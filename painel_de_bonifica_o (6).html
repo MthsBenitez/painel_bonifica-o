@@ -1,0 +1,186 @@
+<!-- ... existing code ... -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease; }
+<!-- ... existing code ... -->
+```
+
+Substitua agora a área de `storage` para integrar a nuvem e cole as chaves do Firebase (que você pegou na Fase 1) no local indicado:
+
+```html:Painel de Bonificação:index.html
+<!-- ... existing code ... -->
+            init() {
+                this.storage.init();
+                this.ui.checkTheme();
+                document.getElementById('view-login').classList.remove('hidden');
+            },
+
+            storage: {
+                // Banco de Dados na Nuvem (Firebase) Configurado!
+                firebaseConfig: {
+                    apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
+                    authDomain: "painel-de-bonificacao.firebaseapp.com",
+                    databaseURL: "https://painel-de-bonificacao-default-rtdb.firebaseio.com/",
+                    projectId: "painel-de-bonificacao",
+                    storageBucket: "painel-de-bonificacao.firebasestorage.app",
+                    messagingSenderId: "96589923224",
+                    appId: "1:96589923224:web:c81d609302104c62f9a1ed"
+                },
+                useLocal: true,
+
+                init() {
+                    if (this.firebaseConfig.apiKey !== "COLE_AQUI_A_API_KEY" && typeof firebase !== 'undefined') {
+                        // Inicia o Firebase na Nuvem
+                        firebase.initializeApp(this.firebaseConfig);
+                        this.useLocal = false;
+                        
+                        // Escuta as mudanças no banco de dados em tempo real
+                        firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
+                            const data = snapshot.val();
+                            if (data) {
+                                if (data.config) {
+                                    app.baseValue = data.config.baseValue || app.baseValue;
+                                    if (data.config.goalsDefinition) app.goalsDefinition = data.config.goalsDefinition;
+                                }
+                                app.users = data.users || [];
+                                
+                                // Atualiza a tela automaticamente se o gestor alterar algo enquanto o monitor estiver online
+                                if(app.currentUser || app.isAdmin) {
+                                    if (app.currentUser) {
+                                        const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
+                                        if(updatedUser) app.currentUser = updatedUser;
+                                    }
+                                    app.calc.updateCalculatorTotals(app.currentUser ? app.currentUser.results : null);
+                                    if(app.isAdmin) app.admin.updateSelectOptions();
+                                }
+                            }
+                        });
+                    } else {
+                        // Se você ainda não colocou as chaves, ele não quebra, apenas continua salvando no PC.
+                        this.loadLocalData();
+                    }
+                },
+
+                saveData() { 
+                    if(!this.useLocal) firebase.database().ref('sistema_bonificacao/users').set(app.users);
+                    else localStorage.setItem('pb_users_final', JSON.stringify(app.users)); 
+                },
+                saveConfig() { 
+                    if(!this.useLocal) firebase.database().ref('sistema_bonificacao/config').set({ baseValue: app.baseValue, goalsDefinition: app.goalsDefinition });
+                    else localStorage.setItem('pb_config_final', JSON.stringify({ baseValue: app.baseValue, goalsDefinition: app.goalsDefinition })); 
+                },
+                loadLocalData() {
+                    const cfg = localStorage.getItem('pb_config_final');
+                    if(cfg) {
+                        const parsed = JSON.parse(cfg);
+                        if(parsed.baseValue) app.baseValue = parsed.baseValue;
+                        if(parsed.goalsDefinition) {
+                            app.goalsDefinition = parsed.goalsDefinition.map(g => {
+                                const orig = app.goalsDefinition.find(o => o.id === g.id);
+                                return orig ? {...orig, ...g} : g;
+                            });
+                        }
+                    }
+                    const usr = localStorage.getItem('pb_users_final');
+                    if(usr) app.users = JSON.parse(usr);
+                }
+            },
+
+            auth: {
+<!-- ... existing code ... -->
+```
+
+Neste bloco, removemos o alerta padrão do navegador na troca de senhas:
+
+```html:Painel de Bonificação:index.html
+<!-- ... existing code ... -->
+                executeChangePassword() {
+                    const newPwd = document.getElementById('modal-pwd-new').value.trim();
+                    if(newPwd.length < 3) return app.ui.showModal("Aviso", "<p class='text-orange-500 font-bold'>A senha é muito curta.</p>");
+                    
+                    const idx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                    if(idx > -1) {
+                        app.users[idx].senha = newPwd; app.currentUser.senha = newPwd;
+                        app.storage.saveData(); app.ui.closeModal();
+                        app.ui.showModal("Sucesso", "<p class='text-center text-green-600 font-bold'>Senha alterada com sucesso!</p>");
+                    }
+                }
+            },
+<!-- ... existing code ... -->
+```
+
+Adicionamos a nova função de confirmação personalizada, acabando com as caixas feias de erro do sistema:
+
+```html:Painel de Bonificação:index.html
+<!-- ... existing code ... -->
+                closeModal() { document.getElementById('global-modal').classList.add('hidden'); },
+
+                showConfirm(title, message, onConfirmJS) {
+                    document.getElementById('modal-title').innerHTML = title;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-5">${message}</p>
+                        <div class="flex gap-3 justify-end mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                            <button onclick="app.ui.closeModal()" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-bold text-sm transition-colors">Cancelar</button>
+                            <button onclick="app.ui.closeModal(); ${onConfirmJS}" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-bold text-sm shadow-md transition-colors">Confirmar Ação</button>
+                        </div>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                // Generator for the Exact Cards matching the Image
+<!-- ... existing code ... -->
+```
+
+Por fim, alteramos os botões de controle de monitores para não usar caixas nativas e incluímos proteções ao criar usuários:
+
+```html:Painel de Bonificação:index.html
+<!-- ... existing code ... -->
+                initUsersView() { this.updateSelectOptions(); },
+
+                registerUser() {
+                    const n = document.getElementById('new-user-nome').value.trim();
+                    const m = document.getElementById('new-user-mat').value.trim();
+                    const p = document.getElementById('new-user-pwd').value.trim();
+                    if(!n || !m || !p) return app.ui.showModal("Aviso", "<p class='text-orange-500 font-bold'>Por favor, preencha todos os campos do cadastro.</p>");
+                    if(app.users.find(u => u.matricula === m)) return app.ui.showModal("Erro", "<p class='text-red-500 font-bold'>Esta matrícula já está cadastrada.</p>");
+                    app.users.push({ nome: n, matricula: m, senha: p, results: [] });
+                    app.storage.saveData();
+                    document.getElementById('new-user-nome').value = ''; document.getElementById('new-user-mat').value = ''; document.getElementById('new-user-pwd').value = '';
+                    this.updateSelectOptions();
+                    app.ui.showModal("Sucesso", "<p class='text-green-600 font-bold'>Monitor cadastrado com sucesso!</p>");
+                },
+
+                loadUserEditor(mat) {
+<!-- ... existing code ... -->
+```
+
+```html:Painel de Bonificação:index.html
+<!-- ... existing code ... -->
+                    app.storage.saveData();
+                    app.ui.showModal("Sucesso", "<p class='text-green-600 font-bold'>Resultados do colaborador salvos e publicados!</p>");
+                },
+
+                clearUserResults() {
+                    app.ui.showConfirm("Zerar Resultados", "Atenção: Você tem certeza que deseja zerar os resultados deste mês para este colaborador? O monitor perderá a visualização.", "app.admin.executeClearUser()");
+                },
+                executeClearUser() {
+                    const u = app.users.find(x => x.matricula === document.getElementById('admin-user-select').value);
+                    if(u) { u.results = []; app.storage.saveData(); this.loadUserEditor(u.matricula); }
+                },
+
+                deleteUser() {
+                    app.ui.showConfirm("Excluir Colaborador", "Deseja excluir permanentemente este colaborador e apagar todos os seus dados?", "app.admin.executeDeleteUser()");
+                },
+                executeDeleteUser() {
+                    app.users = app.users.filter(u => u.matricula !== document.getElementById('admin-user-select').value);
+                    app.storage.saveData(); this.updateSelectOptions(); this.loadUserEditor("");
+                },
+
+                initConfigView() {
+<!-- ... existing code ... -->
