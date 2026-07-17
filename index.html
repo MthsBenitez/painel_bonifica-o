@@ -589,11 +589,15 @@
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                             <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
                                 <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Aproveitamento por Meta (%)</h3>
-                                <canvas id="chart-pct" height="250"></canvas>
+                                <div class="relative h-[250px] w-full">
+                                    <canvas id="chart-pct"></canvas>
+                                </div>
                             </div>
                             <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
                                 <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Custo Financeiro por Meta (R$)</h3>
-                                <canvas id="chart-finance" height="250"></canvas>
+                                <div class="relative h-[250px] w-full">
+                                    <canvas id="chart-finance"></canvas>
+                                </div>
                             </div>
                         </div>
 
