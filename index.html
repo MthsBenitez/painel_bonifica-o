@@ -23,7 +23,7 @@
     </script>
     
     <!-- Google Fonts & FontAwesome -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- Bibliotecas PDF Jurídico -->
@@ -52,12 +52,16 @@
         input[type="month"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
         .dark input[type="month"]::-webkit-calendar-picker-indicator, .dark input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); }
         input[type="month"]::-webkit-calendar-picker-indicator:hover, input[type="time"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+        /* Custom Softmarketing Logo Styling */
+        .logo-font { font-family: 'Inter', sans-serif; letter-spacing: -0.04em; }
+        .logo-sub { font-family: 'Inter', sans-serif; letter-spacing: 0.15em; font-weight: 300; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-blue-500 selection:text-white">
+<body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white">
 
     <!-- Modal Global de Alertas -->
-    <div id="global-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
+    <div id="global-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all">
             <h3 id="modal-title" class="text-lg font-bold mb-3 text-slate-800 dark:text-white flex items-center gap-2"></h3>
             <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed"></div>
@@ -66,35 +70,36 @@
     </div>
 
     <!-- Modal de Troca de Senha -->
-    <div id="pwd-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
+    <div id="pwd-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center mr-3 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
-            <input type="password" id="new-password-input" placeholder="Digite a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 mb-6 dark:text-white outline-none transition-all">
+            <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mr-3 text-green-600 dark:text-green-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
+            <input type="password" id="new-password-input" placeholder="Digite a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 mb-6 dark:text-white outline-none transition-all">
             <div class="flex justify-end gap-3">
                 <button onclick="app.ui.closePwdModal()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
-                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar Senha</button>
+                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar Senha</button>
             </div>
         </div>
     </div>
 
     <!-- Modal 1: Termos de Uso (1º Login Obrigatório) -->
-    <div id="terms-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-file-signature"></i></div>
+    <div id="terms-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-slate-700">
+            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-5 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-file-contract"></i></div>
             <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Termos de Uso e Sigilo</h3>
-            <div class="text-slate-600 dark:text-slate-300 text-sm mb-4 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
+            
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-5 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
                 <p class="mb-3 font-bold text-slate-800 dark:text-slate-100">Bem-vindo(a) ao Portal de Resultados da Softmarketing.</p>
                 <p class="mb-3">O acesso a esta plataforma é pessoal e intransferível. Os dados e métricas aqui apresentados são confidenciais e de propriedade exclusiva da empresa, destinados unicamente para o acompanhamento da sua evolução profissional e apuração de sua bonificação.</p>
-                <p class="mb-3 font-extrabold text-red-600 dark:text-red-400 border-l-4 border-red-500 pl-3">Proteção de Dados e Restrição Legal (LGPD):</p>
+                <p class="mb-2 font-extrabold text-red-600 dark:text-red-400 border-l-4 border-red-500 pl-3">Proteção de Dados e Restrição Legal (LGPD):</p>
                 <p>É terminantemente <strong>proibida</strong> a realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento das imagens, informações, dados da operação e layout contidos neste portal sem a prévia e formal autorização da diretoria. O descumprimento desta diretriz será considerado infração grave, sujeitando o responsável a medidas legais e disciplinares cabíveis, conforme a legislação vigente.</p>
             </div>
             
-            <div class="flex items-start gap-3 p-3 mb-5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-blue-400 transition-colors" onclick="document.getElementById('chk-termos').click()">
+            <div class="flex items-start gap-3 p-4 mb-6 border-2 border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-blue-500 dark:hover:border-blue-500 transition-colors" onclick="document.getElementById('chk-termos').click()">
                 <div class="pt-0.5">
                     <input type="checkbox" id="chk-termos" onclick="event.stopPropagation()" onchange="const btn = document.getElementById('btn-termos'); btn.disabled = !this.checked; if(this.checked){btn.classList.remove('opacity-50','cursor-not-allowed')}else{btn.classList.add('opacity-50','cursor-not-allowed')}" class="w-5 h-5 accent-blue-600 cursor-pointer">
                 </div>
                 <label for="chk-termos" onclick="event.stopPropagation()" class="text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none leading-tight uppercase tracking-wider">
-                    Declaro formalmente que li, compreendi e concordo integralmente com as regras, termos de uso e políticas de sigilo de dados descritos.
+                    Declaro formalmente que li, compreendi e concordo integralmente com as regras, termos de uso e políticas de sigilo de dados descritos acima.
                 </label>
             </div>
 
@@ -103,18 +108,19 @@
     </div>
 
     <!-- Modal 2: Diretrizes de Bonificação (2º Login Obrigatório) -->
-    <div id="guidelines-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <div class="w-16 h-16 bg-green-50 dark:bg-green-900/20 text-green-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-green-100 dark:border-green-800"><i class="fa-solid fa-clipboard-check"></i></div>
+    <div id="guidelines-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-slate-700">
+            <div class="w-16 h-16 bg-green-50 dark:bg-green-900/20 text-green-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-5 border border-green-100 dark:border-green-800"><i class="fa-solid fa-check-double"></i></div>
             <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Diretrizes de Bonificação</h3>
-            <div class="text-slate-600 dark:text-slate-300 text-sm mb-4 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
+            
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-5 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
                 <p class="mb-3 font-bold text-slate-800 dark:text-slate-100">Atualização Estratégica</p>
                 <p class="mb-3">Para garantirmos ainda mais transparência e alinhamento, nossos critérios de cálculo de bonificação requerem foco contínuo.</p>
                 <p class="mb-3">Para assegurar sua recompensa por alta performance, é fundamental que o seu engajamento e a condução das monitorias, calibragens, ações presenciais e de alto impacto estejam intrinsecamente <strong>alinhados aos objetivos mensais da sua operação</strong>.</p>
                 <p>Ao prosseguir, você confirma que leu o <em>Manual de Metas e Critérios</em> (disponível na aba "Regras e Critérios") e compreende integralmente as métricas exigidas para o atingimento dos padrões de excelência necessários para o seu atendimento.</p>
             </div>
 
-            <div class="flex items-start gap-3 p-3 mb-5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-green-400 transition-colors" onclick="document.getElementById('chk-diretrizes').click()">
+            <div class="flex items-start gap-3 p-4 mb-6 border-2 border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-green-500 dark:hover:border-green-500 transition-colors" onclick="document.getElementById('chk-diretrizes').click()">
                 <div class="pt-0.5">
                     <input type="checkbox" id="chk-diretrizes" onclick="event.stopPropagation()" onchange="const btn = document.getElementById('btn-diretrizes'); btn.disabled = !this.checked; if(this.checked){btn.classList.remove('opacity-50','cursor-not-allowed')}else{btn.classList.add('opacity-50','cursor-not-allowed')}" class="w-5 h-5 accent-green-600 cursor-pointer">
                 </div>
@@ -133,15 +139,36 @@
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-gray-500/10 rounded-full blur-3xl pointer-events-none"></div>
         
-        <div class="glass-card max-w-md w-full p-8 rounded-3xl shadow-xl text-center relative z-10">
+        <div class="glass-card max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center relative z-10">
             
-            <!-- Logo Softmarketing com fallback dinâmico -->
-            <div class="w-full max-w-[200px] mx-auto mb-6 bg-white dark:bg-slate-50 rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center justify-center h-28">
-                <img src="1709328472296.jpg (1).jpeg" alt="Softmarketing Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" class="w-full h-full object-contain">
-                <div class="hidden text-xl tracking-tighter font-black text-green-700">SOFT<span class="text-slate-800">MARKETING</span></div>
+            <!-- Logo Softmarketing (Alta Fidelidade com SVG & CSS) -->
+            <div class="w-full max-w-[280px] mx-auto mb-8 bg-transparent flex flex-col items-center justify-center">
+                <!-- Esfera com a Letra S (Fita) -->
+                <svg viewBox="0 0 100 100" class="w-24 h-24 mb-2 drop-shadow-md">
+                    <defs>
+                        <!-- Gradiente da Esfera -->
+                        <radialGradient id="sphereGrad" cx="35%" cy="30%" r="65%">
+                            <stop offset="0%" stop-color="#ffffff" />
+                            <stop offset="40%" stop-color="#cbd5e1" />
+                            <stop offset="85%" stop-color="#64748b" />
+                            <stop offset="100%" stop-color="#334155" />
+                        </radialGradient>
+                    </defs>
+                    <circle cx="50" cy="50" r="48" fill="url(#sphereGrad)" />
+                    <!-- Fita Verde "S" -->
+                    <path d="M 62 18 C 45 15, 33 28, 42 45 C 50 60, 68 65, 58 82 C 45 98, 30 85, 30 85 C 30 85, 45 95, 55 90 C 75 80, 80 60, 60 45 C 45 30, 35 25, 45 15 C 53 6, 62 18, 62 18 Z" fill="#16a34a" />
+                </svg>
+                <!-- Texto Principal -->
+                <div class="logo-font text-[2.2rem] font-bold text-[#333] dark:text-white leading-none mt-1">
+                    soft<span class="text-[#16a34a]">marketing</span>
+                </div>
+                <!-- Subtexto -->
+                <div class="logo-sub text-[8px] text-[#222] dark:text-slate-300 mt-1.5 w-full text-center tracking-[0.2em] uppercase">
+                    Soluções em Comunicação
+                </div>
             </div>
 
-            <h1 class="text-2xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
+            <h1 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
             <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Acompanhe seus indicadores de excelência.</p>
             
             <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-5">
@@ -149,20 +176,23 @@
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
                     <div class="relative">
                         <i class="fa-solid fa-user absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
+                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
                     </div>
                 </div>
                 <div class="text-left">
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
                     <div class="relative">
                         <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
+                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
                     </div>
                 </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-2">
+                <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-4">
                     Acessar Dashboard
                 </button>
             </form>
+            <div class="text-center mt-6">
+                <p class="text-[9px] text-slate-400 font-medium">softmarketing.com.br</p>
+            </div>
         </div>
     </div>
 
@@ -174,8 +204,12 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 bg-gradient-to-br from-green-500 to-green-700 rounded-xl flex items-center justify-center shadow-md">
-                            <i class="fa-solid fa-chart-pie text-white text-sm"></i>
+                        <!-- Mini Logo no Topo -->
+                        <div class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+                            <svg viewBox="0 0 100 100" class="w-8 h-8">
+                                <circle cx="50" cy="50" r="48" fill="#94a3b8" />
+                                <path d="M 62 18 C 45 15, 33 28, 42 45 C 50 60, 68 65, 58 82 C 45 98, 30 85, 30 85 C 30 85, 45 95, 55 90 C 75 80, 80 60, 60 45 C 45 30, 35 25, 45 15 C 53 6, 62 18, 62 18 Z" fill="#16a34a" />
+                            </svg>
                         </div>
                         <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
                     </div>
@@ -244,7 +278,17 @@
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
-                            if (data.config) app.config = data.config;
+                            if (data.config) {
+                                app.config = data.config;
+                                // Script Invisível de Migração para forçar o banco a atualizar a regra de calibragem
+                                const g3 = app.config.goals.find(g => g.id === 'g3');
+                                if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
+                                const g4 = app.config.goals.find(g => g.id === 'g4');
+                                if (g4 && g4.type !== 'actions') { g4.type = 'actions'; g4.title = "Ações Presenciais"; }
+                                const g7 = app.config.goals.find(g => g.id === 'g7');
+                                if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
+                            }
+                            
                             if (data.users) {
                                 app.users = data.users.map(u => {
                                     if(u.results && (u.results.g1 || u.results.g2)) {
@@ -257,11 +301,16 @@
                             } else {
                                 app.users = [];
                             }
-                            // Auto-atualiza UI se logado e já tiver passado pelas validações
-                            if(app.currentUser || app.isAdmin) {
-                                if(document.getElementById('view-app').classList.contains('hidden') === false) {
-                                    app.ui.refreshCurrentView();
-                                }
+                            
+                            // Preservar a referência do usuário logado após o recarregamento do Firebase
+                            if (app.currentUser && !app.isAdmin) {
+                                const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
+                                if (updatedUser) app.currentUser = updatedUser;
+                            }
+
+                            // Auto-atualiza UI se o app estiver vísivel
+                            if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
+                                app.ui.refreshCurrentView();
                             }
                         } else {
                             this.saveConfig();
@@ -310,12 +359,15 @@
                         app.ui.showApp(); return;
                     }
 
-                    const user = app.users.find(u => u.matricula === mat && u.senha === pwd);
-                    if(user) {
-                        app.isAdmin = false; app.currentUser = user; app.currentTab = 'meu_painel';
+                    const userIdx = app.users.findIndex(u => u.matricula === mat && u.senha === pwd);
+                    if(userIdx > -1) {
+                        app.isAdmin = false; 
                         
-                        // Sistema de rastreamento de acessos para regras
-                        app.currentUser.loginCount = (app.currentUser.loginCount || 0) + 1;
+                        // Atualiza a contagem direto na array para não se perder
+                        app.users[userIdx].loginCount = (app.users[userIdx].loginCount || 0) + 1;
+                        app.currentUser = app.users[userIdx];
+                        app.currentTab = 'meu_painel';
+                        
                         app.storage.saveUsers();
 
                         document.getElementById('view-login').classList.add('hidden');
@@ -326,8 +378,8 @@
                 },
 
                 processAcceptances() {
+                    if(!app.currentUser) return;
                     const u = app.currentUser;
-                    if(!u) return;
 
                     // Lógica rigorosa de modais bloqueantes
                     if (!u.aceiteTermos) {
@@ -340,21 +392,29 @@
                 },
 
                 acceptTerms() {
-                    app.currentUser.aceiteTermos = new Date().toISOString();
-                    app.storage.saveUsers();
+                    const userIdx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                    if(userIdx > -1) {
+                        app.users[userIdx].aceiteTermos = new Date().toISOString();
+                        app.currentUser = app.users[userIdx];
+                        app.storage.saveUsers();
+                    }
                     document.getElementById('terms-modal').classList.add('hidden');
                     this.processAcceptances(); // Verifica se precisa do próximo
                 },
 
                 acceptGuidelines() {
-                    app.currentUser.aceiteDiretrizes = new Date().toISOString();
-                    app.storage.saveUsers();
+                    const userIdx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                    if(userIdx > -1) {
+                        app.users[userIdx].aceiteDiretrizes = new Date().toISOString();
+                        app.currentUser = app.users[userIdx];
+                        app.storage.saveUsers();
+                    }
                     document.getElementById('guidelines-modal').classList.add('hidden');
                     this.processAcceptances(); // Vai liberar o app
                 },
 
                 logout() {
-                    app.isAdmin = false; app.currentUser = null;
+                    app.isAdmin = false; app.currentUser = null; window.selectedAdminEditUser = null;
                     document.getElementById('login-mat').value = ''; document.getElementById('login-pwd').value = '';
                     document.getElementById('view-app').classList.add('hidden');
                     document.getElementById('terms-modal').classList.add('hidden');
@@ -362,7 +422,12 @@
                     
                     // Reset Checkboxes visuais
                     document.getElementById('chk-termos').checked = false;
+                    document.getElementById('btn-termos').disabled = true;
+                    document.getElementById('btn-termos').classList.add('opacity-50','cursor-not-allowed');
+                    
                     document.getElementById('chk-diretrizes').checked = false;
+                    document.getElementById('btn-diretrizes').disabled = true;
+                    document.getElementById('btn-diretrizes').classList.add('opacity-50','cursor-not-allowed');
                     
                     document.getElementById('view-login').classList.remove('hidden');
                 },
@@ -374,7 +439,7 @@
                     if(app.currentUser) {
                         const idx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
                         if(idx > -1) {
-                            app.users[idx].senha = newPwd; app.currentUser.senha = newPwd;
+                            app.users[idx].senha = newPwd; app.currentUser = app.users[idx];
                             app.storage.saveUsers(); app.ui.closePwdModal();
                             app.ui.showAlert("Sucesso", "Sua senha foi alterada com segurança.", "success");
                         }
@@ -1222,6 +1287,7 @@
                             </div>
                     `;
                     
+                    // Botão para gerar o PDF (Só aparece para o Administrador)
                     if(app.isAdmin) {
                         html += `
                             <div>
@@ -1252,7 +1318,7 @@
                                 <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-file-contract text-blue-500"></i> Termos de Uso e Restrições (Aviso Legal)</h3>
                                 <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed space-y-4">
                                     <p><strong>1. Finalidade Exclusiva:</strong> Este portal destina-se única e exclusivamente ao acompanhamento de indicadores de performance corporativa e cálculo de bonificações correspondentes. Nenhuma informação aqui contida será utilizada para fins publicitários ou compartilhada com terceiros alheios à sua avaliação de desempenho.</p>
-                                    <p><strong>2. Sigilo de Informações e Imagens:</strong> O registro através de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de compartilhamento das imagens, layout e informações contidas neste portal sem a prévia e formal autorização da diretoria é terminantemente proibido. Tais atos serão considerados infração grave, sujeitando o responsável às medidas disciplinares e legais cabíveis pela exposição de dados da operação.</p>
+                                    <p><strong>2. Sigilo de Informações e Imagens:</strong> A realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento de imagens, layout e informações contidas neste portal sem a prévia e formal autorização da diretoria é terminantemente proibida. Tais atos serão considerados infração grave, sujeitando o responsável às medidas disciplinares e legais cabíveis pela exposição de dados da operação.</p>
                                     <p><strong>3. Credenciais e Retenção:</strong> Sua matrícula e senha são de uso pessoal. A segurança começa pela não partilha da sua senha com colegas. Os lançamentos de notas são mantidos apenas pelo tempo necessário para garantir o pagamento correto da sua bonificação.</p>
                                 </div>
                             </div>
@@ -1280,7 +1346,6 @@
                 }
             }, // <-- Fim do Objeto UI
 
-            // INÍCIO DO OBJETO ADMIN (CORREÇÃO DE ESCOPO)
             admin: {
                 registerUser() {
                     const n = document.getElementById('cad-nome').value.trim();
@@ -1447,17 +1512,18 @@
                     
                     const doc = new window.jspdf.jsPDF('landscape'); 
                     
-                    // Header
+                    // Header Softmarketing
                     doc.setFontSize(16);
-                    doc.setTextColor(30, 41, 59);
-                    doc.text("Softmarketing Solucoes em Comunicacao", 14, 15);
+                    doc.setTextColor(22, 163, 74); // Verde Softmarketing
+                    doc.text("SOFTMARKETING - Solucoes em Comunicacao", 14, 15);
                     
                     doc.setFontSize(12);
+                    doc.setTextColor(30, 41, 59); // Slate 800
                     doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
                     
                     // Metadados
                     doc.setFontSize(9);
-                    doc.setTextColor(100, 116, 139);
+                    doc.setTextColor(100, 116, 139); // Slate 500
                     doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
                     doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
                     
@@ -1466,8 +1532,8 @@
                     const rows = [];
                     
                     app.users.forEach(u => {
-                        const termos = u.aceiteTermos ? `Aceito em ${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                        const diretrizes = u.aceiteDiretrizes ? `Aceito em ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const termos = u.aceiteTermos ? `ACEITO EM:\n${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const diretrizes = u.aceiteDiretrizes ? `ACEITO EM:\n${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
                         rows.push([u.nome, u.matricula, termos, diretrizes]);
                     });
 
@@ -1477,9 +1543,15 @@
                         body: rows,
                         startY: 42,
                         theme: 'grid',
-                        headStyles: { fillColor: [22, 163, 74] },
-                        styles: { fontSize: 8, cellPadding: 3 },
-                        alternateRowStyles: { fillColor: [248, 250, 252] }
+                        headStyles: { fillColor: [22, 163, 74] }, // Verde Softmarketing no Header da Tabela
+                        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
+                        alternateRowStyles: { fillColor: [248, 250, 252] }, // Slate 50
+                        columnStyles: {
+                            0: { cellWidth: 70 },
+                            1: { cellWidth: 40 },
+                            2: { cellWidth: 80 },
+                            3: { cellWidth: 80 }
+                        }
                     });
                     
                     // Rodapé
@@ -1488,7 +1560,7 @@
                         doc.setPage(i);
                         doc.setFontSize(7);
                         doc.setTextColor(150, 150, 150);
-                        doc.text(`Página ${i} de ${pageCount} - Uso restrito e confidencial Softmarketing`, 14, doc.internal.pageSize.height - 10);
+                        doc.text(`Pagina ${i} de ${pageCount} - Uso restrito e confidencial Softmarketing`, 14, doc.internal.pageSize.height - 10);
                     }
                     
                     doc.save("Softmarketing_Relatorio_Aceites_LGPD.pdf");
