@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel de Bonificação</title>
+    <title>Painel de Bonificação | Qualidade Corporativa</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -15,7 +15,7 @@
                     fontFamily: { sans: ['Inter', 'sans-serif'] },
                     colors: {
                         brand: { 50: '#f0fdf4', 100: '#dcfce7', 500: '#22c55e', 600: '#16a34a', 700: '#15803d' },
-                        dark: { bg: '#0f172a', surface: '#1e293b', border: '#334155' }
+                        dark: { bg: '#0b1120', surface: '#1e293b', border: '#334155' }
                     }
                 }
             }
@@ -29,119 +29,148 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Firebase (V8 Compat - Required for direct HTML CDN integration) -->
+    <!-- Firebase (V8 Compat) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
     <style>
         body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease; }
-        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
-        .dark .glass-card { background: rgba(30, 41, 59, 0.95); border-color: #334155; }
-        /* Custom scrollbar for better look */
-        ::-webkit-scrollbar { width: 8px; }
+        .glass-card { background: rgba(255, 255, 255, 1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); border: 1px solid #f1f5f9; }
+        .dark .glass-card { background: rgba(30, 41, 59, 1); border-color: #334155; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
+        .gradient-text { background: linear-gradient(to right, #2563eb, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .dark .gradient-text { background: linear-gradient(to right, #60a5fa, #93c5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        
+        /* Ocultar ícone de calendário no input month no tema dark para melhor UI */
+        input[type="month"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
+        .dark input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+        input[type="month"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden">
+<body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-blue-500 selection:text-white">
 
-    <!-- Custom Modal System -->
-    <div id="global-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all scale-100">
-            <h3 id="modal-title" class="text-lg font-bold mb-2 text-slate-800 dark:text-white flex items-center gap-2"></h3>
-            <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6"></div>
+    <!-- Modal Global de Alertas -->
+    <div id="global-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all">
+            <h3 id="modal-title" class="text-lg font-bold mb-3 text-slate-800 dark:text-white flex items-center gap-2"></h3>
+            <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed"></div>
             <div id="modal-actions" class="flex justify-end gap-3"></div>
         </div>
     </div>
 
-    <!-- Change Password Modal -->
-    <div id="pwd-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white"><i class="fa-solid fa-key text-blue-500 mr-2"></i>Trocar Senha</h3>
-            <input type="password" id="new-password-input" placeholder="Digite a nova senha" class="w-full p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 mb-4 dark:text-white">
+    <!-- Modal de Troca de Senha -->
+    <div id="pwd-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
+            <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center mr-3 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
+            <input type="password" id="new-password-input" placeholder="Digite a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 mb-6 dark:text-white outline-none transition-all">
             <div class="flex justify-end gap-3">
-                <button onclick="app.ui.closePwdModal()" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-bold text-sm transition-colors">Cancelar</button>
-                <button onclick="app.auth.executeChangePassword()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-sm shadow-md transition-colors">Salvar</button>
+                <button onclick="app.ui.closePwdModal()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
+                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar Senha</button>
             </div>
         </div>
     </div>
 
-    <!-- LOGIN VIEW -->
-    <div id="view-login" class="flex-1 flex items-center justify-center p-4">
-        <div class="glass-card max-w-md w-full p-8 rounded-2xl shadow-xl border border-slate-100 dark:border-dark-border text-center">
-            <div class="w-16 h-16 bg-blue-600 text-white rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 shadow-lg">
-                <i class="fa-solid fa-chart-pie"></i>
+    <!-- VIEW LOGIN -->
+    <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden">
+        <!-- Background Elements -->
+        <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div class="glass-card max-w-md w-full p-8 rounded-3xl shadow-xl text-center relative z-10">
+            <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6 shadow-lg transform rotate-3">
+                <i class="fa-solid fa-chart-pie -rotate-3"></i>
             </div>
-            <h1 class="text-2xl font-extrabold text-slate-800 dark:text-white mb-2">Painel de Bonificação</h1>
-            <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Acesse para acompanhar seus indicadores.</p>
+            <h1 class="text-2xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
+            <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Acompanhe seus indicadores de excelência.</p>
             
-            <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-4">
+            <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-5">
                 <div class="text-left">
-                    <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Matrícula (Login)</label>
-                    <input type="text" id="login-mat" required class="w-full p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white transition-all outline-none" placeholder="Digite sua matrícula">
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-user absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
+                    </div>
                 </div>
                 <div class="text-left">
-                    <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Senha</label>
-                    <input type="password" id="login-pwd" required class="w-full p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white transition-all outline-none" placeholder="••••••••">
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
+                    </div>
                 </div>
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 mt-2">
-                    Entrar no Sistema
+                <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 mt-2">
+                    Acessar Dashboard
                 </button>
             </form>
         </div>
     </div>
 
-    <!-- MAIN APP VIEW (Hidden initially) -->
-    <div id="view-app" class="hidden flex-1 flex flex-col pb-[200px]">
+    <!-- VIEW APLICATIVO PRINCIPAL -->
+    <div id="view-app" class="hidden flex-1 flex flex-col pb-16">
         
-        <!-- Header Identical to Image -->
-        <header class="bg-[#111827] text-white shadow-md z-20">
+        <!-- Header -->
+        <header class="bg-white dark:bg-[#0f172a] shadow-sm border-b border-slate-200 dark:border-slate-800 z-20 sticky top-0">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shadow-sm">
+                        <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-md">
                             <i class="fa-solid fa-chart-pie text-white text-sm"></i>
                         </div>
-                        <h1 class="font-bold text-lg tracking-tight">Painel de Bonificação</h1>
+                        <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Portal de Bonificação</h1>
                     </div>
-                    <div class="flex items-center gap-4">
-                        <div class="hidden sm:flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-md border border-slate-700">
-                            <i class="fa-solid fa-user text-slate-400 text-xs"></i>
-                            <span id="header-username" class="text-xs font-bold text-slate-200 tracking-wide uppercase">USUÁRIO</span>
+                    
+                    <div class="flex items-center gap-3 sm:gap-4">
+                        <!-- Mês Global -->
+                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-blue-300 dark:hover:border-blue-500 group">
+                            <i class="fa-regular fa-calendar-days text-blue-500 text-sm"></i>
+                            <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
                         </div>
-                        <!-- Dark mode toggle -->
-                        <button onclick="app.ui.toggleTheme()" class="text-slate-400 hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-800">
-                            <i id="theme-icon" class="fa-solid fa-moon"></i>
+
+                        <!-- Perfil -->
+                        <div class="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
+                            <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs"><i class="fa-solid fa-user"></i></div>
+                            <span id="header-username" class="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wide uppercase truncate max-w-[120px]">USUÁRIO</span>
+                        </div>
+                        
+                        <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+
+                        <!-- Botão Tema -->
+                        <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
                         </button>
-                        <!-- Logout -->
-                        <button onclick="app.auth.logout()" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-md shadow-sm transition-colors">
-                            Sair
+                        
+                        <!-- Sair -->
+                        <button onclick="app.auth.logout()" class="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Sair do Sistema">
+                            <i class="fa-solid fa-right-from-bracket text-lg"></i>
                         </button>
                     </div>
                 </div>
             </div>
             
-            <!-- Navigation -->
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-700">
-                <nav class="flex space-x-1 py-3 overflow-x-auto" id="main-nav">
-                    <!-- Dynamic Nav Items injected by JS based on role -->
+            <!-- Navegação Tabs -->
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-[#0f172a]">
+                <nav class="flex space-x-2 pt-3 overflow-x-auto no-scrollbar" id="main-nav">
+                    <!-- Injetado via JS -->
                 </nav>
             </div>
         </header>
 
-        <!-- Content Container -->
+        <!-- Container de Conteúdo -->
         <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10 flex-1">
-            <div id="content-container">
-                <!-- Views will be rendered here via JS -->
+            <div id="content-container" class="animate-fade-in">
+                <!-- Views injetadas via JS -->
             </div>
         </main>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts da Aplicação -->
     <script>
         const app = {
-            // Firebase Configuration (Real credentials integrated)
+            // Configuração Firebase
             storage: {
                 firebaseConfig: {
                     apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
@@ -153,50 +182,47 @@
                     appId: "1:96589923224:web:c81d609302104c62f9a1ed"
                 },
                 init() {
-                    // Initialize Firebase V8
-                    if (!firebase.apps.length) {
-                        firebase.initializeApp(this.firebaseConfig);
-                    }
-                    // Listen to Realtime Database
+                    if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
+                    
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
-                            if (data.config) {
-                                app.config = data.config;
-                            }
+                            if (data.config) app.config = data.config;
                             if (data.users) {
-                                app.users = data.users;
+                                // Script de migração sutil: caso haja usuários com dados antigos fora da estrutura de meses
+                                app.users = data.users.map(u => {
+                                    if(u.results && (u.results.g1 || u.results.g2)) {
+                                        // Movendo dados antigos pra estrutura de meses genérica pra não quebrar
+                                        const oldData = {...u.results};
+                                        u.results = { "2026-06": oldData }; // Exemplo de refatoração passiva
+                                    }
+                                    if(!u.results) u.results = {};
+                                    return u;
+                                });
                             } else {
                                 app.users = [];
                             }
-                            // Auto-refresh UI if logged in
-                            if(app.currentUser || app.isAdmin) {
-                                app.ui.refreshCurrentView();
-                            }
+                            if(app.currentUser || app.isAdmin) app.ui.refreshCurrentView();
                         } else {
-                            // First time setup empty DB
                             this.saveConfig();
                             this.saveUsers();
                         }
                     });
                 },
-                saveUsers() {
-                    firebase.database().ref('sistema_bonificacao/users').set(app.users);
-                },
-                saveConfig() {
-                    firebase.database().ref('sistema_bonificacao/config').set(app.config);
-                }
+                saveUsers() { firebase.database().ref('sistema_bonificacao/users').set(app.users); },
+                saveConfig() { firebase.database().ref('sistema_bonificacao/config').set(app.config); }
             },
 
-            // App State
+            // Estado Global
             users: [],
+            currentMonth: '', // Definido na inicialização
             config: {
                 baseValue: 400,
                 goals: [
                     { id: 'g1', title: "Monitorias Realizadas", weight: 0.20, type: 'percent', icon: 'fa-headphones' },
                     { id: 'g2', title: "Feedbacks Presenciais", weight: 0.20, type: 'percent', icon: 'fa-comments' },
-                    { id: 'g3', title: "Calibragens", weight: 0.15, type: 'boolean', icon: 'fa-handshake' },
-                    { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-users' },
+                    { id: 'g3', title: "Calibragens", weight: 0.15, type: 'calibracao', icon: 'fa-scale-balanced' },
+                    { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-people-group' },
                     { id: 'g5', title: "Frequência", weight: 0.10, type: 'boolean', icon: 'fa-calendar-check' },
                     { id: 'g6', title: "Avaliação Gestor", weight: 0.10, type: 'boolean', icon: 'fa-thumbs-up' },
                     { id: 'g7', title: "Ação Colaborativa", weight: 0.10, type: 'boolean', icon: 'fa-lightbulb' }
@@ -205,7 +231,14 @@
             
             currentUser: null,
             isAdmin: false,
-            currentTab: 'meu_painel', // Default tab
+            currentTab: 'meu_painel',
+
+            // Mudar Mês Global
+            changeMonth(newMonthStr) {
+                if(!newMonthStr) return;
+                this.currentMonth = newMonthStr;
+                this.ui.refreshCurrentView();
+            },
 
             auth: {
                 login() {
@@ -213,62 +246,49 @@
                     const pwd = document.getElementById('login-pwd').value.trim();
                     
                     if(mat === 'gestaosoft' && pwd === 'qualidade2026') {
-                        app.isAdmin = true;
-                        app.currentUser = null;
-                        app.currentTab = 'dashboard_adm';
-                        app.ui.showApp();
-                        return;
+                        app.isAdmin = true; app.currentUser = null; app.currentTab = 'dashboard_adm';
+                        app.ui.showApp(); return;
                     }
 
                     const user = app.users.find(u => u.matricula === mat && u.senha === pwd);
                     if(user) {
-                        app.isAdmin = false;
-                        app.currentUser = user;
-                        app.currentTab = 'meu_painel';
+                        app.isAdmin = false; app.currentUser = user; app.currentTab = 'meu_painel';
                         app.ui.showApp();
                     } else {
-                        app.ui.showAlert("Acesso Negado", "Matrícula ou senha incorretos.");
+                        app.ui.showAlert("Acesso Negado", "Matrícula ou senha incorretos. Verifique suas credenciais e tente novamente.", "error");
                     }
                 },
                 logout() {
-                    app.isAdmin = false;
-                    app.currentUser = null;
-                    document.getElementById('login-mat').value = '';
-                    document.getElementById('login-pwd').value = '';
+                    app.isAdmin = false; app.currentUser = null;
+                    document.getElementById('login-mat').value = ''; document.getElementById('login-pwd').value = '';
                     document.getElementById('view-app').classList.add('hidden');
                     document.getElementById('view-login').classList.remove('hidden');
                 },
                 executeChangePassword() {
                     const newPwd = document.getElementById('new-password-input').value.trim();
-                    if(newPwd.length < 3) return app.ui.showAlert("Aviso", "A senha é muito curta.");
+                    if(newPwd.length < 4) return app.ui.showAlert("Aviso", "A senha deve ter pelo menos 4 caracteres.", "error");
                     
                     if(app.currentUser) {
                         const idx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
                         if(idx > -1) {
-                            app.users[idx].senha = newPwd;
-                            app.currentUser.senha = newPwd;
-                            app.storage.saveUsers();
-                            app.ui.closePwdModal();
-                            app.ui.showAlert("Sucesso", "Senha alterada com sucesso!", "success");
+                            app.users[idx].senha = newPwd; app.currentUser.senha = newPwd;
+                            app.storage.saveUsers(); app.ui.closePwdModal();
+                            app.ui.showAlert("Sucesso", "Sua senha foi alterada com segurança.", "success");
                         }
                     }
                 }
             },
 
             calc: {
-                getGoalResult(goalId, results) {
-                    if(!results || !results[goalId]) {
-                        return { value: 0, mult: 0, received: 0, display: '-', raw: {} };
-                    }
+                getGoalResult(goalId, resultsForMonth) {
+                    if(!resultsForMonth || !resultsForMonth[goalId]) return { value: 0, mult: 0, received: 0, display: '-', raw: {} };
                     
-                    const res = results[goalId];
+                    const res = resultsForMonth[goalId];
                     const goalDef = app.config.goals.find(g => g.id === goalId);
                     const valueAllocated = app.config.baseValue * goalDef.weight;
-                    let mult = 0;
-                    let display = '';
+                    let mult = 0; let display = '';
 
                     if(goalDef.type === 'percent') {
-                        // Needs Meta and Real
                         const meta = parseFloat(res.meta) || 0;
                         const real = parseFloat(res.real) || 0;
                         const pct = meta > 0 ? (real / meta) : 0;
@@ -278,37 +298,36 @@
                         else if(pct >= 0.90) mult = 0.50;
                         else mult = 0;
                         
-                        display = `${meta > 0 ? (pct * 100).toFixed(1) : '0.0'}%`;
+                        display = `${meta > 0 ? (pct * 100).toFixed(1) : '0.0'}% atingido`;
+                    }
+                    else if(goalDef.type === 'calibracao') {
+                        const count = parseInt(res.val) || 0;
+                        if(count >= 2) mult = 1.0;
+                        else if(count === 1) mult = 0.50;
+                        else mult = 0;
+                        display = `${count} Calibraç${count === 1 ? 'ão' : 'ões'}`;
                     }
                     else if(goalDef.type === 'actions') {
                         const count = parseInt(res.val) || 0;
-                        if(count >= 4) mult = 1.0;
-                        else if(count === 3) mult = 0.75;
-                        else if(count === 2) mult = 0.50;
+                        if(count >= 5) mult = 1.0;
+                        else if(count === 4) mult = 0.75;
+                        else if(count === 3) mult = 0.50;
                         else mult = 0;
-                        display = `${count} Ações Realizadas`;
+                        display = `${count} Aç${count === 1 ? 'ão' : 'ões'}`;
                     }
                     else if(goalDef.type === 'boolean') {
                         const atingido = (res.val === 'Sim');
                         mult = atingido ? 1.0 : 0;
-                        display = atingido ? '✓ Atingido' : '✗ Falhou';
+                        display = atingido ? 'Concluído' : 'Não Atingido';
                     }
 
-                    return {
-                        mult: mult,
-                        received: valueAllocated * mult,
-                        allocated: valueAllocated,
-                        display: display,
-                        raw: res
-                    };
+                    return { mult: mult, received: valueAllocated * mult, allocated: valueAllocated, display: display, raw: res };
                 },
                 
-                getTotal(results) {
-                    if(!results) return { received: 0, pct: 0 };
+                getTotal(resultsForMonth) {
+                    if(!resultsForMonth) return { received: 0, pct: 0 };
                     let totalReceived = 0;
-                    app.config.goals.forEach(g => {
-                        totalReceived += this.getGoalResult(g.id, results).received;
-                    });
+                    app.config.goals.forEach(g => { totalReceived += this.getGoalResult(g.id, resultsForMonth).received; });
                     const pct = app.config.baseValue > 0 ? (totalReceived / app.config.baseValue) : 0;
                     return { received: totalReceived, pct: pct };
                 }
@@ -317,6 +336,14 @@
             ui: {
                 init() {
                     this.checkTheme();
+                    
+                    // Setar mês atual por padrão (Ex: "2026-07")
+                    const today = new Date();
+                    const mm = String(today.getMonth() + 1).padStart(2, '0');
+                    const yyyy = today.getFullYear();
+                    app.currentMonth = `${yyyy}-${mm}`;
+                    document.getElementById('global-month').value = app.currentMonth;
+
                     app.storage.init();
                     document.getElementById('view-login').classList.remove('hidden');
                 },
@@ -341,19 +368,16 @@
                         localStorage.setItem('theme', 'dark');
                         icon.classList.replace('fa-moon', 'fa-sun');
                     }
-                    // Re-render charts if they exist to match theme
                     this.refreshCurrentView();
                 },
 
                 showAlert(title, message, type = 'info') {
-                    const color = type === 'success' ? 'text-green-600' : (type === 'error' ? 'text-red-600' : 'text-blue-600');
-                    const icon = type === 'success' ? 'fa-check-circle' : (type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info');
+                    const color = type === 'success' ? 'text-green-500' : (type === 'error' ? 'text-red-500' : 'text-blue-500');
+                    const icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info');
                     
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${color}"></i> ${title}`;
                     document.getElementById('modal-content').innerHTML = message;
-                    document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Entendi</button>
-                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Entendi</button>`;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
@@ -362,22 +386,19 @@
                     document.getElementById('modal-content').innerHTML = message;
                     const btnClass = danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-bold text-sm transition-colors">Cancelar</button>
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden'); ${confirmCallbackStr}" class="px-4 py-2 ${btnClass} text-white rounded font-bold text-sm shadow-md transition-colors">Confirmar</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden'); ${confirmCallbackStr}" class="px-5 py-2 ${btnClass} text-white rounded-lg font-bold text-sm shadow-md transition-colors">Confirmar</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
-                openPwdModal() { 
-                    document.getElementById('new-password-input').value = '';
-                    document.getElementById('pwd-modal').classList.remove('hidden'); 
-                },
+                openPwdModal() { document.getElementById('new-password-input').value = ''; document.getElementById('pwd-modal').classList.remove('hidden'); },
                 closePwdModal() { document.getElementById('pwd-modal').classList.add('hidden'); },
 
                 showApp() {
                     document.getElementById('view-login').classList.add('hidden');
                     document.getElementById('view-app').classList.remove('hidden');
-                    document.getElementById('header-username').textContent = app.isAdmin ? 'ADMINISTRADOR' : app.currentUser.nome;
+                    document.getElementById('header-username').textContent = app.isAdmin ? 'Administração' : app.currentUser.nome;
                     this.renderNav();
                     this.renderTab(app.currentTab);
                 },
@@ -386,12 +407,12 @@
                     const nav = document.getElementById('main-nav');
                     let html = '';
                     const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Dashboard ADM', icon:'fa-chart-line'}, {id:'cadastros', label:'Cadastros', icon:'fa-users'}, {id:'configuracoes', label:'Configurações', icon:'fa-cog'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-eye'}, {id:'regras', label:'Regras', icon:'fa-balance-scale'}, {id:'calculadora', label:'Calculadora', icon:'fa-calculator'} ]
-                        : [ {id:'meu_painel', label:'Meu Painel', icon:'fa-chart-pie'}, {id:'regras', label:'Regras', icon:'fa-balance-scale'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'} ];
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'} ]
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'} ];
                     
                     tabs.forEach(t => {
-                        const activeCls = app.currentTab === t.id ? 'bg-[#1e293b] text-white border-b-2 border-blue-500' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1e293b]/50';
-                        html += `<button onclick="app.ui.renderTab('${t.id}')" class="px-4 py-3 font-semibold text-sm rounded-t-md transition-all flex items-center gap-2 whitespace-nowrap ${activeCls}"><i class="fa-solid ${t.icon}"></i> ${t.label}</button>`;
+                        const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-blue-600 dark:text-blue-400 border-t-2 border-blue-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
+                        html += `<button onclick="app.ui.renderTab('${t.id}')" class="px-5 py-3 font-semibold text-sm rounded-t-xl transition-all flex items-center gap-2 whitespace-nowrap ${activeCls}"><i class="fa-solid ${t.icon}"></i> ${t.label}</button>`;
                     });
                     nav.innerHTML = html;
                 },
@@ -402,11 +423,18 @@
                     }
                 },
 
+                formatMonthLabel(isoMonth) {
+                    if(!isoMonth) return '';
+                    const [y, m] = isoMonth.split('-');
+                    const months = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+                    return `${months[parseInt(m)-1]} de ${y}`;
+                },
+
                 renderTab(tabId) {
                     app.currentTab = tabId;
                     this.renderNav();
                     const container = document.getElementById('content-container');
-                    container.innerHTML = ''; // Clear
+                    container.innerHTML = ''; 
 
                     if(tabId === 'meu_painel') this.renderView_MeuPainel(container);
                     else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(container);
@@ -417,93 +445,106 @@
                 },
 
                 renderView_MeuPainel(container) {
-                    // Se for ADM, seleciona o user. Se for user, pega de app.currentUser
                     let targetUser = app.currentUser;
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    
                     let html = `
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                             <div>
-                                <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Painel de Bonificação</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm">Acompanhe os indicadores fechados.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Desempenho Individual</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados consolidados referentes a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
                             </div>
                             <div class="flex items-center gap-3">
                     `;
                     
                     if(app.isAdmin) {
-                        html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-bold shadow-sm">
-                            <option value="">Selecione um monitor...</option>`;
+                        html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="">Selecione a matrícula do colaborador...</option>`;
                         app.users.forEach(u => { html += `<option value="${u.matricula}" ${window.selectedViewUser === u.matricula ? 'selected':''}>${u.nome}</option>`; });
                         html += `</select>`;
                         if(window.selectedViewUser) targetUser = app.users.find(u => u.matricula === window.selectedViewUser);
                     } else {
-                        html += `<button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-200 font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"><i class="fa-solid fa-key text-blue-500"></i> Trocar Senha</button>`;
+                        html += `<button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
                     }
                     html += `</div></div>`;
 
                     if(!targetUser && app.isAdmin) {
-                        container.innerHTML = html + `<div class="p-8 text-center text-slate-500 glass-card rounded-xl">Selecione um monitor acima para visualizar o painel dele.</div>`;
+                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um colaborador acima para visualizar seus indicadores deste mês.</div>`;
                         return;
                     }
 
-                    // Render Cards
+                    // Pega resultados ESPECÍFICOS do mês selecionado
+                    const resultsForMonth = (targetUser.results && targetUser.results[app.currentMonth]) || {};
+                    const total = app.calc.getTotal(resultsForMonth);
+                    const isEmpty = Object.keys(resultsForMonth).length === 0;
+
+                    if (isEmpty) {
+                        html += `<div class="p-8 mb-8 text-center glass-card rounded-2xl bg-slate-50/50 dark:bg-slate-800/30">
+                            <i class="fa-regular fa-folder-open text-4xl text-slate-300 dark:text-slate-600 mb-3"></i>
+                            <p class="text-slate-500 dark:text-slate-400 font-medium">Não há dados lançados para ${targetUser.nome} no mês de ${monthLabel}.</p>
+                        </div>`;
+                    }
+
                     html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">`;
                     
-                    const results = targetUser.results || {};
-                    const total = app.calc.getTotal(results);
-
                     app.config.goals.forEach(g => {
-                        const r = app.calc.getGoalResult(g.id, results);
+                        const r = app.calc.getGoalResult(g.id, resultsForMonth);
                         const isPercentGoal = g.type === 'percent';
-                        const wPct = (g.weight * 100).toFixed(1);
+                        const wPct = (g.weight * 100).toFixed(0);
                         const multColor = r.mult >= 1 ? 'text-green-500' : (r.mult > 0 ? 'text-yellow-500' : 'text-red-500');
 
                         html += `
-                        <div class="glass-card rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-dark-border flex flex-col justify-between">
-                            <div class="flex justify-between items-start mb-4">
+                        <div class="glass-card rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between group hover:shadow-md transition-shadow">
+                            ${r.mult >= 1 && !isEmpty ? `<div class="absolute top-0 right-0 w-16 h-16 bg-green-500/10 rounded-bl-full -z-10 transition-transform group-hover:scale-110"></div>` : ''}
+                            
+                            <div class="flex justify-between items-start mb-5">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                    <div class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300">
                                         <i class="fa-solid ${g.icon}"></i>
                                     </div>
-                                    <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 leading-tight">${g.title}</h3>
+                                    <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 leading-tight w-24">${g.title}</h3>
                                 </div>
-                                <span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold px-2 py-1 rounded">${wPct}%</span>
+                                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50 text-[10px] font-bold px-2 py-1 rounded-md">PESO ${wPct}%</span>
                             </div>
                             
-                            <div class="flex-1 flex flex-col justify-center mb-4">
+                            <div class="flex-1 flex flex-col justify-center mb-5">
                         `;
                         
                         if(isPercentGoal) {
                             html += `
-                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                <div class="grid grid-cols-2 gap-3 mb-3">
                                     <div class="text-center">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Meta Oficial</div>
-                                        <div class="bg-slate-50 dark:bg-slate-800/50 rounded py-2 font-bold text-slate-700 dark:text-slate-300 text-sm border border-slate-100 dark:border-slate-700">${r.raw.meta || '-'}</div>
+                                        <div class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">Meta</div>
+                                        <div class="bg-slate-50 dark:bg-slate-800/80 rounded-lg py-2 font-semibold text-slate-700 dark:text-slate-300 text-sm border border-slate-100 dark:border-slate-700">${r.raw.meta || '-'}</div>
                                     </div>
                                     <div class="text-center">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Seu Realizado</div>
-                                        <div class="bg-blue-50 dark:bg-blue-900/20 rounded py-2 font-bold text-blue-600 dark:text-blue-400 text-sm border border-blue-100 dark:border-blue-800">${r.raw.real || '-'}</div>
+                                        <div class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">Realizado</div>
+                                        <div class="bg-blue-50 dark:bg-blue-900/30 rounded-lg py-2 font-bold text-blue-600 dark:text-blue-400 text-sm border border-blue-100 dark:border-blue-800">${r.raw.real || '-'}</div>
                                     </div>
                                 </div>
-                                <div class="text-center bg-slate-50 dark:bg-slate-800/30 rounded py-1 text-xs text-slate-500 dark:text-slate-400">Atingimento Efetivo: <strong class="text-slate-700 dark:text-slate-200">${r.display}</strong></div>
+                                <div class="text-center bg-slate-50 dark:bg-slate-800/50 rounded-lg py-1.5 text-xs text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700/50"><strong class="text-slate-700 dark:text-slate-200">${r.display}</strong></div>
                             `;
                         } else {
-                            const badgeColor = r.mult > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
+                            const badgeColor = r.mult >= 1 ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/50' : 
+                                               (r.mult > 0 ? 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-900/50' : 
+                                               'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:border-slate-700');
                             html += `
                                 <div class="flex items-center justify-center h-full">
-                                    <div class="w-full text-center py-3 rounded-lg font-bold text-sm ${badgeColor}">${r.display || 'Não preenchido'}</div>
+                                    <div class="w-full text-center py-4 rounded-xl border font-bold text-sm ${badgeColor}">${r.display || 'Pendente'}</div>
                                 </div>
                             `;
                         }
 
                         html += `
                             </div>
-                            <div class="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700 pt-3 mt-auto">
+                            <div class="flex justify-between items-end border-t border-slate-100 dark:border-slate-800 pt-4 mt-auto">
                                 <div>
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Múltiplo</div>
-                                    <div class="text-lg font-black ${multColor}">${(r.mult * 100).toFixed(1)}%</div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Quadrante</div>
+                                    <div class="text-sm font-black ${multColor}">${(r.mult * 100).toFixed(0)}% <span class="text-slate-300 dark:text-slate-600 text-xs font-normal">ating.</span></div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Recebido</div>
-                                    <div class="text-lg font-black text-green-600 dark:text-green-400">R$ ${r.received.toFixed(2)}</div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Bônus Calculado</div>
+                                    <div class="text-lg font-black text-slate-800 dark:text-slate-100">R$ ${r.received.toFixed(2)}</div>
                                 </div>
                             </div>
                         </div>`;
@@ -513,18 +554,19 @@
                     // Footer Result
                     const finalPct = (total.pct * 100).toFixed(1);
                     html += `
-                        <div class="bg-white dark:bg-dark-surface rounded-2xl p-6 shadow-md border border-slate-200 dark:border-dark-border flex flex-col md:flex-row justify-between items-center mt-4">
-                            <div>
-                                <div class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Resultado Consolidado</div>
-                                <div class="flex items-center gap-2">
-                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                                    <span class="text-2xl font-black text-slate-800 dark:text-white">${finalPct}%</span>
-                                    <span class="text-slate-500 dark:text-slate-400 text-sm">de Aproveitamento</span>
+                        <div class="bg-gradient-to-r from-blue-900 to-slate-900 rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden">
+                            <div class="absolute right-0 top-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl"></div>
+                            
+                            <div class="z-10 relative">
+                                <div class="text-xs font-bold text-blue-300/80 uppercase tracking-widest mb-2">Resumo Financeiro • ${monthLabel}</div>
+                                <div class="flex items-baseline gap-3">
+                                    <span class="text-4xl md:text-5xl font-black text-white">${finalPct}%</span>
+                                    <span class="text-blue-200 text-sm font-medium">Aproveitamento Total</span>
                                 </div>
                             </div>
-                            <div class="mt-4 md:mt-0 text-right bg-green-50 dark:bg-green-900/10 px-6 py-4 rounded-xl border border-green-100 dark:border-green-900/30">
-                                <div class="text-xs font-bold text-green-600/70 dark:text-green-500/70 uppercase tracking-wide mb-1">Bonificação Recebida</div>
-                                <div class="text-3xl font-black text-green-600 dark:text-green-400">R$ ${total.received.toFixed(2)}</div>
+                            <div class="mt-6 md:mt-0 text-right bg-white/10 backdrop-blur-md px-8 py-5 rounded-2xl border border-white/20 z-10 relative w-full md:w-auto">
+                                <div class="text-xs font-bold text-green-300 uppercase tracking-widest mb-1">Bônus Conquistado</div>
+                                <div class="text-4xl font-black text-green-400 drop-shadow-md">R$ ${total.received.toFixed(2)}</div>
                             </div>
                         </div>
                     `;
@@ -538,24 +580,22 @@
 
                 renderView_DashboardAdm(container) {
                     if(!app.isAdmin) return;
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
                     
-                    let totalCusto = 0;
-                    let somaPct = 0;
-                    let usersComResultado = 0;
-
-                    // Compute aggregates
+                    let totalCusto = 0; let somaPct = 0; let usersComResultado = 0;
                     const goalStats = {};
                     app.config.goals.forEach(g => { goalStats[g.id] = { name: g.title, somaMult: 0, somaVal: 0, count: 0, worstUsers: [] }; });
 
                     app.users.forEach(u => {
-                        if(u.results && Object.keys(u.results).length > 0) {
+                        const resultsForMonth = (u.results && u.results[app.currentMonth]);
+                        if(resultsForMonth && Object.keys(resultsForMonth).length > 0) {
                             usersComResultado++;
-                            const t = app.calc.getTotal(u.results);
+                            const t = app.calc.getTotal(resultsForMonth);
                             totalCusto += t.received;
                             somaPct += t.pct;
 
                             app.config.goals.forEach(g => {
-                                const res = app.calc.getGoalResult(g.id, u.results);
+                                const res = app.calc.getGoalResult(g.id, resultsForMonth);
                                 goalStats[g.id].somaMult += res.mult;
                                 goalStats[g.id].somaVal += res.received;
                                 goalStats[g.id].count++;
@@ -567,63 +607,64 @@
                     const mediaGeral = usersComResultado > 0 ? ((somaPct / usersComResultado) * 100).toFixed(1) : 0;
 
                     let html = `
-                        <div class="mb-6">
-                            <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Dashboard Administrativo</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm">Visão consolidada da equipe neste mês.</p>
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos da equipe referente a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <div class="text-sm font-bold text-slate-500 dark:text-slate-400 mb-1">Custo de Bonificações</div>
-                                <div class="text-3xl font-black text-green-600 dark:text-green-400">R$ ${totalCusto.toFixed(2)}</div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
+                                <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-sack-dollar"></i></div>
+                                <div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total (Mês)</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
+                                </div>
                             </div>
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <div class="text-sm font-bold text-slate-500 dark:text-slate-400 mb-1">Monitores Avaliados</div>
-                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400">${usersComResultado} / ${app.users.length}</div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500">
+                                <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-users-viewfinder"></i></div>
+                                <div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${app.users.length}</span></div>
+                                </div>
                             </div>
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <div class="text-sm font-bold text-slate-500 dark:text-slate-400 mb-1">Aproveitamento Médio</div>
-                                <div class="text-3xl font-black text-purple-600 dark:text-purple-400">${mediaGeral}%</div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-purple-500">
+                                <div class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-chart-simple"></i></div>
+                                <div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Média de Qualidade</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${mediaGeral}%</div>
+                                </div>
                             </div>
                         </div>
                         
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Aproveitamento por Meta (%)</h3>
-                                <div class="relative h-[250px] w-full">
-                                    <canvas id="chart-pct"></canvas>
-                                </div>
+                            <div class="glass-card p-6 rounded-3xl">
+                                <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Aproveitamento Médio (%)</h3>
+                                <div class="relative h-[280px] w-full"><canvas id="chart-pct"></canvas></div>
                             </div>
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Custo Financeiro por Meta (R$)</h3>
-                                <div class="relative h-[250px] w-full">
-                                    <canvas id="chart-finance"></canvas>
-                                </div>
+                            <div class="glass-card p-6 rounded-3xl">
+                                <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Distribuição Financeira (R$)</h3>
+                                <div class="relative h-[280px] w-full"><canvas id="chart-finance"></canvas></div>
                             </div>
                         </div>
 
-                        <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                            <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Ofensores de Indicadores</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div class="glass-card p-8 rounded-3xl mb-8">
+                            <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Foco de Melhoria (Ofensores)</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     `;
 
-                    const labels = [];
-                    const dataPct = [];
-                    const dataVal = [];
+                    const labels = []; const dataPct = []; const dataVal = [];
 
                     Object.values(goalStats).forEach(gs => {
                         const avgPct = gs.count > 0 ? (gs.somaMult / gs.count) * 100 : 0;
-                        labels.push(gs.name);
-                        dataPct.push(avgPct.toFixed(1));
-                        dataVal.push(gs.somaVal.toFixed(2));
+                        labels.push(gs.name); dataPct.push(avgPct.toFixed(1)); dataVal.push(gs.somaVal.toFixed(2));
                         
                         gs.worstUsers.sort((a,b) => a.mult - b.mult);
-                        const worst = gs.worstUsers.slice(0, 3).filter(u => u.mult < 1); // Only those who lost points
+                        const worst = gs.worstUsers.slice(0, 3).filter(u => u.mult < 1); 
                         
                         html += `
-                            <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-                                <div class="text-xs font-bold text-slate-500 mb-2 truncate">${gs.name}</div>
-                                ${worst.length === 0 ? `<span class="text-sm text-green-500"><i class="fa-solid fa-check mr-1"></i> Equipe 100%</span>` : 
-                                    worst.map(w => `<div class="flex justify-between items-center text-sm py-1 border-b border-slate-200 dark:border-slate-700 last:border-0"><span class="text-slate-700 dark:text-slate-300 truncate pr-2">${w.nome}</span><span class="font-bold text-red-500">${(w.mult*100).toFixed(0)}%</span></div>`).join('')
+                            <div class="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                                <div class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 truncate" title="${gs.name}">${gs.name}</div>
+                                ${worst.length === 0 ? `<div class="flex items-center gap-2 text-sm font-medium text-green-500"><i class="fa-solid fa-shield-check"></i> Meta Blindada</div>` : 
+                                    worst.map(w => `<div class="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0"><span class="text-slate-700 dark:text-slate-300 truncate pr-2">${w.nome}</span><span class="font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded text-xs">${(w.mult*100).toFixed(0)}%</span></div>`).join('')
                                 }
                             </div>
                         `;
@@ -632,7 +673,6 @@
                     html += `</div></div>`;
                     container.innerHTML = html;
 
-                    // Render Charts securely
                     setTimeout(() => {
                         const isDark = document.documentElement.classList.contains('dark');
                         const textColor = isDark ? '#94a3b8' : '#64748b';
@@ -641,14 +681,14 @@
                         if(window.myChartPct) window.myChartPct.destroy();
                         window.myChartPct = new Chart(document.getElementById('chart-pct'), {
                             type: 'bar',
-                            data: { labels: labels, datasets: [{ label: '% Médio', data: dataPct, backgroundColor: '#3b82f6', borderRadius: 4 }] },
+                            data: { labels: labels, datasets: [{ label: 'Aproveitamento (%)', data: dataPct, backgroundColor: '#3b82f6', borderRadius: 6 }] },
                             options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, plugins: { legend: { display: false } } }
                         });
 
                         if(window.myChartFin) window.myChartFin.destroy();
                         window.myChartFin = new Chart(document.getElementById('chart-finance'), {
                             type: 'bar',
-                            data: { labels: labels, datasets: [{ label: 'R$ Total Pago', data: dataVal, backgroundColor: '#22c55e', borderRadius: 4 }] },
+                            data: { labels: labels, datasets: [{ label: 'Valor Pago (R$)', data: dataVal, backgroundColor: '#10b981', borderRadius: 6 }] },
                             options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, plugins: { legend: { display: false } } }
                         });
                     }, 50);
@@ -656,36 +696,38 @@
 
                 renderView_Cadastros(container) {
                     if(!app.isAdmin) return;
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    
                     let html = `
-                        <div class="mb-6">
-                            <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Cadastros e Lançamentos</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm">Gerencie acessos e lance os resultados do mês.</p>
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Equipe e Lançamentos</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados referentes a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong> ou cadastre novos membros.</p>
                         </div>
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             
-                            <!-- Coluna Esquerda: Cadastrar Novo -->
-                            <div class="lg:col-span-1 glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border h-fit">
-                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-2">Novo Monitor</h3>
+                            <!-- Novo Colaborador -->
+                            <div class="lg:col-span-1 glass-card p-6 rounded-3xl h-fit">
+                                <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-user-plus text-blue-500"></i> Novo Colaborador</h3>
                                 <div class="space-y-4">
-                                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Nome Completo</label><input type="text" id="cad-nome" class="w-full p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none"></div>
-                                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Matrícula (Login)</label><input type="text" id="cad-mat" class="w-full p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none"></div>
-                                    <div><label class="block text-xs font-bold text-slate-500 mb-1">Senha Inicial</label><input type="text" id="cad-pwd" class="w-full p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none"></div>
-                                    <button onclick="app.admin.registerUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition">Salvar Cadastro</button>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Nome Completo</label><input type="text" id="cad-nome" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label><input type="text" id="cad-mat" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha Inicial</label><input type="text" id="cad-pwd" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+                                    <button onclick="app.admin.registerUser()" class="w-full bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl shadow transition-all mt-2 text-sm">Adicionar à Equipe</button>
                                 </div>
                             </div>
                             
-                            <!-- Coluna Direita: Lançar Resultados -->
-                            <div class="lg:col-span-2 glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white border-b border-slate-100 dark:border-slate-700 pb-2">Lançar Resultados e Gerenciar</h3>
-                                <div class="flex gap-2 mb-6">
-                                    <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 font-bold dark:text-white outline-none">
-                                        <option value="">Selecione um monitor cadastrado...</option>
+                            <!-- Lançamentos -->
+                            <div class="lg:col-span-2 glass-card p-6 md:p-8 rounded-3xl">
+                                <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-file-pen text-blue-500"></i> Lançar Indicadores • ${monthLabel}</h3>
+                                <div class="flex gap-2 mb-8">
+                                    <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 font-semibold dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione um colaborador para lançar notas...</option>
                                     `;
                                     app.users.forEach(u => { html += `<option value="${u.matricula}">${u.nome} (${u.matricula})</option>`; });
                                     html += `</select>
                                 </div>
-                                <div id="adm-editor-area" class="hidden space-y-4">
-                                    <!-- Campos dinamicos injetados aqui -->
+                                <div id="adm-editor-area" class="hidden space-y-6 animate-fade-in">
+                                    <!-- Injetado dinamicamente -->
                                 </div>
                             </div>
                         </div>
@@ -696,50 +738,53 @@
                 renderView_Config(container) {
                     if(!app.isAdmin) return;
                     let html = `
-                        <div class="mb-6">
-                            <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Configurações do Sistema</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm">Altere o valor base e a nomenclatura/peso de cada meta.</p>
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Arquitetura de Metas</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Defina o fundo financeiro e a calibração de pesos de cada pilar de qualidade.</p>
                         </div>
-                        <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                            <div class="mb-6 p-4 bg-blue-50 dark:bg-slate-800 rounded-xl border border-blue-100 dark:border-slate-700 inline-block">
-                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Valor Base Total (R$)</label>
-                                <input type="number" id="cfg-base" value="${app.config.baseValue}" class="w-48 p-2 text-xl font-black rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white text-blue-600 dark:text-blue-400 outline-none focus:ring-2 focus:ring-blue-500">
+                        <div class="glass-card p-6 md:p-8 rounded-3xl">
+                            <div class="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-blue-100 dark:border-slate-700 inline-block">
+                                <label class="block text-xs font-bold text-blue-800/70 dark:text-blue-300/70 mb-2 uppercase tracking-widest">Valor Financeiro Base (100%)</label>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl font-black text-blue-400">R$</span>
+                                    <input type="number" id="cfg-base" value="${app.config.baseValue}" class="w-48 p-3 text-2xl font-black rounded-xl border border-blue-200 dark:border-slate-600 bg-white dark:bg-slate-900 dark:text-white text-blue-700 dark:text-blue-400 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm">
+                                </div>
                             </div>
                             
-                            <div class="overflow-x-auto">
+                            <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                                 <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                                            <th class="py-3 px-2 font-bold">Ícone</th>
-                                            <th class="py-3 px-2 font-bold">Título do Indicador</th>
-                                            <th class="py-3 px-2 font-bold w-32">Peso (Decimal)</th>
-                                            <th class="py-3 px-2 font-bold w-32">% Calculada</th>
+                                    <thead class="bg-slate-50 dark:bg-slate-800/80">
+                                        <tr class="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                                            <th class="py-4 px-4 font-bold border-b border-slate-200 dark:border-slate-700 w-12 text-center">Ícone</th>
+                                            <th class="py-4 px-4 font-bold border-b border-slate-200 dark:border-slate-700">Nomenclatura Corporativa</th>
+                                            <th class="py-4 px-4 font-bold border-b border-slate-200 dark:border-slate-700 w-32 text-center">Fração (0.x)</th>
+                                            <th class="py-4 px-4 font-bold border-b border-slate-200 dark:border-slate-700 w-32 text-center">Impacto (%)</th>
                                         </tr>
                                     </thead>
                                     <tbody id="cfg-goals-tbody">
                     `;
                     app.config.goals.forEach((g, i) => {
                         html += `
-                            <tr class="border-b border-slate-100 dark:border-slate-800/50">
-                                <td class="py-2 px-2 text-slate-400"><i class="fa-solid ${g.icon}"></i></td>
-                                <td class="py-2 px-2"><input type="text" id="cfg-t-${i}" value="${g.title}" class="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-sm dark:text-white outline-none focus:ring-1 focus:ring-blue-500"></td>
-                                <td class="py-2 px-2"><input type="number" step="0.01" id="cfg-w-${i}" value="${g.weight}" onchange="app.admin.updateConfigPreview()" class="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-sm text-center dark:text-white outline-none focus:ring-1 focus:ring-blue-500"></td>
-                                <td class="py-2 px-2 text-center font-bold text-slate-600 dark:text-slate-300" id="cfg-p-${i}">${(g.weight*100).toFixed(0)}%</td>
+                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                <td class="py-3 px-4 text-center text-slate-400 dark:text-slate-500"><i class="fa-solid ${g.icon} text-lg"></i></td>
+                                <td class="py-3 px-4"><input type="text" id="cfg-t-${i}" value="${g.title}" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"></td>
+                                <td class="py-3 px-4"><input type="number" step="0.01" id="cfg-w-${i}" value="${g.weight}" oninput="app.admin.updateConfigPreview()" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-center font-bold dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"></td>
+                                <td class="py-3 px-4 text-center font-black text-slate-600 dark:text-slate-300" id="cfg-p-${i}">${(g.weight*100).toFixed(0)}%</td>
                             </tr>
                         `;
                     });
                     html += `</tbody>
-                            <tfoot class="bg-slate-50 dark:bg-slate-800/50">
+                            <tfoot class="bg-slate-50 dark:bg-slate-800/80">
                                 <tr>
-                                    <td colspan="2" class="py-3 px-2 text-right font-bold text-slate-700 dark:text-slate-300">Soma dos Pesos:</td>
-                                    <td class="py-3 px-2 text-center font-black text-blue-600 dark:text-blue-400" id="cfg-total-w">1.00</td>
-                                    <td class="py-3 px-2 text-center font-black text-blue-600 dark:text-blue-400" id="cfg-total-p">100%</td>
+                                    <td colspan="2" class="py-4 px-4 text-right font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-widest">Soma dos Pesos:</td>
+                                    <td class="py-4 px-4 text-center font-black text-blue-600 dark:text-blue-400 text-lg" id="cfg-total-w">1.00</td>
+                                    <td class="py-4 px-4 text-center font-black text-blue-600 dark:text-blue-400 text-lg" id="cfg-total-p">100%</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
-                    <div class="mt-6 flex justify-end">
-                        <button onclick="app.admin.saveConfig()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow transition">Salvar Configurações</button>
+                    <div class="mt-8 flex justify-end">
+                        <button onclick="app.admin.saveConfig()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
                     </div>
                     </div>`;
                     container.innerHTML = html;
@@ -748,47 +793,62 @@
 
                 renderView_Calculadora(container) {
                     let html = `
-                        <div class="mb-6">
-                            <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Calculadora Simuladora</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm">Simule os dados livremente. Isso não salva no banco de dados.</p>
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Simulador Estratégico</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Ambiente seguro para projetar cenários. <span class="font-bold text-orange-500">Nenhum dado digitado aqui é salvo.</span></p>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" id="sim-cards-container">
+                        
+                        <div class="flex flex-col-reverse lg:flex-row gap-8">
+                            <!-- Cards de Input -->
+                            <div class="lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-5" id="sim-cards-container">
                     `;
-                    // Generate input cards similar to ADM form but interactive immediately
-                    app.config.goals.forEach((g, idx) => {
+                    
+                    app.config.goals.forEach(g => {
                         html += `
-                        <div class="glass-card rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-dark-border">
-                            <div class="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-2">
-                                <i class="fa-solid ${g.icon} text-slate-400"></i>
+                        <div class="glass-card rounded-2xl p-5 border-l-4 border-l-slate-300 dark:border-l-slate-600 focus-within:border-l-blue-500 transition-colors">
+                            <div class="flex items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700/50 pb-3">
+                                <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500"><i class="fa-solid ${g.icon} text-sm"></i></div>
                                 <h3 class="font-bold text-sm text-slate-800 dark:text-white truncate">${g.title}</h3>
                             </div>
-                            <div class="space-y-3">
+                            <div class="space-y-4">
                         `;
                         if(g.type === 'percent') {
                             html += `
-                                <div><label class="block text-[10px] font-bold text-slate-500 uppercase">Meta Oficial</label><input type="number" id="sim-${g.id}-meta" oninput="app.ui.calcSim()" class="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-sm dark:text-white" value="400"></div>
-                                <div><label class="block text-[10px] font-bold text-slate-500 uppercase">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm font-bold text-blue-600 dark:text-blue-400" placeholder="Ex: 380"></div>
+                                <div class="flex gap-3">
+                                    <div class="flex-1"><label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Meta Oficial</label><input type="number" id="sim-${g.id}-meta" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="100"></div>
+                                    <div class="flex-1"><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: 95"></div>
+                                </div>
                             `;
+                        } else if(g.type === 'calibracao') {
+                            html += `<div><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Qtd. Calibrações (0 a 2)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500" min="0" max="2" value="0"></div>`;
                         } else if(g.type === 'actions') {
-                            html += `<div><label class="block text-[10px] font-bold text-slate-500 uppercase">Qtd Ações (0 a 4)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm font-bold text-blue-600 dark:text-blue-400" min="0" max="4" value="0"></div>`;
+                            html += `<div><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Ações Realizadas (0 a 5)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500" min="0" max="5" value="0"></div>`;
                         } else {
-                            html += `<div><label class="block text-[10px] font-bold text-slate-500 uppercase">Status</label><select id="sim-${g.id}-val" onchange="app.ui.calcSim()" class="w-full p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm font-bold text-blue-600 dark:text-blue-400"><option value="Não">Não</option><option value="Sim">Sim</option></select></div>`;
+                            html += `<div><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Cumprimento (Sim/Não)</label><select id="sim-${g.id}-val" onchange="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500"><option value="Não">Não (Falhou)</option><option value="Sim">Sim (Atingiu)</option></select></div>`;
                         }
                         
                         html += `
-                                <div class="bg-slate-100 dark:bg-slate-800 p-2 rounded mt-2 text-center">
-                                    <div class="text-[10px] text-slate-500 uppercase font-bold">Simulação Recebido</div>
-                                    <div id="sim-res-${g.id}" class="font-black text-green-600 dark:text-green-400">R$ 0,00</div>
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg flex justify-between items-center border border-slate-100 dark:border-slate-700/50">
+                                    <div class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Projeção Módulo</div>
+                                    <div id="sim-res-${g.id}" class="font-black text-green-600 dark:text-green-400 text-sm">R$ 0,00</div>
                                 </div>
                             </div>
                         </div>`;
                     });
 
                     html += `
-                        </div>
-                        <div class="bg-white dark:bg-dark-surface rounded-2xl p-6 shadow-md border border-slate-200 dark:border-dark-border text-center max-w-sm mx-auto">
-                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Total Simulado</div>
-                            <div id="sim-total-res" class="text-4xl font-black text-green-600 dark:text-green-400">R$ 0,00</div>
+                            </div>
+                            
+                            <!-- Totalizador Lateral -->
+                            <div class="lg:w-1/3">
+                                <div class="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 shadow-xl sticky top-24 text-center border border-slate-700">
+                                    <div class="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center text-white text-2xl mx-auto mb-6"><i class="fa-solid fa-scale-balanced"></i></div>
+                                    <div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Simulação de Bônus Final</div>
+                                    <div id="sim-total-res" class="text-4xl lg:text-5xl font-black text-green-400 mb-6 drop-shadow-md">R$ 0,00</div>
+                                    <div class="h-px w-full bg-slate-700 mb-6"></div>
+                                    <p class="text-xs text-slate-400 leading-relaxed">Ajuste os valores nos quadros ao lado para entender como cada meta afeta sua remuneração.</p>
+                                </div>
+                            </div>
                         </div>
                     `;
                     container.innerHTML = html;
@@ -813,54 +873,81 @@
 
                 renderView_Regras(container) {
                     let html = `
-                        <div class="mb-6">
-                            <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Regras e Quadrantes</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm">Entenda como os cálculos são feitos.</p>
+                        <div class="mb-10">
+                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Manual de Metas e Critérios</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-base max-w-3xl">Entenda a estrutura do nosso programa de excelência, desenhado para reconhecer o engajamento, a qualidade e o desenvolvimento contínuo da equipe.</p>
                         </div>
-                        <div class="space-y-6 max-w-4xl mx-auto">
-                            <!-- Porcentagem -->
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <h3 class="font-bold text-lg mb-4 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-percent mr-2"></i>Escala Porcentual (Monitorias e Feedbacks)</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">A porcentagem é o resultado da divisão entre o "Seu Realizado" e a "Meta Oficial".</p>
-                                <div class="overflow-x-auto">
+                        
+                        <div class="space-y-8 max-w-4xl mx-auto">
+                            
+                            <!-- Missão -->
+                            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-3xl p-8 relative overflow-hidden">
+                                <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-bullseye"></i></div>
+                                <h3 class="font-extrabold text-xl mb-3 text-blue-800 dark:text-blue-300 relative z-10">Nosso Propósito</h3>
+                                <p class="text-blue-700/80 dark:text-blue-200/70 text-sm leading-relaxed relative z-10">As cobranças de métricas não são apenas numéricas. Elas existem para garantir que nossa operação mantenha o mais alto padrão de qualidade, fomentando um ambiente onde boas práticas são compartilhadas, a assiduidade é valorizada e o atendimento ao cliente atinge a excelência real. Ao atingir suas metas, você impulsiona os resultados da empresa e é recompensado financeiramente por sua alta performance.</p>
+                            </div>
+
+                            <!-- Escala Porcentual -->
+                            <div class="glass-card p-8 rounded-3xl">
+                                <h3 class="font-extrabold text-lg mb-6 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-chart-line"></i></div> Qualidade de Atendimento (Monitorias e Feedbacks)</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Esses indicadores mensuram o volume entregue frente ao que foi planejado, garantindo que nossos clientes recebam a atenção estipulada. O cálculo é feito dividindo o seu <strong>Realizado</strong> pela <strong>Meta Oficial</strong>.</p>
+                                <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <table class="w-full text-sm text-left text-slate-600 dark:text-slate-300 border-collapse">
-                                        <thead class="bg-slate-100 dark:bg-slate-800 font-bold uppercase text-xs">
-                                            <tr><th class="p-3 rounded-tl-lg">Quadrante</th><th class="p-3">Resultado Calculado</th><th class="p-3 rounded-tr-lg">Múltiplo de Recebimento</th></tr>
+                                        <thead class="bg-slate-50 dark:bg-slate-800/80 font-bold uppercase text-[11px] tracking-widest text-slate-500">
+                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Bônus Adquirido</th></tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50"><td class="p-3 font-bold text-green-500">Q1 (Excelente)</td><td class="p-3">100% ou mais</td><td class="p-3 font-bold">100% do valor</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50"><td class="p-3 font-bold text-yellow-500">Q2 (Bom)</td><td class="p-3">95% a 99,9%</td><td class="p-3 font-bold">75% do valor</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50"><td class="p-3 font-bold text-orange-500">Q3 (Regular)</td><td class="p-3">90% a 94,9%</td><td class="p-3 font-bold">50% do valor</td></tr>
-                                            <tr><td class="p-3 font-bold text-red-500">Q4 (Insuficiente)</td><td class="p-3">Abaixo de 90%</td><td class="p-3 font-bold">0% (Zerado)</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">95.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">90.0% a 94.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da fatia</td></tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q4 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 90.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% (Zerado)</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
 
-                            <!-- Ações -->
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border">
-                                <h3 class="font-bold text-lg mb-4 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-users mr-2"></i>Ações Presenciais</h3>
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-sm text-left text-slate-600 dark:text-slate-300 border-collapse">
-                                        <thead class="bg-slate-100 dark:bg-slate-800 font-bold uppercase text-xs">
-                                            <tr><th class="p-3 rounded-tl-lg">Ações Realizadas</th><th class="p-3 rounded-tr-lg">Múltiplo de Recebimento</th></tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50"><td class="p-3">4 Ações Distintas</td><td class="p-3 font-bold text-green-500">100% do valor</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50"><td class="p-3">3 Ações Distintas</td><td class="p-3 font-bold text-yellow-500">75% do valor</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50"><td class="p-3">2 Ações Distintas</td><td class="p-3 font-bold text-orange-500">50% do valor</td></tr>
-                                            <tr><td class="p-3">0 a 1 Ação</td><td class="p-3 font-bold text-red-500">0% (Zerado)</td></tr>
-                                        </tbody>
-                                    </table>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <!-- Calibragens -->
+                                <div class="glass-card p-8 rounded-3xl">
+                                    <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-scale-balanced"></i></div> Calibragens</h3>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garantem o alinhamento de visão sobre o serviço. Quantas sessões de calibração você participou?</p>
+                                    <ul class="space-y-3 text-sm">
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% de Bônus</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% de Bônus</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% (Zerado)</strong></li>
+                                    </ul>
+                                </div>
+                                
+                                <!-- Ações Presenciais -->
+                                <div class="glass-card p-8 rounded-3xl">
+                                    <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-people-group"></i></div> Ações Presenciais</h3>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a vivência no ambiente corporativo e o engajamento com as dinâmicas de escritório.</p>
+                                    <ul class="space-y-2.5 text-sm">
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100%</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75%</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50%</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0%</strong></li>
+                                    </ul>
                                 </div>
                             </div>
                             
-                            <!-- Checkboxes -->
-                            <div class="glass-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-dark-border flex items-start gap-4">
-                                <div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-toggle-on"></i></div>
-                                <div>
-                                    <h3 class="font-bold text-slate-800 dark:text-white mb-2">Metas de Status (Calibragem, Frequência, Avaliação, Colaborativa)</h3>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400">Estas metas funcionam no formato binário. Se a regra for cumprida (Sim), recebe 100% da verba alocada. Se houver falha (Não), perde 100% da verba alocada.</p>
+                            <!-- Indicadores Condicionantes -->
+                            <div class="glass-card p-8 rounded-3xl">
+                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários)</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Se a regra for cumprida (Sim), recebe-se o valor integral (100%). Se houver desvio (Não), perde-se todo o valor daquela meta (0%).</p>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Frequência</div>
+                                        <div class="text-xs text-slate-500">Premia o absenteísmo zero. Faltar impacta negativamente o time.</div>
+                                    </div>
+                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
+                                        <div class="text-xs text-slate-500">Reflete percepção comportamental, postura e colaboração diária.</div>
+                                    </div>
+                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação Colaborativa</div>
+                                        <div class="text-xs text-slate-500">Reconhece o apoio extra e proatividade para com os colegas.</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -874,13 +961,13 @@
                     const n = document.getElementById('cad-nome').value.trim();
                     const m = document.getElementById('cad-mat').value.trim();
                     const p = document.getElementById('cad-pwd').value.trim();
-                    if(!n || !m || !p) return app.ui.showAlert("Aviso", "Preencha todos os campos.");
-                    if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Erro", "Matrícula já cadastrada.", "error");
+                    if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
+                    if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
                     
                     app.users.push({ nome: n, matricula: m, senha: p, results: {} });
                     app.storage.saveUsers();
                     document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
-                    app.ui.showAlert("Sucesso", "Monitor cadastrado com sucesso!", "success");
+                    app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
                     app.ui.refreshCurrentView();
                 },
 
@@ -890,49 +977,51 @@
                     if(!mat) { area.classList.add('hidden'); return; }
                     
                     const u = app.users.find(x => x.matricula === mat);
-                    const res = u.results || {};
+                    const res = (u.results && u.results[app.currentMonth]) || {};
                     
                     let html = `
-                        <div class="flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-3 rounded-lg mb-4">
-                            <div><span class="text-xs text-slate-500 block uppercase font-bold">Senha Atual:</span><code class="text-sm font-bold text-slate-700 dark:text-slate-300">${u.senha}</code></div>
+                        <div class="flex justify-between items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50">
+                            <div><span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span><code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code></div>
                             <div class="flex gap-2">
-                                <button onclick="app.admin.clearUser()" class="px-3 py-1 bg-orange-100 text-orange-600 hover:bg-orange-200 rounded text-xs font-bold transition">Limpar Dados</button>
-                                <button onclick="app.admin.deleteUser()" class="px-3 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs font-bold transition"><i class="fa-solid fa-trash"></i></button>
+                                <button onclick="app.admin.clearUser()" class="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
+                                <button onclick="app.admin.deleteUser()" class="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                     `;
 
                     app.config.goals.forEach(g => {
                         const val = res[g.id] || {};
-                        html += `<div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">${g.title}</label>
+                        html += `<div class="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all">
+                            <label class="block text-xs font-extrabold text-slate-700 dark:text-slate-200 mb-4 truncate"><i class="fa-solid ${g.icon} text-blue-500 mr-2"></i> ${g.title}</label>
                         `;
                         
                         if(g.type === 'percent') {
                             html += `
-                                <div class="flex gap-2">
-                                    <div class="flex-1"><span class="text-[10px] text-slate-400 block mb-1">Meta Oficial</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-sm dark:text-white" value="${val.meta || ''}"></div>
-                                    <div class="flex-1"><span class="text-[10px] text-blue-400 block mb-1 font-bold">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm font-bold text-blue-600 dark:text-blue-400" value="${val.real || ''}"></div>
+                                <div class="flex gap-3">
+                                    <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
+                                    <div class="flex-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-400 outline-none" value="${val.real || ''}"></div>
                                 </div>
                             `;
+                        } else if(g.type === 'calibracao') {
+                            html += `<div class="mt-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
                         } else if(g.type === 'actions') {
-                            html += `<input type="number" id="ed-${g.id}-val" class="w-full p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-sm dark:text-white" placeholder="Qtd Ações (0 a 4)" min="0" max="4" value="${val.val || ''}">`;
+                            html += `<div class="mt-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
                         } else {
-                            html += `<select id="ed-${g.id}-val" class="w-full p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-sm dark:text-white">
+                            html += `<div class="mt-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
                                 <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
                                 <option value="Sim" ${val.val==='Sim'?'selected':''}>Sim (Atingiu)</option>
                                 <option value="Não" ${val.val==='Não'?'selected':''}>Não (Falhou)</option>
-                            </select>`;
+                            </select></div>`;
                         }
                         html += `</div>`;
                     });
 
                     html += `
                         </div>
-                        <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
-                            <button onclick="app.admin.saveUserResults()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5">
-                                Salvar Resultados deste Monitor
+                        <div class="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+                            <button onclick="app.admin.saveUserResults()" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider">
+                                <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
                             </button>
                         </div>
                     `;
@@ -957,18 +1046,20 @@
                         }
                     });
                     
-                    u.results = newRes;
+                    if(!u.results) u.results = {};
+                    u.results[app.currentMonth] = newRes;
+                    
                     app.storage.saveUsers();
-                    app.ui.showAlert("Sucesso", "Resultados atualizados com sucesso!", "success");
+                    app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
                 },
 
-                clearUser() { app.ui.showConfirm("Atenção", "Deseja realmente ZERAR os resultados deste monitor neste mês?", "app.admin.executeClearUser()", true); },
+                clearUser() { app.ui.showConfirm("Limpar Lançamentos", `Isso irá ZERAR as notas do colaborador apenas no mês de <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong>. Confirmar?`, "app.admin.executeClearUser()", true); },
                 executeClearUser() {
                     const u = app.users.find(x => x.matricula === document.getElementById('adm-user-select').value);
-                    if(u) { u.results = {}; app.storage.saveUsers(); this.loadUserEditor(); }
+                    if(u && u.results) { delete u.results[app.currentMonth]; app.storage.saveUsers(); this.loadUserEditor(); }
                 },
 
-                deleteUser() { app.ui.showConfirm("Cuidado!", "Excluir permanentemente este monitor do sistema?", "app.admin.executeDeleteUser()", true); },
+                deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
                 executeDeleteUser() {
                     app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
                     app.storage.saveUsers();
@@ -984,8 +1075,8 @@
                     });
                     document.getElementById('cfg-total-w').textContent = wTotal.toFixed(2);
                     document.getElementById('cfg-total-p').textContent = `${(wTotal*100).toFixed(0)}%`;
-                    if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-blue-600', 'text-red-500');
-                    else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-blue-600');
+                    if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-blue-400', 'text-red-500');
+                    else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-blue-400');
                 },
 
                 saveConfig() {
@@ -995,12 +1086,11 @@
                         g.weight = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
                     });
                     app.storage.saveConfig();
-                    app.ui.showAlert("Sucesso", "Configurações Globais atualizadas!", "success");
+                    app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
                 }
             }
         };
 
-        // Bootstrap App
         window.onload = () => { app.ui.init(); };
     </script>
 </body>
