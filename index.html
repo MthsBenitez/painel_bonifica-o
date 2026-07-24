@@ -73,6 +73,35 @@
         </div>
     </div>
 
+    <!-- Modal 1: Termos de Uso (1º Login) -->
+    <div id="terms-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/80 backdrop-blur-md transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border">
+            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-shield-check"></i></div>
+            <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Termos de Uso e Sigilo</h3>
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl h-48 overflow-y-auto border border-slate-100 dark:border-slate-700">
+                <p class="mb-3">Bem-vindo(a) ao Portal de Resultados da <strong>Softmarketing</strong>.</p>
+                <p class="mb-3">O acesso a esta plataforma é pessoal e intransferível. Os dados e métricas aqui apresentados são confidenciais e de propriedade exclusiva da empresa, destinados unicamente para o acompanhamento da sua evolução profissional e apuração de sua bonificação.</p>
+                <p class="mb-3 font-bold text-red-600 dark:text-red-400">Proteção de Dados e Restrição de Imagens (LGPD):</p>
+                <p>É terminantemente <strong>proibida</strong> a realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento das imagens, informações e dados contidos neste portal sem a prévia e formal autorização da diretoria. O descumprimento desta diretriz será considerado infração grave, sujeitando o responsável a medidas legais e disciplinares cabíveis, conforme a legislação vigente.</p>
+            </div>
+            <button onclick="app.auth.acceptTerms()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Li, compreendi e concordo com os Termos</button>
+        </div>
+    </div>
+
+    <!-- Modal 2: Diretrizes de Bonificação (2º Login) -->
+    <div id="guidelines-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/80 backdrop-blur-md transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border">
+            <div class="w-16 h-16 bg-green-50 dark:bg-green-900/20 text-green-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-green-100 dark:border-green-800"><i class="fa-solid fa-list-check"></i></div>
+            <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Diretrizes de Bonificação</h3>
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl h-48 overflow-y-auto border border-slate-100 dark:border-slate-700">
+                <p class="mb-3">Houve uma atualização na nossa política e critérios para o cálculo de bonificações para garantirmos ainda mais transparência e alinhamento estratégico.</p>
+                <p class="mb-3">Para garantir a sua recompensa por alta performance, é fundamental que o seu engajamento e a condução das monitorias, calibragens, ações presenciais e de alto impacto estejam intrinsecamente <strong>alinhados aos objetivos mensais da sua operação</strong>.</p>
+                <p>Ao prosseguir, você confirma que leu o <em>Manual de Metas e Critérios</em> (disponível na aba Regras) e compreende as métricas exigidas para o atingimento dos padrões de excelência necessários do atendimento.</p>
+            </div>
+            <button onclick="app.auth.acceptGuidelines()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Ciente e de acordo com as Diretrizes</button>
+        </div>
+    </div>
+
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden">
         <!-- Background Elements -->
@@ -202,7 +231,12 @@
                             } else {
                                 app.users = [];
                             }
-                            if(app.currentUser || app.isAdmin) app.ui.refreshCurrentView();
+                            // Auto-atualiza UI se logado e já tiver passado pelas validações
+                            if(app.currentUser || app.isAdmin) {
+                                if(document.getElementById('view-app').classList.contains('hidden') === false) {
+                                    app.ui.refreshCurrentView();
+                                }
+                            }
                         } else {
                             this.saveConfig();
                             this.saveUsers();
@@ -246,23 +280,65 @@
                     
                     if(mat === 'gestaosoft' && pwd === 'qualidade2026') {
                         app.isAdmin = true; app.currentUser = null; app.currentTab = 'dashboard_adm';
+                        document.getElementById('view-login').classList.add('hidden');
                         app.ui.showApp(); return;
                     }
 
                     const user = app.users.find(u => u.matricula === mat && u.senha === pwd);
                     if(user) {
                         app.isAdmin = false; app.currentUser = user; app.currentTab = 'meu_painel';
-                        app.ui.showApp();
+                        
+                        // Incrementa o contador de logins para a lógica do 2º login
+                        app.currentUser.loginCount = (app.currentUser.loginCount || 0) + 1;
+                        app.storage.saveUsers();
+
+                        document.getElementById('view-login').classList.add('hidden');
+                        this.processAcceptances();
                     } else {
                         app.ui.showAlert("Acesso Negado", "Matrícula ou senha incorretos. Verifique suas credenciais e tente novamente.", "error");
                     }
                 },
+                
+                processAcceptances() {
+                    const u = app.currentUser;
+                    if(!u) return;
+
+                    // Lógica rígida baseada no número de acessos
+                    if (!u.aceiteTermos) {
+                        // Sempre obriga Termos primeiro se não tiver
+                        document.getElementById('terms-modal').classList.remove('hidden');
+                    } else if (!u.aceiteDiretrizes && u.loginCount >= 2) {
+                        // Se já tem Termos, mas NÃO tem Diretrizes, E é do segundo login em diante
+                        document.getElementById('guidelines-modal').classList.remove('hidden');
+                    } else {
+                        // Libera painel
+                        app.ui.showApp();
+                    }
+                },
+
+                acceptTerms() {
+                    app.currentUser.aceiteTermos = new Date().toISOString();
+                    app.storage.saveUsers();
+                    document.getElementById('terms-modal').classList.add('hidden');
+                    this.processAcceptances();
+                },
+
+                acceptGuidelines() {
+                    app.currentUser.aceiteDiretrizes = new Date().toISOString();
+                    app.storage.saveUsers();
+                    document.getElementById('guidelines-modal').classList.add('hidden');
+                    this.processAcceptances();
+                },
+
                 logout() {
                     app.isAdmin = false; app.currentUser = null;
                     document.getElementById('login-mat').value = ''; document.getElementById('login-pwd').value = '';
                     document.getElementById('view-app').classList.add('hidden');
+                    document.getElementById('terms-modal').classList.add('hidden');
+                    document.getElementById('guidelines-modal').classList.add('hidden');
                     document.getElementById('view-login').classList.remove('hidden');
                 },
+
                 executeChangePassword() {
                     const newPwd = document.getElementById('new-password-input').value.trim();
                     if(newPwd.length < 4) return app.ui.showAlert("Aviso", "A senha deve ter pelo menos 4 caracteres.", "error");
@@ -394,9 +470,8 @@
                 closePwdModal() { document.getElementById('pwd-modal').classList.add('hidden'); },
 
                 showApp() {
-                    document.getElementById('view-login').classList.add('hidden');
-                    document.getElementById('view-app').classList.remove('hidden');
                     document.getElementById('header-username').textContent = app.isAdmin ? 'Administração' : app.currentUser.nome;
+                    document.getElementById('view-app').classList.remove('hidden');
                     this.renderNav();
                     this.renderTab(app.currentTab);
                 },
@@ -965,7 +1040,6 @@
                     app.ui.calcDimensionamento();
                 },
 
-                // Função auxiliar para converter "HH:MM:SS" em minutos decimais
                 timeStrToMinutes(str) {
                     if(!str) return 0;
                     const parts = str.split(':').map(Number);
@@ -975,7 +1049,6 @@
                     return (h * 60) + m + (s / 60);
                 },
 
-                // Função auxiliar para converter minutos decimais em "HH:MM:SS"
                 minutesToTimeStr(totalMins) {
                     if (totalMins < 0) totalMins = 0;
                     const h = Math.floor(totalMins / 60);
@@ -1033,7 +1106,7 @@
                             <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-3xl p-8 relative overflow-hidden">
                                 <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-bullseye"></i></div>
                                 <h3 class="font-extrabold text-xl mb-3 text-green-800 dark:text-green-300 relative z-10">Nosso Propósito</h3>
-                                <p class="text-green-700/80 dark:text-green-200/70 text-sm leading-relaxed relative z-10">As cobranças de métricas não são apenas numéricas. Elas existem para garantir que nossa operação mantenha o mais alto padrão de qualidade, fomentando um ambiente onde boas práticas são compartilhadas, a assiduidade é valorizada e o atendimento ao cliente atinge a excelência real. Ao atingir suas metas, você impulsiona os resultados da empresa e é recompensado financeiramente por sua alta performance.</p>
+                                <p class="text-green-700/80 dark:text-green-200/70 text-sm leading-relaxed relative z-10">Os critérios de avaliação existem para garantir que nossa operação mantenha o mais alto padrão de qualidade, fomentando um ambiente onde boas práticas são compartilhadas, a assiduidade é valorizada e o atendimento ao cliente atinge a excelência real. Ao atingir suas metas, você impulsiona os resultados da empresa e é recompensado financeiramente por sua alta performance.</p>
                             </div>
 
                             <!-- Escala Porcentual -->
@@ -1059,7 +1132,7 @@
                                 <!-- Calibragens -->
                                 <div class="glass-card p-8 rounded-3xl">
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-scale-balanced"></i></div> Calibragens</h3>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garantem o alinhamento de visão sobre o serviço. Quantas sessões de calibração você participou?</p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garante a sinergia da análise entre qualidade e gestão referente ao atendimento realizado em cada operação. Quantas sessões de calibração você conduziu? <strong class="text-slate-700 dark:text-slate-300">(É obrigatória a apresentação de ata).</strong></p>
                                     <ul class="space-y-3 text-sm">
                                         <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% da bonificação</strong></li>
                                         <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% da bonificação</strong></li>
@@ -1070,7 +1143,7 @@
                                 <!-- Ações Presenciais -->
                                 <div class="glass-card p-8 rounded-3xl">
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-people-group"></i></div> Ações Presenciais</h3>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos, o fortalecimento da cultura interna e o engajamento. Estar presente e envolver-se nessas ações amplia seu desenvolvimento profissional e colabora diretamente para um clima organizacional de excelência.</p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos, o fortalecimento do conhecimento técnico necessário para garantir a excelência na qualidade do atendimento e o engajamento. Estar presente e envolver-se nessas ações amplia seu desenvolvimento profissional e colabora diretamente para que nossos indicadores atinjam os padrões de excelência necessários.</p>
                                     <ul class="space-y-2.5 text-sm">
                                         <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100% da bonificação</strong></li>
                                         <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75% da bonificação</strong></li>
@@ -1091,11 +1164,11 @@
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
-                                        <div class="text-xs text-slate-500">Reflete percepção comportamental, postura profissional e alinhamento diário.</div>
+                                        <div class="text-xs text-slate-500">Reflete percepção comportamental, postura profissional, alinhamento diário e o quanto suas ações e entregas estão alinhadas aos objetivos mensais de cada operação.</div>
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação de Alto Impacto</div>
-                                        <div class="text-xs text-slate-500">Reconhece o apoio extra e a proatividade direcionada ao fortalecimento da equipe e da operação como um todo.</div>
+                                        <div class="text-xs text-slate-500">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1126,11 +1199,11 @@
 
                             <!-- Termos de Uso -->
                             <div class="glass-card p-8 rounded-3xl">
-                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-file-contract text-blue-500"></i> Termos de Uso do Portal</h3>
+                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-file-contract text-blue-500"></i> Termos de Uso e Restrições (Aviso Legal)</h3>
                                 <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed space-y-4">
                                     <p><strong>1. Finalidade Exclusiva:</strong> Este portal destina-se única e exclusivamente ao acompanhamento de indicadores de performance corporativa e cálculo de bonificações correspondentes. Nenhuma informação aqui contida será utilizada para fins publicitários ou compartilhada com terceiros alheios à sua avaliação de desempenho.</p>
-                                    <p><strong>2. Credenciais de Acesso:</strong> Sua matrícula e senha são de uso pessoal e intransferível. A segurança do seu acesso começa pela não partilha da sua senha com colegas.</p>
-                                    <p><strong>3. Retenção de Dados:</strong> Os lançamentos de notas são mantidos apenas pelo tempo necessário para garantir o pagamento correto da sua bonificação e a prestação de contas operacionais.</p>
+                                    <p><strong>2. Sigilo de Informações e Imagens:</strong> O registro através de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de compartilhamento das imagens e informações contidas neste portal sem a prévia e formal autorização da diretoria é terminantemente proibido. Tais atos serão considerados infração grave, sujeitando o responsável às medidas disciplinares e legais cabíveis pela exposição de dados da operação.</p>
+                                    <p><strong>3. Credenciais e Retenção:</strong> Sua matrícula e senha são de uso pessoal. A segurança começa pela não partilha da sua senha com colegas. Os lançamentos de notas são mantidos apenas pelo tempo necessário para garantir o pagamento correto da sua bonificação.</p>
                                 </div>
                             </div>
 
@@ -1164,7 +1237,8 @@
                         if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
                         if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
                         
-                        app.users.push({ nome: n, matricula: m, senha: p, results: {} });
+                        // Inicializa sem aceite e sem contagem de login
+                        app.users.push({ nome: n, matricula: m, senha: p, results: {}, loginCount: 0, aceiteTermos: null, aceiteDiretrizes: null });
                         app.storage.saveUsers();
                         document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
                         app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
@@ -1179,11 +1253,32 @@
                         const u = app.users.find(x => x.matricula === mat);
                         const res = (u.results && u.results[app.currentMonth]) || {};
                         
+                        const termosBadge = u.aceiteTermos 
+                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded"><i class="fa-solid fa-check"></i> Aceito em ${new Date(u.aceiteTermos).toLocaleDateString()}</span>` 
+                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded"><i class="fa-solid fa-clock"></i> Pendente</span>`;
+                        
+                        const diretrizesBadge = u.aceiteDiretrizes 
+                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded"><i class="fa-solid fa-check"></i> Aceito em ${new Date(u.aceiteDiretrizes).toLocaleDateString()}</span>` 
+                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded"><i class="fa-solid fa-clock"></i> Pendente</span>`;
+
                         let html = `
-                            <div class="flex justify-between items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50">
-                                <div><span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span><code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code></div>
-                                <div class="flex gap-2">
-                                    <button onclick="app.admin.clearUser()" class="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50 gap-4">
+                                <div>
+                                    <span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span>
+                                    <code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code>
+                                </div>
+                                <div class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 w-full md:w-auto">
+                                    <div class="text-xs">
+                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Termos de Uso</span>
+                                        ${termosBadge}
+                                    </div>
+                                    <div class="text-xs">
+                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Diretrizes (2º Login)</span>
+                                        ${diretrizesBadge}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
+                                    <button onclick="app.admin.clearUser()" class="flex-1 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
                                     <button onclick="app.admin.deleteUser()" class="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
                                 </div>
                             </div>
