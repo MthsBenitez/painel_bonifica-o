@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel de Bonificação | Qualidade Corporativa</title>
+    <title>Portal de Resultados | Softmarketing</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -45,9 +45,9 @@
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
         
-        input[type="month"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
-        .dark input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(1); }
-        input[type="month"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+        input[type="month"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
+        .dark input[type="month"]::-webkit-calendar-picker-indicator, .dark input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+        input[type="month"]::-webkit-calendar-picker-indicator:hover, input[type="time"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-blue-500 selection:text-white">
@@ -76,13 +76,16 @@
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden">
         <!-- Background Elements -->
-        <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-gray-500/10 rounded-full blur-3xl pointer-events-none"></div>
         
         <div class="glass-card max-w-md w-full p-8 rounded-3xl shadow-xl text-center relative z-10">
-            <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6 shadow-lg transform rotate-3">
-                <i class="fa-solid fa-chart-pie -rotate-3"></i>
+            
+            <!-- Logo Softmarketing -->
+            <div class="w-full max-w-[200px] mx-auto mb-6 bg-white rounded-2xl p-3 shadow-sm border border-slate-100">
+                <img src="1709328472296.jpg (1).jpeg" alt="Softmarketing Logo" class="w-full h-auto object-contain rounded-xl">
             </div>
+
             <h1 class="text-2xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
             <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Acompanhe seus indicadores de excelência.</p>
             
@@ -91,17 +94,17 @@
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
                     <div class="relative">
                         <i class="fa-solid fa-user absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
+                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
                     </div>
                 </div>
                 <div class="text-left">
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
                     <div class="relative">
                         <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
+                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
                     </div>
                 </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 mt-2">
+                <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-2">
                     Acessar Dashboard
                 </button>
             </form>
@@ -116,29 +119,29 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-md">
+                        <div class="w-9 h-9 bg-gradient-to-br from-green-500 to-green-700 rounded-xl flex items-center justify-center shadow-md">
                             <i class="fa-solid fa-chart-pie text-white text-sm"></i>
                         </div>
-                        <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Portal de Bonificação</h1>
+                        <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
                     </div>
                     
                     <div class="flex items-center gap-3 sm:gap-4">
                         <!-- Mês Global -->
-                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-blue-300 dark:hover:border-blue-500 group">
-                            <i class="fa-regular fa-calendar-days text-blue-500 text-sm"></i>
+                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-green-300 dark:hover:border-green-500 group">
+                            <i class="fa-regular fa-calendar-days text-green-600 text-sm"></i>
                             <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
                         </div>
 
                         <!-- Perfil -->
                         <div class="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
-                            <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs"><i class="fa-solid fa-user"></i></div>
+                            <div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs"><i class="fa-solid fa-user"></i></div>
                             <span id="header-username" class="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wide uppercase truncate max-w-[120px]">USUÁRIO</span>
                         </div>
                         
                         <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
 
                         <!-- Botão Tema -->
-                        <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                        <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
                             <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
                         </button>
                         
@@ -379,7 +382,7 @@
                 showConfirm(title, message, confirmCallbackStr, danger = false) {
                     document.getElementById('modal-title').innerHTML = title;
                     document.getElementById('modal-content').innerHTML = message;
-                    const btnClass = danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
+                    const btnClass = danger ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700';
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
                         <button onclick="document.getElementById('global-modal').classList.add('hidden'); ${confirmCallbackStr}" class="px-5 py-2 ${btnClass} text-white rounded-lg font-bold text-sm shadow-md transition-colors">Confirmar</button>
@@ -402,11 +405,11 @@
                     const nav = document.getElementById('main-nav');
                     let html = '';
                     const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'} ]
-                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'} ];
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
                     
                     tabs.forEach(t => {
-                        const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-blue-600 dark:text-blue-400 border-t-2 border-blue-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
+                        const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
                         html += `<button onclick="app.ui.renderTab('${t.id}')" class="px-5 py-3 font-semibold text-sm rounded-t-xl transition-all flex items-center gap-2 whitespace-nowrap ${activeCls}"><i class="fa-solid ${t.icon}"></i> ${t.label}</button>`;
                     });
                     nav.innerHTML = html;
@@ -438,6 +441,7 @@
                     else if(tabId === 'calculadora') this.renderView_Calculadora(container);
                     else if(tabId === 'regras') this.renderView_Regras(container);
                     else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(container);
+                    else if(tabId === 'legal') this.renderView_Legal(container);
                 },
 
                 renderView_MeuPainel(container) {
@@ -448,13 +452,13 @@
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Desempenho Individual</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados consolidados referentes a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados consolidados referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                             </div>
                             <div class="flex items-center gap-3">
                     `;
                     
                     if(app.isAdmin) {
-                        html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold shadow-sm focus:ring-2 focus:ring-green-500 outline-none">
                             <option value="">Selecione a matrícula do colaborador...</option>`;
                         app.users.forEach(u => { html += `<option value="${u.matricula}" ${window.selectedViewUser === u.matricula ? 'selected':''}>${u.nome}</option>`; });
                         html += `</select>`;
@@ -499,7 +503,7 @@
                                     </div>
                                     <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 leading-tight w-24">${g.title}</h3>
                                 </div>
-                                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50 text-[10px] font-bold px-2 py-1 rounded-md">PESO ${wPct}%</span>
+                                <span class="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 text-[10px] font-bold px-2 py-1 rounded-md">PESO ${wPct}%</span>
                             </div>
                             
                             <div class="flex-1 flex flex-col justify-center mb-5">
@@ -514,7 +518,7 @@
                                     </div>
                                     <div class="text-center">
                                         <div class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">Realizado</div>
-                                        <div class="bg-blue-50 dark:bg-blue-900/30 rounded-lg py-2 font-bold text-blue-600 dark:text-blue-400 text-sm border border-blue-100 dark:border-blue-800">${r.raw.real || '-'}</div>
+                                        <div class="bg-green-50 dark:bg-green-900/30 rounded-lg py-2 font-bold text-green-600 dark:text-green-400 text-sm border border-green-100 dark:border-green-800/50">${r.raw.real || '-'}</div>
                                     </div>
                                 </div>
                                 <div class="text-center bg-slate-50 dark:bg-slate-800/50 rounded-lg py-1.5 text-xs text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700/50"><strong class="text-slate-700 dark:text-slate-200">${r.display}</strong></div>
@@ -548,14 +552,14 @@
 
                     const finalPct = (total.pct * 100).toFixed(1);
                     html += `
-                        <div class="bg-gradient-to-r from-blue-900 to-slate-900 rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden">
-                            <div class="absolute right-0 top-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl"></div>
+                        <div class="bg-gradient-to-r from-gray-800 to-black rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden">
+                            <div class="absolute right-0 top-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl"></div>
                             
                             <div class="z-10 relative">
-                                <div class="text-xs font-bold text-blue-300/80 uppercase tracking-widest mb-2">Resumo Financeiro • ${monthLabel}</div>
+                                <div class="text-xs font-bold text-green-300/80 uppercase tracking-widest mb-2">Resumo Financeiro • ${monthLabel}</div>
                                 <div class="flex items-baseline gap-3">
                                     <span class="text-4xl md:text-5xl font-black text-white">${finalPct}%</span>
-                                    <span class="text-blue-200 text-sm font-medium">Aproveitamento Total</span>
+                                    <span class="text-green-100 text-sm font-medium">Aproveitamento Total</span>
                                 </div>
                             </div>
                             <div class="mt-6 md:mt-0 text-right bg-white/10 backdrop-blur-md px-8 py-5 rounded-2xl border border-white/20 z-10 relative w-full md:w-auto">
@@ -603,7 +607,7 @@
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos da equipe referente a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos da equipe referente a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
@@ -695,26 +699,26 @@
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Equipe e Lançamentos</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados referentes a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong> ou cadastre novos membros.</p>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong> ou cadastre novos membros.</p>
                         </div>
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             
                             <!-- Novo Colaborador -->
                             <div class="lg:col-span-1 glass-card p-6 rounded-3xl h-fit">
-                                <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-user-plus text-blue-500"></i> Novo Colaborador</h3>
+                                <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-user-plus text-green-600"></i> Novo Colaborador</h3>
                                 <div class="space-y-4">
-                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Nome Completo</label><input type="text" id="cad-nome" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label><input type="text" id="cad-mat" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha Inicial</label><input type="text" id="cad-pwd" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Nome Completo</label><input type="text" id="cad-nome" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label><input type="text" id="cad-mat" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha Inicial</label><input type="text" id="cad-pwd" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all"></div>
                                     <button onclick="app.admin.registerUser()" class="w-full bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl shadow transition-all mt-2 text-sm">Adicionar à Equipe</button>
                                 </div>
                             </div>
                             
                             <!-- Lançamentos -->
                             <div class="lg:col-span-2 glass-card p-6 md:p-8 rounded-3xl">
-                                <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-file-pen text-blue-500"></i> Lançar Indicadores • ${monthLabel}</h3>
+                                <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-file-pen text-green-600"></i> Lançar Indicadores • ${monthLabel}</h3>
                                 <div class="flex gap-2 mb-8">
-                                    <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 font-semibold dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+                                    <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 font-semibold dark:text-white outline-none focus:ring-2 focus:ring-green-500">
                                         <option value="">Selecione um colaborador para lançar notas...</option>
                                     `;
                                     app.users.forEach(u => { html += `<option value="${u.matricula}">${u.nome} (${u.matricula})</option>`; });
@@ -737,11 +741,11 @@
                             <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Defina o fundo financeiro e a calibração de pesos de cada pilar de qualidade.</p>
                         </div>
                         <div class="glass-card p-6 md:p-8 rounded-3xl">
-                            <div class="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-blue-100 dark:border-slate-700 inline-block">
-                                <label class="block text-xs font-bold text-blue-800/70 dark:text-blue-300/70 mb-2 uppercase tracking-widest">Valor Financeiro Base (100%)</label>
+                            <div class="mb-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-green-100 dark:border-slate-700 inline-block">
+                                <label class="block text-xs font-bold text-green-800/70 dark:text-green-300/70 mb-2 uppercase tracking-widest">Valor Financeiro Base (100%)</label>
                                 <div class="flex items-center gap-3">
-                                    <span class="text-2xl font-black text-blue-400">R$</span>
-                                    <input type="number" id="cfg-base" value="${app.config.baseValue}" class="w-48 p-3 text-2xl font-black rounded-xl border border-blue-200 dark:border-slate-600 bg-white dark:bg-slate-900 dark:text-white text-blue-700 dark:text-blue-400 outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm">
+                                    <span class="text-2xl font-black text-green-500">R$</span>
+                                    <input type="number" id="cfg-base" value="${app.config.baseValue}" class="w-48 p-3 text-2xl font-black rounded-xl border border-green-200 dark:border-slate-600 bg-white dark:bg-slate-900 dark:text-white text-green-700 dark:text-green-400 outline-none focus:ring-2 focus:ring-green-500 transition-all shadow-sm">
                                 </div>
                             </div>
                             
@@ -761,8 +765,8 @@
                         html += `
                             <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                                 <td class="py-3 px-4 text-center text-slate-400 dark:text-slate-500"><i class="fa-solid ${g.icon} text-lg"></i></td>
-                                <td class="py-3 px-4"><input type="text" id="cfg-t-${i}" value="${g.title}" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"></td>
-                                <td class="py-3 px-4"><input type="number" step="0.01" id="cfg-w-${i}" value="${g.weight}" oninput="app.admin.updateConfigPreview()" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-center font-bold dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"></td>
+                                <td class="py-3 px-4"><input type="text" id="cfg-t-${i}" value="${g.title}" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium dark:text-white outline-none focus:ring-2 focus:ring-green-500 transition-all shadow-sm"></td>
+                                <td class="py-3 px-4"><input type="number" step="0.01" id="cfg-w-${i}" value="${g.weight}" oninput="app.admin.updateConfigPreview()" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-center font-bold dark:text-white outline-none focus:ring-2 focus:ring-green-500 transition-all shadow-sm"></td>
                                 <td class="py-3 px-4 text-center font-black text-slate-600 dark:text-slate-300" id="cfg-p-${i}">${(g.weight*100).toFixed(0)}%</td>
                             </tr>
                         `;
@@ -771,14 +775,14 @@
                             <tfoot class="bg-slate-50 dark:bg-slate-800/80">
                                 <tr>
                                     <td colspan="2" class="py-4 px-4 text-right font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-widest">Soma dos Pesos:</td>
-                                    <td class="py-4 px-4 text-center font-black text-blue-600 dark:text-blue-400 text-lg" id="cfg-total-w">1.00</td>
-                                    <td class="py-4 px-4 text-center font-black text-blue-600 dark:text-blue-400 text-lg" id="cfg-total-p">100%</td>
+                                    <td class="py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg" id="cfg-total-w">1.00</td>
+                                    <td class="py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg" id="cfg-total-p">100%</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
                     <div class="mt-8 flex justify-end">
-                        <button onclick="app.admin.saveConfig()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
+                        <button onclick="app.admin.saveConfig()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
                     </div>
                     </div>`;
                     container.innerHTML = html;
@@ -799,7 +803,7 @@
                     
                     app.config.goals.forEach(g => {
                         html += `
-                        <div class="glass-card rounded-2xl p-5 border-l-4 border-l-slate-300 dark:border-l-slate-600 focus-within:border-l-blue-500 transition-colors">
+                        <div class="glass-card rounded-2xl p-5 border-l-4 border-l-slate-300 dark:border-l-slate-600 focus-within:border-l-green-500 transition-colors">
                             <div class="flex items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700/50 pb-3">
                                 <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500"><i class="fa-solid ${g.icon} text-sm"></i></div>
                                 <h3 class="font-bold text-sm text-slate-800 dark:text-white truncate">${g.title}</h3>
@@ -810,15 +814,15 @@
                             html += `
                                 <div class="flex gap-3">
                                     <div class="flex-1"><label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Meta Oficial</label><input type="number" id="sim-${g.id}-meta" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="100"></div>
-                                    <div class="flex-1"><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: 95"></div>
+                                    <div class="flex-1"><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" placeholder="Ex: 95"></div>
                                 </div>
                             `;
                         } else if(g.type === 'calibracao') {
-                            html += `<div><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Qtd. Calibrações (0 a 2)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500" min="0" max="2" value="0"></div>`;
+                            html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Qtd. Calibrações (0 a 2)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" min="0" max="2" value="0"></div>`;
                         } else if(g.type === 'actions') {
-                            html += `<div><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Ações Realizadas (0 a 5)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500" min="0" max="5" value="0"></div>`;
+                            html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Ações Realizadas (0 a 5)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" min="0" max="5" value="0"></div>`;
                         } else {
-                            html += `<div><label class="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Cumprimento (Sim/Não)</label><select id="sim-${g.id}-val" onchange="app.ui.calcSim()" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 outline-none focus:ring-2 focus:ring-blue-500"><option value="Não">Não (Falhou)</option><option value="Sim">Sim (Atingiu)</option></select></div>`;
+                            html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Cumprimento (Sim/Não)</label><select id="sim-${g.id}-val" onchange="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500"><option value="Não">Não (Falhou)</option><option value="Sim">Sim (Atingiu)</option></select></div>`;
                         }
                         
                         html += `
@@ -877,41 +881,41 @@
                             <!-- Painel de Inputs -->
                             <div class="lg:w-7/12 space-y-6">
                                 <div class="glass-card p-6 rounded-3xl">
-                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-regular fa-clock text-blue-500"></i> Tempos de Jornada (Minutos)</h3>
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-regular fa-clock text-green-500"></i> Tempos de Jornada</h3>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Turno Completo</label>
-                                            <input type="number" id="dim-horas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="480" min="1">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Turno Completo (HH:MM:SS)</label>
+                                            <input type="time" step="1" id="dim-horas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all" value="08:00:00">
                                         </div>
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Pausas Oficiais</label>
-                                            <input type="number" id="dim-pausas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="60" min="0">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Pausas Oficiais (HH:MM:SS)</label>
+                                            <input type="time" step="1" id="dim-pausas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all" value="01:00:00">
                                         </div>
                                         <div class="col-span-2">
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Outras Tarefas / Reuniões (Minutos/Dia)</label>
-                                            <input type="number" id="dim-outras" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="30" min="0">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Outras Tarefas / Reuniões (HH:MM:SS)</label>
+                                            <input type="time" step="1" id="dim-outras" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all" value="00:30:00">
                                         </div>
                                     </div>
                                 </div>
                                 
                                 <div class="glass-card p-6 rounded-3xl">
-                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-headphones text-blue-500"></i> Tempos de Operação</h3>
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-headphones text-green-500"></i> Tempos de Operação</h3>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Escuta/Nota (Min)</label>
-                                            <input type="number" id="dim-tmo" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-300 font-bold outline-none transition-all" value="15" min="1">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Escuta/Nota (HH:MM:SS)</label>
+                                            <input type="time" step="1" id="dim-tmo" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 focus:ring-2 focus:ring-green-500 text-green-700 dark:text-green-300 font-bold outline-none transition-all" value="00:15:00">
                                         </div>
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback (Min)</label>
-                                            <input type="number" id="dim-tmf" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-300 font-bold outline-none transition-all" value="5" min="0">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback (HH:MM:SS)</label>
+                                            <input type="time" step="1" id="dim-tmf" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 focus:ring-2 focus:ring-green-500 text-green-700 dark:text-green-300 font-bold outline-none transition-all" value="00:05:00">
                                         </div>
                                         <div class="col-span-1">
                                             <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5" title="Porcentagem de monitorias que exigirão o feedback. Ex: 50%">Vol. de Feedbacks (%)</label>
-                                            <input type="number" id="dim-taxafb" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="100" min="0" max="100">
+                                            <input type="number" id="dim-taxafb" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all" value="100" min="0" max="100">
                                         </div>
                                         <div class="col-span-1">
                                             <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Dias Úteis/Mês</label>
-                                            <input type="number" id="dim-dias" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="22" min="1">
+                                            <input type="number" id="dim-dias" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all" value="22" min="1">
                                         </div>
                                     </div>
                                 </div>
@@ -919,38 +923,38 @@
 
                             <!-- Resultados -->
                             <div class="lg:w-5/12 flex flex-col gap-6">
-                                <div class="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl p-8 shadow-xl text-white">
+                                <div class="bg-gradient-to-br from-green-600 to-emerald-800 rounded-3xl p-8 shadow-xl text-white">
                                     <h3 class="font-extrabold text-xl mb-8 flex items-center gap-3"><i class="fa-solid fa-chart-line"></i> Capacidade Projetada</h3>
                                     
                                     <div class="grid grid-cols-2 gap-4 mb-4">
                                         <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/20">
-                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-1">Produtivo Líquido</div>
-                                            <div id="dim-res-produtivo" class="text-2xl font-black">0h 0m</div>
+                                            <div class="text-[10px] font-bold text-green-200 uppercase tracking-widest mb-1">Produtivo Líquido</div>
+                                            <div id="dim-res-produtivo" class="text-2xl font-black">00:00:00</div>
                                         </div>
                                         <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/20">
-                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-1">Tempo Livre / Dia</div>
-                                            <div id="dim-res-livre" class="text-2xl font-black text-amber-200">0m</div>
+                                            <div class="text-[10px] font-bold text-green-200 uppercase tracking-widest mb-1">Tempo Livre / Dia</div>
+                                            <div id="dim-res-livre" class="text-2xl font-black text-emerald-100">00:00:00</div>
                                         </div>
                                     </div>
                                     
                                     <div class="grid grid-cols-2 gap-4">
                                         <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 text-center">
-                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2">Meta Diária</div>
-                                            <div id="dim-res-dia" class="text-5xl font-black text-green-300 drop-shadow">0</div>
-                                            <div class="text-xs text-blue-200 mt-2">Monitorias / Dia</div>
+                                            <div class="text-[10px] font-bold text-green-200 uppercase tracking-widest mb-2">Meta Diária</div>
+                                            <div id="dim-res-dia" class="text-5xl font-black text-white drop-shadow">0</div>
+                                            <div class="text-xs text-green-200 mt-2">Monitorias / Dia</div>
                                         </div>
                                         <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 text-center">
-                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2">Meta Mensal</div>
+                                            <div class="text-[10px] font-bold text-green-200 uppercase tracking-widest mb-2">Meta Mensal</div>
                                             <div id="dim-res-mes" class="text-5xl font-black text-white drop-shadow">0</div>
-                                            <div class="text-xs text-blue-200 mt-2">Monitorias / Mês</div>
+                                            <div class="text-xs text-green-200 mt-2">Monitorias / Mês</div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <!-- Explicação Matemática -->
-                                <div class="bg-blue-50 dark:bg-slate-800/80 border border-blue-100 dark:border-slate-700 rounded-3xl p-6 text-sm text-slate-600 dark:text-slate-400 leading-relaxed shadow-sm">
-                                    <h4 class="font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2"><i class="fa-solid fa-calculator text-blue-500"></i> Como este cálculo é feito?</h4>
-                                    <p class="mb-2"><strong>1. Tempo Produtivo:</strong> Subtraímos as pausas e outras tarefas do tempo total do turno em minutos.</p>
+                                <div class="bg-green-50 dark:bg-slate-800/80 border border-green-100 dark:border-slate-700 rounded-3xl p-6 text-sm text-slate-600 dark:text-slate-400 leading-relaxed shadow-sm">
+                                    <h4 class="font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2"><i class="fa-solid fa-calculator text-green-600"></i> Como este cálculo é feito?</h4>
+                                    <p class="mb-2"><strong>1. Tempo Produtivo:</strong> Subtraímos as pausas e outras tarefas do tempo total do turno.</p>
                                     <p class="mb-2"><strong>2. Esforço por Monitoria:</strong> Somamos o tempo de escuta/nota com o tempo de feedback. O feedback é multiplicado pelo <strong>Volume (%)</strong> para diluir o tempo apenas para as avaliações que o exigirão.</p>
                                     <p><strong>3. Meta e Tempo Livre:</strong> Dividimos o <em>Tempo Produtivo</em> pelo <em>Esforço por Monitoria</em>, garantindo que o colaborador entregue números inteiros. O que não forma uma monitoria completa vira o <em>Tempo Livre (Residual)</em>.</p>
                                 </div>
@@ -961,12 +965,38 @@
                     app.ui.calcDimensionamento();
                 },
 
+                // Função auxiliar para converter "HH:MM:SS" em minutos decimais
+                timeStrToMinutes(str) {
+                    if(!str) return 0;
+                    const parts = str.split(':').map(Number);
+                    const h = parts[0] || 0;
+                    const m = parts[1] || 0;
+                    const s = parts[2] || 0;
+                    return (h * 60) + m + (s / 60);
+                },
+
+                // Função auxiliar para converter minutos decimais em "HH:MM:SS"
+                minutesToTimeStr(totalMins) {
+                    if (totalMins < 0) totalMins = 0;
+                    const h = Math.floor(totalMins / 60);
+                    const m = Math.floor(totalMins % 60);
+                    const s = Math.round((totalMins % 1) * 60);
+                    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                },
+
                 calcDimensionamento() {
-                    const turnoMinutos = parseFloat(document.getElementById('dim-horas').value) || 0;
-                    const pausas = parseFloat(document.getElementById('dim-pausas').value) || 0;
-                    const outras = parseFloat(document.getElementById('dim-outras').value) || 0;
-                    const tmo = parseFloat(document.getElementById('dim-tmo').value) || 0;
-                    const tmf = parseFloat(document.getElementById('dim-tmf').value) || 0;
+                    const turnoStr = document.getElementById('dim-horas').value;
+                    const pausasStr = document.getElementById('dim-pausas').value;
+                    const outrasStr = document.getElementById('dim-outras').value;
+                    const tmoStr = document.getElementById('dim-tmo').value;
+                    const tmfStr = document.getElementById('dim-tmf').value;
+
+                    const turnoMinutos = this.timeStrToMinutes(turnoStr);
+                    const pausas = this.timeStrToMinutes(pausasStr);
+                    const outras = this.timeStrToMinutes(outrasStr);
+                    const tmo = this.timeStrToMinutes(tmoStr);
+                    const tmf = this.timeStrToMinutes(tmfStr);
+                    
                     const taxaFb = parseFloat(document.getElementById('dim-taxafb').value) || 0;
                     const dias = parseFloat(document.getElementById('dim-dias').value) || 0;
 
@@ -984,16 +1014,10 @@
                         tempoLivre = produtivo - (metaDia * tempoPorAvaliacao);
                     }
 
-                    const safeProdutivo = Math.max(0, produtivo);
-                    const hrsProd = Math.floor(safeProdutivo / 60);
-                    const minsProd = Math.floor(safeProdutivo % 60);
-                    
-                    const safeLivre = Math.max(0, Math.floor(tempoLivre));
-
-                    document.getElementById('dim-res-produtivo').textContent = `${hrsProd}h ${minsProd}m`;
+                    document.getElementById('dim-res-produtivo').textContent = this.minutesToTimeStr(produtivo);
                     document.getElementById('dim-res-dia').textContent = metaDia;
                     document.getElementById('dim-res-mes').textContent = metaMes;
-                    document.getElementById('dim-res-livre').textContent = `${safeLivre}m`;
+                    document.getElementById('dim-res-livre').textContent = this.minutesToTimeStr(tempoLivre);
                 },
 
                 renderView_Regras(container) {
@@ -1006,10 +1030,10 @@
                         <div class="space-y-8 max-w-4xl mx-auto">
                             
                             <!-- Missão -->
-                            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-3xl p-8 relative overflow-hidden">
+                            <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-3xl p-8 relative overflow-hidden">
                                 <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-bullseye"></i></div>
-                                <h3 class="font-extrabold text-xl mb-3 text-blue-800 dark:text-blue-300 relative z-10">Nosso Propósito</h3>
-                                <p class="text-blue-700/80 dark:text-blue-200/70 text-sm leading-relaxed relative z-10">As cobranças de métricas não são apenas numéricas. Elas existem para garantir que nossa operação mantenha o mais alto padrão de qualidade, fomentando um ambiente onde boas práticas são compartilhadas, a assiduidade é valorizada e o atendimento ao cliente atinge a excelência real. Ao atingir suas metas, você impulsiona os resultados da empresa e é recompensado financeiramente por sua alta performance.</p>
+                                <h3 class="font-extrabold text-xl mb-3 text-green-800 dark:text-green-300 relative z-10">Nosso Propósito</h3>
+                                <p class="text-green-700/80 dark:text-green-200/70 text-sm leading-relaxed relative z-10">As cobranças de métricas não são apenas numéricas. Elas existem para garantir que nossa operação mantenha o mais alto padrão de qualidade, fomentando um ambiente onde boas práticas são compartilhadas, a assiduidade é valorizada e o atendimento ao cliente atinge a excelência real. Ao atingir suas metas, você impulsiona os resultados da empresa e é recompensado financeiramente por sua alta performance.</p>
                             </div>
 
                             <!-- Escala Porcentual -->
@@ -1078,140 +1102,192 @@
                         </div>
                     `;
                     container.innerHTML = html;
-                }
-            },
-
-            admin: {
-                registerUser() {
-                    const n = document.getElementById('cad-nome').value.trim();
-                    const m = document.getElementById('cad-mat').value.trim();
-                    const p = document.getElementById('cad-pwd').value.trim();
-                    if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
-                    if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
-                    
-                    app.users.push({ nome: n, matricula: m, senha: p, results: {} });
-                    app.storage.saveUsers();
-                    document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
-                    app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
-                    app.ui.refreshCurrentView();
                 },
 
-                loadUserEditor() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    const area = document.getElementById('adm-editor-area');
-                    if(!mat) { area.classList.add('hidden'); return; }
-                    
-                    const u = app.users.find(x => x.matricula === mat);
-                    const res = (u.results && u.results[app.currentMonth]) || {};
-                    
+                renderView_Legal(container) {
                     let html = `
-                        <div class="flex justify-between items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50">
-                            <div><span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span><code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code></div>
-                            <div class="flex gap-2">
-                                <button onclick="app.admin.clearUser()" class="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
-                                <button onclick="app.admin.deleteUser()" class="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
+                        <div class="mb-10 text-center max-w-2xl mx-auto">
+                            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-shield-halved"></i></div>
+                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Privacidade e Conformidade LGPD</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm">Transparência e segurança no tratamento dos seus dados na Softmarketing.</p>
+                        </div>
+                        
+                        <div class="space-y-8 max-w-4xl mx-auto">
+                            <!-- Nossa Promessa -->
+                            <div class="glass-card p-8 rounded-3xl">
+                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-handshake-angle text-blue-500"></i> Nosso Compromisso Cordial</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+                                    A Softmarketing valoriza o seu esforço e tem o compromisso de tratar todas as suas informações com o máximo respeito, sigilo e segurança. Nosso portal foi construído para ser uma ferramenta amigável e transparente, projetada exclusivamente para auxiliar você a acompanhar e celebrar suas conquistas profissionais e métricas de desempenho.
+                                </p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                                    Não coletamos, armazenamos ou rastreamos nenhuma informação de saúde, crenças, opiniões políticas, ou qualquer outra categoria que a legislação defina como **dado sensível**. Queremos que você se sinta totalmente protegido e confortável utilizando esta plataforma.
+                                </p>
+                            </div>
+
+                            <!-- Termos de Uso -->
+                            <div class="glass-card p-8 rounded-3xl">
+                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-file-contract text-blue-500"></i> Termos de Uso do Portal</h3>
+                                <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed space-y-4">
+                                    <p><strong>1. Finalidade Exclusiva:</strong> Este portal destina-se única e exclusivamente ao acompanhamento de indicadores de performance corporativa e cálculo de bonificações correspondentes. Nenhuma informação aqui contida será utilizada para fins publicitários ou compartilhada com terceiros alheios à sua avaliação de desempenho.</p>
+                                    <p><strong>2. Credenciais de Acesso:</strong> Sua matrícula e senha são de uso pessoal e intransferível. A segurança do seu acesso começa pela não partilha da sua senha com colegas.</p>
+                                    <p><strong>3. Retenção de Dados:</strong> Os lançamentos de notas são mantidos apenas pelo tempo necessário para garantir o pagamento correto da sua bonificação e a prestação de contas operacionais.</p>
+                                </div>
+                            </div>
+
+                            <!-- Certificado LGPD -->
+                            <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl p-8 relative">
+                                <div class="absolute right-6 top-6 text-green-500 text-4xl opacity-20"><i class="fa-solid fa-stamp"></i></div>
+                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-gavel text-green-600"></i> Documento Declaratório de Conformidade</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+                                    Esta aplicação atesta sua adequação aos requisitos de controle estabelecidos pela <strong>Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018)</strong> do Governo Federal Brasileiro.
+                                </p>
+                                <ul class="space-y-3 text-sm text-slate-600 dark:text-slate-400 mb-6 border-l-2 border-green-500 pl-4 ml-2">
+                                    <li><strong>Art. 5º, II (Dado Sensível):</strong> Declaramos a inexistência de coleta de dados sensíveis na plataforma.</li>
+                                    <li><strong>Art. 6º, I (Finalidade):</strong> Os dados (Nome e Matrícula) são processados com propósitos legítimos e explícitos.</li>
+                                    <li><strong>Art. 6º, III (Necessidade):</strong> O processamento limita-se ao mínimo necessário para a realização das finalidades de bonificação.</li>
+                                    <li><strong>Art. 46 (Segurança):</strong> Adotamos medidas de segurança técnicas para proteger os dados pessoais de acessos não autorizados.</li>
+                                </ul>
+                                <div class="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                                    Documento validado para a operação interna. O uso continuado da plataforma indica o aceite das políticas descritas acima, consolidando a transparência entre a Softmarketing e seus colaboradores.
+                                </div>
                             </div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                     `;
+                    container.innerHTML = html;
+                },
 
-                    app.config.goals.forEach(g => {
-                        const val = res[g.id] || {};
-                        html += `<div class="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all">
-                            <label class="block text-xs font-extrabold text-slate-700 dark:text-slate-200 mb-4 truncate"><i class="fa-solid ${g.icon} text-blue-500 mr-2"></i> ${g.title}</label>
-                        `;
+                admin: {
+                    registerUser() {
+                        const n = document.getElementById('cad-nome').value.trim();
+                        const m = document.getElementById('cad-mat').value.trim();
+                        const p = document.getElementById('cad-pwd').value.trim();
+                        if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
+                        if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
                         
-                        if(g.type === 'percent') {
-                            html += `
-                                <div class="flex gap-3">
-                                    <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
-                                    <div class="flex-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold text-blue-700 dark:text-blue-400 outline-none" value="${val.real || ''}"></div>
+                        app.users.push({ nome: n, matricula: m, senha: p, results: {} });
+                        app.storage.saveUsers();
+                        document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
+                        app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
+                        app.ui.refreshCurrentView();
+                    },
+
+                    loadUserEditor() {
+                        const mat = document.getElementById('adm-user-select').value;
+                        const area = document.getElementById('adm-editor-area');
+                        if(!mat) { area.classList.add('hidden'); return; }
+                        
+                        const u = app.users.find(x => x.matricula === mat);
+                        const res = (u.results && u.results[app.currentMonth]) || {};
+                        
+                        let html = `
+                            <div class="flex justify-between items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50">
+                                <div><span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span><code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code></div>
+                                <div class="flex gap-2">
+                                    <button onclick="app.admin.clearUser()" class="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
+                                    <button onclick="app.admin.deleteUser()" class="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
                                 </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                        `;
+
+                        app.config.goals.forEach(g => {
+                            const val = res[g.id] || {};
+                            html += `<div class="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent transition-all">
+                                <label class="block text-xs font-extrabold text-slate-700 dark:text-slate-200 mb-4 truncate"><i class="fa-solid ${g.icon} text-green-600 mr-2"></i> ${g.title}</label>
                             `;
-                        } else if(g.type === 'calibracao') {
-                            html += `<div class="mt-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
-                        } else if(g.type === 'actions') {
-                            html += `<div class="mt-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
-                        } else {
-                            html += `<div class="mt-1"><span class="text-[10px] text-blue-500 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
-                                <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
-                                <option value="Sim" ${val.val==='Sim'?'selected':''}>Sim (Atingiu)</option>
-                                <option value="Não" ${val.val==='Não'?'selected':''}>Não (Falhou)</option>
-                            </select></div>`;
-                        }
-                        html += `</div>`;
-                    });
+                            
+                            if(g.type === 'percent') {
+                                html += `
+                                    <div class="flex gap-3">
+                                        <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
+                                        <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
+                                    </div>
+                                `;
+                            } else if(g.type === 'calibracao') {
+                                html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
+                            } else if(g.type === 'actions') {
+                                html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
+                            } else {
+                                html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
+                                    <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
+                                    <option value="Sim" ${val.val==='Sim'?'selected':''}>Sim (Atingiu)</option>
+                                    <option value="Não" ${val.val==='Não'?'selected':''}>Não (Falhou)</option>
+                                </select></div>`;
+                            }
+                            html += `</div>`;
+                        });
 
-                    html += `
-                        </div>
-                        <div class="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-                            <button onclick="app.admin.saveUserResults()" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider">
-                                <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
-                            </button>
-                        </div>
-                    `;
-                    area.innerHTML = html;
-                    area.classList.remove('hidden');
-                },
+                        html += `
+                            </div>
+                            <div class="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+                                <button onclick="app.admin.saveUserResults()" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-gray-500/20 hover:shadow-gray-500/40 transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider">
+                                    <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
+                                </button>
+                            </div>
+                        `;
+                        area.innerHTML = html;
+                        area.classList.remove('hidden');
+                    },
 
-                saveUserResults() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    const u = app.users.find(x => x.matricula === mat);
-                    if(!u) return;
+                    saveUserResults() {
+                        const mat = document.getElementById('adm-user-select').value;
+                        const u = app.users.find(x => x.matricula === mat);
+                        if(!u) return;
 
-                    const newRes = {};
-                    app.config.goals.forEach(g => {
-                        if(g.type === 'percent') {
-                            const m = document.getElementById(`ed-${g.id}-meta`).value;
-                            const r = document.getElementById(`ed-${g.id}-real`).value;
-                            if(m !== '' || r !== '') newRes[g.id] = { meta: m, real: r };
-                        } else {
-                            const v = document.getElementById(`ed-${g.id}-val`).value;
-                            if(v !== '') newRes[g.id] = { val: v };
-                        }
-                    });
-                    
-                    if(!u.results) u.results = {};
-                    u.results[app.currentMonth] = newRes;
-                    
-                    app.storage.saveUsers();
-                    app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
-                },
+                        const newRes = {};
+                        app.config.goals.forEach(g => {
+                            if(g.type === 'percent') {
+                                const m = document.getElementById(`ed-${g.id}-meta`).value;
+                                const r = document.getElementById(`ed-${g.id}-real`).value;
+                                if(m !== '' || r !== '') newRes[g.id] = { meta: m, real: r };
+                            } else {
+                                const v = document.getElementById(`ed-${g.id}-val`).value;
+                                if(v !== '') newRes[g.id] = { val: v };
+                            }
+                        });
+                        
+                        if(!u.results) u.results = {};
+                        u.results[app.currentMonth] = newRes;
+                        
+                        app.storage.saveUsers();
+                        app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
+                    },
 
-                clearUser() { app.ui.showConfirm("Limpar Lançamentos", `Isso irá ZERAR as notas do colaborador apenas no mês de <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong>. Confirmar?`, "app.admin.executeClearUser()", true); },
-                executeClearUser() {
-                    const u = app.users.find(x => x.matricula === document.getElementById('adm-user-select').value);
-                    if(u && u.results) { delete u.results[app.currentMonth]; app.storage.saveUsers(); this.loadUserEditor(); }
-                },
+                    clearUser() { app.ui.showConfirm("Limpar Lançamentos", `Isso irá ZERAR as notas do colaborador apenas no mês de <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong>. Confirmar?`, "app.admin.executeClearUser()", true); },
+                    executeClearUser() {
+                        const u = app.users.find(x => x.matricula === document.getElementById('adm-user-select').value);
+                        if(u && u.results) { delete u.results[app.currentMonth]; app.storage.saveUsers(); this.loadUserEditor(); }
+                    },
 
-                deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
-                executeDeleteUser() {
-                    app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
-                    app.storage.saveUsers();
-                    app.ui.refreshCurrentView();
-                },
+                    deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
+                    executeDeleteUser() {
+                        app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
+                        app.storage.saveUsers();
+                        app.ui.refreshCurrentView();
+                    },
 
-                updateConfigPreview() {
-                    let wTotal = 0;
-                    app.config.goals.forEach((g, i) => {
-                        const val = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
-                        wTotal += val;
-                        document.getElementById(`cfg-p-${i}`).textContent = `${(val*100).toFixed(0)}%`;
-                    });
-                    document.getElementById('cfg-total-w').textContent = wTotal.toFixed(2);
-                    document.getElementById('cfg-total-p').textContent = `${(wTotal*100).toFixed(0)}%`;
-                    if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-blue-400', 'text-red-500');
-                    else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-blue-400');
-                },
+                    updateConfigPreview() {
+                        let wTotal = 0;
+                        app.config.goals.forEach((g, i) => {
+                            const val = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
+                            wTotal += val;
+                            document.getElementById(`cfg-p-${i}`).textContent = `${(val*100).toFixed(0)}%`;
+                        });
+                        document.getElementById('cfg-total-w').textContent = wTotal.toFixed(2);
+                        document.getElementById('cfg-total-p').textContent = `${(wTotal*100).toFixed(0)}%`;
+                        if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-green-600', 'text-red-500');
+                        else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-green-600');
+                    },
 
-                saveConfig() {
-                    app.config.baseValue = parseFloat(document.getElementById('cfg-base').value) || 400;
-                    app.config.goals.forEach((g, i) => {
-                        g.title = document.getElementById(`cfg-t-${i}`).value;
-                        g.weight = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
-                    });
-                    app.storage.saveConfig();
-                    app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
+                    saveConfig() {
+                        app.config.baseValue = parseFloat(document.getElementById('cfg-base').value) || 400;
+                        app.config.goals.forEach((g, i) => {
+                            g.title = document.getElementById(`cfg-t-${i}`).value;
+                            g.weight = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
+                        });
+                        app.storage.saveConfig();
+                        app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
+                    }
                 }
             }
         };
