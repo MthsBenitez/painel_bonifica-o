@@ -257,6 +257,7 @@
                             } else {
                                 app.users = [];
                             }
+                            // Auto-atualiza UI se logado e já tiver passado pelas validações
                             if(app.currentUser || app.isAdmin) {
                                 if(document.getElementById('view-app').classList.contains('hidden') === false) {
                                     app.ui.refreshCurrentView();
@@ -1221,7 +1222,6 @@
                             </div>
                     `;
                     
-                    // Botão para gerar o PDF (Só aparece para o Administrador)
                     if(app.isAdmin) {
                         html += `
                             <div>
@@ -1277,222 +1277,223 @@
                         </div>
                     `;
                     container.innerHTML = html;
+                }
+            }, // <-- Fim do Objeto UI
+
+            // INÍCIO DO OBJETO ADMIN (CORREÇÃO DE ESCOPO)
+            admin: {
+                registerUser() {
+                    const n = document.getElementById('cad-nome').value.trim();
+                    const m = document.getElementById('cad-mat').value.trim();
+                    const p = document.getElementById('cad-pwd').value.trim();
+                    if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
+                    if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
+                    
+                    // Inicializa sem aceite e sem contagem de login
+                    app.users.push({ nome: n, matricula: m, senha: p, results: {}, loginCount: 0, aceiteTermos: null, aceiteDiretrizes: null });
+                    app.storage.saveUsers();
+                    document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
+                    app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
+                    app.ui.refreshCurrentView();
                 },
 
-                admin: {
-                    registerUser() {
-                        const n = document.getElementById('cad-nome').value.trim();
-                        const m = document.getElementById('cad-mat').value.trim();
-                        const p = document.getElementById('cad-pwd').value.trim();
-                        if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
-                        if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
-                        
-                        // Inicializa sem aceite e sem contagem de login
-                        app.users.push({ nome: n, matricula: m, senha: p, results: {}, loginCount: 0, aceiteTermos: null, aceiteDiretrizes: null });
-                        app.storage.saveUsers();
-                        document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
-                        app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
-                        app.ui.refreshCurrentView();
-                    },
+                loadUserEditor() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    window.selectedAdminEditUser = mat; // Memória para não perder a seleção no re-render
+                    const area = document.getElementById('adm-editor-area');
+                    if(!mat) { area.classList.add('hidden'); return; }
+                    
+                    const u = app.users.find(x => x.matricula === mat);
+                    if(!u) return;
+                    
+                    const res = (u.results && u.results[app.currentMonth]) || {};
+                    
+                    const termosBadge = u.aceiteTermos 
+                        ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ${new Date(u.aceiteTermos).toLocaleDateString()}</span>` 
+                        : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-clock"></i> Pendente</span>`;
+                    
+                    const diretrizesBadge = u.aceiteDiretrizes 
+                        ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ${new Date(u.aceiteDiretrizes).toLocaleDateString()}</span>` 
+                        : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-clock"></i> Pendente</span>`;
 
-                    loadUserEditor() {
-                        const mat = document.getElementById('adm-user-select').value;
-                        window.selectedAdminEditUser = mat; // Memória para não perder a seleção no re-render
-                        const area = document.getElementById('adm-editor-area');
-                        if(!mat) { area.classList.add('hidden'); return; }
-                        
-                        const u = app.users.find(x => x.matricula === mat);
-                        if(!u) return;
-                        
-                        const res = (u.results && u.results[app.currentMonth]) || {};
-                        
-                        const termosBadge = u.aceiteTermos 
-                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ${new Date(u.aceiteTermos).toLocaleDateString()}</span>` 
-                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-clock"></i> Pendente</span>`;
-                        
-                        const diretrizesBadge = u.aceiteDiretrizes 
-                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ${new Date(u.aceiteDiretrizes).toLocaleDateString()}</span>` 
-                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-clock"></i> Pendente</span>`;
-
-                        let html = `
-                            <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50 gap-4">
-                                <div>
-                                    <span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span>
-                                    <code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code>
+                    let html = `
+                        <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50 gap-4">
+                            <div>
+                                <span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span>
+                                <code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 w-full xl:w-auto">
+                                <div class="text-xs">
+                                    <span class="block text-[10px] text-slate-400 uppercase font-bold mb-1">Termos & LGPD (1º Login)</span>
+                                    ${termosBadge}
                                 </div>
-                                <div class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 w-full xl:w-auto">
-                                    <div class="text-xs">
-                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-1">Termos & LGPD (1º Login)</span>
-                                        ${termosBadge}
-                                    </div>
-                                    <div class="text-xs">
-                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-1">Diretrizes (2º Login)</span>
-                                        ${diretrizesBadge}
-                                    </div>
-                                </div>
-                                <div class="flex gap-2 w-full xl:w-auto mt-2 xl:mt-0">
-                                    <button onclick="app.admin.clearUser()" class="flex-1 px-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
-                                    <button onclick="app.admin.deleteUser()" class="px-4 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
+                                <div class="text-xs">
+                                    <span class="block text-[10px] text-slate-400 uppercase font-bold mb-1">Diretrizes (2º Login)</span>
+                                    ${diretrizesBadge}
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                        `;
+                            <div class="flex gap-2 w-full xl:w-auto mt-2 xl:mt-0">
+                                <button onclick="app.admin.clearUser()" class="flex-1 px-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
+                                <button onclick="app.admin.deleteUser()" class="px-4 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                    `;
 
-                        app.config.goals.forEach(g => {
-                            const val = res[g.id] || {};
-                            html += `<div class="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent transition-all">
-                                <label class="block text-xs font-extrabold text-slate-700 dark:text-slate-200 mb-4 truncate"><i class="fa-solid ${g.icon} text-green-600 mr-2"></i> ${g.title}</label>
+                    app.config.goals.forEach(g => {
+                        const val = res[g.id] || {};
+                        html += `<div class="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent transition-all">
+                            <label class="block text-xs font-extrabold text-slate-700 dark:text-slate-200 mb-4 truncate"><i class="fa-solid ${g.icon} text-green-600 mr-2"></i> ${g.title}</label>
+                        `;
+                        
+                        if(g.type === 'percent') {
+                            html += `
+                                <div class="flex gap-3">
+                                    <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
+                                    <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
+                                </div>
                             `;
-                            
-                            if(g.type === 'percent') {
-                                html += `
-                                    <div class="flex gap-3">
-                                        <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
-                                        <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
-                                    </div>
-                                `;
-                            } else if(g.type === 'calibracao') {
-                                html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
-                            } else if(g.type === 'actions') {
-                                html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
-                            } else {
-                                html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
-                                    <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
-                                    <option value="Sim" ${val.val==='Sim'?'selected':''}>Sim (Atingiu)</option>
-                                    <option value="Não" ${val.val==='Não'?'selected':''}>Não (Falhou)</option>
-                                </select></div>`;
-                            }
-                            html += `</div>`;
-                        });
-
-                        html += `
-                            </div>
-                            <div class="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-                                <button onclick="app.admin.saveUserResults()" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-gray-500/20 hover:shadow-gray-500/40 transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider">
-                                    <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
-                                </button>
-                            </div>
-                        `;
-                        area.innerHTML = html;
-                        area.classList.remove('hidden');
-                    },
-
-                    saveUserResults() {
-                        const mat = document.getElementById('adm-user-select').value;
-                        const u = app.users.find(x => x.matricula === mat);
-                        if(!u) return;
-
-                        const newRes = {};
-                        app.config.goals.forEach(g => {
-                            if(g.type === 'percent') {
-                                const m = document.getElementById(`ed-${g.id}-meta`).value;
-                                const r = document.getElementById(`ed-${g.id}-real`).value;
-                                if(m !== '' || r !== '') newRes[g.id] = { meta: m, real: r };
-                            } else {
-                                const v = document.getElementById(`ed-${g.id}-val`).value;
-                                if(v !== '') newRes[g.id] = { val: v };
-                            }
-                        });
-                        
-                        if(!u.results) u.results = {};
-                        u.results[app.currentMonth] = newRes;
-                        
-                        app.storage.saveUsers();
-                        app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
-                    },
-
-                    clearUser() { app.ui.showConfirm("Limpar Lançamentos", `Isso irá ZERAR as notas do colaborador apenas no mês de <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong>. Confirmar?`, "app.admin.executeClearUser()", true); },
-                    executeClearUser() {
-                        const u = app.users.find(x => x.matricula === document.getElementById('adm-user-select').value);
-                        if(u && u.results) { delete u.results[app.currentMonth]; app.storage.saveUsers(); this.loadUserEditor(); }
-                    },
-
-                    deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
-                    executeDeleteUser() {
-                        app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
-                        window.selectedAdminEditUser = null;
-                        app.storage.saveUsers();
-                        app.ui.refreshCurrentView();
-                    },
-
-                    updateConfigPreview() {
-                        let wTotal = 0;
-                        app.config.goals.forEach((g, i) => {
-                            const val = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
-                            wTotal += val;
-                            document.getElementById(`cfg-p-${i}`).textContent = `${(val*100).toFixed(0)}%`;
-                        });
-                        document.getElementById('cfg-total-w').textContent = wTotal.toFixed(2);
-                        document.getElementById('cfg-total-p').textContent = `${(wTotal*100).toFixed(0)}%`;
-                        if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-green-600', 'text-red-500');
-                        else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-green-600');
-                    },
-
-                    saveConfig() {
-                        app.config.baseValue = parseFloat(document.getElementById('cfg-base').value) || 400;
-                        app.config.goals.forEach((g, i) => {
-                            g.title = document.getElementById(`cfg-t-${i}`).value;
-                            g.weight = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
-                        });
-                        app.storage.saveConfig();
-                        app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
-                    },
-
-                    generateLegalPDF() {
-                        if (!window.jspdf || !window.jspdf.jsPDF) {
-                            return app.ui.showAlert("Aviso", "A biblioteca de geração de PDF está carregando, tente novamente em 3 segundos.", "error");
+                        } else if(g.type === 'calibracao') {
+                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
+                        } else if(g.type === 'actions') {
+                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
+                        } else {
+                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
+                                <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
+                                <option value="Sim" ${val.val==='Sim'?'selected':''}>Sim (Atingiu)</option>
+                                <option value="Não" ${val.val==='Não'?'selected':''}>Não (Falhou)</option>
+                            </select></div>`;
                         }
-                        
-                        const doc = new window.jspdf.jsPDF('landscape'); // Landscape para caber melhor os carimbos de tempo longos
-                        
-                        // Header
-                        doc.setFontSize(16);
-                        doc.setTextColor(30, 41, 59); // Slate 800
-                        doc.text("Softmarketing Solucoes em Comunicacao", 14, 15);
-                        
-                        doc.setFontSize(12);
-                        doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
-                        
-                        // Metadados
-                        doc.setFontSize(9);
-                        doc.setTextColor(100, 116, 139); // Slate 500
-                        doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-                        doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
-                        
-                        // Preparar Tabela
-                        const columns = ["Colaborador", "Matricula", "Status LGPD (Termos)", "Status Diretrizes (Metas)"];
-                        const rows = [];
-                        
-                        app.users.forEach(u => {
-                            const termos = u.aceiteTermos ? `Aceito em ${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                            const diretrizes = u.aceiteDiretrizes ? `Aceito em ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                            rows.push([u.nome, u.matricula, termos, diretrizes]);
-                        });
+                        html += `</div>`;
+                    });
 
-                        // Configurar Tabela usando autoTable
-                        doc.autoTable({
-                            head: [columns],
-                            body: rows,
-                            startY: 42,
-                            theme: 'grid',
-                            headStyles: { fillColor: [22, 163, 74] }, // Verde Softmarketing
-                            styles: { fontSize: 8, cellPadding: 3 },
-                            alternateRowStyles: { fillColor: [248, 250, 252] } // Slate 50
-                        });
-                        
-                        // Rodapé
-                        const pageCount = doc.internal.getNumberOfPages();
-                        for(let i = 1; i <= pageCount; i++) {
-                            doc.setPage(i);
-                            doc.setFontSize(7);
-                            doc.setTextColor(150);
-                            doc.text(`Página ${i} de ${pageCount} - Uso restrito e confidencial Softmarketing`, 14, doc.internal.pageSize.height - 10);
+                    html += `
+                        </div>
+                        <div class="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+                            <button onclick="app.admin.saveUserResults()" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-gray-500/20 hover:shadow-gray-500/40 transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider">
+                                <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
+                            </button>
+                        </div>
+                    `;
+                    area.innerHTML = html;
+                    area.classList.remove('hidden');
+                },
+
+                saveUserResults() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const u = app.users.find(x => x.matricula === mat);
+                    if(!u) return;
+
+                    const newRes = {};
+                    app.config.goals.forEach(g => {
+                        if(g.type === 'percent') {
+                            const m = document.getElementById(`ed-${g.id}-meta`).value;
+                            const r = document.getElementById(`ed-${g.id}-real`).value;
+                            if(m !== '' || r !== '') newRes[g.id] = { meta: m, real: r };
+                        } else {
+                            const v = document.getElementById(`ed-${g.id}-val`).value;
+                            if(v !== '') newRes[g.id] = { val: v };
                         }
-                        
-                        doc.save("Softmarketing_Relatorio_Aceites_LGPD.pdf");
+                    });
+                    
+                    if(!u.results) u.results = {};
+                    u.results[app.currentMonth] = newRes;
+                    
+                    app.storage.saveUsers();
+                    app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
+                },
+
+                clearUser() { app.ui.showConfirm("Limpar Lançamentos", `Isso irá ZERAR as notas do colaborador apenas no mês de <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong>. Confirmar?`, "app.admin.executeClearUser()", true); },
+                executeClearUser() {
+                    const u = app.users.find(x => x.matricula === document.getElementById('adm-user-select').value);
+                    if(u && u.results) { delete u.results[app.currentMonth]; app.storage.saveUsers(); this.loadUserEditor(); }
+                },
+
+                deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
+                executeDeleteUser() {
+                    app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
+                    window.selectedAdminEditUser = null;
+                    app.storage.saveUsers();
+                    app.ui.refreshCurrentView();
+                },
+
+                updateConfigPreview() {
+                    let wTotal = 0;
+                    app.config.goals.forEach((g, i) => {
+                        const val = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
+                        wTotal += val;
+                        document.getElementById(`cfg-p-${i}`).textContent = `${(val*100).toFixed(0)}%`;
+                    });
+                    document.getElementById('cfg-total-w').textContent = wTotal.toFixed(2);
+                    document.getElementById('cfg-total-p').textContent = `${(wTotal*100).toFixed(0)}%`;
+                    if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-green-600', 'text-red-500');
+                    else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-green-600');
+                },
+
+                saveConfig() {
+                    app.config.baseValue = parseFloat(document.getElementById('cfg-base').value) || 400;
+                    app.config.goals.forEach((g, i) => {
+                        g.title = document.getElementById(`cfg-t-${i}`).value;
+                        g.weight = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
+                    });
+                    app.storage.saveConfig();
+                    app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
+                },
+
+                generateLegalPDF() {
+                    if (!window.jspdf || !window.jspdf.jsPDF) {
+                        return app.ui.showAlert("Aviso", "A biblioteca de geração de PDF está carregando, tente novamente em 3 segundos.", "error");
                     }
+                    
+                    const doc = new window.jspdf.jsPDF('landscape'); 
+                    
+                    // Header
+                    doc.setFontSize(16);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text("Softmarketing Solucoes em Comunicacao", 14, 15);
+                    
+                    doc.setFontSize(12);
+                    doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
+                    
+                    // Metadados
+                    doc.setFontSize(9);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
+                    doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
+                    
+                    // Preparar Tabela
+                    const columns = ["Colaborador", "Matricula", "Status LGPD (Termos)", "Status Diretrizes (Metas)"];
+                    const rows = [];
+                    
+                    app.users.forEach(u => {
+                        const termos = u.aceiteTermos ? `Aceito em ${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const diretrizes = u.aceiteDiretrizes ? `Aceito em ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        rows.push([u.nome, u.matricula, termos, diretrizes]);
+                    });
+
+                    // Configurar Tabela usando autoTable
+                    doc.autoTable({
+                        head: [columns],
+                        body: rows,
+                        startY: 42,
+                        theme: 'grid',
+                        headStyles: { fillColor: [22, 163, 74] },
+                        styles: { fontSize: 8, cellPadding: 3 },
+                        alternateRowStyles: { fillColor: [248, 250, 252] }
+                    });
+                    
+                    // Rodapé
+                    const pageCount = doc.internal.getNumberOfPages();
+                    for(let i = 1; i <= pageCount; i++) {
+                        doc.setPage(i);
+                        doc.setFontSize(7);
+                        doc.setTextColor(150, 150, 150);
+                        doc.text(`Página ${i} de ${pageCount} - Uso restrito e confidencial Softmarketing`, 14, doc.internal.pageSize.height - 10);
+                    }
+                    
+                    doc.save("Softmarketing_Relatorio_Aceites_LGPD.pdf");
                 }
-            }
+            } // <-- Fim do Objeto Admin
         };
 
         window.onload = () => { app.ui.init(); };
