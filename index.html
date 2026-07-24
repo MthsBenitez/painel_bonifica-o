@@ -26,6 +26,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Bibliotecas PDF Jurídico -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -53,7 +57,7 @@
 <body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-blue-500 selection:text-white">
 
     <!-- Modal Global de Alertas -->
-    <div id="global-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
+    <div id="global-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all">
             <h3 id="modal-title" class="text-lg font-bold mb-3 text-slate-800 dark:text-white flex items-center gap-2"></h3>
             <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed"></div>
@@ -62,7 +66,7 @@
     </div>
 
     <!-- Modal de Troca de Senha -->
-    <div id="pwd-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
+    <div id="pwd-modal" class="fixed inset-0 z-[70] hidden flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
             <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center mr-3 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
             <input type="password" id="new-password-input" placeholder="Digite a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 mb-6 dark:text-white outline-none transition-all">
@@ -73,32 +77,53 @@
         </div>
     </div>
 
-    <!-- Modal 1: Termos de Uso (1º Login) -->
-    <div id="terms-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/80 backdrop-blur-md transition-opacity">
+    <!-- Modal 1: Termos de Uso (1º Login Obrigatório) -->
+    <div id="terms-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-shield-check"></i></div>
+            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-file-signature"></i></div>
             <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Termos de Uso e Sigilo</h3>
-            <div class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl h-48 overflow-y-auto border border-slate-100 dark:border-slate-700">
-                <p class="mb-3">Bem-vindo(a) ao Portal de Resultados da <strong>Softmarketing</strong>.</p>
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-4 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
+                <p class="mb-3 font-bold text-slate-800 dark:text-slate-100">Bem-vindo(a) ao Portal de Resultados da Softmarketing.</p>
                 <p class="mb-3">O acesso a esta plataforma é pessoal e intransferível. Os dados e métricas aqui apresentados são confidenciais e de propriedade exclusiva da empresa, destinados unicamente para o acompanhamento da sua evolução profissional e apuração de sua bonificação.</p>
-                <p class="mb-3 font-bold text-red-600 dark:text-red-400">Proteção de Dados e Restrição de Imagens (LGPD):</p>
-                <p>É terminantemente <strong>proibida</strong> a realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento das imagens, informações e dados contidos neste portal sem a prévia e formal autorização da diretoria. O descumprimento desta diretriz será considerado infração grave, sujeitando o responsável a medidas legais e disciplinares cabíveis, conforme a legislação vigente.</p>
+                <p class="mb-3 font-extrabold text-red-600 dark:text-red-400 border-l-4 border-red-500 pl-3">Proteção de Dados e Restrição Legal (LGPD):</p>
+                <p>É terminantemente <strong>proibida</strong> a realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento das imagens, informações, dados da operação e layout contidos neste portal sem a prévia e formal autorização da diretoria. O descumprimento desta diretriz será considerado infração grave, sujeitando o responsável a medidas legais e disciplinares cabíveis, conforme a legislação vigente.</p>
             </div>
-            <button onclick="app.auth.acceptTerms()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Li, compreendi e concordo com os Termos</button>
+            
+            <div class="flex items-start gap-3 p-3 mb-5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-blue-400 transition-colors" onclick="document.getElementById('chk-termos').click()">
+                <div class="pt-0.5">
+                    <input type="checkbox" id="chk-termos" onclick="event.stopPropagation()" onchange="const btn = document.getElementById('btn-termos'); btn.disabled = !this.checked; if(this.checked){btn.classList.remove('opacity-50','cursor-not-allowed')}else{btn.classList.add('opacity-50','cursor-not-allowed')}" class="w-5 h-5 accent-blue-600 cursor-pointer">
+                </div>
+                <label for="chk-termos" onclick="event.stopPropagation()" class="text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none leading-tight uppercase tracking-wider">
+                    Declaro formalmente que li, compreendi e concordo integralmente com as regras, termos de uso e políticas de sigilo de dados descritos.
+                </label>
+            </div>
+
+            <button id="btn-termos" disabled onclick="app.auth.acceptTerms()" class="w-full opacity-50 cursor-not-allowed bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider">Registrar Aceite Jurídico</button>
         </div>
     </div>
 
-    <!-- Modal 2: Diretrizes de Bonificação (2º Login) -->
-    <div id="guidelines-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/80 backdrop-blur-md transition-opacity">
+    <!-- Modal 2: Diretrizes de Bonificação (2º Login Obrigatório) -->
+    <div id="guidelines-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <div class="w-16 h-16 bg-green-50 dark:bg-green-900/20 text-green-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-green-100 dark:border-green-800"><i class="fa-solid fa-list-check"></i></div>
+            <div class="w-16 h-16 bg-green-50 dark:bg-green-900/20 text-green-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-4 border border-green-100 dark:border-green-800"><i class="fa-solid fa-clipboard-check"></i></div>
             <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Diretrizes de Bonificação</h3>
-            <div class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl h-48 overflow-y-auto border border-slate-100 dark:border-slate-700">
-                <p class="mb-3">Houve uma atualização na nossa política e critérios para o cálculo de bonificações para garantirmos ainda mais transparência e alinhamento estratégico.</p>
-                <p class="mb-3">Para garantir a sua recompensa por alta performance, é fundamental que o seu engajamento e a condução das monitorias, calibragens, ações presenciais e de alto impacto estejam intrinsecamente <strong>alinhados aos objetivos mensais da sua operação</strong>.</p>
-                <p>Ao prosseguir, você confirma que leu o <em>Manual de Metas e Critérios</em> (disponível na aba Regras) e compreende as métricas exigidas para o atingimento dos padrões de excelência necessários do atendimento.</p>
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-4 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
+                <p class="mb-3 font-bold text-slate-800 dark:text-slate-100">Atualização Estratégica</p>
+                <p class="mb-3">Para garantirmos ainda mais transparência e alinhamento, nossos critérios de cálculo de bonificação requerem foco contínuo.</p>
+                <p class="mb-3">Para assegurar sua recompensa por alta performance, é fundamental que o seu engajamento e a condução das monitorias, calibragens, ações presenciais e de alto impacto estejam intrinsecamente <strong>alinhados aos objetivos mensais da sua operação</strong>.</p>
+                <p>Ao prosseguir, você confirma que leu o <em>Manual de Metas e Critérios</em> (disponível na aba "Regras e Critérios") e compreende integralmente as métricas exigidas para o atingimento dos padrões de excelência necessários para o seu atendimento.</p>
             </div>
-            <button onclick="app.auth.acceptGuidelines()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Ciente e de acordo com as Diretrizes</button>
+
+            <div class="flex items-start gap-3 p-3 mb-5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-green-400 transition-colors" onclick="document.getElementById('chk-diretrizes').click()">
+                <div class="pt-0.5">
+                    <input type="checkbox" id="chk-diretrizes" onclick="event.stopPropagation()" onchange="const btn = document.getElementById('btn-diretrizes'); btn.disabled = !this.checked; if(this.checked){btn.classList.remove('opacity-50','cursor-not-allowed')}else{btn.classList.add('opacity-50','cursor-not-allowed')}" class="w-5 h-5 accent-green-600 cursor-pointer">
+                </div>
+                <label for="chk-diretrizes" onclick="event.stopPropagation()" class="text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none leading-tight uppercase tracking-wider">
+                    Confirmo ciência e acordo com os critérios de metas, regras operacionais e diretrizes para bonificação deste mês.
+                </label>
+            </div>
+
+            <button id="btn-diretrizes" disabled onclick="app.auth.acceptGuidelines()" class="w-full opacity-50 cursor-not-allowed bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider">Ciente e de Acordo</button>
         </div>
     </div>
 
@@ -110,9 +135,10 @@
         
         <div class="glass-card max-w-md w-full p-8 rounded-3xl shadow-xl text-center relative z-10">
             
-            <!-- Logo Softmarketing -->
-            <div class="w-full max-w-[200px] mx-auto mb-6 bg-white rounded-2xl p-3 shadow-sm border border-slate-100">
-                <img src="1709328472296.jpg (1).jpeg" alt="Softmarketing Logo" class="w-full h-auto object-contain rounded-xl">
+            <!-- Logo Softmarketing com fallback dinâmico -->
+            <div class="w-full max-w-[200px] mx-auto mb-6 bg-white dark:bg-slate-50 rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center justify-center h-28">
+                <img src="1709328472296.jpg (1).jpeg" alt="Softmarketing Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" class="w-full h-full object-contain">
+                <div class="hidden text-xl tracking-tighter font-black text-green-700">SOFT<span class="text-slate-800">MARKETING</span></div>
             </div>
 
             <h1 class="text-2xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
@@ -231,7 +257,6 @@
                             } else {
                                 app.users = [];
                             }
-                            // Auto-atualiza UI se logado e já tiver passado pelas validações
                             if(app.currentUser || app.isAdmin) {
                                 if(document.getElementById('view-app').classList.contains('hidden') === false) {
                                     app.ui.refreshCurrentView();
@@ -288,7 +313,7 @@
                     if(user) {
                         app.isAdmin = false; app.currentUser = user; app.currentTab = 'meu_painel';
                         
-                        // Incrementa o contador de logins para a lógica do 2º login
+                        // Sistema de rastreamento de acessos para regras
                         app.currentUser.loginCount = (app.currentUser.loginCount || 0) + 1;
                         app.storage.saveUsers();
 
@@ -298,20 +323,17 @@
                         app.ui.showAlert("Acesso Negado", "Matrícula ou senha incorretos. Verifique suas credenciais e tente novamente.", "error");
                     }
                 },
-                
+
                 processAcceptances() {
                     const u = app.currentUser;
                     if(!u) return;
 
-                    // Lógica rígida baseada no número de acessos
+                    // Lógica rigorosa de modais bloqueantes
                     if (!u.aceiteTermos) {
-                        // Sempre obriga Termos primeiro se não tiver
                         document.getElementById('terms-modal').classList.remove('hidden');
                     } else if (!u.aceiteDiretrizes && u.loginCount >= 2) {
-                        // Se já tem Termos, mas NÃO tem Diretrizes, E é do segundo login em diante
                         document.getElementById('guidelines-modal').classList.remove('hidden');
                     } else {
-                        // Libera painel
                         app.ui.showApp();
                     }
                 },
@@ -320,14 +342,14 @@
                     app.currentUser.aceiteTermos = new Date().toISOString();
                     app.storage.saveUsers();
                     document.getElementById('terms-modal').classList.add('hidden');
-                    this.processAcceptances();
+                    this.processAcceptances(); // Verifica se precisa do próximo
                 },
 
                 acceptGuidelines() {
                     app.currentUser.aceiteDiretrizes = new Date().toISOString();
                     app.storage.saveUsers();
                     document.getElementById('guidelines-modal').classList.add('hidden');
-                    this.processAcceptances();
+                    this.processAcceptances(); // Vai liberar o app
                 },
 
                 logout() {
@@ -336,6 +358,11 @@
                     document.getElementById('view-app').classList.add('hidden');
                     document.getElementById('terms-modal').classList.add('hidden');
                     document.getElementById('guidelines-modal').classList.add('hidden');
+                    
+                    // Reset Checkboxes visuais
+                    document.getElementById('chk-termos').checked = false;
+                    document.getElementById('chk-diretrizes').checked = false;
+                    
                     document.getElementById('view-login').classList.remove('hidden');
                 },
 
@@ -796,7 +823,9 @@
                                     <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 font-semibold dark:text-white outline-none focus:ring-2 focus:ring-green-500">
                                         <option value="">Selecione um colaborador para lançar notas...</option>
                                     `;
-                                    app.users.forEach(u => { html += `<option value="${u.matricula}">${u.nome} (${u.matricula})</option>`; });
+                                    app.users.forEach(u => { 
+                                        html += `<option value="${u.matricula}" ${window.selectedAdminEditUser === u.matricula ? 'selected' : ''}>${u.nome} (${u.matricula})</option>`; 
+                                    });
                                     html += `</select>
                                 </div>
                                 <div id="adm-editor-area" class="hidden space-y-6 animate-fade-in">
@@ -806,6 +835,11 @@
                         </div>
                     `;
                     container.innerHTML = html;
+                    
+                    // Recuperar aba editora de dados se havia alguém selecionado antes do firebase atualizar
+                    if(window.selectedAdminEditUser) {
+                        app.admin.loadUserEditor();
+                    }
                 },
 
                 renderView_Config(container) {
@@ -1179,10 +1213,26 @@
 
                 renderView_Legal(container) {
                     let html = `
-                        <div class="mb-10 text-center max-w-2xl mx-auto">
-                            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-shield-halved"></i></div>
-                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Privacidade e Conformidade LGPD</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm">Transparência e segurança no tratamento dos seus dados na Softmarketing.</p>
+                        <div class="mb-10 flex flex-col md:flex-row justify-between items-center max-w-4xl mx-auto gap-4">
+                            <div class="text-left flex-1">
+                                <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-shield-halved"></i></div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Privacidade e Conformidade LGPD</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm">Transparência e segurança no tratamento dos seus dados na Softmarketing.</p>
+                            </div>
+                    `;
+                    
+                    // Botão para gerar o PDF (Só aparece para o Administrador)
+                    if(app.isAdmin) {
+                        html += `
+                            <div>
+                                <button onclick="app.admin.generateLegalPDF()" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all flex items-center gap-2 text-sm uppercase tracking-widest">
+                                    <i class="fa-solid fa-file-pdf"></i> Baixar Relatório Jurídico
+                                </button>
+                            </div>
+                        `;
+                    }
+                    
+                    html += `
                         </div>
                         
                         <div class="space-y-8 max-w-4xl mx-auto">
@@ -1202,7 +1252,7 @@
                                 <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-file-contract text-blue-500"></i> Termos de Uso e Restrições (Aviso Legal)</h3>
                                 <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed space-y-4">
                                     <p><strong>1. Finalidade Exclusiva:</strong> Este portal destina-se única e exclusivamente ao acompanhamento de indicadores de performance corporativa e cálculo de bonificações correspondentes. Nenhuma informação aqui contida será utilizada para fins publicitários ou compartilhada com terceiros alheios à sua avaliação de desempenho.</p>
-                                    <p><strong>2. Sigilo de Informações e Imagens:</strong> O registro através de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de compartilhamento das imagens e informações contidas neste portal sem a prévia e formal autorização da diretoria é terminantemente proibido. Tais atos serão considerados infração grave, sujeitando o responsável às medidas disciplinares e legais cabíveis pela exposição de dados da operação.</p>
+                                    <p><strong>2. Sigilo de Informações e Imagens:</strong> O registro através de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de compartilhamento das imagens, layout e informações contidas neste portal sem a prévia e formal autorização da diretoria é terminantemente proibido. Tais atos serão considerados infração grave, sujeitando o responsável às medidas disciplinares e legais cabíveis pela exposição de dados da operação.</p>
                                     <p><strong>3. Credenciais e Retenção:</strong> Sua matrícula e senha são de uso pessoal. A segurança começa pela não partilha da sua senha com colegas. Os lançamentos de notas são mantidos apenas pelo tempo necessário para garantir o pagamento correto da sua bonificação.</p>
                                 </div>
                             </div>
@@ -1247,39 +1297,42 @@
 
                     loadUserEditor() {
                         const mat = document.getElementById('adm-user-select').value;
+                        window.selectedAdminEditUser = mat; // Memória para não perder a seleção no re-render
                         const area = document.getElementById('adm-editor-area');
                         if(!mat) { area.classList.add('hidden'); return; }
                         
                         const u = app.users.find(x => x.matricula === mat);
+                        if(!u) return;
+                        
                         const res = (u.results && u.results[app.currentMonth]) || {};
                         
                         const termosBadge = u.aceiteTermos 
-                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded"><i class="fa-solid fa-check"></i> Aceito em ${new Date(u.aceiteTermos).toLocaleDateString()}</span>` 
-                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded"><i class="fa-solid fa-clock"></i> Pendente</span>`;
+                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ${new Date(u.aceiteTermos).toLocaleDateString()}</span>` 
+                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-clock"></i> Pendente</span>`;
                         
                         const diretrizesBadge = u.aceiteDiretrizes 
-                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded"><i class="fa-solid fa-check"></i> Aceito em ${new Date(u.aceiteDiretrizes).toLocaleDateString()}</span>` 
-                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded"><i class="fa-solid fa-clock"></i> Pendente</span>`;
+                            ? `<span class="text-green-600 font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-check"></i> ${new Date(u.aceiteDiretrizes).toLocaleDateString()}</span>` 
+                            : `<span class="text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded inline-flex items-center gap-1"><i class="fa-solid fa-clock"></i> Pendente</span>`;
 
                         let html = `
-                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50 gap-4">
+                            <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50 gap-4">
                                 <div>
                                     <span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span>
-                                    <code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code>
+                                    <code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code>
                                 </div>
-                                <div class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 w-full md:w-auto">
+                                <div class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 w-full xl:w-auto">
                                     <div class="text-xs">
-                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Termos de Uso</span>
+                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-1">Termos & LGPD (1º Login)</span>
                                         ${termosBadge}
                                     </div>
                                     <div class="text-xs">
-                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Diretrizes (2º Login)</span>
+                                        <span class="block text-[10px] text-slate-400 uppercase font-bold mb-1">Diretrizes (2º Login)</span>
                                         ${diretrizesBadge}
                                     </div>
                                 </div>
-                                <div class="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
-                                    <button onclick="app.admin.clearUser()" class="flex-1 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
-                                    <button onclick="app.admin.deleteUser()" class="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
+                                <div class="flex gap-2 w-full xl:w-auto mt-2 xl:mt-0">
+                                    <button onclick="app.admin.clearUser()" class="flex-1 px-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-xl text-xs font-bold transition shadow-sm text-slate-600 dark:text-slate-300" title="Apagar dados deste mês">Zerar Mês</button>
+                                    <button onclick="app.admin.deleteUser()" class="px-4 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl text-xs font-bold transition shadow-sm border border-red-100 dark:border-red-900/50" title="Excluir Colaborador"><i class="fa-solid fa-trash"></i></button>
                                 </div>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -1357,6 +1410,7 @@
                     deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
                     executeDeleteUser() {
                         app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
+                        window.selectedAdminEditUser = null;
                         app.storage.saveUsers();
                         app.ui.refreshCurrentView();
                     },
@@ -1382,6 +1436,60 @@
                         });
                         app.storage.saveConfig();
                         app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
+                    },
+
+                    generateLegalPDF() {
+                        if (!window.jspdf || !window.jspdf.jsPDF) {
+                            return app.ui.showAlert("Aviso", "A biblioteca de geração de PDF está carregando, tente novamente em 3 segundos.", "error");
+                        }
+                        
+                        const doc = new window.jspdf.jsPDF('landscape'); // Landscape para caber melhor os carimbos de tempo longos
+                        
+                        // Header
+                        doc.setFontSize(16);
+                        doc.setTextColor(30, 41, 59); // Slate 800
+                        doc.text("Softmarketing Solucoes em Comunicacao", 14, 15);
+                        
+                        doc.setFontSize(12);
+                        doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
+                        
+                        // Metadados
+                        doc.setFontSize(9);
+                        doc.setTextColor(100, 116, 139); // Slate 500
+                        doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
+                        doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
+                        
+                        // Preparar Tabela
+                        const columns = ["Colaborador", "Matricula", "Status LGPD (Termos)", "Status Diretrizes (Metas)"];
+                        const rows = [];
+                        
+                        app.users.forEach(u => {
+                            const termos = u.aceiteTermos ? `Aceito em ${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                            const diretrizes = u.aceiteDiretrizes ? `Aceito em ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                            rows.push([u.nome, u.matricula, termos, diretrizes]);
+                        });
+
+                        // Configurar Tabela usando autoTable
+                        doc.autoTable({
+                            head: [columns],
+                            body: rows,
+                            startY: 42,
+                            theme: 'grid',
+                            headStyles: { fillColor: [22, 163, 74] }, // Verde Softmarketing
+                            styles: { fontSize: 8, cellPadding: 3 },
+                            alternateRowStyles: { fillColor: [248, 250, 252] } // Slate 50
+                        });
+                        
+                        // Rodapé
+                        const pageCount = doc.internal.getNumberOfPages();
+                        for(let i = 1; i <= pageCount; i++) {
+                            doc.setPage(i);
+                            doc.setFontSize(7);
+                            doc.setTextColor(150);
+                            doc.text(`Página ${i} de ${pageCount} - Uso restrito e confidencial Softmarketing`, 14, doc.internal.pageSize.height - 10);
+                        }
+                        
+                        doc.save("Softmarketing_Relatorio_Aceites_LGPD.pdf");
                     }
                 }
             }
