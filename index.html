@@ -45,7 +45,6 @@
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
         
-        /* Ocultar ícone de calendário no input month no tema dark para melhor UI */
         input[type="month"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
         .dark input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(1); }
         input[type="month"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
@@ -189,12 +188,10 @@
                         if (data) {
                             if (data.config) app.config = data.config;
                             if (data.users) {
-                                // Script de migração sutil: caso haja usuários com dados antigos fora da estrutura de meses
                                 app.users = data.users.map(u => {
                                     if(u.results && (u.results.g1 || u.results.g2)) {
-                                        // Movendo dados antigos pra estrutura de meses genérica pra não quebrar
                                         const oldData = {...u.results};
-                                        u.results = { "2026-06": oldData }; // Exemplo de refatoração passiva
+                                        u.results = { "2026-06": oldData };
                                     }
                                     if(!u.results) u.results = {};
                                     return u;
@@ -215,7 +212,7 @@
 
             // Estado Global
             users: [],
-            currentMonth: '', // Definido na inicialização
+            currentMonth: '', 
             config: {
                 baseValue: 400,
                 goals: [
@@ -233,7 +230,6 @@
             isAdmin: false,
             currentTab: 'meu_painel',
 
-            // Mudar Mês Global
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
                 this.currentMonth = newMonthStr;
@@ -337,7 +333,6 @@
                 init() {
                     this.checkTheme();
                     
-                    // Setar mês atual por padrão (Ex: "2026-07")
                     const today = new Date();
                     const mm = String(today.getMonth() + 1).padStart(2, '0');
                     const yyyy = today.getFullYear();
@@ -407,7 +402,7 @@
                     const nav = document.getElementById('main-nav');
                     let html = '';
                     const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'} ]
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'} ]
                         : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'} ];
                     
                     tabs.forEach(t => {
@@ -442,6 +437,7 @@
                     else if(tabId === 'configuracoes') this.renderView_Config(container);
                     else if(tabId === 'calculadora') this.renderView_Calculadora(container);
                     else if(tabId === 'regras') this.renderView_Regras(container);
+                    else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(container);
                 },
 
                 renderView_MeuPainel(container) {
@@ -473,7 +469,6 @@
                         return;
                     }
 
-                    // Pega resultados ESPECÍFICOS do mês selecionado
                     const resultsForMonth = (targetUser.results && targetUser.results[app.currentMonth]) || {};
                     const total = app.calc.getTotal(resultsForMonth);
                     const isEmpty = Object.keys(resultsForMonth).length === 0;
@@ -543,7 +538,7 @@
                                     <div class="text-sm font-black ${multColor}">${(r.mult * 100).toFixed(0)}% <span class="text-slate-300 dark:text-slate-600 text-xs font-normal">ating.</span></div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Bônus Calculado</div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Bonificação Calculada</div>
                                     <div class="text-lg font-black text-slate-800 dark:text-slate-100">R$ ${r.received.toFixed(2)}</div>
                                 </div>
                             </div>
@@ -551,7 +546,6 @@
                     });
                     html += `</div>`;
 
-                    // Footer Result
                     const finalPct = (total.pct * 100).toFixed(1);
                     html += `
                         <div class="bg-gradient-to-r from-blue-900 to-slate-900 rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden">
@@ -565,7 +559,7 @@
                                 </div>
                             </div>
                             <div class="mt-6 md:mt-0 text-right bg-white/10 backdrop-blur-md px-8 py-5 rounded-2xl border border-white/20 z-10 relative w-full md:w-auto">
-                                <div class="text-xs font-bold text-green-300 uppercase tracking-widest mb-1">Bônus Conquistado</div>
+                                <div class="text-xs font-bold text-green-300 uppercase tracking-widest mb-1">Bonificação Conquistada</div>
                                 <div class="text-4xl font-black text-green-400 drop-shadow-md">R$ ${total.received.toFixed(2)}</div>
                             </div>
                         </div>
@@ -843,7 +837,7 @@
                             <div class="lg:w-1/3">
                                 <div class="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 shadow-xl sticky top-24 text-center border border-slate-700">
                                     <div class="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center text-white text-2xl mx-auto mb-6"><i class="fa-solid fa-scale-balanced"></i></div>
-                                    <div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Simulação de Bônus Final</div>
+                                    <div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Simulação da Bonificação Final</div>
                                     <div id="sim-total-res" class="text-4xl lg:text-5xl font-black text-green-400 mb-6 drop-shadow-md">R$ 0,00</div>
                                     <div class="h-px w-full bg-slate-700 mb-6"></div>
                                     <p class="text-xs text-slate-400 leading-relaxed">Ajuste os valores nos quadros ao lado para entender como cada meta afeta sua remuneração.</p>
@@ -871,6 +865,114 @@
                     document.getElementById('sim-total-res').textContent = `R$ ${total.toFixed(2)}`;
                 },
 
+                renderView_CalcMonitorias(container) {
+                    if(!app.isAdmin) return;
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dimensionamento de Monitorias</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Ferramenta completa para estimar a capacidade produtiva diária e mensal da sua equipe de qualidade.</p>
+                        </div>
+                        
+                        <div class="flex flex-col lg:flex-row gap-8">
+                            <!-- Painel de Inputs -->
+                            <div class="lg:w-1/2 space-y-6">
+                                <div class="glass-card p-6 rounded-3xl">
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-regular fa-clock text-blue-500"></i> Tempos de Jornada</h3>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Turno (Horas)</label>
+                                            <input type="number" id="dim-horas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="8" step="0.5" min="1">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Pausas (Minutos)</label>
+                                            <input type="number" id="dim-pausas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="60" min="0">
+                                        </div>
+                                        <div class="col-span-2">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Outras Tarefas / Reuniões (Minutos/Dia)</label>
+                                            <input type="number" id="dim-outras" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="30" min="0">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="glass-card p-6 rounded-3xl">
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-headphones text-blue-500"></i> Tempos de Operação (TMO/TMF)</h3>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Escuta/Nota (Min)</label>
+                                            <input type="number" id="dim-tmo" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-300 font-bold outline-none transition-all" value="15" min="1">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback (Min)</label>
+                                            <input type="number" id="dim-tmf" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-300 font-bold outline-none transition-all" value="5" min="0">
+                                        </div>
+                                        <div class="col-span-2">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Dias Úteis no Mês</label>
+                                            <input type="number" id="dim-dias" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="22" min="1">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Resultados -->
+                            <div class="lg:w-1/2">
+                                <div class="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl p-8 shadow-xl sticky top-24 text-white">
+                                    <h3 class="font-extrabold text-xl mb-8 flex items-center gap-3"><i class="fa-solid fa-chart-line"></i> Capacidade Projetada (Por Monitor)</h3>
+                                    
+                                    <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 mb-6">
+                                        <div class="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1">Tempo Produtivo Líquido (Diário)</div>
+                                        <div id="dim-res-produtivo" class="text-3xl font-black">0h 0m</div>
+                                        <p class="text-xs text-blue-200/70 mt-1">Horas dedicadas exclusivamente às avaliações e retornos.</p>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 text-center">
+                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2">Meta Diária</div>
+                                            <div id="dim-res-dia" class="text-5xl font-black text-green-300 drop-shadow">0</div>
+                                            <div class="text-xs text-blue-200 mt-2">Monitorias / Dia</div>
+                                        </div>
+                                        <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 text-center">
+                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2">Meta Mensal</div>
+                                            <div id="dim-res-mes" class="text-5xl font-black text-amber-300 drop-shadow">0</div>
+                                            <div class="text-xs text-blue-200 mt-2">Monitorias / Mês</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                    app.ui.calcDimensionamento();
+                },
+
+                calcDimensionamento() {
+                    const horas = parseFloat(document.getElementById('dim-horas').value) || 0;
+                    const pausas = parseFloat(document.getElementById('dim-pausas').value) || 0;
+                    const outras = parseFloat(document.getElementById('dim-outras').value) || 0;
+                    const tmo = parseFloat(document.getElementById('dim-tmo').value) || 0;
+                    const tmf = parseFloat(document.getElementById('dim-tmf').value) || 0;
+                    const dias = parseFloat(document.getElementById('dim-dias').value) || 0;
+
+                    const totalMins = Math.floor(horas * 60);
+                    const produtivo = totalMins - pausas - outras;
+                    const tempoPorAvaliacao = tmo + tmf;
+
+                    let metaDia = 0;
+                    let metaMes = 0;
+
+                    if (produtivo > 0 && tempoPorAvaliacao > 0) {
+                        metaDia = Math.floor(produtivo / tempoPorAvaliacao);
+                        metaMes = metaDia * dias;
+                    }
+
+                    const safeProdutivo = Math.max(0, produtivo);
+                    const hrsProd = Math.floor(safeProdutivo / 60);
+                    const minsProd = safeProdutivo % 60;
+
+                    document.getElementById('dim-res-produtivo').textContent = `${hrsProd}h ${minsProd}m`;
+                    document.getElementById('dim-res-dia').textContent = metaDia;
+                    document.getElementById('dim-res-mes').textContent = metaMes;
+                },
+
                 renderView_Regras(container) {
                     let html = `
                         <div class="mb-10">
@@ -894,13 +996,13 @@
                                 <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <table class="w-full text-sm text-left text-slate-600 dark:text-slate-300 border-collapse">
                                         <thead class="bg-slate-50 dark:bg-slate-800/80 font-bold uppercase text-[11px] tracking-widest text-slate-500">
-                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Bônus Adquirido</th></tr>
+                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Bonificação Adquirida</th></tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da fatia</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">95.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da fatia</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">90.0% a 94.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da fatia</td></tr>
-                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q4 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 90.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% (Zerado)</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da bonificação</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">95.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da bonificação</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">90.0% a 94.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da bonificação</td></tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q4 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 90.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% da bonificação</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -912,21 +1014,21 @@
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-scale-balanced"></i></div> Calibragens</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garantem o alinhamento de visão sobre o serviço. Quantas sessões de calibração você participou?</p>
                                     <ul class="space-y-3 text-sm">
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% de Bônus</strong></li>
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% de Bônus</strong></li>
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% (Zerado)</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% da bonificação</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% da bonificação</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% da bonificação</strong></li>
                                     </ul>
                                 </div>
                                 
                                 <!-- Ações Presenciais -->
                                 <div class="glass-card p-8 rounded-3xl">
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-people-group"></i></div> Ações Presenciais</h3>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a vivência no ambiente corporativo e o engajamento com as dinâmicas de escritório.</p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos, o fortalecimento da cultura interna e o engajamento. Estar presente e envolver-se nessas ações amplia seu desenvolvimento profissional e colabora diretamente para um clima organizacional de excelência.</p>
                                     <ul class="space-y-2.5 text-sm">
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100%</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75%</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50%</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0%</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100% da bonificação</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75% da bonificação</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50% da bonificação</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0% da bonificação</strong></li>
                                     </ul>
                                 </div>
                             </div>
@@ -934,19 +1036,19 @@
                             <!-- Indicadores Condicionantes -->
                             <div class="glass-card p-8 rounded-3xl">
                                 <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários)</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Se a regra for cumprida (Sim), recebe-se o valor integral (100%). Se houver desvio (Não), perde-se todo o valor daquela meta (0%).</p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Se a regra for cumprida (Sim), recebe-se o valor integral daquele peso (100%). Se houver desvio (Não), perde-se o valor atrelado à meta (0%).</p>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Frequência</div>
-                                        <div class="text-xs text-slate-500">Premia o absenteísmo zero. Faltar impacta negativamente o time.</div>
+                                        <div class="text-xs text-slate-500">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
-                                        <div class="text-xs text-slate-500">Reflete percepção comportamental, postura e colaboração diária.</div>
+                                        <div class="text-xs text-slate-500">Reflete percepção comportamental, postura profissional e alinhamento diário.</div>
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação Colaborativa</div>
-                                        <div class="text-xs text-slate-500">Reconhece o apoio extra e proatividade para com os colegas.</div>
+                                        <div class="text-xs text-slate-500">Reconhece o apoio extra e a proatividade direcionada ao fortalecimento da equipe.</div>
                                     </div>
                                 </div>
                             </div>
