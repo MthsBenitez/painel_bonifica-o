@@ -222,7 +222,7 @@
                     { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-people-group' },
                     { id: 'g5', title: "Frequência", weight: 0.10, type: 'boolean', icon: 'fa-calendar-check' },
                     { id: 'g6', title: "Avaliação Gestor", weight: 0.10, type: 'boolean', icon: 'fa-thumbs-up' },
-                    { id: 'g7', title: "Ação Colaborativa", weight: 0.10, type: 'boolean', icon: 'fa-lightbulb' }
+                    { id: 'g7', title: "Ação de Alto Impacto", weight: 0.10, type: 'boolean', icon: 'fa-lightbulb' }
                 ]
             },
             
@@ -875,16 +875,16 @@
                         
                         <div class="flex flex-col lg:flex-row gap-8">
                             <!-- Painel de Inputs -->
-                            <div class="lg:w-1/2 space-y-6">
+                            <div class="lg:w-7/12 space-y-6">
                                 <div class="glass-card p-6 rounded-3xl">
-                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-regular fa-clock text-blue-500"></i> Tempos de Jornada</h3>
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-regular fa-clock text-blue-500"></i> Tempos de Jornada (Minutos)</h3>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Turno (Horas)</label>
-                                            <input type="number" id="dim-horas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="8" step="0.5" min="1">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Turno Completo</label>
+                                            <input type="number" id="dim-horas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="480" min="1">
                                         </div>
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Pausas (Minutos)</label>
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Pausas Oficiais</label>
                                             <input type="number" id="dim-pausas" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="60" min="0">
                                         </div>
                                         <div class="col-span-2">
@@ -895,7 +895,7 @@
                                 </div>
                                 
                                 <div class="glass-card p-6 rounded-3xl">
-                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-headphones text-blue-500"></i> Tempos de Operação (TMO/TMF)</h3>
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-headphones text-blue-500"></i> Tempos de Operação</h3>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Escuta/Nota (Min)</label>
@@ -905,8 +905,12 @@
                                             <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback (Min)</label>
                                             <input type="number" id="dim-tmf" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-300 font-bold outline-none transition-all" value="5" min="0">
                                         </div>
-                                        <div class="col-span-2">
-                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Dias Úteis no Mês</label>
+                                        <div class="col-span-1">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5" title="Porcentagem de monitorias que exigirão o feedback. Ex: 50%">Vol. de Feedbacks (%)</label>
+                                            <input type="number" id="dim-taxafb" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="100" min="0" max="100">
+                                        </div>
+                                        <div class="col-span-1">
+                                            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Dias Úteis/Mês</label>
                                             <input type="number" id="dim-dias" oninput="app.ui.calcDimensionamento()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all" value="22" min="1">
                                         </div>
                                     </div>
@@ -914,14 +918,19 @@
                             </div>
 
                             <!-- Resultados -->
-                            <div class="lg:w-1/2">
-                                <div class="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl p-8 shadow-xl sticky top-24 text-white">
-                                    <h3 class="font-extrabold text-xl mb-8 flex items-center gap-3"><i class="fa-solid fa-chart-line"></i> Capacidade Projetada (Por Monitor)</h3>
+                            <div class="lg:w-5/12 flex flex-col gap-6">
+                                <div class="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl p-8 shadow-xl text-white">
+                                    <h3 class="font-extrabold text-xl mb-8 flex items-center gap-3"><i class="fa-solid fa-chart-line"></i> Capacidade Projetada</h3>
                                     
-                                    <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 mb-6">
-                                        <div class="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1">Tempo Produtivo Líquido (Diário)</div>
-                                        <div id="dim-res-produtivo" class="text-3xl font-black">0h 0m</div>
-                                        <p class="text-xs text-blue-200/70 mt-1">Horas dedicadas exclusivamente às avaliações e retornos.</p>
+                                    <div class="grid grid-cols-2 gap-4 mb-4">
+                                        <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/20">
+                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-1">Produtivo Líquido</div>
+                                            <div id="dim-res-produtivo" class="text-2xl font-black">0h 0m</div>
+                                        </div>
+                                        <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/20">
+                                            <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-1">Tempo Livre / Dia</div>
+                                            <div id="dim-res-livre" class="text-2xl font-black text-amber-200">0m</div>
+                                        </div>
                                     </div>
                                     
                                     <div class="grid grid-cols-2 gap-4">
@@ -932,10 +941,18 @@
                                         </div>
                                         <div class="bg-white/10 rounded-2xl p-5 backdrop-blur-sm border border-white/20 text-center">
                                             <div class="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2">Meta Mensal</div>
-                                            <div id="dim-res-mes" class="text-5xl font-black text-amber-300 drop-shadow">0</div>
+                                            <div id="dim-res-mes" class="text-5xl font-black text-white drop-shadow">0</div>
                                             <div class="text-xs text-blue-200 mt-2">Monitorias / Mês</div>
                                         </div>
                                     </div>
+                                </div>
+
+                                <!-- Explicação Matemática -->
+                                <div class="bg-blue-50 dark:bg-slate-800/80 border border-blue-100 dark:border-slate-700 rounded-3xl p-6 text-sm text-slate-600 dark:text-slate-400 leading-relaxed shadow-sm">
+                                    <h4 class="font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2"><i class="fa-solid fa-calculator text-blue-500"></i> Como este cálculo é feito?</h4>
+                                    <p class="mb-2"><strong>1. Tempo Produtivo:</strong> Subtraímos as pausas e outras tarefas do tempo total do turno em minutos.</p>
+                                    <p class="mb-2"><strong>2. Esforço por Monitoria:</strong> Somamos o tempo de escuta/nota com o tempo de feedback. O feedback é multiplicado pelo <strong>Volume (%)</strong> para diluir o tempo apenas para as avaliações que o exigirão.</p>
+                                    <p><strong>3. Meta e Tempo Livre:</strong> Dividimos o <em>Tempo Produtivo</em> pelo <em>Esforço por Monitoria</em>, garantindo que o colaborador entregue números inteiros. O que não forma uma monitoria completa vira o <em>Tempo Livre (Residual)</em>.</p>
                                 </div>
                             </div>
                         </div>
@@ -945,32 +962,38 @@
                 },
 
                 calcDimensionamento() {
-                    const horas = parseFloat(document.getElementById('dim-horas').value) || 0;
+                    const turnoMinutos = parseFloat(document.getElementById('dim-horas').value) || 0;
                     const pausas = parseFloat(document.getElementById('dim-pausas').value) || 0;
                     const outras = parseFloat(document.getElementById('dim-outras').value) || 0;
                     const tmo = parseFloat(document.getElementById('dim-tmo').value) || 0;
                     const tmf = parseFloat(document.getElementById('dim-tmf').value) || 0;
+                    const taxaFb = parseFloat(document.getElementById('dim-taxafb').value) || 0;
                     const dias = parseFloat(document.getElementById('dim-dias').value) || 0;
 
-                    const totalMins = Math.floor(horas * 60);
-                    const produtivo = totalMins - pausas - outras;
-                    const tempoPorAvaliacao = tmo + tmf;
+                    const produtivo = turnoMinutos - pausas - outras;
+                    const proporcaoFeedback = taxaFb / 100;
+                    const tempoPorAvaliacao = tmo + (tmf * proporcaoFeedback);
 
                     let metaDia = 0;
                     let metaMes = 0;
+                    let tempoLivre = 0;
 
                     if (produtivo > 0 && tempoPorAvaliacao > 0) {
                         metaDia = Math.floor(produtivo / tempoPorAvaliacao);
                         metaMes = metaDia * dias;
+                        tempoLivre = produtivo - (metaDia * tempoPorAvaliacao);
                     }
 
                     const safeProdutivo = Math.max(0, produtivo);
                     const hrsProd = Math.floor(safeProdutivo / 60);
-                    const minsProd = safeProdutivo % 60;
+                    const minsProd = Math.floor(safeProdutivo % 60);
+                    
+                    const safeLivre = Math.max(0, Math.floor(tempoLivre));
 
                     document.getElementById('dim-res-produtivo').textContent = `${hrsProd}h ${minsProd}m`;
                     document.getElementById('dim-res-dia').textContent = metaDia;
                     document.getElementById('dim-res-mes').textContent = metaMes;
+                    document.getElementById('dim-res-livre').textContent = `${safeLivre}m`;
                 },
 
                 renderView_Regras(container) {
@@ -1047,8 +1070,8 @@
                                         <div class="text-xs text-slate-500">Reflete percepção comportamental, postura profissional e alinhamento diário.</div>
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
-                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação Colaborativa</div>
-                                        <div class="text-xs text-slate-500">Reconhece o apoio extra e a proatividade direcionada ao fortalecimento da equipe.</div>
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação de Alto Impacto</div>
+                                        <div class="text-xs text-slate-500">Reconhece o apoio extra e a proatividade direcionada ao fortalecimento da equipe e da operação como um todo.</div>
                                     </div>
                                 </div>
                             </div>
