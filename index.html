@@ -1632,16 +1632,8 @@
                     document.getElementById('dim-res-livre').textContent = this.minutesToTimeStr(tempoLivre);
                 },
 
-                                renderView_Regras(container) {
+                renderView_Regras(container) {
                     const totalBase = app.config.baseValue || 400;
-                    const getVal = (id) => totalBase * (app.config.goals.find(g => g.id === id)?.weight || 0);
-                    const valG1 = getVal('g1');
-                    const valG3 = getVal('g3');
-                    const valG4 = getVal('g4');
-                    const valG5 = getVal('g5');
-                    const valG6 = getVal('g6');
-                    const valG7 = getVal('g7');
-                    const fmt = (v) => 'R$ ' + v.toFixed(2).replace('.',',');
                     
                     let html = `
                         <div class="mb-10">
@@ -1653,7 +1645,7 @@
                             <!-- Deflatores -->
                             <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-3xl p-8 relative overflow-hidden">
                                 <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-triangle-exclamation text-red-500"></i></div>
-                                <h3 class="font-extrabold text-xl mb-3 text-red-800 dark:text-red-400 relative z-10">Deflatores (Zeramento da Bonificação Total)</h3>
+                                <h3 class="font-extrabold text-xl mb-3 text-red-800 dark:text-red-400 relative z-10">Deflatores (Zeramento de Fatias)</h3>
                                 <p class="text-red-700/90 dark:text-red-300/80 text-sm leading-relaxed relative z-10">
                                     A bonificação é um reconhecimento de excelência e compromisso. Sendo assim, as seguintes ocorrências no mês de referência atuam como deflatores e <strong>zeram integralmente a sua bonificação</strong>:
                                 </p>
@@ -1676,14 +1668,14 @@
                     app.config.goals.forEach(g => {
                         const val = totalBase * g.weight;
                         const wPct = (g.weight * 100).toFixed(0);
-                        html += \`
+                        html += `
                             <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 flex flex-col items-center text-center transition-transform hover:-translate-y-1 hover:shadow-md">
-                                <i class="fa-solid \${g.icon} text-xl text-slate-400 dark:text-slate-500 mb-2"></i>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase h-6 flex items-center justify-center leading-tight">\${g.title}</div>
-                                <div class="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-bold mt-1">Peso \${wPct}%</div>
-                                <div class="text-lg font-black text-green-600 dark:text-green-400 mt-2">R$ \${val.toFixed(2).replace('.',',')}</div>
+                                <i class="fa-solid ${g.icon} text-xl text-slate-400 dark:text-slate-500 mb-2"></i>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase h-6 flex items-center justify-center leading-tight">${g.title}</div>
+                                <div class="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-bold mt-1">Peso ${wPct}%</div>
+                                <div class="text-lg font-black text-green-600 dark:text-green-400 mt-2">R$ ${val.toFixed(2).replace('.',',')}</div>
                             </div>
-                        \`;
+                        `;
                     });
 
                     html += `
@@ -1704,14 +1696,14 @@
                                 <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <table class="w-full text-sm text-left text-slate-600 dark:text-slate-300 border-collapse">
                                         <thead class="bg-slate-50 dark:bg-slate-800/80 font-bold uppercase text-[11px] tracking-widest text-slate-500">
-                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Fatia Adquirida (Por Indicador)</th></tr>
+                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Fatia Adquirida</th></tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white flex items-center justify-between"><span>100%</span> <span class="ml-2 px-2 py-1 text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-md font-bold">\${fmt(valG1)}</span></td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">90.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white flex items-center justify-between"><span>75%</span> <span class="ml-2 px-2 py-1 text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-md font-bold">\${fmt(valG1 * 0.75)}</span></td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">80.0% a 89.9%</td><td class="p-4 font-black text-slate-800 dark:text-white flex items-center justify-between"><span>50%</span> <span class="ml-2 px-2 py-1 text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-md font-bold">\${fmt(valG1 * 0.5)}</span></td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-amber-500 flex items-center gap-2"><i class="fa-solid fa-bell"></i> Q4 (Atenção)</td><td class="p-4 font-medium">70.0% a 79.9%</td><td class="p-4 font-black text-slate-800 dark:text-white flex items-center justify-between"><span>25%</span> <span class="ml-2 px-2 py-1 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-md font-bold">\${fmt(valG1 * 0.25)}</span></td></tr>
-                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q5 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 70.0%</td><td class="p-4 font-black text-slate-800 dark:text-white flex items-center justify-between"><span>0%</span> <span class="ml-2 px-2 py-1 text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-md font-bold">\${fmt(0)}</span></td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">90.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">80.0% a 89.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-amber-500 flex items-center gap-2"><i class="fa-solid fa-bell"></i> Q4 (Atenção)</td><td class="p-4 font-medium">70.0% a 79.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">25% da fatia</td></tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q5 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 70.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% da fatia</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1723,27 +1715,9 @@
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-scale-balanced"></i></div> Calibragens</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garante a sinergia da análise entre qualidade e gestão referente ao atendimento realizado em cada operação. Quantas sessões de calibração você conduziu? <strong class="text-slate-700 dark:text-slate-300">(É obrigatória a apresentação de ata).</strong></p>
                                     <ul class="space-y-3 text-sm">
-                                        <li class="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-green-500">100% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-md font-bold">\${fmt(valG3)}</span>
-                                            </div>
-                                        </li>
-                                        <li class="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-orange-500">50% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-md font-bold">\${fmt(valG3 * 0.5)}</span>
-                                            </div>
-                                        </li>
-                                        <li class="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-red-500">0% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-md font-bold">\${fmt(0)}</span>
-                                            </div>
-                                        </li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% da fatia</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% da fatia</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% da fatia</strong></li>
                                     </ul>
                                 </div>
                                 
@@ -1752,34 +1726,10 @@
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-people-group"></i></div> Ações Presenciais</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos e o engajamento para aprimoramento da qualidade.</p>
                                     <ul class="space-y-2.5 text-sm">
-                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-green-500">100% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-md font-bold">\${fmt(valG4)}</span>
-                                            </div>
-                                        </li>
-                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-blue-500">75% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-md font-bold">\${fmt(valG4 * 0.75)}</span>
-                                            </div>
-                                        </li>
-                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-orange-500">50% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-md font-bold">\${fmt(valG4 * 0.5)}</span>
-                                            </div>
-                                        </li>
-                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                                            <span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span>
-                                            <div class="flex items-center gap-2">
-                                                <strong class="text-red-500">0% da fatia</strong>
-                                                <span class="px-2 py-1 text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-md font-bold">\${fmt(0)}</span>
-                                            </div>
-                                        </li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100% da fatia</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75% da fatia</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50% da fatia</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0% da fatia</strong></li>
                                     </ul>
                                 </div>
                             </div>
@@ -1789,48 +1739,38 @@
                                 <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários e Gestor)</h3>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Para Frequência e Ação de Alto Impacto: se a regra for cumprida (Sim), recebe-se o valor integral da fatia. Se houver desvio (Não), a respectiva fatia é zerada.</p>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
-                                        <div>
-                                            <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Frequência</div>
-                                            <div class="text-xs text-slate-500">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
-                                        </div>
-                                        <div class="mt-4 flex justify-between items-center border-t border-slate-100 dark:border-slate-700 pt-3">
-                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Valor da Fatia:</span>
-                                            <span class="text-sm font-black text-green-600 dark:text-green-400">\${fmt(valG5)}</span>
-                                        </div>
+                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Frequência</div>
+                                        <div class="text-xs text-slate-500">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
                                         <div>
                                             <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
-                                            <div class="text-xs text-slate-500 mb-3">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
-                                            <div class="text-[10px] font-bold text-slate-400 uppercase mb-2">Métricas de Fatiamento:</div>
-                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 space-y-1.5">
-                                                <div class="flex justify-between items-center">• 100%: Alinhamento Total <span class="text-green-600 dark:text-green-400 font-bold">\${fmt(valG6)}</span></div>
-                                                <div class="flex justify-between items-center">• 75%: Bom Alinhamento <span class="text-blue-600 dark:text-blue-400 font-bold">\${fmt(valG6 * 0.75)}</span></div>
-                                                <div class="flex justify-between items-center">• 50%: Alinhamento Parcial <span class="text-orange-500 dark:text-orange-400 font-bold">\${fmt(valG6 * 0.5)}</span></div>
-                                                <div class="flex justify-between items-center">• 25%: Baixo Alinhamento <span class="text-amber-500 dark:text-amber-400 font-bold">\${fmt(valG6 * 0.25)}</span></div>
-                                                <div class="flex justify-between items-center">• 0%: Sem Alinhamento <span class="text-red-500 dark:text-red-400 font-bold">\${fmt(0)}</span></div>
+                                            <div class="text-xs text-slate-500 mb-2">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[10px] font-bold text-slate-400 uppercase">Métricas de Fatiamento:</div>
+                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 mt-1 space-y-0.5">
+                                                <div>• 100%: Alinhamento Total</div>
+                                                <div>• 75%: Bom Alinhamento</div>
+                                                <div>• 50%: Alinhamento Parcial</div>
+                                                <div>• 25%: Baixo Alinhamento</div>
+                                                <div>• 0%: Sem Alinhamento</div>
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
-                                        <div>
-                                            <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação de Alto Impacto</div>
-                                            <div class="text-xs text-slate-500">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
-                                        </div>
-                                        <div class="mt-4 flex justify-between items-center border-t border-slate-100 dark:border-slate-700 pt-3">
-                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Valor da Fatia:</span>
-                                            <span class="text-sm font-black text-green-600 dark:text-green-400">\${fmt(valG7)}</span>
-                                        </div>
+                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação de Alto Impacto</div>
+                                        <div class="text-xs text-slate-500">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     `;
                     container.innerHTML = html;
-                }
+                },
 
-renderView_Legal(container) {
+                renderView_Legal(container) {
                     let html = `
                         <div class="mb-10 flex flex-col md:flex-row justify-between items-center max-w-4xl mx-auto gap-4">
                             <div class="text-left flex-1">
