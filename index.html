@@ -548,7 +548,7 @@
                 }
             },
 
-            // --- MOTOR MATEMÁTICO INSERIDO AQUI ---
+            // --- MOTOR MATEMÁTICO ---
             calc: {
                 getGoalResult(goalId, resultsData) {
                     const goal = app.config.goals.find(g => g.id === goalId);
@@ -618,7 +618,6 @@
                     };
                 }
             },
-            // ---------------------------------------
 
             auth: {
                 login() {
@@ -714,7 +713,7 @@
             },
 
             ui: {
-                currentActionFilter: 'pendente', // Controle de abas na validação de ações
+                currentActionFilter: 'pendente', 
                 
                 init() {
                     this.checkTheme();
@@ -1632,8 +1631,19 @@
                     document.getElementById('dim-res-livre').textContent = this.minutesToTimeStr(tempoLivre);
                 },
 
+                // --- MODIFICAÇÃO PRINCIPAL: ABA REGRAS ---
                 renderView_Regras(container) {
                     const totalBase = app.config.baseValue || 400;
+                    
+                    // Funções auxiliares para calcular o valor financeiro de cada meta
+                    const getGoalMax = (id) => { const g = app.config.goals.find(x => x.id === id); return g ? (totalBase * g.weight) : 0; };
+                    
+                    const maxG1 = getGoalMax('g1'); // Monitorias
+                    const maxG3 = getGoalMax('g3'); // Calibrações
+                    const maxG4 = getGoalMax('g4'); // Ações
+                    const maxG5 = getGoalMax('g5'); // Frequência
+                    const maxG6 = getGoalMax('g6'); // Gestor
+                    const maxG7 = getGoalMax('g7'); // Alto Impacto
                     
                     let html = `
                         <div class="mb-10">
@@ -1645,7 +1655,7 @@
                             <!-- Deflatores -->
                             <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-3xl p-8 relative overflow-hidden">
                                 <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-triangle-exclamation text-red-500"></i></div>
-                                <h3 class="font-extrabold text-xl mb-3 text-red-800 dark:text-red-400 relative z-10">Deflatores (Zeramento de Fatias)</h3>
+                                <h3 class="font-extrabold text-xl mb-3 text-red-800 dark:text-red-400 relative z-10">Deflatores (Bonificação Total Zerada)</h3>
                                 <p class="text-red-700/90 dark:text-red-300/80 text-sm leading-relaxed relative z-10">
                                     A bonificação é um reconhecimento de excelência e compromisso. Sendo assim, as seguintes ocorrências no mês de referência atuam como deflatores e <strong>zeram integralmente a sua bonificação</strong>:
                                 </p>
@@ -1696,14 +1706,44 @@
                                 <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <table class="w-full text-sm text-left text-slate-600 dark:text-slate-300 border-collapse">
                                         <thead class="bg-slate-50 dark:bg-slate-800/80 font-bold uppercase text-[11px] tracking-widest text-slate-500">
-                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Fatia Adquirida</th></tr>
+                                            <tr>
+                                                <th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th>
+                                                <th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th>
+                                                <th class="p-4 border-b border-slate-200 dark:border-slate-700">Fatia Adquirida (%)</th>
+                                                <th class="p-4 border-b border-slate-200 dark:border-slate-700 text-right">Valor Pago (R$)</th>
+                                            </tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da fatia</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">90.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da fatia</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">80.0% a 89.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da fatia</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-amber-500 flex items-center gap-2"><i class="fa-solid fa-bell"></i> Q4 (Atenção)</td><td class="p-4 font-medium">70.0% a 79.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">25% da fatia</td></tr>
-                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q5 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 70.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td>
+                                                <td class="p-4 font-medium">100% ou superior</td>
+                                                <td class="p-4 font-black text-slate-800 dark:text-white">100% da fatia</td>
+                                                <td class="p-4 font-black text-green-600 dark:text-green-400 text-right">R$ ${(maxG1 * 1.0).toFixed(2).replace('.', ',')}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td>
+                                                <td class="p-4 font-medium">90.0% a 99.9%</td>
+                                                <td class="p-4 font-black text-slate-800 dark:text-white">75% da fatia</td>
+                                                <td class="p-4 font-black text-blue-600 dark:text-blue-400 text-right">R$ ${(maxG1 * 0.75).toFixed(2).replace('.', ',')}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td>
+                                                <td class="p-4 font-medium">80.0% a 89.9%</td>
+                                                <td class="p-4 font-black text-slate-800 dark:text-white">50% da fatia</td>
+                                                <td class="p-4 font-black text-orange-500 text-right">R$ ${(maxG1 * 0.50).toFixed(2).replace('.', ',')}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="p-4 font-bold text-amber-500 flex items-center gap-2"><i class="fa-solid fa-bell"></i> Q4 (Atenção)</td>
+                                                <td class="p-4 font-medium">70.0% a 79.9%</td>
+                                                <td class="p-4 font-black text-slate-800 dark:text-white">25% da fatia</td>
+                                                <td class="p-4 font-black text-amber-500 text-right">R$ ${(maxG1 * 0.25).toFixed(2).replace('.', ',')}</td>
+                                            </tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q5 (Insuficiente)</td>
+                                                <td class="p-4 font-medium">Abaixo de 70.0%</td>
+                                                <td class="p-4 font-black text-slate-800 dark:text-white">0% da fatia</td>
+                                                <td class="p-4 font-black text-red-500 text-right">R$ 0,00</td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1715,9 +1755,27 @@
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-scale-balanced"></i></div> Calibragens</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garante a sinergia da análise entre qualidade e gestão referente ao atendimento realizado em cada operação. Quantas sessões de calibração você conduziu? <strong class="text-slate-700 dark:text-slate-300">(É obrigatória a apresentação de ata).</strong></p>
                                     <ul class="space-y-3 text-sm">
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% da fatia</strong></li>
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% da fatia</strong></li>
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% da fatia</strong></li>
+                                        <li class="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-green-500">100% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ ${(maxG3 * 1.0).toFixed(2).replace('.', ',')}</span>
+                                            </div>
+                                        </li>
+                                        <li class="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-orange-500">50% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ ${(maxG3 * 0.50).toFixed(2).replace('.', ',')}</span>
+                                            </div>
+                                        </li>
+                                        <li class="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-red-500">0% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ 0,00</span>
+                                            </div>
+                                        </li>
                                     </ul>
                                 </div>
                                 
@@ -1726,10 +1784,34 @@
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-people-group"></i></div> Ações Presenciais</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos e o engajamento para aprimoramento da qualidade.</p>
                                     <ul class="space-y-2.5 text-sm">
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100% da fatia</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75% da fatia</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50% da fatia</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0% da fatia</strong></li>
+                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-green-500">100% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ ${(maxG4 * 1.0).toFixed(2).replace('.', ',')}</span>
+                                            </div>
+                                        </li>
+                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-blue-500">75% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ ${(maxG4 * 0.75).toFixed(2).replace('.', ',')}</span>
+                                            </div>
+                                        </li>
+                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-orange-500">50% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ ${(maxG4 * 0.50).toFixed(2).replace('.', ',')}</span>
+                                            </div>
+                                        </li>
+                                        <li class="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                                            <span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span>
+                                            <div class="flex items-center gap-3">
+                                                <strong class="text-red-500">0% da fatia</strong>
+                                                <span class="font-black text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-600 min-w-[90px] text-center shadow-sm">R$ 0,00</span>
+                                            </div>
+                                        </li>
                                     </ul>
                                 </div>
                             </div>
@@ -1739,30 +1821,43 @@
                                 <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários e Gestor)</h3>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Para Frequência e Ação de Alto Impacto: se a regra for cumprida (Sim), recebe-se o valor integral da fatia. Se houver desvio (Não), a respectiva fatia é zerada.</p>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
-                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Frequência</div>
-                                        <div class="text-xs text-slate-500">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div class="font-bold text-slate-800 dark:text-white text-sm">Frequência</div>
+                                            <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">R$ ${(maxG5).toFixed(2).replace('.', ',')}</span>
+                                        </div>
+                                        <div class="text-xs text-slate-500 mt-2">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
                                     </div>
+                                    
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
                                         <div>
-                                            <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
+                                            <div class="flex justify-between items-start mb-2">
+                                                <div class="font-bold text-slate-800 dark:text-white text-sm">Avaliação do Gestor</div>
+                                                <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">R$ ${(maxG6).toFixed(2).replace('.', ',')}</span>
+                                            </div>
                                             <div class="text-xs text-slate-500 mb-2">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
                                         </div>
-                                        <div>
-                                            <div class="text-[10px] font-bold text-slate-400 uppercase">Métricas de Fatiamento:</div>
-                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 mt-1 space-y-0.5">
-                                                <div>• 100%: Alinhamento Total</div>
-                                                <div>• 75%: Bom Alinhamento</div>
-                                                <div>• 50%: Alinhamento Parcial</div>
-                                                <div>• 25%: Baixo Alinhamento</div>
-                                                <div>• 0%: Sem Alinhamento</div>
+                                        <div class="mt-2 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-1.5">Métricas de Fatiamento:</div>
+                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 space-y-1">
+                                                <div class="flex justify-between"><span>• 100%: Alinhamento Total</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 1.0).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between"><span>• 75%: Bom Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.75).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between"><span>• 50%: Alinhamento Parcial</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.50).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between"><span>• 25%: Baixo Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.25).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between"><span>• 0%: Sem Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ 0,00</strong></div>
                                             </div>
                                         </div>
                                     </div>
+                                    
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
-                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação de Alto Impacto</div>
-                                        <div class="text-xs text-slate-500">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div class="font-bold text-slate-800 dark:text-white text-sm">Ação de Alto Impacto</div>
+                                            <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">R$ ${(maxG7).toFixed(2).replace('.', ',')}</span>
+                                        </div>
+                                        <div class="text-xs text-slate-500 mt-2">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
                                     </div>
+                                    
                                 </div>
                             </div>
                         </div>
