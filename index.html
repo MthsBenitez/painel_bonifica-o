@@ -286,6 +286,8 @@
                                 if (g4 && g4.type !== 'actions') { g4.type = 'actions'; g4.title = "Ações Presenciais"; }
                                 const g7 = app.config.goals.find(g => g.id === 'g7');
                                 if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
+                                const g6 = app.config.goals.find(g => g.id === 'g6');
+                                if (g6 && g6.type !== 'gestor') { g6.type = 'gestor'; g6.title = "Avaliação Gestor"; }
                             }
                             
                             if (data.users) {
@@ -340,7 +342,7 @@
                     { id: 'g3', title: "Calibragens", weight: 0.15, type: 'calibracao', icon: 'fa-scale-balanced' },
                     { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-people-group' },
                     { id: 'g5', title: "Frequência", weight: 0.10, type: 'boolean', icon: 'fa-calendar-check' },
-                    { id: 'g6', title: "Avaliação Gestor", weight: 0.10, type: 'boolean', icon: 'fa-thumbs-up' },
+                    { id: 'g6', title: "Avaliação Gestor", weight: 0.10, type: 'gestor', icon: 'fa-thumbs-up' },
                     { id: 'g7', title: "Ação de Alto Impacto", weight: 0.10, type: 'boolean', icon: 'fa-lightbulb' }
                 ]
             },
@@ -559,19 +561,20 @@
                     let display = '-';
                     
                     if (goal.type === 'percent') {
-                        const meta = parseFloat(res.meta) || 0;
+                        const meta = (goalId === 'g1') ? 400 : (parseFloat(res.meta) || 0); // Cravada em 400 para monitoria
                         const real = parseFloat(res.real) || 0;
                         if (meta > 0) {
                             const pct = real / meta;
                             if (pct >= 1.0) mult = 1.0;
-                            else if (pct >= 0.95) mult = 0.75;
-                            else if (pct >= 0.90) mult = 0.50;
+                            else if (pct >= 0.90) mult = 0.75;
+                            else if (pct >= 0.80) mult = 0.50;
+                            else if (pct >= 0.70) mult = 0.25;
                             else mult = 0;
                             display = (pct * 100).toFixed(1) + '%';
                         } else {
                             display = '0%';
                         }
-                        return { raw: { meta: res.meta || '-', real: res.real || '-' }, display, mult, received: maxVal * mult };
+                        return { raw: { meta: (goalId === 'g1') ? 400 : (res.meta || '-'), real: res.real || '-' }, display, mult, received: maxVal * mult };
                     } else if (goal.type === 'calibracao') {
                         const val = parseInt(res.val) || 0;
                         if (val >= 2) mult = 1.0;
@@ -586,6 +589,11 @@
                         else if (val === 3) mult = 0.50;
                         else mult = 0;
                         display = val + ' Ações';
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    } else if (goal.type === 'gestor') {
+                        const val = parseInt(res.val) || 0;
+                        mult = val / 100;
+                        display = val + '%';
                         return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
                     } else {
                         const val = res.val || 'Não';
@@ -880,7 +888,7 @@
                                                     <p class="text-sm text-slate-500 dark:text-slate-400 font-semibold"><span class="text-green-600">Clique para anexar</span> múltiplas evidências</p>
                                                     <p class="text-xs text-slate-400 dark:text-slate-500 mt-1" id="file-name-display">JPG, PNG permitidos</p>
                                                 </div>
-                                                <input type="file" id="act-foto" accept="image/*" multiple class="hidden" required onchange="const count = this.files.length; document.getElementById('file-name-display').innerHTML = count > 1 ? '<span class=\\'text-green-500 font-bold\\'>' + count + ' arquivos selecionados</span>' : '<span class=\\'text-green-500 font-bold\\'>Arquivo selecionado:</span> ' + this.files[0].name" />
+                                                <input type="file" id="act-foto" accept="image/*" multiple class="hidden" required onchange="const count = this.files.length; document.getElementById('file-name-display').innerHTML = count > 1 ? '<span class=\'text-green-500 font-bold\'>' + count + ' arquivos selecionados</span>' : '<span class=\'text-green-500 font-bold\'>Arquivo selecionado:</span> ' + this.files[0].name" />
                                             </label>
                                         </div>
                                     </div>
@@ -1131,7 +1139,7 @@
                                     <div class="text-sm font-black ${multColor}">${(r.mult * 100).toFixed(0)}% <span class="text-slate-300 dark:text-slate-600 text-xs font-normal">ating.</span></div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Bonificação Calculada</div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Fatia Calculada</div>
                                     <div class="text-lg font-black text-slate-800 dark:text-slate-100">R$ ${r.received.toFixed(2)}</div>
                                 </div>
                             </div>
@@ -1406,16 +1414,27 @@
                             <div class="space-y-4">
                         `;
                         if(g.type === 'percent') {
-                            html += `
-                                <div class="flex gap-3">
-                                    <div class="flex-1"><label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Meta Oficial</label><input type="number" id="sim-${g.id}-meta" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="100"></div>
-                                    <div class="flex-1"><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" placeholder="Ex: 95"></div>
-                                </div>
-                            `;
+                            if(g.id === 'g1') {
+                                html += `
+                                    <div class="flex gap-3">
+                                        <div class="flex-1"><label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Meta (Fixa)</label><input type="number" id="sim-${g.id}-meta" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 dark:text-slate-400 outline-none cursor-not-allowed" value="400" readonly></div>
+                                        <div class="flex-1"><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" placeholder="Ex: 380"></div>
+                                    </div>
+                                `;
+                            } else {
+                                html += `
+                                    <div class="flex gap-3">
+                                        <div class="flex-1"><label class="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Meta Oficial</label><input type="number" id="sim-${g.id}-meta" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="100"></div>
+                                        <div class="flex-1"><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Seu Realizado</label><input type="number" id="sim-${g.id}-real" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" placeholder="Ex: 95"></div>
+                                    </div>
+                                `;
+                            }
                         } else if(g.type === 'calibracao') {
                             html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Qtd. Calibrações (0 a 2)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" min="0" max="2" value="0"></div>`;
                         } else if(g.type === 'actions') {
                             html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Ações Realizadas (0 a 5)</label><input type="number" id="sim-${g.id}-val" oninput="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500" min="0" max="5" value="0"></div>`;
+                        } else if(g.type === 'gestor') {
+                            html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Avaliação Gestor (%)</label><select id="sim-${g.id}-val" onchange="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500"><option value="100">100%</option><option value="75">75%</option><option value="50">50%</option><option value="25">25%</option><option value="0">0%</option></select></div>`;
                         } else {
                             html += `<div><label class="block text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Cumprimento (Sim/Não)</label><select id="sim-${g.id}-val" onchange="app.ui.calcSim()" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-300 outline-none focus:ring-2 focus:ring-green-500"><option value="Não">Não (Falhou)</option><option value="Sim">Sim (Atingiu)</option></select></div>`;
                         }
@@ -1614,6 +1633,8 @@
                 },
 
                 renderView_Regras(container) {
+                    const totalBase = app.config.baseValue || 400;
+                    
                     let html = `
                         <div class="mb-10">
                             <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Manual de Metas e Critérios</h2>
@@ -1621,7 +1642,46 @@
                         </div>
                         
                         <div class="space-y-8 max-w-4xl mx-auto">
-                            
+                            <!-- Deflatores -->
+                            <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-3xl p-8 relative overflow-hidden">
+                                <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-triangle-exclamation text-red-500"></i></div>
+                                <h3 class="font-extrabold text-xl mb-3 text-red-800 dark:text-red-400 relative z-10">Deflatores (Zeramento de Fatias)</h3>
+                                <p class="text-red-700/90 dark:text-red-300/80 text-sm leading-relaxed relative z-10">
+                                    A bonificação é um reconhecimento de excelência e compromisso. Sendo assim, as seguintes ocorrências no mês de referência atuam como deflatores e <strong>zeram integralmente a sua bonificação</strong>:
+                                </p>
+                                <ul class="list-disc ml-5 mt-3 space-y-1 text-red-700 dark:text-red-300 text-sm font-semibold relative z-10">
+                                    <li>Faltas Injustificadas</li>
+                                    <li>Medidas Administrativas</li>
+                                    <li>Suspensão</li>
+                                </ul>
+                            </div>
+
+                            <!-- Distribuição Visual -->
+                            <div class="glass-card p-8 rounded-3xl">
+                                <h3 class="font-extrabold text-lg mb-6 text-slate-800 dark:text-white flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-chart-pie"></i></div>
+                                    Distribuição da Bonificação (Total: R$ ${totalBase.toFixed(2).replace('.', ',')})
+                                </h3>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    `;
+                    
+                    app.config.goals.forEach(g => {
+                        const val = totalBase * g.weight;
+                        const wPct = (g.weight * 100).toFixed(0);
+                        html += `
+                            <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 flex flex-col items-center text-center transition-transform hover:-translate-y-1 hover:shadow-md">
+                                <i class="fa-solid ${g.icon} text-xl text-slate-400 dark:text-slate-500 mb-2"></i>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase h-6 flex items-center justify-center leading-tight">${g.title}</div>
+                                <div class="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-bold mt-1">Peso ${wPct}%</div>
+                                <div class="text-lg font-black text-green-600 dark:text-green-400 mt-2">R$ ${val.toFixed(2).replace('.',',')}</div>
+                            </div>
+                        `;
+                    });
+
+                    html += `
+                                </div>
+                            </div>
+
                             <!-- Missão -->
                             <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-3xl p-8 relative overflow-hidden">
                                 <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-bullseye"></i></div>
@@ -1632,17 +1692,18 @@
                             <!-- Escala Porcentual -->
                             <div class="glass-card p-8 rounded-3xl">
                                 <h3 class="font-extrabold text-lg mb-6 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-chart-line"></i></div> Qualidade de Atendimento (Monitorias e Feedbacks)</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Esses indicadores mensuram o volume entregue frente ao que foi planejado, garantindo que nossos clientes recebam a atenção estipulada. O cálculo é feito dividindo o seu <strong>Realizado</strong> pela <strong>Meta Oficial</strong>.</p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Esses indicadores mensuram o volume entregue frente ao que foi planejado, garantindo que nossos clientes recebam a atenção estipulada. <strong class="text-green-600">Importante: A meta oficial de Monitorias está cravada em 400 avaliações mensais para todos os colaboradores.</strong></p>
                                 <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <table class="w-full text-sm text-left text-slate-600 dark:text-slate-300 border-collapse">
                                         <thead class="bg-slate-50 dark:bg-slate-800/80 font-bold uppercase text-[11px] tracking-widest text-slate-500">
-                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Bonificação Adquirida</th></tr>
+                                            <tr><th class="p-4 border-b border-slate-200 dark:border-slate-700">Quadrante de Performance</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Taxa de Conclusão</th><th class="p-4 border-b border-slate-200 dark:border-slate-700">Fatia Adquirida</th></tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da bonificação</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">95.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da bonificação</td></tr>
-                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">90.0% a 94.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da bonificação</td></tr>
-                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q4 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 90.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% da bonificação</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-green-600 dark:text-green-400 flex items-center gap-2"><i class="fa-solid fa-star"></i> Q1 (Excelente)</td><td class="p-4 font-medium">100% ou superior</td><td class="p-4 font-black text-slate-800 dark:text-white">100% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-regular fa-star-half-stroke"></i> Q2 (Bom)</td><td class="p-4 font-medium">90.0% a 99.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">75% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-orange-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Q3 (Regular)</td><td class="p-4 font-medium">80.0% a 89.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">50% da fatia</td></tr>
+                                            <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-amber-500 flex items-center gap-2"><i class="fa-solid fa-bell"></i> Q4 (Atenção)</td><td class="p-4 font-medium">70.0% a 79.9%</td><td class="p-4 font-black text-slate-800 dark:text-white">25% da fatia</td></tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"><td class="p-4 font-bold text-red-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark"></i> Q5 (Insuficiente)</td><td class="p-4 font-medium">Abaixo de 70.0%</td><td class="p-4 font-black text-slate-800 dark:text-white">0% da fatia</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1654,37 +1715,49 @@
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-scale-balanced"></i></div> Calibragens</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Garante a sinergia da análise entre qualidade e gestão referente ao atendimento realizado em cada operação. Quantas sessões de calibração você conduziu? <strong class="text-slate-700 dark:text-slate-300">(É obrigatória a apresentação de ata).</strong></p>
                                     <ul class="space-y-3 text-sm">
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% da bonificação</strong></li>
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% da bonificação</strong></li>
-                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% da bonificação</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">2 Calibrações</span><strong class="text-green-500">100% da fatia</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">1 Calibração</span><strong class="text-orange-500">50% da fatia</strong></li>
+                                        <li class="flex justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50"><span class="font-medium text-slate-600 dark:text-slate-300">0 Calibrações</span><strong class="text-red-500">0% da fatia</strong></li>
                                     </ul>
                                 </div>
                                 
                                 <!-- Ações Presenciais -->
                                 <div class="glass-card p-8 rounded-3xl">
                                     <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-people-group"></i></div> Ações Presenciais</h3>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos, o fortalecimento do conhecimento técnico necessário para garantir a excelência na qualidade do atendimento e o engajamento. Estar presente e envolver-se nessas ações amplia seu desenvolvimento profissional e colabora diretamente para que nossos indicadores atinjam os padrões de excelência necessários.</p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Incentiva a participação ativa nas dinâmicas da operação, promovendo a troca de conhecimentos e o engajamento para aprimoramento da qualidade.</p>
                                     <ul class="space-y-2.5 text-sm">
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100% da bonificação</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75% da bonificação</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50% da bonificação</strong></li>
-                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0% da bonificação</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">5 Ações</span><strong class="text-green-500">100% da fatia</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">4 Ações</span><strong class="text-blue-500">75% da fatia</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">3 Ações</span><strong class="text-orange-500">50% da fatia</strong></li>
+                                        <li class="flex justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50"><span class="font-medium text-slate-600 dark:text-slate-300">Menos de 3</span><strong class="text-red-500">0% da fatia</strong></li>
                                     </ul>
                                 </div>
                             </div>
                             
                             <!-- Indicadores Condicionantes -->
                             <div class="glass-card p-8 rounded-3xl">
-                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários)</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Se a regra for cumprida (Sim), recebe-se o valor integral daquele peso (100%). Se houver desvio (Não), perde-se o valor atrelado à meta (0%).</p>
+                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários e Gestor)</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Para Frequência e Ação de Alto Impacto: se a regra for cumprida (Sim), recebe-se o valor integral da fatia. Se houver desvio (Não), a respectiva fatia é zerada.</p>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Frequência</div>
                                         <div class="text-xs text-slate-500">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
                                     </div>
-                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
-                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
-                                        <div class="text-xs text-slate-500">Reflete percepção comportamental, postura profissional, alinhamento diário e o quanto suas ações e entregas estão alinhadas aos objetivos mensais de cada operação.</div>
+                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
+                                        <div>
+                                            <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Avaliação do Gestor</div>
+                                            <div class="text-xs text-slate-500 mb-2">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[10px] font-bold text-slate-400 uppercase">Métricas de Fatiamento:</div>
+                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 mt-1 space-y-0.5">
+                                                <div>• 100%: Alinhamento Total</div>
+                                                <div>• 75%: Bom Alinhamento</div>
+                                                <div>• 50%: Alinhamento Parcial</div>
+                                                <div>• 25%: Baixo Alinhamento</div>
+                                                <div>• 0%: Sem Alinhamento</div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="font-bold text-slate-800 dark:text-white text-sm mb-1">Ação de Alto Impacto</div>
@@ -1727,7 +1800,7 @@
                                 <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
                                     A Softmarketing valoriza o seu esforço e tem o compromisso de tratar todas as suas informações com o máximo respeito, sigilo e segurança. Nosso portal foi construído para ser uma ferramenta amigável e transparente, projetada exclusivamente para auxiliar você a acompanhar e celebrar suas conquistas profissionais e métricas de desempenho.
                                 </p>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
                                     Não coletamos, armazenamos ou rastreamos nenhuma informação de saúde, crenças, opiniões políticas, ou qualquer outra categoria que a legislação defina como **dado sensível**. Queremos que você se sinta totalmente protegido e confortável utilizando esta plataforma.
                                 </p>
                             </div>
@@ -1830,16 +1903,34 @@
                         `;
                         
                         if(g.type === 'percent') {
-                            html += `
-                                <div class="flex gap-3">
-                                    <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
-                                    <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
-                                </div>
-                            `;
+                            if(g.id === 'g1') {
+                                html += `
+                                    <div class="flex gap-3">
+                                        <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta (Fixa)</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 dark:text-slate-400 outline-none cursor-not-allowed" value="400" readonly></div>
+                                        <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
+                                    </div>
+                                `;
+                            } else {
+                                html += `
+                                    <div class="flex gap-3">
+                                        <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
+                                        <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
+                                    </div>
+                                `;
+                            }
                         } else if(g.type === 'calibracao') {
                             html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
                         } else if(g.type === 'actions') {
                             html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
+                        } else if(g.type === 'gestor') {
+                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Métrica de Avaliação</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
+                                <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
+                                <option value="100" ${val.val==='100'?'selected':''}>100%</option>
+                                <option value="75" ${val.val==='75'?'selected':''}>75%</option>
+                                <option value="50" ${val.val==='50'?'selected':''}>50%</option>
+                                <option value="25" ${val.val==='25'?'selected':''}>25%</option>
+                                <option value="0" ${val.val==='0'?'selected':''}>0%</option>
+                            </select></div>`;
                         } else {
                             html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
                                 <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
@@ -1951,8 +2042,10 @@
                     const rows = [];
                     
                     app.users.forEach(u => {
-                        const termos = u.aceiteTermos ? `ACEITO EM:\n${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                        const diretrizes = u.aceiteDiretrizes ? `ACEITO EM:\n${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const termos = u.aceiteTermos ? `ACEITO EM:
+${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const diretrizes = u.aceiteDiretrizes ? `ACEITO EM:
+${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
                         rows.push([u.nome, u.matricula, termos, diretrizes]);
                     });
 
@@ -1991,3 +2084,5 @@
     </script>
 </body>
 </html>
+portal_softmarketing.html
+Exibindo portal_softmarketing.html.
