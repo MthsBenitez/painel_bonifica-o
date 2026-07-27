@@ -1,4 +1,819 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de Resultados | Softmarketing</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        brand: { 50: '#f0fdf4', 100: '#dcfce7', 500: '#22c55e', 600: '#16a34a', 700: '#15803d' },
+                        dark: { bg: '#0b1120', surface: '#1e293b', border: '#334155' }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Google Fonts & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Bibliotecas PDF Jurídico -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+    <!-- Firebase (V8 Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease; }
+        .glass-card { background: rgba(255, 255, 255, 1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); border: 1px solid #f1f5f9; }
+        .dark .glass-card { background: rgba(30, 41, 59, 1); border-color: #334155; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
+        .gradient-text { background: linear-gradient(to right, #2563eb, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .dark .gradient-text { background: linear-gradient(to right, #60a5fa, #93c5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        
+        input[type="month"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator, input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
+        .dark input[type="month"]::-webkit-calendar-picker-indicator, .dark input[type="time"]::-webkit-calendar-picker-indicator, .dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+        input[type="month"]::-webkit-calendar-picker-indicator:hover, input[type="time"]::-webkit-calendar-picker-indicator:hover, input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+        /* Custom Softmarketing Logo Styling */
+        .logo-font { font-family: 'Inter', sans-serif; letter-spacing: -0.04em; }
+        .logo-sub { font-family: 'Inter', sans-serif; letter-spacing: 0.15em; font-weight: 300; }
+        
+        /* Image Preview fit */
+        .img-preview { object-fit: cover; border-radius: 0.5rem; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="app.notifications.closeDropdown(event)">
+
+    <!-- Modal Global de Alertas -->
+    <div id="global-modal" class="fixed inset-0 z-[90] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all">
+            <h3 id="modal-title" class="text-lg font-bold mb-3 text-slate-800 dark:text-white flex items-center gap-2"></h3>
+            <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed max-h-[75vh] overflow-y-auto"></div>
+            <div id="modal-actions" class="flex justify-end gap-3"></div>
+        </div>
+    </div>
+
+    <!-- Modal de Troca de Senha -->
+    <div id="pwd-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
+            <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mr-3 text-green-600 dark:text-green-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
+            <input type="password" id="new-password-input" placeholder="Digite a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 mb-6 dark:text-white outline-none transition-all">
+            <div class="flex justify-end gap-3">
+                <button onclick="app.ui.closePwdModal()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
+                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar Senha</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 1: Termos de Uso (1º Login Obrigatório) -->
+    <div id="terms-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-slate-700">
+            <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-5 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-file-contract"></i></div>
+            <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Termos de Uso e Sigilo</h3>
+            
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-5 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
+                <p class="mb-3 font-bold text-slate-800 dark:text-slate-100">Bem-vindo(a) ao Portal de Resultados da Softmarketing.</p>
+                <p class="mb-3">O acesso a esta plataforma é pessoal e intransferível. Os dados e métricas aqui apresentados são confidenciais e de propriedade exclusiva da empresa, destinados unicamente para o acompanhamento da sua evolução profissional e apuração de sua bonificação.</p>
+                <p class="mb-2 font-extrabold text-red-600 dark:text-red-400 border-l-4 border-red-500 pl-3">Proteção de Dados e Restrição Legal (LGPD):</p>
+                <p>É terminantemente <strong>proibida</strong> a realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento das imagens, informações, dados da operação e layout contidos neste portal sem a prévia e formal autorização da diretoria. O descumprimento desta diretriz será considerado infração grave, sujeitando o responsável a medidas legais e disciplinares cabíveis, conforme a legislação vigente.</p>
+            </div>
+            
+            <div class="flex items-start gap-3 p-4 mb-6 border-2 border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-blue-500 dark:hover:border-blue-500 transition-colors" onclick="document.getElementById('chk-termos').click()">
+                <div class="pt-0.5">
+                    <input type="checkbox" id="chk-termos" onclick="event.stopPropagation()" onchange="const btn = document.getElementById('btn-termos'); btn.disabled = !this.checked; if(this.checked){btn.classList.remove('opacity-50','cursor-not-allowed')}else{btn.classList.add('opacity-50','cursor-not-allowed')}" class="w-5 h-5 accent-blue-600 cursor-pointer">
+                </div>
+                <label for="chk-termos" onclick="event.stopPropagation()" class="text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none leading-tight uppercase tracking-wider">
+                    Declaro formalmente que li, compreendi e concordo integralmente com as regras, termos de uso e políticas de sigilo de dados descritos acima.
+                </label>
+            </div>
+
+            <button id="btn-termos" disabled onclick="app.auth.acceptTerms()" class="w-full opacity-50 cursor-not-allowed bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider">Registrar Aceite Jurídico</button>
+        </div>
+    </div>
+
+    <!-- Modal 2: Diretrizes de Bonificação (2º Login Obrigatório) -->
+    <div id="guidelines-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-md transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl p-8 max-w-lg w-full mx-4 border border-slate-200 dark:border-slate-700">
+            <div class="w-16 h-16 bg-green-50 dark:bg-green-900/20 text-green-600 mx-auto rounded-full flex items-center justify-center text-3xl mb-5 border border-green-100 dark:border-green-800"><i class="fa-solid fa-check-double"></i></div>
+            <h3 class="text-2xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">Diretrizes de Bonificação</h3>
+            
+            <div class="text-slate-600 dark:text-slate-300 text-sm mb-5 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl h-56 overflow-y-auto border border-slate-100 dark:border-slate-700 shadow-inner">
+                <p class="mb-3 font-bold text-slate-800 dark:text-slate-100">Atualização Estratégica</p>
+                <p class="mb-3">Para garantirmos ainda mais transparência e alinhamento, nossos critérios de cálculo de bonificação requerem foco contínuo.</p>
+                <p class="mb-3">Para assegurar sua recompensa por alta performance, é fundamental que o seu engajamento e a condução das monitorias, calibragens, ações presenciais e de alto impacto estejam intrinsecamente <strong>alinhados aos objetivos mensais da sua operação</strong>.</p>
+                <p>Ao prosseguir, você confirma que leu o <em>Manual de Metas e Critérios</em> (disponível na aba "Regras e Critérios") e compreende integralmente as métricas exigidas para o atingimento dos padrões de excelência necessários para o seu atendimento.</p>
+            </div>
+
+            <div class="flex items-start gap-3 p-4 mb-6 border-2 border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 cursor-pointer hover:border-green-500 dark:hover:border-green-500 transition-colors" onclick="document.getElementById('chk-diretrizes').click()">
+                <div class="pt-0.5">
+                    <input type="checkbox" id="chk-diretrizes" onclick="event.stopPropagation()" onchange="const btn = document.getElementById('btn-diretrizes'); btn.disabled = !this.checked; if(this.checked){btn.classList.remove('opacity-50','cursor-not-allowed')}else{btn.classList.add('opacity-50','cursor-not-allowed')}" class="w-5 h-5 accent-green-600 cursor-pointer">
+                </div>
+                <label for="chk-diretrizes" onclick="event.stopPropagation()" class="text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none leading-tight uppercase tracking-wider">
+                    Confirmo ciência e acordo com os critérios de metas, regras operacionais e diretrizes para bonificação deste mês.
+                </label>
+            </div>
+
+            <button id="btn-diretrizes" disabled onclick="app.auth.acceptGuidelines()" class="w-full opacity-50 cursor-not-allowed bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider">Ciente e de Acordo</button>
+        </div>
+    </div>
+
+    <!-- VIEW LOGIN -->
+    <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden">
+        <!-- Background Elements -->
+        <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-gray-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div class="glass-card max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center relative z-10">
+            <!-- Logo Softmarketing (Apenas Escrita) -->
+            <div class="w-full mx-auto mb-8 bg-transparent flex flex-col items-center justify-center">
+                <div class="logo-font text-[2.4rem] font-bold text-[#333] dark:text-white leading-none mt-1">
+                    soft<span class="text-[#16a34a]">marketing</span>
+                </div>
+                <div class="logo-sub text-[9px] text-[#222] dark:text-slate-300 mt-2 w-full text-center tracking-[0.2em] uppercase">
+                    Soluções em Comunicação
+                </div>
+            </div>
+
+            <h1 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
+            <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Acompanhe seus indicadores de excelência.</p>
+            
+            <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-5">
+                <div class="text-left">
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-user absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
+                    </div>
+                </div>
+                <div class="text-left">
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-4">
+                    Acessar Dashboard
+                </button>
+            </form>
+            <div class="text-center mt-6">
+                <p class="text-[9px] text-slate-400 font-medium">softmarketing.com.br</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW APLICATIVO PRINCIPAL -->
+    <div id="view-app" class="hidden flex-1 flex flex-col pb-16">
+        
+        <!-- Header -->
+        <header class="bg-white dark:bg-[#0f172a] shadow-sm border-b border-slate-200 dark:border-slate-800 z-20 sticky top-0">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center gap-3">
+                        <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
+                    </div>
+                    
+                    <div class="flex items-center gap-3 sm:gap-4">
+                        
+                        <!-- Mês Global -->
+                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-green-300 dark:hover:border-green-500 group">
+                            <i class="fa-regular fa-calendar-days text-green-600 text-sm"></i>
+                            <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
+                        </div>
+
+                        <!-- Perfil -->
+                        <div class="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
+                            <div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs"><i class="fa-solid fa-user"></i></div>
+                            <span id="header-username" class="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wide uppercase truncate max-w-[120px]">USUÁRIO</span>
+                        </div>
+                        
+                        <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+
+                        <!-- Notificações e Tema agrupados -->
+                        <div class="flex items-center gap-1">
+                            <!-- Dropdown de Notificações -->
+                            <div class="relative">
+                                <button onclick="app.notifications.toggleDropdown(event)" class="relative text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Notificações">
+                                    <i class="fa-solid fa-bell text-lg"></i>
+                                    <span id="notif-badge" class="hidden absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-[#0f172a]"></span>
+                                </button>
+                                <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden transform origin-top-right transition-all">
+                                    <div class="p-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Notificações</h4>
+                                        <button onclick="app.notifications.markAllAsRead()" class="text-[10px] text-blue-500 hover:text-blue-700 font-bold">Marcar como lidas</button>
+                                    </div>
+                                    <div id="notif-list" class="max-h-72 overflow-y-auto">
+                                        <!-- Injetado via JS -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botão Tema -->
+                            <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Trocar Tema">
+                                <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-1"></div>
+
+                        <!-- Sair -->
+                        <button onclick="app.auth.logout()" class="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Sair do Sistema">
+                            <i class="fa-solid fa-right-from-bracket text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navegação Tabs -->
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-[#0f172a]">
+                <nav class="flex space-x-2 pt-3 overflow-x-auto no-scrollbar" id="main-nav">
+                    <!-- Injetado via JS -->
+                </nav>
+            </div>
+        </header>
+
+        <!-- Container de Conteúdo -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10 flex-1">
+            <div id="content-container" class="animate-fade-in">
+                <!-- Views injetadas via JS -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts da Aplicação -->
+    <script>
+        const app = {
+            storage: {
+                firebaseConfig: {
+                    apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
+                    authDomain: "painel-de-bonificacao.firebaseapp.com",
+                    databaseURL: "https://painel-de-bonificacao-default-rtdb.firebaseio.com/",
+                    projectId: "painel-de-bonificacao",
+                    storageBucket: "painel-de-bonificacao.firebasestorage.app",
+                    messagingSenderId: "96589923224",
+                    appId: "1:96589923224:web:c81d609302104c62f9a1ed"
+                },
+                init() {
+                    if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
+                    
+                    firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
+                        const data = snapshot.val();
+                        if (data) {
+                            if (data.config) {
+                                app.config = data.config;
+                                const g3 = app.config.goals.find(g => g.id === 'g3');
+                                if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
+                                const g4 = app.config.goals.find(g => g.id === 'g4');
+                                if (g4 && g4.type !== 'actions') { g4.type = 'actions'; g4.title = "Ações Presenciais"; }
+                                const g7 = app.config.goals.find(g => g.id === 'g7');
+                                if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
+                                const g6 = app.config.goals.find(g => g.id === 'g6');
+                                if (g6 && g6.type !== 'gestor') { g6.type = 'gestor'; g6.title = "Avaliação Gestor"; }
+                            }
+                            
+                            if (data.users) {
+                                app.users = data.users.map(u => {
+                                    if(u.results && (u.results.g1 || u.results.g2)) {
+                                        const oldData = {...u.results};
+                                        u.results = { "2026-06": oldData };
+                                    }
+                                    if(!u.results) u.results = {};
+                                    return u;
+                                });
+                            } else {
+                                app.users = [];
+                            }
+
+                            if (data.actions) app.actionsList = data.actions;
+                            else app.actionsList = {};
+
+                            if (data.notifications) app.notificationsList = data.notifications;
+                            else app.notificationsList = {};
+                            
+                            if (app.currentUser && !app.isAdmin) {
+                                const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
+                                if (updatedUser) app.currentUser = updatedUser;
+                            }
+
+                            if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
+                                app.ui.refreshCurrentView();
+                                app.notifications.updateBadge();
+                            }
+                        } else {
+                            this.saveConfig();
+                            this.saveUsers();
+                        }
+                    });
+                },
+                saveUsers() { return firebase.database().ref('sistema_bonificacao/users').set(app.users); },
+                saveConfig() { return firebase.database().ref('sistema_bonificacao/config').set(app.config); },
+                saveActions() { return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList); },
+                saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); }
+            },
+
+            users: [],
+            actionsList: {},
+            notificationsList: {},
+            currentMonth: '', 
+            config: {
+                baseValue: 400,
+                goals: [
+                    { id: 'g1', title: "Monitorias Realizadas", weight: 0.20, type: 'percent', icon: 'fa-headphones' },
+                    { id: 'g2', title: "Feedbacks Presenciais", weight: 0.20, type: 'percent', icon: 'fa-comments' },
+                    { id: 'g3', title: "Calibragens", weight: 0.15, type: 'calibracao', icon: 'fa-scale-balanced' },
+                    { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-people-group' },
+                    { id: 'g5', title: "Frequência", weight: 0.10, type: 'boolean', icon: 'fa-calendar-check' },
+                    { id: 'g6', title: "Avaliação Gestor", weight: 0.10, type: 'gestor', icon: 'fa-thumbs-up' },
+                    { id: 'g7', title: "Ação de Alto Impacto", weight: 0.10, type: 'boolean', icon: 'fa-lightbulb' }
+                ]
+            },
+            
+            currentUser: null,
+            isAdmin: false,
+            currentTab: 'meu_painel',
+
+            changeMonth(newMonthStr) {
+                if(!newMonthStr) return;
+                this.currentMonth = newMonthStr;
+                this.ui.refreshCurrentView();
+            },
+
+            notifications: {
+                notify(userId, title, message, type = 'info') {
+                    const id = 'notif_' + Date.now() + Math.floor(Math.random()*1000);
+                    app.notificationsList[id] = { id, userId, title, message, type, read: false, timestamp: Date.now() };
+                    app.storage.saveNotifications();
+                },
+                toggleDropdown(e) {
+                    e.stopPropagation();
+                    const drop = document.getElementById('notif-dropdown');
+                    if(drop.classList.contains('hidden')) {
+                        drop.classList.remove('hidden');
+                        this.renderList();
+                    } else {
+                        drop.classList.add('hidden');
+                    }
+                },
+                closeDropdown(e) {
+                    const drop = document.getElementById('notif-dropdown');
+                    if(drop && !drop.classList.contains('hidden') && !drop.contains(e.target) && !e.target.closest('button[title="Notificações"]')) {
+                        drop.classList.add('hidden');
+                    }
+                },
+                getRelevant() {
+                    const targetId = app.isAdmin ? 'ADM' : app.currentUser.matricula;
+                    return Object.values(app.notificationsList).filter(n => n.userId === targetId).sort((a,b) => b.timestamp - a.timestamp);
+                },
+                updateBadge() {
+                    const unread = this.getRelevant().filter(n => !n.read).length;
+                    const badge = document.getElementById('notif-badge');
+                    if(!badge) return;
+                    if(unread > 0) badge.classList.remove('hidden');
+                    else badge.classList.add('hidden');
+                },
+                markAllAsRead() {
+                    let changed = false;
+                    this.getRelevant().forEach(n => {
+                        if(!n.read) { app.notificationsList[n.id].read = true; changed = true; }
+                    });
+                    if(changed) { app.storage.saveNotifications(); this.renderList(); this.updateBadge(); }
+                },
+                renderList() {
+                    const list = this.getRelevant();
+                    const container = document.getElementById('notif-list');
+                    if(!container) return;
+                    
+                    if(list.length === 0) {
+                        container.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs">Nenhuma notificação encontrada.</div>`;
+                        return;
+                    }
+
+                    let html = '';
+                    list.forEach(n => {
+                        const icon = n.type === 'success' ? 'fa-circle-check text-green-500' : (n.type === 'error' ? 'fa-circle-xmark text-red-500' : 'fa-bell text-blue-500');
+                        const bgClass = n.read ? 'bg-white dark:bg-dark-surface' : 'bg-blue-50 dark:bg-slate-800';
+                        html += `
+                            <div class="p-3 border-b border-slate-100 dark:border-slate-700/50 ${bgClass} hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex gap-3 items-start">
+                                <div class="mt-1"><i class="fa-solid ${icon}"></i></div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-800 dark:text-slate-200">${n.title}</div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">${n.message}</div>
+                                    <div class="text-[9px] text-slate-400 mt-1">${new Date(n.timestamp).toLocaleString('pt-BR')}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                }
+            },
+
+            actions: {
+                compressImageAsync(file) {
+                    return new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onload = event => {
+                            const img = new Image();
+                            img.src = event.target.result;
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const MAX_WIDTH = 800; const MAX_HEIGHT = 800;
+                                let width = img.width; let height = img.height;
+                                if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } } 
+                                else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
+                                canvas.width = width; canvas.height = height;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, width, height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.6));
+                            };
+                        };
+                    });
+                },
+
+                submitAction() {
+                    if(!app.currentUser) return;
+                    
+                    const btn = document.getElementById('btn-submit-action');
+                    const fileInput = document.getElementById('act-foto');
+                    
+                    const payload = {
+                        id: 'act_' + Date.now(),
+                        matricula: app.currentUser.matricula,
+                        nome: app.currentUser.nome,
+                        month: app.currentMonth, 
+                        dataAcao: document.getElementById('act-data').value,
+                        codigoOpe: document.getElementById('act-codigo').value,
+                        objetivo: document.getElementById('act-objetivo').value,
+                        acaoRealizada: document.getElementById('act-acao').value,
+                        operadores: document.getElementById('act-qtd').value,
+                        gestor: document.getElementById('act-gestor').value,
+                        ofensor: document.getElementById('act-ofensor').value,
+                        brindes: document.getElementById('act-brindes').value,
+                        status: 'pendente',
+                        timestamp: Date.now(),
+                        photos: []
+                    };
+
+                    for (let key in payload) {
+                        if (payload[key] === '' || payload[key] === null) return app.ui.showAlert("Aviso", "Preencha todos os campos corretamente antes de enviar.", "error");
+                    }
+                    if(!fileInput.files || fileInput.files.length === 0) return app.ui.showAlert("Aviso", "Você precisa anexar pelo menos uma foto de comprovação.", "error");
+
+                    btn.disabled = true;
+                    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Processando...`;
+
+                    const uploadPromises = Array.from(fileInput.files).map(file => this.compressImageAsync(file));
+                    
+                    Promise.all(uploadPromises).then(base64Images => {
+                        payload.photos = base64Images;
+                        app.actionsList[payload.id] = payload;
+                        
+                        app.storage.saveActions().then(() => {
+                            app.notifications.notify('ADM', 'Nova Ação Registrada', `${app.currentUser.nome} registrou uma ação para o mês de ${app.ui.formatMonthLabel(app.currentMonth)}.`, 'info');
+                            app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação da gestão.", "success");
+                            app.ui.renderTab('registrar_acao');
+                        });
+                    });
+                },
+
+                approveAction(id) {
+                    if(!app.actionsList[id]) return;
+                    app.actionsList[id].status = 'aprovado';
+                    const act = app.actionsList[id];
+                    
+                    app.storage.saveActions().then(() => {
+                        try {
+                            const u = app.users.find(x => x.matricula === act.matricula);
+                            if(u) {
+                                if(!u.results) u.results = {};
+                                if(!u.results[act.month]) u.results[act.month] = {};
+                                if(!u.results[act.month]['g4']) u.results[act.month]['g4'] = { val: 0 };
+                                
+                                let currentVal = parseInt(u.results[act.month]['g4'].val) || 0;
+                                u.results[act.month]['g4'].val = (currentVal + 1).toString();
+                                
+                                app.storage.saveUsers();
+                                app.notifications.notify(u.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
+                            }
+                        } catch (err) {
+                            console.error("Erro ao creditar ação:", err);
+                        }
+                        
+                        app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
+                        app.ui.renderTab('validar_acoes');
+                    });
+                },
+
+                rejectAction(id) {
+                    if(!app.actionsList[id]) return;
+                    app.actionsList[id].status = 'reprovado';
+                    const act = app.actionsList[id];
+                    
+                    app.storage.saveActions().then(() => {
+                        app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi reprovada. Fale com a gestão.`, 'error');
+                        app.ui.showAlert("Feito", "Ação reprovada e descartada da métrica.", "info");
+                        app.ui.renderTab('validar_acoes');
+                    });
+                },
+                
+                showImageFull(actId) {
+                    const act = app.actionsList[actId];
+                    if(!act) return;
+                    const photos = act.photos || [act.photo]; // Fallback if old format
+                    let imagesHtml = photos.map(p => `<img src="${p}" class="w-full rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4">`).join('');
+                    
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-images text-blue-500"></i> Evidências Fotográficas (${photos.length})`;
+                    document.getElementById('modal-content').innerHTML = imagesHtml;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Fechar</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                }
+            },
+
+            // --- MOTOR MATEMÁTICO INSERIDO AQUI ---
+            calc: {
+                getGoalResult(goalId, resultsData) {
+                    const goal = app.config.goals.find(g => g.id === goalId);
+                    if (!goal) return { raw: { meta: '-', real: '-' }, display: '-', mult: 0, received: 0 };
+                    
+                    const maxVal = app.config.baseValue * goal.weight;
+                    const res = resultsData[goalId] || {};
+                    
+                    let mult = 0;
+                    let display = '-';
+                    
+                    if (goal.type === 'percent') {
+                        const meta = (goalId === 'g1') ? 400 : (parseFloat(res.meta) || 0); // Cravada em 400 para monitoria
+                        const real = parseFloat(res.real) || 0;
+                        if (meta > 0) {
+                            const pct = real / meta;
+                            if (pct >= 1.0) mult = 1.0;
+                            else if (pct >= 0.90) mult = 0.75;
+                            else if (pct >= 0.80) mult = 0.50;
+                            else if (pct >= 0.70) mult = 0.25;
+                            else mult = 0;
+                            display = (pct * 100).toFixed(1) + '%';
+                        } else {
+                            display = '0%';
+                        }
+                        return { raw: { meta: (goalId === 'g1') ? 400 : (res.meta || '-'), real: res.real || '-' }, display, mult, received: maxVal * mult };
+                    } else if (goal.type === 'calibracao') {
+                        const val = parseInt(res.val) || 0;
+                        if (val >= 2) mult = 1.0;
+                        else if (val === 1) mult = 0.5;
+                        else mult = 0;
+                        display = val + ' Sessões';
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    } else if (goal.type === 'actions') {
+                        const val = parseInt(res.val) || 0;
+                        if (val >= 5) mult = 1.0;
+                        else if (val === 4) mult = 0.75;
+                        else if (val === 3) mult = 0.50;
+                        else mult = 0;
+                        display = val + ' Ações';
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    } else if (goal.type === 'gestor') {
+                        const val = parseInt(res.val) || 0;
+                        mult = val / 100;
+                        display = val + '%';
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    } else {
+                        const val = res.val || 'Não';
+                        if (val === 'Sim') mult = 1.0;
+                        else mult = 0;
+                        display = val;
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    }
+                },
+                getTotal(resultsData) {
+                    let received = 0;
+                    if(!resultsData) return { received: 0, pct: 0 };
+                    
+                    app.config.goals.forEach(g => {
+                        const r = this.getGoalResult(g.id, resultsData);
+                        received += r.received;
+                    });
+                    
+                    return { 
+                        received, 
+                        pct: app.config.baseValue > 0 ? (received / app.config.baseValue) : 0 
+                    };
+                }
+            },
+            // ---------------------------------------
+
+            auth: {
+                login() {
+                    const mat = document.getElementById('login-mat').value.trim();
+                    const pwd = document.getElementById('login-pwd').value.trim();
+                    
+                    if(mat === 'gestaosoft' && pwd === 'qualidade2026') {
+                        app.isAdmin = true; app.currentUser = null; app.currentTab = 'dashboard_adm';
+                        document.getElementById('view-login').classList.add('hidden');
+                        app.ui.showApp(); return;
+                    }
+
+                    const userIdx = app.users.findIndex(u => u.matricula === mat && u.senha === pwd);
+                    if(userIdx > -1) {
+                        app.isAdmin = false; 
+                        app.users[userIdx].loginCount = (app.users[userIdx].loginCount || 0) + 1;
+                        app.currentUser = app.users[userIdx];
+                        app.currentTab = 'meu_painel';
+                        app.storage.saveUsers();
+
+                        document.getElementById('view-login').classList.add('hidden');
+                        this.processAcceptances();
+                    } else {
+                        app.ui.showAlert("Acesso Negado", "Matrícula ou senha incorretos. Verifique suas credenciais e tente novamente.", "error");
+                    }
+                },
+
+                processAcceptances() {
+                    if(!app.currentUser) return;
+                    const u = app.currentUser;
+                    if (!u.aceiteTermos) {
+                        document.getElementById('terms-modal').classList.remove('hidden');
+                    } else if (!u.aceiteDiretrizes && u.loginCount >= 2) {
+                        document.getElementById('guidelines-modal').classList.remove('hidden');
+                    } else {
+                        app.ui.showApp();
+                    }
+                },
+
+                acceptTerms() {
+                    const userIdx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                    if(userIdx > -1) {
+                        app.users[userIdx].aceiteTermos = new Date().toISOString();
+                        app.currentUser = app.users[userIdx];
+                        app.storage.saveUsers();
+                    }
+                    document.getElementById('terms-modal').classList.add('hidden');
+                    this.processAcceptances(); 
+                },
+
+                acceptGuidelines() {
+                    const userIdx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                    if(userIdx > -1) {
+                        app.users[userIdx].aceiteDiretrizes = new Date().toISOString();
+                        app.currentUser = app.users[userIdx];
+                        app.storage.saveUsers();
+                    }
+                    document.getElementById('guidelines-modal').classList.add('hidden');
+                    this.processAcceptances(); 
+                },
+
+                logout() {
+                    app.isAdmin = false; app.currentUser = null; window.selectedAdminEditUser = null;
+                    document.getElementById('login-mat').value = ''; document.getElementById('login-pwd').value = '';
+                    document.getElementById('view-app').classList.add('hidden');
+                    document.getElementById('terms-modal').classList.add('hidden');
+                    document.getElementById('guidelines-modal').classList.add('hidden');
+                    
+                    document.getElementById('chk-termos').checked = false;
+                    document.getElementById('btn-termos').disabled = true;
+                    document.getElementById('btn-termos').classList.add('opacity-50','cursor-not-allowed');
+                    
+                    document.getElementById('chk-diretrizes').checked = false;
+                    document.getElementById('btn-diretrizes').disabled = true;
+                    document.getElementById('btn-diretrizes').classList.add('opacity-50','cursor-not-allowed');
+                    
+                    document.getElementById('view-login').classList.remove('hidden');
+                },
+
+                executeChangePassword() {
+                    const newPwd = document.getElementById('new-password-input').value.trim();
+                    if(newPwd.length < 4) return app.ui.showAlert("Aviso", "A senha deve ter pelo menos 4 caracteres.", "error");
+                    
+                    if(app.currentUser) {
+                        const idx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                        if(idx > -1) {
+                            app.users[idx].senha = newPwd; app.currentUser = app.users[idx];
+                            app.storage.saveUsers(); app.ui.closePwdModal();
+                            app.ui.showAlert("Sucesso", "Sua senha foi alterada com segurança.", "success");
+                        }
+                    }
+                }
+            },
+
+            ui: {
+                currentActionFilter: 'pendente', // Controle de abas na validação de ações
+                
+                init() {
+                    this.checkTheme();
+                    const today = new Date();
+                    const mm = String(today.getMonth() + 1).padStart(2, '0');
+                    const yyyy = today.getFullYear();
+                    app.currentMonth = `${yyyy}-${mm}`;
+                    document.getElementById('global-month').value = app.currentMonth;
+                    app.storage.init();
+                    document.getElementById('view-login').classList.remove('hidden');
+                },
+                
+                checkTheme() {
+                    if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                        document.documentElement.classList.add('dark');
+                        document.getElementById('theme-icon').classList.replace('fa-moon', 'fa-sun');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        document.getElementById('theme-icon').classList.replace('fa-sun', 'fa-moon');
+                    }
+                },
+                toggleTheme() {
+                    const icon = document.getElementById('theme-icon');
+                    if (document.documentElement.classList.contains('dark')) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('theme', 'light');
+                        icon.classList.replace('fa-sun', 'fa-moon');
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('theme', 'dark');
+                        icon.classList.replace('fa-moon', 'fa-sun');
+                    }
+                    this.refreshCurrentView();
+                },
+
+                showAlert(title, message, type = 'info') {
+                    const color = type === 'success' ? 'text-green-500' : (type === 'error' ? 'text-red-500' : 'text-blue-500');
+                    const icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info');
+                    
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${color}"></i> ${title}`;
+                    document.getElementById('modal-content').innerHTML = message;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Entendi</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                showConfirm(title, message, confirmCallbackStr, danger = false) {
+                    document.getElementById('modal-title').innerHTML = title;
+                    document.getElementById('modal-content').innerHTML = message;
+                    const btnClass = danger ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700';
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden'); ${confirmCallbackStr}" class="px-5 py-2 ${btnClass} text-white rounded-lg font-bold text-sm shadow-md transition-colors">Confirmar</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                openPwdModal() { document.getElementById('new-password-input').value = ''; document.getElementById('pwd-modal').classList.remove('hidden'); },
+                closePwdModal() { document.getElementById('pwd-modal').classList.add('hidden'); },
+
+                showApp() {
+                    document.getElementById('header-username').textContent = app.isAdmin ? 'Administração' : app.currentUser.nome;
+                    document.getElementById('view-app').classList.remove('hidden');
+                    this.renderNav();
+                    this.renderTab(app.currentTab);
+                    app.notifications.updateBadge();
+                },
+
+                renderNav() {
+                    const nav = document.getElementById('main-nav');
+                    let html = '';
+                    const tabs = app.isAdmin 
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
+                    
+                    tabs.forEach(t => {
+                        const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
+                        html += `<button onclick="app.ui.renderTab('${t.id}')" class="px-5 py-3 font-semibold text-sm rounded-t-xl transition-all flex items-center gap-2 whitespace-nowrap ${activeCls}"><i class="fa-solid ${t.icon}"></i> ${t.label}</button>`;
+                    });
+                    nav.innerHTML = html;
+                },
+
+                refreshCurrentView() {
+                    if(!document.getElementById('view-app').classList.contains('hidden')) {
+                        this.renderTab(app.currentTab);
+                    }
+                },
+
+                formatMonthLabel(isoMonth) {
+                    if(!isoMonth) return '';
+                    const [y, m] = isoMonth.split('-');
+                    const months = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+                    return `${months[parseInt(m)-1]} de ${y}`;
+                },
+
+                renderTab(tabId) {
+                    app.currentTab = tabId;
+                    this.renderNav();
+                    const container = document.getElementById('content-container');
+                    container.innerHTML = ''; 
 
                     if(tabId === 'meu_painel') this.renderView_MeuPainel(container);
                     else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(container);
@@ -1329,3 +2144,5 @@ ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceit
     </script>
 </body>
 </html>
+portal_softmarketing.html
+Exibindo portal_softmarketing.html.
