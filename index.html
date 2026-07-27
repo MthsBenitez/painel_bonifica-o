@@ -498,24 +498,24 @@
                     app.actionsList[id].status = 'aprovado';
                     const act = app.actionsList[id];
                     
-                    try {
-                        const u = app.users.find(x => x.matricula === act.matricula);
-                        if(u) {
-                            if(!u.results) u.results = {};
-                            if(!u.results[act.month]) u.results[act.month] = {};
-                            if(!u.results[act.month]['g4']) u.results[act.month]['g4'] = { val: 0 };
-                            
-                            let currentVal = parseInt(u.results[act.month]['g4'].val) || 0;
-                            u.results[act.month]['g4'].val = (currentVal + 1).toString();
-                            
-                            app.storage.saveUsers();
-                            app.notifications.notify(u.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
-                        }
-                    } catch (err) {
-                        console.error("Erro ao creditar ação:", err);
-                    }
-                    
                     app.storage.saveActions().then(() => {
+                        try {
+                            const u = app.users.find(x => x.matricula === act.matricula);
+                            if(u) {
+                                if(!u.results) u.results = {};
+                                if(!u.results[act.month]) u.results[act.month] = {};
+                                if(!u.results[act.month]['g4']) u.results[act.month]['g4'] = { val: 0 };
+                                
+                                let currentVal = parseInt(u.results[act.month]['g4'].val) || 0;
+                                u.results[act.month]['g4'].val = (currentVal + 1).toString();
+                                
+                                app.storage.saveUsers();
+                                app.notifications.notify(u.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
+                            }
+                        } catch (err) {
+                            console.error("Erro ao creditar ação:", err);
+                        }
+                        
                         app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
                         app.ui.renderTab('validar_acoes');
                     });
