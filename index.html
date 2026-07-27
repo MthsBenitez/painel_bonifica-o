@@ -546,6 +546,72 @@
                 }
             },
 
+            // --- MOTOR MATEMÁTICO INSERIDO AQUI ---
+            calc: {
+                getGoalResult(goalId, resultsData) {
+                    const goal = app.config.goals.find(g => g.id === goalId);
+                    if (!goal) return { raw: { meta: '-', real: '-' }, display: '-', mult: 0, received: 0 };
+                    
+                    const maxVal = app.config.baseValue * goal.weight;
+                    const res = resultsData[goalId] || {};
+                    
+                    let mult = 0;
+                    let display = '-';
+                    
+                    if (goal.type === 'percent') {
+                        const meta = parseFloat(res.meta) || 0;
+                        const real = parseFloat(res.real) || 0;
+                        if (meta > 0) {
+                            const pct = real / meta;
+                            if (pct >= 1.0) mult = 1.0;
+                            else if (pct >= 0.95) mult = 0.75;
+                            else if (pct >= 0.90) mult = 0.50;
+                            else mult = 0;
+                            display = (pct * 100).toFixed(1) + '%';
+                        } else {
+                            display = '0%';
+                        }
+                        return { raw: { meta: res.meta || '-', real: res.real || '-' }, display, mult, received: maxVal * mult };
+                    } else if (goal.type === 'calibracao') {
+                        const val = parseInt(res.val) || 0;
+                        if (val >= 2) mult = 1.0;
+                        else if (val === 1) mult = 0.5;
+                        else mult = 0;
+                        display = val + ' Sessões';
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    } else if (goal.type === 'actions') {
+                        const val = parseInt(res.val) || 0;
+                        if (val >= 5) mult = 1.0;
+                        else if (val === 4) mult = 0.75;
+                        else if (val === 3) mult = 0.50;
+                        else mult = 0;
+                        display = val + ' Ações';
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    } else {
+                        const val = res.val || 'Não';
+                        if (val === 'Sim') mult = 1.0;
+                        else mult = 0;
+                        display = val;
+                        return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
+                    }
+                },
+                getTotal(resultsData) {
+                    let received = 0;
+                    if(!resultsData) return { received: 0, pct: 0 };
+                    
+                    app.config.goals.forEach(g => {
+                        const r = this.getGoalResult(g.id, resultsData);
+                        received += r.received;
+                    });
+                    
+                    return { 
+                        received, 
+                        pct: app.config.baseValue > 0 ? (received / app.config.baseValue) : 0 
+                    };
+                }
+            },
+            // ---------------------------------------
+
             auth: {
                 login() {
                     const mat = document.getElementById('login-mat').value.trim();
