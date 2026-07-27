@@ -56,9 +56,6 @@
         /* Custom Softmarketing Logo Styling */
         .logo-font { font-family: 'Inter', sans-serif; letter-spacing: -0.04em; }
         .logo-sub { font-family: 'Inter', sans-serif; letter-spacing: 0.15em; font-weight: 300; }
-        
-        /* Image Preview fit */
-        .img-preview { object-fit: cover; border-radius: 0.5rem; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="app.notifications.closeDropdown(event)">
@@ -67,7 +64,7 @@
     <div id="global-modal" class="fixed inset-0 z-[90] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all">
             <h3 id="modal-title" class="text-lg font-bold mb-3 text-slate-800 dark:text-white flex items-center gap-2"></h3>
-            <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed max-h-[70vh] overflow-y-auto"></div>
+            <div id="modal-content" class="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed max-h-[75vh] overflow-y-auto"></div>
             <div id="modal-actions" class="flex justify-end gap-3"></div>
         </div>
     </div>
@@ -138,15 +135,19 @@
 
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden">
+        <!-- Background Elements -->
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-gray-500/10 rounded-full blur-3xl pointer-events-none"></div>
         
         <div class="glass-card max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center relative z-10">
+            
             <!-- Logo Softmarketing (Apenas Escrita) -->
             <div class="w-full mx-auto mb-8 bg-transparent flex flex-col items-center justify-center">
+                <!-- Texto Principal -->
                 <div class="logo-font text-[2.4rem] font-bold text-[#333] dark:text-white leading-none mt-1">
                     soft<span class="text-[#16a34a]">marketing</span>
                 </div>
+                <!-- Subtexto -->
                 <div class="logo-sub text-[9px] text-[#222] dark:text-slate-300 mt-2 w-full text-center tracking-[0.2em] uppercase">
                     Soluções em Comunicação
                 </div>
@@ -193,24 +194,6 @@
                     
                     <div class="flex items-center gap-3 sm:gap-4">
                         
-                        <!-- Notificações -->
-                        <div class="relative">
-                            <button onclick="app.notifications.toggleDropdown(event)" class="relative text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Notificações">
-                                <i class="fa-solid fa-bell text-lg"></i>
-                                <span id="notif-badge" class="hidden absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-[#0f172a]"></span>
-                            </button>
-                            <!-- Dropdown de Notificações -->
-                            <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden transform origin-top-right transition-all">
-                                <div class="p-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-                                    <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Notificações</h4>
-                                    <button onclick="app.notifications.markAllAsRead()" class="text-[10px] text-blue-500 hover:text-blue-700 font-bold">Marcar como lidas</button>
-                                </div>
-                                <div id="notif-list" class="max-h-72 overflow-y-auto">
-                                    <!-- Injetado via JS -->
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Mês Global -->
                         <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-green-300 dark:hover:border-green-500 group">
                             <i class="fa-regular fa-calendar-days text-green-600 text-sm"></i>
@@ -225,11 +208,33 @@
                         
                         <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
 
-                        <!-- Botão Tema -->
-                        <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                            <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
-                        </button>
+                        <!-- Notificações e Tema agrupados -->
+                        <div class="flex items-center gap-1">
+                            <!-- Dropdown de Notificações -->
+                            <div class="relative">
+                                <button onclick="app.notifications.toggleDropdown(event)" class="relative text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Notificações">
+                                    <i class="fa-solid fa-bell text-lg"></i>
+                                    <span id="notif-badge" class="hidden absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-[#0f172a]"></span>
+                                </button>
+                                <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden transform origin-top-right transition-all">
+                                    <div class="p-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Notificações</h4>
+                                        <button onclick="app.notifications.markAllAsRead()" class="text-[10px] text-blue-500 hover:text-blue-700 font-bold">Marcar como lidas</button>
+                                    </div>
+                                    <div id="notif-list" class="max-h-72 overflow-y-auto">
+                                        <!-- Injetado via JS -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botão Tema -->
+                            <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Trocar Tema">
+                                <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
+                            </button>
+                        </div>
                         
+                        <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-1"></div>
+
                         <!-- Sair -->
                         <button onclick="app.auth.logout()" class="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Sair do Sistema">
                             <i class="fa-solid fa-right-from-bracket text-lg"></i>
@@ -257,7 +262,6 @@
     <!-- Scripts da Aplicação -->
     <script>
         const app = {
-            // Configuração Firebase
             storage: {
                 firebaseConfig: {
                     apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
@@ -276,7 +280,7 @@
                         if (data) {
                             if (data.config) {
                                 app.config = data.config;
-                                // Migração de regra
+                                // Migração Invisível e Forçada de Regras Antigas para Novas
                                 const g3 = app.config.goals.find(g => g.id === 'g3');
                                 if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
                                 const g4 = app.config.goals.find(g => g.id === 'g4');
@@ -304,12 +308,13 @@
                             if (data.notifications) app.notificationsList = data.notifications;
                             else app.notificationsList = {};
                             
-                            // Preservar usuário local
+                            // Preservar usuário logado e seleções
                             if (app.currentUser && !app.isAdmin) {
                                 const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
                                 if (updatedUser) app.currentUser = updatedUser;
                             }
 
+                            // Auto-atualiza UI se logado, sem quebrar navegação ou modais
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
                                 app.ui.refreshCurrentView();
                                 app.notifications.updateBadge();
@@ -353,7 +358,6 @@
                 this.ui.refreshCurrentView();
             },
 
-            // ================== MÓDULO NOTIFICAÇÕES ==================
             notifications: {
                 notify(userId, title, message, type = 'info') {
                     const id = 'notif_' + Date.now() + Math.floor(Math.random()*1000);
@@ -423,7 +427,6 @@
                 }
             },
 
-            // ================== MÓDULO AÇÕES (SUBMISSÃO E VALIDAÇÃO) ==================
             actions: {
                 compressImage(file, callback) {
                     const reader = new FileReader();
@@ -440,7 +443,7 @@
                             canvas.width = width; canvas.height = height;
                             const ctx = canvas.getContext('2d');
                             ctx.drawImage(img, 0, 0, width, height);
-                            callback(canvas.toDataURL('image/jpeg', 0.6)); // 60% quality jpeg
+                            callback(canvas.toDataURL('image/jpeg', 0.6));
                         };
                     };
                 },
@@ -455,7 +458,7 @@
                         id: 'act_' + Date.now(),
                         matricula: app.currentUser.matricula,
                         nome: app.currentUser.nome,
-                        month: app.currentMonth, // Vincula ao mês selecionado no topo
+                        month: app.currentMonth, 
                         dataAcao: document.getElementById('act-data').value,
                         codigoOpe: document.getElementById('act-codigo').value,
                         objetivo: document.getElementById('act-objetivo').value,
@@ -468,7 +471,6 @@
                         timestamp: Date.now()
                     };
 
-                    // Verifica campos obrigatórios
                     for (let key in payload) {
                         if (!payload[key]) return app.ui.showAlert("Aviso", "Preencha todos os campos corretamente antes de enviar.", "error");
                     }
@@ -477,17 +479,15 @@
                     btn.disabled = true;
                     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Processando...`;
 
-                    // Comprime imagem e salva
                     this.compressImage(fileInput.files[0], (base64Img) => {
                         payload.photo = base64Img;
                         app.actionsList[payload.id] = payload;
                         app.storage.saveActions();
                         
-                        // Notifica o ADM
                         app.notifications.notify('ADM', 'Nova Ação Registrada', `${app.currentUser.nome} registrou uma ação para o mês de ${app.ui.formatMonthLabel(app.currentMonth)}.`, 'info');
                         
                         app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação da gestão.", "success");
-                        app.ui.renderTab('registrar_acao'); // reseta formulário
+                        app.ui.renderTab('registrar_acao');
                     });
                 },
 
@@ -497,20 +497,24 @@
                     
                     act.status = 'aprovado';
                     
-                    // Somar na meta g4 (Ações Presenciais) do usuário naquele mês
-                    const u = app.users.find(x => x.matricula === act.matricula);
-                    if(u) {
-                        if(!u.results) u.results = {};
-                        if(!u.results[act.month]) u.results[act.month] = {};
-                        if(!u.results[act.month]['g4']) u.results[act.month]['g4'] = { val: 0 };
-                        
-                        let currentVal = parseInt(u.results[act.month]['g4'].val) || 0;
-                        u.results[act.month]['g4'].val = currentVal + 1;
-                        
-                        app.storage.saveUsers();
-                        
-                        // Notificar Usuário
-                        app.notifications.notify(u.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e já somou nos seus indicadores.`, 'success');
+                    try {
+                        const u = app.users.find(x => x.matricula === act.matricula);
+                        if(u) {
+                            if(!u.results) u.results = {};
+                            if(!u.results[act.month]) u.results[act.month] = {};
+                            if(!u.results[act.month]['g4']) u.results[act.month]['g4'] = { val: 0 };
+                            
+                            let currentVal = parseInt(u.results[act.month]['g4'].val) || 0;
+                            u.results[act.month]['g4'].val = (currentVal + 1).toString();
+                            
+                            app.storage.saveUsers();
+                            
+                            if(app.notifications && app.notifications.notify) {
+                                app.notifications.notify(u.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e já somou nos seus indicadores.`, 'success');
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Erro ao creditar ação:", err);
                     }
                     
                     app.storage.saveActions();
@@ -525,10 +529,11 @@
                     act.status = 'reprovado';
                     app.storage.saveActions();
                     
-                    // Notificar Usuário
-                    app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi analisada e reprovada. Converse com seu gestor para entender o motivo.`, 'error');
+                    if(app.notifications && app.notifications.notify) {
+                        app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi reprovada. Fale com a gestão.`, 'error');
+                    }
                     
-                    app.ui.showAlert("Feito", "Ação reprovada. Nenhuma métrica foi alterada.", "info");
+                    app.ui.showAlert("Feito", "Ação reprovada e descartada da métrica.", "info");
                     app.ui.renderTab('validar_acoes');
                 },
                 
@@ -540,7 +545,6 @@
                 }
             },
 
-            // ================== CONTROLE DE AUTENTICAÇÃO ==================
             auth: {
                 login() {
                     const mat = document.getElementById('login-mat').value.trim();
@@ -559,6 +563,7 @@
                         app.currentUser = app.users[userIdx];
                         app.currentTab = 'meu_painel';
                         app.storage.saveUsers();
+
                         document.getElementById('view-login').classList.add('hidden');
                         this.processAcceptances();
                     } else {
@@ -586,7 +591,7 @@
                         app.storage.saveUsers();
                     }
                     document.getElementById('terms-modal').classList.add('hidden');
-                    this.processAcceptances();
+                    this.processAcceptances(); 
                 },
 
                 acceptGuidelines() {
@@ -633,8 +638,65 @@
                 }
             },
 
+            calc: {
+                getGoalResult(goalId, resultsForMonth) {
+                    if(!resultsForMonth || !resultsForMonth[goalId]) return { value: 0, mult: 0, received: 0, display: '-', raw: {} };
+                    
+                    const res = resultsForMonth[goalId];
+                    const goalDef = app.config.goals.find(g => g.id === goalId);
+                    
+                    // Prevenção de falha caso não encontre a meta
+                    if(!goalDef) return { value: 0, mult: 0, received: 0, display: '-', raw: {} };
+
+                    const valueAllocated = app.config.baseValue * goalDef.weight;
+                    let mult = 0; let display = '';
+
+                    if(goalDef.type === 'percent') {
+                        const meta = parseFloat(res.meta) || 0;
+                        const real = parseFloat(res.real) || 0;
+                        const pct = meta > 0 ? (real / meta) : 0;
+                        
+                        if(pct >= 1.0) mult = 1.0;
+                        else if(pct >= 0.95) mult = 0.75;
+                        else if(pct >= 0.90) mult = 0.50;
+                        else mult = 0;
+                        
+                        display = `${meta > 0 ? (pct * 100).toFixed(1) : '0.0'}% atingido`;
+                    }
+                    else if(goalDef.type === 'calibracao') {
+                        const count = parseInt(res.val) || 0;
+                        if(count >= 2) mult = 1.0;
+                        else if(count === 1) mult = 0.50;
+                        else mult = 0;
+                        display = `${count} Calibraç${count === 1 ? 'ão' : 'ões'}`;
+                    }
+                    else if(goalDef.type === 'actions') {
+                        const count = parseInt(res.val) || 0;
+                        if(count >= 5) mult = 1.0;
+                        else if(count === 4) mult = 0.75;
+                        else if(count === 3) mult = 0.50;
+                        else mult = 0;
+                        display = `${count} Aç${count === 1 ? 'ão' : 'ões'}`;
+                    }
+                    else if(goalDef.type === 'boolean') {
+                        const atingido = (res.val === 'Sim');
+                        mult = atingido ? 1.0 : 0;
+                        display = atingido ? 'Concluído' : 'Não Atingido';
+                    }
+
+                    return { mult: mult, received: valueAllocated * mult, allocated: valueAllocated, display: display, raw: res };
+                },
+                
+                getTotal(resultsForMonth) {
+                    if(!resultsForMonth) return { received: 0, pct: 0 };
+                    let totalReceived = 0;
+                    app.config.goals.forEach(g => { totalReceived += this.getGoalResult(g.id, resultsForMonth).received; });
+                    const pct = app.config.baseValue > 0 ? (totalReceived / app.config.baseValue) : 0;
+                    return { received: totalReceived, pct: pct };
+                }
+            },
+
             ui: {
-                // (Mantido idêntico: init, renderNav, renderTab, etc. Apenas adicionando as duas views novas)
                 init() {
                     this.checkTheme();
                     const today = new Date();
@@ -746,10 +808,6 @@
                     else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(container);
                 },
 
-                // ==================================
-                // INÍCIO DAS RENDERIZAÇÕES NORMAIS
-                // ==================================
-
                 renderView_RegistrarAcao(container) {
                     if(app.isAdmin) return;
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
@@ -822,8 +880,44 @@
                                     </button>
                                 </div>
                             </form>
-                        </div>
+                            
+                            <!-- User Action History -->
+                            <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
+                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-6 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Meu Histórico de Envios</h3>
                     `;
+                    
+                    const myActions = Object.values(app.actionsList).filter(a => a.matricula === app.currentUser.matricula).sort((a,b) => b.timestamp - a.timestamp);
+                    
+                    if(myActions.length === 0) {
+                        html += `<div class="text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl text-center border border-slate-100 dark:border-slate-700">Você ainda não possui histórico de envios registrados no sistema.</div>`;
+                    } else {
+                        html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+                        myActions.forEach(act => {
+                            let statusBadge = '';
+                            if(act.status === 'pendente') statusBadge = `<span class="bg-orange-100 text-orange-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"><i class="fa-solid fa-clock"></i> Pendente</span>`;
+                            else if(act.status === 'aprovado') statusBadge = `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"><i class="fa-solid fa-check"></i> Aprovado</span>`;
+                            else if(act.status === 'reprovado') statusBadge = `<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"><i class="fa-solid fa-xmark"></i> Reprovado</span>`;
+                            
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex gap-4 items-center transition-all hover:shadow-md cursor-pointer" onclick="app.actions.showImageFull('${act.photo}')">
+                                    <div class="w-16 h-16 shrink-0 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                                        <img src="${act.photo}" class="w-full h-full object-cover">
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex justify-between items-start mb-1 gap-2">
+                                            <h4 class="font-bold text-slate-800 dark:text-slate-200 text-sm truncate">${act.objetivo}</h4>
+                                            ${statusBadge}
+                                        </div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Op: ${act.codigoOpe} | Mês: ${app.ui.formatMonthLabel(act.month)}</div>
+                                        <div class="text-[10px] text-slate-400 mt-1">${new Date(act.timestamp).toLocaleString('pt-BR')}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
+                    }
+
+                    html += `</div></div>`;
                     container.innerHTML = html;
                 },
 
@@ -839,7 +933,6 @@
                         </div>
                     `;
 
-                    // Filtrar ações pendentes
                     const list = Object.values(app.actionsList).filter(a => a.status === 'pendente').sort((a,b) => b.timestamp - a.timestamp);
 
                     if(list.length === 0) {
@@ -856,32 +949,29 @@
                         list.forEach(act => {
                             html += `
                                 <div class="glass-card rounded-3xl overflow-hidden flex flex-col shadow-sm border border-slate-200 dark:border-slate-700">
-                                    <!-- Header Foto -->
                                     <div class="h-48 w-full bg-slate-200 dark:bg-slate-800 relative group cursor-pointer" onclick="app.actions.showImageFull('${act.photo}')">
                                         <img src="${act.photo}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
                                         <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2">
                                             <i class="fa-solid fa-expand"></i> Ampliar Foto
                                         </div>
                                     </div>
-                                    <!-- Info -->
                                     <div class="p-5 flex-1 flex flex-col">
                                         <div class="flex justify-between items-start mb-3">
-                                            <div>
+                                            <div class="flex-1 pr-2 overflow-hidden">
                                                 <div class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-0.5">Mês Alvo: ${this.formatMonthLabel(act.month)}</div>
-                                                <h4 class="font-bold text-slate-800 dark:text-white text-base leading-tight">${act.nome}</h4>
+                                                <h4 class="font-bold text-slate-800 dark:text-white text-sm leading-tight truncate" title="${act.nome}">${act.nome}</h4>
                                             </div>
-                                            <span class="bg-orange-100 text-orange-600 text-[9px] font-bold px-2 py-1 rounded-md uppercase tracking-wider">Pendente</span>
+                                            <span class="bg-orange-100 text-orange-600 text-[9px] font-bold px-2 py-1 rounded-md uppercase tracking-wider shrink-0 mt-1">Pendente</span>
                                         </div>
                                         
-                                        <div class="space-y-2 mb-5 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 flex-1">
-                                            <p><strong><i class="fa-regular fa-calendar text-slate-400 w-4"></i> Data:</strong> ${new Date(act.dataAcao + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                                            <p><strong><i class="fa-solid fa-crosshairs text-slate-400 w-4"></i> Operação:</strong> ${act.codigoOpe}</p>
-                                            <p><strong><i class="fa-solid fa-bullseye text-slate-400 w-4"></i> Objetivo:</strong> <span class="truncate inline-block align-bottom max-w-[150px]" title="${act.objetivo}">${act.objetivo}</span></p>
-                                            <p><strong><i class="fa-solid fa-user-tie text-slate-400 w-4"></i> Gestor:</strong> ${act.gestor}</p>
-                                            <p><strong><i class="fa-solid fa-users text-slate-400 w-4"></i> Operadores:</strong> ${act.operadores} &nbsp;|&nbsp; <strong>Brindes:</strong> ${act.brindes}</p>
+                                        <div class="space-y-2 mb-5 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 flex-1 overflow-hidden">
+                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-regular fa-calendar w-4"></i></strong> ${new Date(act.dataAcao + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-solid fa-crosshairs w-4"></i></strong> ${act.codigoOpe}</p>
+                                            <p class="truncate" title="${act.objetivo}"><strong class="text-slate-500"><i class="fa-solid fa-bullseye w-4"></i></strong> ${act.objetivo}</p>
+                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-solid fa-user-tie w-4"></i></strong> ${act.gestor}</p>
+                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-solid fa-users w-4"></i></strong> ${act.operadores} &nbsp;|&nbsp; <strong class="text-slate-500">Brindes:</strong> ${act.brindes}</p>
                                         </div>
                                         
-                                        <!-- Actions -->
                                         <div class="grid grid-cols-2 gap-3 mt-auto">
                                             <button onclick="app.actions.rejectAction('${act.id}')" class="py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors border border-red-200 dark:border-red-900/50">Reprovar</button>
                                             <button onclick="app.actions.approveAction('${act.id}')" class="py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm">Aprovar +1</button>
@@ -924,6 +1014,9 @@
                         container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um colaborador acima para visualizar seus indicadores deste mês.</div>`;
                         return;
                     }
+
+                    // Previne quebra caso a renderização ocorra antes de sincronizar o Firebase
+                    if(!targetUser) return;
 
                     const resultsForMonth = (targetUser.results && targetUser.results[app.currentMonth]) || {};
                     const total = app.calc.getTotal(resultsForMonth);
@@ -1186,7 +1279,6 @@
                     `;
                     container.innerHTML = html;
                     
-                    // Recuperar aba editora de dados se havia alguém selecionado antes do firebase atualizar
                     if(window.selectedAdminEditUser) {
                         app.admin.loadUserEditor();
                     }
@@ -1559,73 +1651,6 @@
                         </div>
                     `;
                     container.innerHTML = html;
-                },
-
-                renderView_Legal(container) {
-                    let html = `
-                        <div class="mb-10 flex flex-col md:flex-row justify-between items-center max-w-4xl mx-auto gap-4">
-                            <div class="text-left flex-1">
-                                <div class="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4 border border-blue-100 dark:border-blue-800"><i class="fa-solid fa-shield-halved"></i></div>
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Privacidade e Conformidade LGPD</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm">Transparência e segurança no tratamento dos seus dados na Softmarketing.</p>
-                            </div>
-                    `;
-                    
-                    if(app.isAdmin) {
-                        html += `
-                            <div>
-                                <button onclick="app.admin.generateLegalPDF()" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all flex items-center gap-2 text-sm uppercase tracking-widest">
-                                    <i class="fa-solid fa-file-pdf"></i> Baixar Relatório Jurídico
-                                </button>
-                            </div>
-                        `;
-                    }
-                    
-                    html += `
-                        </div>
-                        
-                        <div class="space-y-8 max-w-4xl mx-auto">
-                            <!-- Nossa Promessa -->
-                            <div class="glass-card p-8 rounded-3xl">
-                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-handshake-angle text-blue-500"></i> Nosso Compromisso Cordial</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                                    A Softmarketing valoriza o seu esforço e tem o compromisso de tratar todas as suas informações com o máximo respeito, sigilo e segurança. Nosso portal foi construído para ser uma ferramenta amigável e transparente, projetada exclusivamente para auxiliar você a acompanhar e celebrar suas conquistas profissionais e métricas de desempenho.
-                                </p>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                                    Não coletamos, armazenamos ou rastreamos nenhuma informação de saúde, crenças, opiniões políticas, ou qualquer outra categoria que a legislação defina como **dado sensível**. Queremos que você se sinta totalmente protegido e confortável utilizando esta plataforma.
-                                </p>
-                            </div>
-
-                            <!-- Termos de Uso -->
-                            <div class="glass-card p-8 rounded-3xl">
-                                <h3 class="font-bold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-file-contract text-blue-500"></i> Termos de Uso e Restrições (Aviso Legal)</h3>
-                                <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed space-y-4">
-                                    <p><strong>1. Finalidade Exclusiva:</strong> Este portal destina-se única e exclusivamente ao acompanhamento de indicadores de performance corporativa e cálculo de bonificações correspondentes. Nenhuma informação aqui contida será utilizada para fins publicitários ou compartilhada com terceiros alheios à sua avaliação de desempenho.</p>
-                                    <p><strong>2. Sigilo de Informações e Imagens:</strong> A realização de capturas de tela (prints), fotografias, gravações, réplicas ou qualquer outra forma de registro e compartilhamento de imagens, layout e informações contidas neste portal sem a prévia e formal autorização da diretoria é terminantemente proibida. Tais atos serão considerados infração grave, sujeitando o responsável às medidas disciplinares e legais cabíveis pela exposição de dados da operação.</p>
-                                    <p><strong>3. Credenciais e Retenção:</strong> Sua matrícula e senha são de uso pessoal. A segurança começa pela não partilha da sua senha com colegas. Os lançamentos de notas são mantidos apenas pelo tempo necessário para garantir o pagamento correto da sua bonificação.</p>
-                                </div>
-                            </div>
-
-                            <!-- Certificado LGPD -->
-                            <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl p-8 relative">
-                                <div class="absolute right-6 top-6 text-green-500 text-4xl opacity-20"><i class="fa-solid fa-stamp"></i></div>
-                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-gavel text-green-600"></i> Documento Declaratório de Conformidade</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                                    Esta aplicação atesta sua adequação aos requisitos de controle estabelecidos pela <strong>Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018)</strong> do Governo Federal Brasileiro.
-                                </p>
-                                <ul class="space-y-3 text-sm text-slate-600 dark:text-slate-400 mb-6 border-l-2 border-green-500 pl-4 ml-2">
-                                    <li><strong>Art. 5º, II (Dado Sensível):</strong> Declaramos a inexistência de coleta de dados sensíveis na plataforma.</li>
-                                    <li><strong>Art. 6º, I (Finalidade):</strong> Os dados (Nome e Matrícula) são processados com propósitos legítimos e explícitos.</li>
-                                    <li><strong>Art. 6º, III (Necessidade):</strong> O processing limita-se ao mínimo necessário para a realização das finalidades de bonificação.</li>
-                                    <li><strong>Art. 46 (Segurança):</strong> Adotamos medidas de segurança técnicas para proteger os dados pessoais de acessos não autorizados.</li>
-                                </ul>
-                                <div class="pt-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-                                    Documento validado para a operação interna. O uso continuado da plataforma indica o aceite das políticas descritas acima, consolidando a transparência entre a Softmarketing e seus colaboradores.
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    container.innerHTML = html;
                 }
             }, // <-- Fim do Objeto UI
 
@@ -1637,7 +1662,6 @@
                     if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
                     if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada no sistema.", "error");
                     
-                    // Inicializa sem aceite e sem contagem de login
                     app.users.push({ nome: n, matricula: m, senha: p, results: {}, loginCount: 0, aceiteTermos: null, aceiteDiretrizes: null });
                     app.storage.saveUsers();
                     document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
@@ -1647,7 +1671,7 @@
 
                 loadUserEditor() {
                     const mat = document.getElementById('adm-user-select').value;
-                    window.selectedAdminEditUser = mat; // Memória para não perder a seleção no re-render
+                    window.selectedAdminEditUser = mat; 
                     const area = document.getElementById('adm-editor-area');
                     if(!mat) { area.classList.add('hidden'); return; }
                     
@@ -1797,16 +1821,16 @@
                     
                     // Header Softmarketing (Apenas Texto)
                     doc.setFontSize(16);
-                    doc.setTextColor(22, 163, 74); // Verde Softmarketing
+                    doc.setTextColor(22, 163, 74); 
                     doc.text("SOFTMARKETING - Solucoes em Comunicacao", 14, 15);
                     
                     doc.setFontSize(12);
-                    doc.setTextColor(30, 41, 59); // Slate 800
+                    doc.setTextColor(30, 41, 59); 
                     doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
                     
                     // Metadados
                     doc.setFontSize(9);
-                    doc.setTextColor(100, 116, 139); // Slate 500
+                    doc.setTextColor(100, 116, 139); 
                     doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
                     doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
                     
@@ -1826,9 +1850,9 @@
                         body: rows,
                         startY: 42,
                         theme: 'grid',
-                        headStyles: { fillColor: [22, 163, 74] }, // Verde Softmarketing no Header da Tabela
+                        headStyles: { fillColor: [22, 163, 74] }, 
                         styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
-                        alternateRowStyles: { fillColor: [248, 250, 252] }, // Slate 50
+                        alternateRowStyles: { fillColor: [248, 250, 252] }, 
                         columnStyles: {
                             0: { cellWidth: 70 },
                             1: { cellWidth: 40 },
