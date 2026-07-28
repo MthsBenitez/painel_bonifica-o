@@ -280,14 +280,25 @@
                         if (data) {
                             if (data.config) {
                                 app.config = data.config;
+                                
+                                // Correções dinâmicas de migração do banco
                                 const g3 = app.config.goals.find(g => g.id === 'g3');
                                 if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
                                 const g4 = app.config.goals.find(g => g.id === 'g4');
                                 if (g4 && g4.type !== 'actions') { g4.type = 'actions'; g4.title = "Ações Presenciais"; }
-                                const g7 = app.config.goals.find(g => g.id === 'g7');
-                                if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
                                 const g6 = app.config.goals.find(g => g.id === 'g6');
                                 if (g6 && g6.type !== 'gestor') { g6.type = 'gestor'; g6.title = "Avaliação Gestor"; }
+                                const g7 = app.config.goals.find(g => g.id === 'g7');
+                                if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
+
+                                // Regra: Remover G5 (Frequência) e recalcular pesos
+                                if (app.config.goals.find(g => g.id === 'g5')) {
+                                    app.config.goals = app.config.goals.filter(g => g.id !== 'g5');
+                                    const updateG6 = app.config.goals.find(g => g.id === 'g6');
+                                    if(updateG6) updateG6.weight = 0.15;
+                                    const updateG7 = app.config.goals.find(g => g.id === 'g7');
+                                    if(updateG7) updateG7.weight = 0.15;
+                                }
                             }
                             
                             if (data.users) {
@@ -341,9 +352,8 @@
                     { id: 'g2', title: "Feedbacks Presenciais", weight: 0.20, type: 'percent', icon: 'fa-comments' },
                     { id: 'g3', title: "Calibragens", weight: 0.15, type: 'calibracao', icon: 'fa-scale-balanced' },
                     { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-people-group' },
-                    { id: 'g5', title: "Frequência", weight: 0.10, type: 'boolean', icon: 'fa-calendar-check' },
-                    { id: 'g6', title: "Avaliação Gestor", weight: 0.10, type: 'gestor', icon: 'fa-thumbs-up' },
-                    { id: 'g7', title: "Ação de Alto Impacto", weight: 0.10, type: 'boolean', icon: 'fa-lightbulb' }
+                    { id: 'g6', title: "Avaliação Gestor", weight: 0.15, type: 'gestor', icon: 'fa-thumbs-up' },
+                    { id: 'g7', title: "Ação de Alto Impacto", weight: 0.15, type: 'boolean', icon: 'fa-lightbulb' }
                 ]
             },
             
@@ -580,7 +590,7 @@
                         if (val >= 2) mult = 1.0;
                         else if (val === 1) mult = 0.5;
                         else mult = 0;
-                        display = val + ' Sessões';
+                        display = val === 1 ? '1 Sessão' : `${val} Sessões`;
                         return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
                     } else if (goal.type === 'actions') {
                         const val = parseInt(res.val) || 0;
@@ -588,7 +598,7 @@
                         else if (val === 4) mult = 0.75;
                         else if (val === 3) mult = 0.50;
                         else mult = 0;
-                        display = val + ' Ações';
+                        display = val === 1 ? '1 Ação' : `${val} Ações`;
                         return { raw: { meta: '-', real: '-' }, display, mult, received: maxVal * mult };
                     } else if (goal.type === 'gestor') {
                         const val = parseInt(res.val) || 0;
@@ -786,7 +796,7 @@
                     let html = '';
                     const tabs = app.isAdmin 
                         ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
-                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
                     
                     tabs.forEach(t => {
                         const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
@@ -1078,6 +1088,43 @@
                             <i class="fa-regular fa-folder-open text-4xl text-slate-300 dark:text-slate-600 mb-3"></i>
                             <p class="text-slate-500 dark:text-slate-400 font-medium">Não há dados lançados para ${targetUser.nome} no mês de ${monthLabel}.</p>
                         </div>`;
+                    } else {
+                        // Painel de Status de Validação do Feedback
+                        const fbStatus = resultsForMonth.status || 'pendente';
+                        let bannerHtml = '';
+                        
+                        if(fbStatus === 'pendente') {
+                            bannerHtml = `
+                                <div class="mb-6 p-5 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex items-center gap-4">
+                                    <div class="text-3xl text-amber-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div>
+                                        <h4 class="font-extrabold text-amber-800 dark:text-amber-400 text-sm">Pendente de Validação</h4>
+                                        <p class="text-amber-700 dark:text-amber-300 text-xs mt-1">Sua bonificação foi lançada, porém requer assinatura conjunta. <strong>Fale com seu gestor</strong> para ele agendar o seu feedback.</p>
+                                    </div>
+                                </div>
+                            `;
+                        } else if(fbStatus === 'agendado') {
+                            let dtFormatada = resultsForMonth.fbDate ? new Date(resultsForMonth.fbDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'Data Indefinida';
+                            bannerHtml = `
+                                <div class="mb-6 p-5 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 flex items-center gap-4">
+                                    <div class="text-3xl text-blue-500"><i class="fa-solid fa-calendar-check"></i></div>
+                                    <div>
+                                        <h4 class="font-extrabold text-blue-800 dark:text-blue-400 text-sm">Feedback Agendado</h4>
+                                        <p class="text-blue-700 dark:text-blue-300 text-xs mt-1">Seu alinhamento está marcado para <strong>${dtFormatada} às ${resultsForMonth.fbTime || '--:--'}</strong>. Aguarde a validação presencial com seu gestor.</p>
+                                    </div>
+                                </div>
+                            `;
+                        } else if(fbStatus === 'validado') {
+                            bannerHtml = `
+                                <div class="mb-6 p-4 rounded-xl bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 flex items-center gap-3">
+                                    <div class="text-xl text-green-500"><i class="fa-solid fa-circle-check"></i></div>
+                                    <div>
+                                        <h4 class="font-bold text-green-800 dark:text-green-400 text-xs uppercase tracking-wider">Resultados Validados</h4>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        html += bannerHtml;
                     }
 
                     html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">`;
@@ -1159,7 +1206,7 @@
                                 </div>
                             </div>
                             <div class="mt-6 md:mt-0 text-right bg-white/10 backdrop-blur-md px-8 py-5 rounded-2xl border border-white/20 z-10 relative w-full md:w-auto">
-                                <div class="text-xs font-bold text-green-300 uppercase tracking-widest mb-1">Bonificação Conquistada</div>
+                                <div class="text-xs font-bold text-green-300 uppercase tracking-widest mb-1">Bonificação Projetada</div>
                                 <div class="text-4xl font-black text-green-400 drop-shadow-md">R$ ${total.received.toFixed(2)}</div>
                             </div>
                         </div>
@@ -1201,10 +1248,16 @@
                     const mediaGeral = usersComResultado > 0 ? ((somaPct / usersComResultado) * 100).toFixed(1) : 0;
 
                     let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos da equipe referente a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos da equipe referente a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                            </div>
+                            <button onclick="app.admin.exportBonusReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-file-excel"></i> Relatório do Mês
+                            </button>
                         </div>
+
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
                                 <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-sack-dollar"></i></div>
@@ -1482,8 +1535,8 @@
                     document.getElementById('sim-total-res').textContent = `R$ ${total.toFixed(2)}`;
                 },
 
+                // Acesso agora é global (removido bloqueio do ADM)
                 renderView_CalcMonitorias(container) {
-                    if(!app.isAdmin) return;
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dimensionamento de Monitorias</h2>
@@ -1631,19 +1684,16 @@
                     document.getElementById('dim-res-livre').textContent = this.minutesToTimeStr(tempoLivre);
                 },
 
-                // --- MODIFICAÇÃO PRINCIPAL: ABA REGRAS ---
                 renderView_Regras(container) {
                     const totalBase = app.config.baseValue || 400;
                     
-                    // Funções auxiliares para calcular o valor financeiro de cada meta
                     const getGoalMax = (id) => { const g = app.config.goals.find(x => x.id === id); return g ? (totalBase * g.weight) : 0; };
                     
-                    const maxG1 = getGoalMax('g1'); // Monitorias
-                    const maxG3 = getGoalMax('g3'); // Calibrações
-                    const maxG4 = getGoalMax('g4'); // Ações
-                    const maxG5 = getGoalMax('g5'); // Frequência
-                    const maxG6 = getGoalMax('g6'); // Gestor
-                    const maxG7 = getGoalMax('g7'); // Alto Impacto
+                    const maxG1 = getGoalMax('g1'); 
+                    const maxG3 = getGoalMax('g3'); 
+                    const maxG4 = getGoalMax('g4'); 
+                    const maxG6 = getGoalMax('g6'); 
+                    const maxG7 = getGoalMax('g7'); 
                     
                     let html = `
                         <div class="mb-10">
@@ -1652,18 +1702,20 @@
                         </div>
                         
                         <div class="space-y-8 max-w-4xl mx-auto">
-                            <!-- Deflatores -->
-                            <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-3xl p-8 relative overflow-hidden">
-                                <div class="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i class="fa-solid fa-triangle-exclamation text-red-500"></i></div>
-                                <h3 class="font-extrabold text-xl mb-3 text-red-800 dark:text-red-400 relative z-10">Deflatores (Bonificação Total Zerada)</h3>
-                                <p class="text-red-700/90 dark:text-red-300/80 text-sm leading-relaxed relative z-10">
-                                    A bonificação é um reconhecimento de excelência e compromisso. Sendo assim, as seguintes ocorrências no mês de referência atuam como deflatores e <strong>zeram integralmente a sua bonificação</strong>:
-                                </p>
-                                <ul class="list-disc ml-5 mt-3 space-y-1 text-red-700 dark:text-red-300 text-sm font-semibold relative z-10">
-                                    <li>Faltas Injustificadas</li>
-                                    <li>Medidas Administrativas</li>
-                                    <li>Suspensão</li>
-                                </ul>
+                            
+                            <!-- Deflatores Reestilizados -->
+                            <div class="glass-card p-6 rounded-3xl border-l-4 border-l-red-500 relative overflow-hidden mb-8 shadow-sm">
+                                <div class="flex flex-col md:flex-row items-start md:items-center gap-5">
+                                    <div class="w-14 h-14 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div>
+                                        <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-1.5">Deflatores (Bonificação Total Zerada)</h3>
+                                        <p class="text-slate-600 dark:text-slate-400 text-sm leading-relaxed mb-3">A bonificação é um reconhecimento de excelência e compromisso. As seguintes ocorrências no mês de referência atuam como deflatores e <strong>zeram integralmente a sua bonificação</strong>:</p>
+                                        <ul class="flex flex-wrap gap-3">
+                                            <li class="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/10 px-3 py-1.5 rounded-lg border border-red-100 dark:border-red-900/30"><i class="fa-solid fa-user-xmark text-red-500"></i> Faltas Injustificadas</li>
+                                            <li class="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/10 px-3 py-1.5 rounded-lg border border-red-100 dark:border-red-900/30"><i class="fa-solid fa-file-signature text-red-500"></i> Medidas Administrativas</li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Distribuição Visual -->
@@ -1818,29 +1870,21 @@
                             
                             <!-- Indicadores Condicionantes -->
                             <div class="glass-card p-8 rounded-3xl">
-                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Binários e Gestor)</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Para Frequência e Ação de Alto Impacto: se a regra for cumprida (Sim), recebe-se o valor integral da fatia. Se houver desvio (Não), a respectiva fatia é zerada.</p>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    
-                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
-                                        <div class="flex justify-between items-start mb-2">
-                                            <div class="font-bold text-slate-800 dark:text-white text-sm">Frequência</div>
-                                            <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">R$ ${(maxG5).toFixed(2).replace('.', ',')}</span>
-                                        </div>
-                                        <div class="text-xs text-slate-500 mt-2">Reconhece a presença ativa e o compromisso contínuo com as rotinas da operação, fatores fundamentais para a estabilidade e qualidade do atendimento.</div>
-                                    </div>
+                                <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Avaliação Qualitativa)</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Se a regra binária for cumprida (Sim), recebe-se o valor integral da fatia; em caso de desvio (Não), a fatia correspondente é zerada.</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
                                         <div>
                                             <div class="flex justify-between items-start mb-2">
                                                 <div class="font-bold text-slate-800 dark:text-white text-sm">Avaliação do Gestor</div>
-                                                <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">R$ ${(maxG6).toFixed(2).replace('.', ',')}</span>
+                                                <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">Máx: R$ ${(maxG6).toFixed(2).replace('.', ',')}</span>
                                             </div>
                                             <div class="text-xs text-slate-500 mb-2">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
                                         </div>
-                                        <div class="mt-2 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700/50">
-                                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-1.5">Métricas de Fatiamento:</div>
-                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 space-y-1">
+                                        <div class="mt-2 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-2">Métricas de Fatiamento:</div>
+                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 space-y-1.5">
                                                 <div class="flex justify-between"><span>• 100%: Alinhamento Total</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 1.0).toFixed(2).replace('.', ',')}</strong></div>
                                                 <div class="flex justify-between"><span>• 75%: Bom Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.75).toFixed(2).replace('.', ',')}</strong></div>
                                                 <div class="flex justify-between"><span>• 50%: Alinhamento Parcial</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.50).toFixed(2).replace('.', ',')}</strong></div>
@@ -1853,9 +1897,9 @@
                                     <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
                                         <div class="flex justify-between items-start mb-2">
                                             <div class="font-bold text-slate-800 dark:text-white text-sm">Ação de Alto Impacto</div>
-                                            <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">R$ ${(maxG7).toFixed(2).replace('.', ',')}</span>
+                                            <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">Fixo: R$ ${(maxG7).toFixed(2).replace('.', ',')}</span>
                                         </div>
-                                        <div class="text-xs text-slate-500 mt-2">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
+                                        <div class="text-xs text-slate-500 mt-2">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação. <strong>Se Atingido = 100% da fatia. Falhou = 0%.</strong></div>
                                     </div>
                                     
                                 </div>
@@ -2043,6 +2087,29 @@
                                 <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
                             </button>
                         </div>
+                        
+                        <!-- Agendamento e Validação Presencial -->
+                        <div class="mt-6 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                            <h4 class="font-extrabold text-slate-800 dark:text-white text-sm mb-5"><i class="fa-solid fa-calendar-check text-blue-500 mr-2"></i> Agendamento e Validação de Feedback (Obrigatório)</h4>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div class="space-y-4">
+                                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Agendar Data/Hora p/ Feedback</label>
+                                    <div class="flex gap-2">
+                                        <input type="date" id="fb-date" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm dark:text-white" value="${res.fbDate || ''}">
+                                        <input type="time" id="fb-time" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm dark:text-white" value="${res.fbTime || ''}">
+                                    </div>
+                                    <button onclick="app.admin.scheduleFeedback()" class="w-full bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 font-bold py-3 px-4 rounded-xl text-xs transition border border-blue-200 dark:border-blue-800/50 uppercase tracking-widest">Registrar Agendamento</button>
+                                </div>
+                                
+                                <div class="space-y-4 md:border-l md:border-slate-200 dark:md:border-slate-700 md:pl-8">
+                                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Assinatura Presencial do Monitor</label>
+                                    <input type="password" id="fb-pwd" placeholder="Senha do Monitor logado" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm dark:text-white text-center">
+                                    <button onclick="app.admin.validateFeedback()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl text-xs shadow-md transition uppercase tracking-widest">Validar Bonificação</button>
+                                    ${res.status === 'validado' ? '<div class="text-xs text-green-600 dark:text-green-400 font-bold text-center mt-2 bg-green-50 dark:bg-green-900/20 py-2 rounded-lg"><i class="fa-solid fa-check-circle"></i> Resultados Validados</div>' : ''}
+                                </div>
+                            </div>
+                        </div>
                     `;
                     area.innerHTML = html;
                     area.classList.remove('hidden');
@@ -2065,11 +2132,51 @@
                         }
                     });
                     
+                    // Manter histórico de agendamento/status
+                    newRes.status = u.results[app.currentMonth]?.status || 'pendente';
+                    newRes.fbDate = u.results[app.currentMonth]?.fbDate || '';
+                    newRes.fbTime = u.results[app.currentMonth]?.fbTime || '';
+
                     if(!u.results) u.results = {};
                     u.results[app.currentMonth] = newRes;
                     
                     app.storage.saveUsers().then(() => {
                         app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
+                    });
+                },
+
+                scheduleFeedback() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const u = app.users.find(x => x.matricula === mat);
+                    const dt = document.getElementById('fb-date').value;
+                    const tm = document.getElementById('fb-time').value;
+                    if(!u || !u.results || !u.results[app.currentMonth]) return app.ui.showAlert("Aviso", "Grave os lançamentos do mês antes de agendar o feedback.", "info");
+                    if(!dt) return app.ui.showAlert("Aviso", "Insira uma data válida para o agendamento.", "error");
+
+                    u.results[app.currentMonth].fbDate = dt;
+                    u.results[app.currentMonth].fbTime = tm;
+                    if(u.results[app.currentMonth].status !== 'validado') u.results[app.currentMonth].status = 'agendado';
+                    
+                    app.storage.saveUsers().then(() => {
+                        app.ui.showAlert("Feedback Agendado", "A data do feedback foi salva e o monitor já consegue visualizá-la no seu painel.", "success");
+                        app.admin.loadUserEditor();
+                    });
+                },
+
+                validateFeedback() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const u = app.users.find(x => x.matricula === mat);
+                    const pwd = document.getElementById('fb-pwd').value;
+                    if(!u || !u.results || !u.results[app.currentMonth]) return;
+                    
+                    if(pwd !== u.senha) {
+                        return app.ui.showAlert("Assinatura Inválida", "A senha digitada não confere com a senha atual do colaborador.", "error");
+                    }
+
+                    u.results[app.currentMonth].status = 'validado';
+                    app.storage.saveUsers().then(() => {
+                        app.ui.showAlert("Validação Concluída", "Os resultados foram assinados com sucesso pelo colaborador e a bonificação foi liberada.", "success");
+                        app.admin.loadUserEditor();
                     });
                 },
 
@@ -2110,6 +2217,74 @@
                     });
                 },
 
+                exportBonusReport() {
+                    if (!window.jspdf || !window.jspdf.jsPDF) {
+                        return app.ui.showAlert("Aviso", "O sistema está carregando o módulo de PDF, aguarde um instante e clique novamente.", "error");
+                    }
+                    
+                    const doc = new window.jspdf.jsPDF('landscape'); 
+                    
+                    doc.setFontSize(16);
+                    doc.setTextColor(22, 163, 74); 
+                    doc.text("SOFTMARKETING - Relatorio Oficial de Bonificacao", 14, 15);
+                    
+                    doc.setFontSize(12);
+                    doc.setTextColor(30, 41, 59); 
+                    doc.text(`Competencia: ${app.ui.formatMonthLabel(app.currentMonth)}`, 14, 23);
+                    doc.setFontSize(9);
+                    doc.setTextColor(100, 116, 139); 
+                    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 29);
+                    
+                    const columns = ["Matricula", "Nome", "Operacao", "Monitorias (G1)", "Feedbacks (G2)", "Calibragens (G3)", "Acoes (G4)", "Gestor (G6)", "Impacto (G7)", "Total Pago (R$)"];
+                    const rows = [];
+                    
+                    app.users.forEach(u => {
+                        const res = u.results ? u.results[app.currentMonth] : null;
+                        if(res && Object.keys(res).length > 0) {
+                            const stats = app.calc.getTotal(res);
+                            
+                            const g1 = app.calc.getGoalResult('g1', res).display;
+                            const g2 = app.calc.getGoalResult('g2', res).display;
+                            const g3 = app.calc.getGoalResult('g3', res).display;
+                            const g4 = app.calc.getGoalResult('g4', res).display;
+                            const g6 = app.calc.getGoalResult('g6', res).display;
+                            const g7 = app.calc.getGoalResult('g7', res).display;
+                            
+                            const valTotal = `R$ ${stats.received.toFixed(2)}`;
+                            
+                            rows.push([u.matricula, u.nome, "MONITORIA", g1, g2, g3, g4, g6, g7, valTotal]);
+                        }
+                    });
+
+                    if(rows.length === 0) {
+                        return app.ui.showAlert("Sem Dados", `Não há pagamentos registrados para o mês de ${app.ui.formatMonthLabel(app.currentMonth)} para gerar no relatório.`, "info");
+                    }
+
+                    doc.autoTable({
+                        head: [columns],
+                        body: rows,
+                        startY: 35,
+                        theme: 'grid',
+                        headStyles: { fillColor: [22, 163, 74], fontSize: 7, halign: 'center' }, 
+                        styles: { fontSize: 7, cellPadding: 2, valign: 'middle', halign: 'center' },
+                        columnStyles: { 
+                            1: { halign: 'left', cellWidth: 50 }, 
+                            9: { fontStyle: 'bold', textColor: [22, 163, 74] } 
+                        },
+                        alternateRowStyles: { fillColor: [248, 250, 252] }
+                    });
+                    
+                    const pageCount = doc.internal.getNumberOfPages();
+                    for(let i = 1; i <= pageCount; i++) {
+                        doc.setPage(i);
+                        doc.setFontSize(7);
+                        doc.setTextColor(150, 150, 150);
+                        doc.text(`Pagina ${i} de ${pageCount} - Softmarketing`, 14, doc.internal.pageSize.height - 10);
+                    }
+                    
+                    doc.save(`Relatorio_Bonificacao_${app.currentMonth}.pdf`);
+                },
+
                 generateLegalPDF() {
                     if (!window.jspdf || !window.jspdf.jsPDF) {
                         return app.ui.showAlert("Aviso", "A biblioteca de geração de PDF está carregando, tente novamente em 3 segundos.", "error");
@@ -2117,34 +2292,26 @@
                     
                     const doc = new window.jspdf.jsPDF('landscape'); 
                     
-                    // Header Softmarketing (Apenas Texto)
                     doc.setFontSize(16);
                     doc.setTextColor(22, 163, 74); 
                     doc.text("SOFTMARKETING - Solucoes em Comunicacao", 14, 15);
-                    
                     doc.setFontSize(12);
                     doc.setTextColor(30, 41, 59); 
                     doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
-                    
-                    // Metadados
                     doc.setFontSize(9);
                     doc.setTextColor(100, 116, 139); 
                     doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
                     doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
                     
-                    // Preparar Tabela
                     const columns = ["Colaborador", "Matricula", "Status LGPD (Termos)", "Status Diretrizes (Metas)"];
                     const rows = [];
                     
                     app.users.forEach(u => {
-                        const termos = u.aceiteTermos ? `ACEITO EM:
-${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                        const diretrizes = u.aceiteDiretrizes ? `ACEITO EM:
-${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const termos = u.aceiteTermos ? `ACEITO EM:\n${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
+                        const diretrizes = u.aceiteDiretrizes ? `ACEITO EM:\n${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
                         rows.push([u.nome, u.matricula, termos, diretrizes]);
                     });
 
-                    // Configurar Tabela usando autoTable
                     doc.autoTable({
                         head: [columns],
                         body: rows,
@@ -2154,14 +2321,10 @@ ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceit
                         styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
                         alternateRowStyles: { fillColor: [248, 250, 252] }, 
                         columnStyles: {
-                            0: { cellWidth: 70 },
-                            1: { cellWidth: 40 },
-                            2: { cellWidth: 80 },
-                            3: { cellWidth: 80 }
+                            0: { cellWidth: 70 }, 1: { cellWidth: 40 }, 2: { cellWidth: 80 }, 3: { cellWidth: 80 }
                         }
                     });
                     
-                    // Rodapé
                     const pageCount = doc.internal.getNumberOfPages();
                     for(let i = 1; i <= pageCount; i++) {
                         doc.setPage(i);
@@ -2172,7 +2335,7 @@ ${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceit
                     
                     doc.save("Softmarketing_Relatorio_Aceites_LGPD.pdf");
                 }
-            } // <-- Fim do Objeto Admin
+            }
         };
 
         window.onload = () => { app.ui.init(); };
