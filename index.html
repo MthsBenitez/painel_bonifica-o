@@ -161,15 +161,21 @@
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
                     <div class="relative">
                         <i class="fa-solid fa-user absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="login-mat" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
+                        <input type="text" id="login-mat" name="username" autocomplete="username" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
                     </div>
                 </div>
                 <div class="text-left">
                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
                     <div class="relative">
                         <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="password" id="login-pwd" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
+                        <input type="password" id="login-pwd" name="password" autocomplete="current-password" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
                     </div>
+                </div>
+                <div class="flex items-center justify-between mt-2 px-1">
+                    <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-green-600 transition-colors">
+                        <input type="checkbox" id="login-remember" class="accent-green-600 w-4 h-4 rounded border-slate-300 cursor-pointer">
+                        Lembrar minha matrícula
+                    </label>
                 </div>
                 <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-4">
                     Acessar Dashboard
@@ -253,8 +259,8 @@
 
         <!-- Container de Conteúdo -->
         <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10 flex-1">
-            <div id="content-container" class="animate-fade-in">
-                <!-- Views injetadas via JS -->
+            <div id="content-container" class="relative w-full h-full">
+                <!-- Views injetadas em sub-containers via JS para reter estado/memória -->
             </div>
         </main>
     </div>
@@ -326,7 +332,7 @@
                             }
 
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
-                                app.ui.refreshCurrentView();
+                                app.ui.renderTab(app.currentTab, true); // Force refresh if data changed from backend
                                 app.notifications.updateBadge();
                             }
                         } else {
@@ -364,7 +370,9 @@
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
                 this.currentMonth = newMonthStr;
-                this.ui.refreshCurrentView();
+                // Quando troca de mês, resetar o cache inteiro
+                document.getElementById('content-container').innerHTML = ''; 
+                this.ui.renderTab(app.currentTab, true);
             },
 
             notifications: {
@@ -373,6 +381,33 @@
                     app.notificationsList[id] = { id, userId, title, message, type, read: false, timestamp: Date.now() };
                     app.storage.saveNotifications();
                 },
+                
+                checkDailySchedule() {
+                    const today = new Date().toISOString().split('T')[0];
+                    let needsSave = false;
+
+                    app.users.forEach(u => {
+                        const res = u.results && u.results[app.currentMonth];
+                        if(res && res.status === 'agendado' && res.fbDate === today) {
+                            const notifIdADM = 'notif_daily_adm_' + u.matricula + '_' + today;
+                            const notifIdUser = 'notif_daily_usr_' + u.matricula + '_' + today;
+                            
+                            if(!app.notificationsList[notifIdADM]) {
+                                app.notificationsList[notifIdADM] = { id: notifIdADM, userId: 'ADM', title: 'Feedback Hoje!', message: `Lembrete: Você tem feedback presencial agendado com ${u.nome} hoje às ${res.fbTime || '--:--'}.`, type: 'info', read: false, timestamp: Date.now() };
+                                needsSave = true;
+                            }
+                            if(!app.notificationsList[notifIdUser]) {
+                                app.notificationsList[notifIdUser] = { id: notifIdUser, userId: u.matricula, title: 'Feedback Hoje!', message: `Lembrete: O seu feedback presencial com o gestor acontecerá hoje às ${res.fbTime || '--:--'}.`, type: 'info', read: false, timestamp: Date.now() };
+                                needsSave = true;
+                            }
+                        }
+                    });
+
+                    if(needsSave) {
+                        app.storage.saveNotifications();
+                    }
+                },
+
                 toggleDropdown(e) {
                     e.stopPropagation();
                     const drop = document.getElementById('notif-dropdown');
@@ -500,7 +535,7 @@
                         app.storage.saveActions().then(() => {
                             app.notifications.notify('ADM', 'Nova Ação Registrada', `${app.currentUser.nome} registrou uma ação para o mês de ${app.ui.formatMonthLabel(app.currentMonth)}.`, 'info');
                             app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação da gestão.", "success");
-                            app.ui.renderTab('registrar_acao');
+                            app.ui.renderTab('registrar_acao', true);
                         });
                     });
                 },
@@ -529,7 +564,7 @@
                         }
                         
                         app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
-                        app.ui.renderTab('validar_acoes');
+                        app.ui.renderTab('validar_acoes', true);
                     });
                 },
 
@@ -541,7 +576,7 @@
                     app.storage.saveActions().then(() => {
                         app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi reprovada. Fale com a gestão.`, 'error');
                         app.ui.showAlert("Feito", "Ação reprovada e descartada da métrica.", "info");
-                        app.ui.renderTab('validar_acoes');
+                        app.ui.renderTab('validar_acoes', true);
                     });
                 },
                 
@@ -633,7 +668,14 @@
                 login() {
                     const mat = document.getElementById('login-mat').value.trim();
                     const pwd = document.getElementById('login-pwd').value.trim();
+                    const remember = document.getElementById('login-remember').checked;
                     
+                    if(remember) {
+                        localStorage.setItem('soft_saved_mat', mat);
+                    } else {
+                        localStorage.removeItem('soft_saved_mat');
+                    }
+
                     if(mat === 'gestaosoft' && pwd === 'qualidade2026') {
                         app.isAdmin = true; app.currentUser = null; app.currentTab = 'dashboard_adm';
                         document.getElementById('view-login').classList.add('hidden');
@@ -691,7 +733,11 @@
 
                 logout() {
                     app.isAdmin = false; app.currentUser = null; window.selectedAdminEditUser = null;
-                    document.getElementById('login-mat').value = ''; document.getElementById('login-pwd').value = '';
+                    
+                    const savedMat = localStorage.getItem('soft_saved_mat');
+                    document.getElementById('login-mat').value = savedMat || '';
+                    document.getElementById('login-pwd').value = '';
+                    
                     document.getElementById('view-app').classList.add('hidden');
                     document.getElementById('terms-modal').classList.add('hidden');
                     document.getElementById('guidelines-modal').classList.add('hidden');
@@ -703,6 +749,9 @@
                     document.getElementById('chk-diretrizes').checked = false;
                     document.getElementById('btn-diretrizes').disabled = true;
                     document.getElementById('btn-diretrizes').classList.add('opacity-50','cursor-not-allowed');
+                    
+                    // Clear all memory tabs
+                    document.getElementById('content-container').innerHTML = '';
                     
                     document.getElementById('view-login').classList.remove('hidden');
                 },
@@ -727,6 +776,13 @@
                 
                 init() {
                     this.checkTheme();
+                    
+                    const savedMat = localStorage.getItem('soft_saved_mat');
+                    if(savedMat) {
+                        document.getElementById('login-mat').value = savedMat;
+                        document.getElementById('login-remember').checked = true;
+                    }
+                    
                     const today = new Date();
                     const mm = String(today.getMonth() + 1).padStart(2, '0');
                     const yyyy = today.getFullYear();
@@ -756,7 +812,7 @@
                         localStorage.setItem('theme', 'dark');
                         icon.classList.replace('fa-moon', 'fa-sun');
                     }
-                    this.refreshCurrentView();
+                    this.refreshCurrentView(); // Optional update on theme switch
                 },
 
                 showAlert(title, message, type = 'info') {
@@ -786,8 +842,12 @@
                 showApp() {
                     document.getElementById('header-username').textContent = app.isAdmin ? 'Administração' : app.currentUser.nome;
                     document.getElementById('view-app').classList.remove('hidden');
+                    
+                    // Rotina Diária de Agenda
+                    app.notifications.checkDailySchedule();
+                    
                     this.renderNav();
-                    this.renderTab(app.currentTab);
+                    this.renderTab(app.currentTab, true);
                     app.notifications.updateBadge();
                 },
 
@@ -800,6 +860,7 @@
                     
                     tabs.forEach(t => {
                         const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
+                        // Pass false to NOT force refresh, keeping memory alive
                         html += `<button onclick="app.ui.renderTab('${t.id}')" class="px-5 py-3 font-semibold text-sm rounded-t-xl transition-all flex items-center gap-2 whitespace-nowrap ${activeCls}"><i class="fa-solid ${t.icon}"></i> ${t.label}</button>`;
                     });
                     nav.innerHTML = html;
@@ -807,7 +868,7 @@
 
                 refreshCurrentView() {
                     if(!document.getElementById('view-app').classList.contains('hidden')) {
-                        this.renderTab(app.currentTab);
+                        this.renderTab(app.currentTab, true);
                     }
                 },
 
@@ -818,22 +879,38 @@
                     return `${months[parseInt(m)-1]} de ${y}`;
                 },
 
-                renderTab(tabId) {
+                renderTab(tabId, forceRefresh = false) {
                     app.currentTab = tabId;
                     this.renderNav();
-                    const container = document.getElementById('content-container');
-                    container.innerHTML = ''; 
+                    const mainContainer = document.getElementById('content-container');
+                    
+                    // Esconder todas as abas (Memória ativada)
+                    const allViews = mainContainer.querySelectorAll('.tab-view-container');
+                    allViews.forEach(v => v.classList.add('hidden'));
 
-                    if(tabId === 'meu_painel') this.renderView_MeuPainel(container);
-                    else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(container);
-                    else if(tabId === 'cadastros') this.renderView_Cadastros(container);
-                    else if(tabId === 'configuracoes') this.renderView_Config(container);
-                    else if(tabId === 'calculadora') this.renderView_Calculadora(container);
-                    else if(tabId === 'regras') this.renderView_Regras(container);
-                    else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(container);
-                    else if(tabId === 'legal') this.renderView_Legal(container);
-                    else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(container);
-                    else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(container);
+                    let viewDiv = document.getElementById('view-container-' + tabId);
+                    
+                    if(!viewDiv || forceRefresh) {
+                        if(viewDiv) viewDiv.remove();
+                        viewDiv = document.createElement('div');
+                        viewDiv.id = 'view-container-' + tabId;
+                        viewDiv.className = 'tab-view-container w-full h-full animate-fade-in pb-12';
+                        mainContainer.appendChild(viewDiv);
+                        
+                        // RENDER
+                        if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
+                        else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
+                        else if(tabId === 'cadastros') this.renderView_Cadastros(viewDiv);
+                        else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
+                        else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
+                        else if(tabId === 'regras') this.renderView_Regras(viewDiv);
+                        else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
+                        else if(tabId === 'legal') this.renderView_Legal(viewDiv);
+                        else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
+                        else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv);
+                    }
+                    
+                    viewDiv.classList.remove('hidden');
                 },
 
                 renderView_RegistrarAcao(container) {
@@ -953,7 +1030,7 @@
 
                 setActionFilter(filterType) {
                     this.currentActionFilter = filterType;
-                    this.renderTab('validar_acoes');
+                    this.renderTab('validar_acoes', true); // Force refresh specific to inside logic
                 },
 
                 renderView_ValidarAcoes(container) {
@@ -1216,7 +1293,7 @@
 
                 refreshMeuPainelAdm() {
                     window.selectedViewUser = document.getElementById('adm-view-user').value;
-                    this.renderTab('meu_painel');
+                    this.renderTab('meu_painel', true);
                 },
 
                 renderView_DashboardAdm(container) {
@@ -1226,6 +1303,9 @@
                     let totalCusto = 0; let somaPct = 0; let usersComResultado = 0;
                     const goalStats = {};
                     app.config.goals.forEach(g => { goalStats[g.id] = { name: g.title, somaMult: 0, somaVal: 0, count: 0, worstUsers: [] }; });
+
+                    // Coletando métricas globais e filtrando Agenda
+                    const pendentes = [];
 
                     app.users.forEach(u => {
                         const resultsForMonth = (u.results && u.results[app.currentMonth]);
@@ -1242,9 +1322,14 @@
                                 goalStats[g.id].count++;
                                 goalStats[g.id].worstUsers.push({ nome: u.nome, mult: res.mult });
                             });
+                            
+                            if(resultsForMonth.status === 'agendado') {
+                                pendentes.push(u);
+                            }
                         }
                     });
 
+                    pendentes.sort((a,b) => new Date(a.results[app.currentMonth].fbDate) - new Date(b.results[app.currentMonth].fbDate));
                     const mediaGeral = usersComResultado > 0 ? ((somaPct / usersComResultado) * 100).toFixed(1) : 0;
 
                     let html = `
@@ -1258,41 +1343,80 @@
                             </button>
                         </div>
 
+                        <!-- Linha 1: KPIs -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
-                                <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-sack-dollar"></i></div>
+                                <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-sack-dollar"></i></div>
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total (Mês)</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
+                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500">
-                                <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-users-viewfinder"></i></div>
+                                <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-users-viewfinder"></i></div>
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${app.users.length}</span></div>
+                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${app.users.length}</span></div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-purple-500">
-                                <div class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-chart-simple"></i></div>
+                                <div class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-chart-simple"></i></div>
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Média de Qualidade</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${mediaGeral}%</div>
+                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${mediaGeral}%</div>
                                 </div>
                             </div>
                         </div>
                         
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                            <div class="glass-card p-6 rounded-3xl">
-                                <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Aproveitamento Médio (%)</h3>
-                                <div class="relative h-[280px] w-full"><canvas id="chart-pct"></canvas></div>
+                        <!-- Linha 2: Agenda e Gráficos -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                            
+                            <!-- Coluna 1: Agenda Automática -->
+                            <div class="lg:col-span-1 glass-card p-6 rounded-3xl h-full flex flex-col">
+                                <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><i class="fa-solid fa-calendar-day text-blue-500"></i> Próximos Feedbacks</h3>
+                    `;
+                    
+                    if(pendentes.length === 0) {
+                        html += `<div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-4 min-h-[250px]"><i class="fa-regular fa-calendar-check text-5xl mb-3 opacity-50"></i><p class="text-sm">Nenhum feedback pendente de validação.</p></div>`;
+                    } else {
+                        html += `<div class="space-y-3 overflow-y-auto pr-2 max-h-[280px]">`;
+                        pendentes.forEach(p => {
+                            const r = p.results[app.currentMonth];
+                            const dataFmt = r.fbDate ? new Date(r.fbDate + 'T00:00:00').toLocaleDateString('pt-BR') : '--';
+                            const hrFmt = r.fbTime || '--:--';
+                            const isToday = r.fbDate === new Date().toISOString().split('T')[0];
+                            const badge = isToday ? `<span class="bg-red-100 text-red-600 px-2 py-0.5 rounded-md text-[10px] font-bold animate-pulse">HOJE</span>` : `<span class="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md text-[10px] font-bold">${dataFmt}</span>`;
+                            
+                            html += `
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-colors shadow-sm" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ document.getElementById('adm-user-select').value='${p.matricula}'; app.admin.loadUserEditor(); }, 150);" title="Ir para lançamento do monitor">
+                                    <div class="min-w-0 pr-2">
+                                        <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${p.nome}</div>
+                                        <div class="text-[10px] font-semibold text-slate-500 flex items-center gap-1.5 mt-1"><i class="fa-regular fa-clock"></i> ${hrFmt}</div>
+                                    </div>
+                                    <div class="shrink-0 text-right">${badge}</div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
+                    }
+                                
+                    html += `
                             </div>
-                            <div class="glass-card p-6 rounded-3xl">
-                                <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Distribuição Financeira (R$)</h3>
-                                <div class="relative h-[280px] w-full"><canvas id="chart-finance"></canvas></div>
+
+                            <!-- Coluna 2 e 3: Gráficos -->
+                            <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+                                <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
+                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Aproveitamento (%)</h3>
+                                    <div class="relative flex-1 min-h-[220px] w-full"><canvas id="chart-pct"></canvas></div>
+                                </div>
+                                <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
+                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Financeiro (R$)</h3>
+                                    <div class="relative flex-1 min-h-[220px] w-full"><canvas id="chart-finance"></canvas></div>
+                                </div>
                             </div>
                         </div>
 
+                        <!-- Linha 3: Ofensores -->
                         <div class="glass-card p-8 rounded-3xl mb-8">
                             <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Foco de Melhoria (Ofensores)</h3>
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1524,18 +1648,22 @@
                     app.config.goals.forEach(g => {
                         const fakeRes = {};
                         if(g.type === 'percent') {
-                            fakeRes[g.id] = { meta: document.getElementById(`sim-${g.id}-meta`).value, real: document.getElementById(`sim-${g.id}-real`).value };
+                            const mEl = document.getElementById(`sim-${g.id}-meta`);
+                            const rEl = document.getElementById(`sim-${g.id}-real`);
+                            if(mEl && rEl) fakeRes[g.id] = { meta: mEl.value, real: rEl.value };
                         } else {
-                            fakeRes[g.id] = { val: document.getElementById(`sim-${g.id}-val`).value };
+                            const vEl = document.getElementById(`sim-${g.id}-val`);
+                            if(vEl) fakeRes[g.id] = { val: vEl.value };
                         }
                         const r = app.calc.getGoalResult(g.id, fakeRes);
-                        document.getElementById(`sim-res-${g.id}`).textContent = `R$ ${r.received.toFixed(2)}`;
+                        const resEl = document.getElementById(`sim-res-${g.id}`);
+                        if(resEl) resEl.textContent = `R$ ${r.received.toFixed(2)}`;
                         total += r.received;
                     });
-                    document.getElementById('sim-total-res').textContent = `R$ ${total.toFixed(2)}`;
+                    const tEl = document.getElementById('sim-total-res');
+                    if(tEl) tEl.textContent = `R$ ${total.toFixed(2)}`;
                 },
 
-                // Acesso agora é global (removido bloqueio do ADM)
                 renderView_CalcMonitorias(container) {
                     let html = `
                         <div class="mb-8">
@@ -1587,7 +1715,7 @@
                                 </div>
                             </div>
 
-                            <!-- Resultados -->
+                            <!-- Resultados e Explicação -->
                             <div class="lg:w-5/12 flex flex-col gap-6">
                                 <div class="bg-gradient-to-br from-green-600 to-emerald-800 rounded-3xl p-8 shadow-xl text-white">
                                     <h3 class="font-extrabold text-xl mb-8 flex items-center gap-3"><i class="fa-solid fa-chart-line"></i> Capacidade Projetada</h3>
@@ -1617,18 +1745,35 @@
                                     </div>
                                 </div>
 
-                                <!-- Explicação Matemática -->
-                                <div class="bg-green-50 dark:bg-slate-800/80 border border-green-100 dark:border-slate-700 rounded-3xl p-6 text-sm text-slate-600 dark:text-slate-400 leading-relaxed shadow-sm">
-                                    <h4 class="font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2"><i class="fa-solid fa-calculator text-green-600"></i> Como este cálculo é feito?</h4>
-                                    <p class="mb-2"><strong>1. Tempo Produtivo:</strong> Subtraímos as pausas e outras tarefas do tempo total do turno.</p>
-                                    <p class="mb-2"><strong>2. Esforço por Monitoria:</strong> Somamos o tempo de escuta/nota com o tempo de feedback. O feedback é multiplicado pelo <strong>Volume (%)</strong> para diluir o tempo apenas para as avaliações que o exigirão.</p>
-                                    <p><strong>3. Meta e Tempo Livre:</strong> Dividimos o <em>Tempo Produtivo</em> pelo <em>Esforço por Monitoria</em>, garantindo que o colaborador entregue números inteiros. O que não forma uma monitoria completa vira o <em>Tempo Livre (Residual)</em>.</p>
+                                <!-- Explicação Matemática - Fábrica de Bolos -->
+                                <div class="bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+                                    <div class="absolute -right-4 -top-4 text-7xl text-slate-200 dark:text-slate-700 opacity-50"><i class="fa-solid fa-cake-candles"></i></div>
+                                    
+                                    <h4 class="font-extrabold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2 text-lg relative z-10"><i class="fa-solid fa-calculator text-green-600"></i> Entendendo a Lógica</h4>
+                                    <p class="mb-5 text-sm text-slate-600 dark:text-slate-400 relative z-10">Para ficar cristalino como o sistema calcula seu número diário, pense que a operação é uma <strong>Fábrica de Bolos</strong>:</p>
+                                    
+                                    <div class="space-y-4 relative z-10">
+                                        <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                            <h5 class="font-bold text-slate-800 dark:text-white text-sm mb-1.5 flex items-center gap-2"><i class="fa-solid fa-fire-burner text-orange-500"></i> 1. Tempo de Forno (Produtivo)</h5>
+                                            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Você está na fábrica por 8 horas (Turno). Porém, você tem 1 hora de almoço e 30 minutos de reunião. Seu tempo <strong>real</strong> livre para fazer os bolos é de 6h30min. Esse é o seu <em>Produtivo Líquido</em> do dia.</p>
+                                        </div>
+                                        
+                                        <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                            <h5 class="font-bold text-slate-800 dark:text-white text-sm mb-1.5 flex items-center gap-2"><i class="fa-solid fa-truck-fast text-blue-500"></i> 2. Custos da Unidade (Monitoria)</h5>
+                                            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Fazer um bolo (Escuta) gasta 15 min. Entregar na casa do cliente (Feedback) gasta 5 min. Mas atenção: você não entrega <em>todos</em>! Digamos que só 50% deles precisam de entrega. O sistema faz a média exata de tempo que você gastará misturando os que têm entrega e os que não têm.</p>
+                                        </div>
+                                        
+                                        <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                            <h5 class="font-bold text-slate-800 dark:text-white text-sm mb-1.5 flex items-center gap-2"><i class="fa-solid fa-box-check text-green-500"></i> 3. A Conta Redonda (Sua Meta)</h5>
+                                            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Pegamos o seu tempo total (6h30) e dividimos pelo tempo médio de um bolo completo. Se o resultado for 20,5 bolos, não tem como entregar meio bolo pronto. Sua meta é cravada para baixo: <strong>20 bolos</strong> inteiros. O tempo que sobrou desse "meio bolo" se torna seu <em>Tempo Livre</em>.</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     `;
                     container.innerHTML = html;
-                    app.ui.calcDimensionamento();
+                    app.ui.calcDimensionamento(); // Inicializar valores default na tela
                 },
 
                 timeStrToMinutes(str) {
@@ -1649,7 +1794,10 @@
                 },
 
                 calcDimensionamento() {
-                    const turnoStr = document.getElementById('dim-horas').value;
+                    const turnoEl = document.getElementById('dim-horas');
+                    if(!turnoEl) return;
+                    
+                    const turnoStr = turnoEl.value;
                     const pausasStr = document.getElementById('dim-pausas').value;
                     const outrasStr = document.getElementById('dim-outras').value;
                     const tmoStr = document.getElementById('dim-tmo').value;
@@ -1876,7 +2024,7 @@
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     
-                                    <!-- Avaliação do Gestor (Padronizado) -->
+                                    <!-- Avaliação do Gestor -->
                                     <div class="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col h-full shadow-sm">
                                         <div class="flex justify-between items-start mb-2">
                                             <div class="font-bold text-slate-800 dark:text-white text-base">Avaliação do Gestor</div>
@@ -1896,7 +2044,7 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Ação de Alto Impacto (Padronizado idêntico ao de cima) -->
+                                    <!-- Ação de Alto Impacto -->
                                     <div class="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col h-full shadow-sm">
                                         <div class="flex justify-between items-start mb-2">
                                             <div class="font-bold text-slate-800 dark:text-white text-base">Ação de Alto Impacto</div>
@@ -2000,7 +2148,7 @@
                     app.storage.saveUsers();
                     document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
                     app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado com sucesso!", "success");
-                    app.ui.refreshCurrentView();
+                    app.ui.renderTab('cadastros', true);
                 },
 
                 loadUserEditor() {
@@ -2026,7 +2174,10 @@
                         <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl mb-6 border border-slate-200 dark:border-slate-700/50 gap-4">
                             <div>
                                 <span class="text-[10px] text-slate-400 dark:text-slate-500 block uppercase tracking-widest font-bold mb-1">Credencial Atual:</span>
-                                <code class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700">${u.senha}</code>
+                                <div class="relative inline-block mt-1">
+                                    <input type="password" readonly value="${u.senha}" id="pwd-reveal-${u.matricula}" class="text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 pl-3 pr-8 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 w-32 outline-none">
+                                    <button onclick="const i = document.getElementById('pwd-reveal-${u.matricula}'); if(i.type==='password'){i.type='text';}else{i.type='password';}" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-500 transition-colors" title="Revelar Senha"><i class="fa-solid fa-eye"></i></button>
+                                </div>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 w-full xl:w-auto">
                                 <div class="text-xs">
@@ -2113,11 +2264,11 @@
                                     <button onclick="app.admin.scheduleFeedback()" class="w-full bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 font-bold py-3 px-4 rounded-xl text-xs transition border border-blue-200 dark:border-blue-800/50 uppercase tracking-widest">Registrar Agendamento</button>
                                 </div>
                                 
-                                <div class="space-y-4 md:border-l md:border-slate-200 dark:md:border-slate-700 md:pl-8">
+                                <div class="space-y-4 md:border-l md:border-slate-200 dark:md:border-slate-700 md:pl-8 relative">
                                     <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Assinatura Presencial do Monitor</label>
                                     <input type="password" id="fb-pwd" placeholder="Senha do Monitor logado" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm dark:text-white text-center">
                                     <button onclick="app.admin.validateFeedback()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl text-xs shadow-md transition uppercase tracking-widest">Validar Bonificação</button>
-                                    ${res.status === 'validado' ? '<div class="text-xs text-green-600 dark:text-green-400 font-bold text-center mt-2 bg-green-50 dark:bg-green-900/20 py-2 rounded-lg"><i class="fa-solid fa-check-circle"></i> Resultados Validados</div>' : ''}
+                                    ${res.status === 'validado' ? '<div class="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-[2px] flex items-center justify-center rounded-xl z-10 border border-green-200 dark:border-green-800/50"><div class="text-sm text-green-600 dark:text-green-400 font-bold bg-green-50 dark:bg-green-900/40 py-2 px-6 rounded-lg shadow-sm"><i class="fa-solid fa-check-circle"></i> Resultados Validados</div></div>' : ''}
                                 </div>
                             </div>
                         </div>
@@ -2168,6 +2319,9 @@
                     u.results[app.currentMonth].fbTime = tm;
                     if(u.results[app.currentMonth].status !== 'validado') u.results[app.currentMonth].status = 'agendado';
                     
+                    // Notificar Monitor instantaneamente do agendamento
+                    app.notifications.notify(u.matricula, 'Feedback Agendado!', `Seu gestor agendou seu feedback presencial para ${dt.split('-').reverse().join('/')} às ${tm || '--:--'}.`, 'info');
+
                     app.storage.saveUsers().then(() => {
                         app.ui.showAlert("Feedback Agendado", "A data do feedback foi salva e o monitor já consegue visualizá-la no seu painel.", "success");
                         app.admin.loadUserEditor();
@@ -2201,7 +2355,7 @@
                 executeDeleteUser() {
                     app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
                     window.selectedAdminEditUser = null;
-                    app.storage.saveUsers().then(() => app.ui.refreshCurrentView());
+                    app.storage.saveUsers().then(() => app.ui.renderTab('cadastros', true));
                 },
 
                 updateConfigPreview() {
