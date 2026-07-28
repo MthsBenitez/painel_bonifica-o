@@ -1690,6 +1690,7 @@
                     const getGoalMax = (id) => { const g = app.config.goals.find(x => x.id === id); return g ? (totalBase * g.weight) : 0; };
                     
                     const maxG1 = getGoalMax('g1'); 
+                    const maxG2 = getGoalMax('g2'); 
                     const maxG3 = getGoalMax('g3'); 
                     const maxG4 = getGoalMax('g4'); 
                     const maxG6 = getGoalMax('g6'); 
@@ -1724,7 +1725,7 @@
                                     <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-chart-pie"></i></div>
                                     Distribuição da Bonificação (Total: R$ ${totalBase.toFixed(2).replace('.', ',')})
                                 </h3>
-                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                     `;
                     
                     app.config.goals.forEach(g => {
@@ -1872,34 +1873,44 @@
                             <div class="glass-card p-8 rounded-3xl">
                                 <h3 class="font-extrabold text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center rounded-xl"><i class="fa-solid fa-toggle-on"></i></div> Indicadores Condicionantes (Avaliação Qualitativa)</h3>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Metas focadas em atitude, cultura e compromisso primário. Se a regra binária for cumprida (Sim), recebe-se o valor integral da fatia; em caso de desvio (Não), a fatia correspondente é zerada.</p>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     
-                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col justify-between">
-                                        <div>
-                                            <div class="flex justify-between items-start mb-2">
-                                                <div class="font-bold text-slate-800 dark:text-white text-sm">Avaliação do Gestor</div>
-                                                <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">Máx: R$ ${(maxG6).toFixed(2).replace('.', ',')}</span>
-                                            </div>
-                                            <div class="text-xs text-slate-500 mb-2">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
+                                    <!-- Avaliação do Gestor (Padronizado) -->
+                                    <div class="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col h-full shadow-sm">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div class="font-bold text-slate-800 dark:text-white text-base">Avaliação do Gestor</div>
+                                            <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">Máx: R$ ${(maxG6).toFixed(2).replace('.', ',')}</span>
                                         </div>
-                                        <div class="mt-2 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-700/50">
-                                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-2">Métricas de Fatiamento:</div>
-                                            <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 space-y-1.5">
-                                                <div class="flex justify-between"><span>• 100%: Alinhamento Total</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 1.0).toFixed(2).replace('.', ',')}</strong></div>
-                                                <div class="flex justify-between"><span>• 75%: Bom Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.75).toFixed(2).replace('.', ',')}</strong></div>
-                                                <div class="flex justify-between"><span>• 50%: Alinhamento Parcial</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.50).toFixed(2).replace('.', ',')}</strong></div>
-                                                <div class="flex justify-between"><span>• 25%: Baixo Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.25).toFixed(2).replace('.', ',')}</strong></div>
-                                                <div class="flex justify-between"><span>• 0%: Sem Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ 0,00</strong></div>
+                                        <div class="text-xs text-slate-500 mb-4 flex-1">Reflete percepção comportamental, postura profissional e entregas alinhadas aos objetivos da operação.</div>
+                                        
+                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                                            <div class="text-[10px] font-bold text-slate-400 uppercase mb-2.5">Métricas de Fatiamento:</div>
+                                            <div class="text-[11px] font-medium text-slate-600 dark:text-slate-300 space-y-2">
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-[8px] text-green-500"></i> 100%: Alinhamento Total</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 1.0).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-[8px] text-blue-500"></i> 75%: Bom Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.75).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-[8px] text-orange-500"></i> 50%: Alinhamento Parcial</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.50).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-[8px] text-amber-500"></i> 25%: Baixo Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG6 * 0.25).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-[8px] text-red-500"></i> 0%: Sem Alinhamento</span><strong class="text-slate-800 dark:text-white">R$ 0,00</strong></div>
                                             </div>
                                         </div>
                                     </div>
                                     
-                                    <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface">
+                                    <!-- Ação de Alto Impacto (Padronizado idêntico ao de cima) -->
+                                    <div class="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-dark-surface flex flex-col h-full shadow-sm">
                                         <div class="flex justify-between items-start mb-2">
-                                            <div class="font-bold text-slate-800 dark:text-white text-sm">Ação de Alto Impacto</div>
+                                            <div class="font-bold text-slate-800 dark:text-white text-base">Ação de Alto Impacto</div>
                                             <span class="font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-[10px] border border-green-100 dark:border-green-800/50">Fixo: R$ ${(maxG7).toFixed(2).replace('.', ',')}</span>
                                         </div>
-                                        <div class="text-xs text-slate-500 mt-2">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação. <strong>Se Atingido = 100% da fatia. Falhou = 0%.</strong></div>
+                                        <div class="text-xs text-slate-500 mb-4 flex-1">Reconhece o apoio extra, a proatividade direcionada ao fortalecimento da equipe e o quanto suas ações de impacto estão alinhadas aos objetivos mensais da operação.</div>
+                                        
+                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                                            <div class="text-[10px] font-bold text-slate-400 uppercase mb-2.5">Métrica Binária:</div>
+                                            <div class="text-[11px] font-medium text-slate-600 dark:text-slate-300 space-y-2">
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-check text-green-500"></i> Atingido (Sim)</span><strong class="text-slate-800 dark:text-white">R$ ${(maxG7 * 1.0).toFixed(2).replace('.', ',')}</strong></div>
+                                                <div class="flex justify-between items-center"><span class="flex items-center gap-1.5"><i class="fa-solid fa-xmark text-red-500"></i> Falhou (Não)</span><strong class="text-slate-800 dark:text-white">R$ 0,00</strong></div>
+                                            </div>
+                                        </div>
                                     </div>
                                     
                                 </div>
