@@ -1415,7 +1415,7 @@
                     
                     let totalCusto = 0; let somaPct = 0; let usersComResultado = 0;
                     const goalStats = {};
-                    app.config.goals.forEach(g => { goalStats[g.id] = { name: g.title, somaMult: 0, somaVal: 0, count: 0, worstUsers: [] }; });
+                    app.config.goals.forEach(g => { goalStats[g.id] = { name: g.title, type: g.type, somaMult: 0, somaVal: 0, count: 0, deliveries: [] }; });
 
                     // Coletando métricas globais e filtrando Agenda
                     const pendentes = [];
@@ -1433,7 +1433,31 @@
                                 goalStats[g.id].somaMult += res.mult;
                                 goalStats[g.id].somaVal += res.received;
                                 goalStats[g.id].count++;
-                                goalStats[g.id].worstUsers.push({ nome: u.nome, mult: res.mult });
+                                
+                                // Nova lógica de coleta das entregas reais
+                                const rawData = resultsForMonth[g.id] || {};
+                                let rawVal = 0;
+                                let displayVal = '-';
+                                
+                                if (g.type === 'percent') {
+                                    rawVal = parseFloat(rawData.real) || 0;
+                                    displayVal = rawVal.toString();
+                                } else if (g.type === 'calibracao' || g.type === 'actions') {
+                                    rawVal = parseInt(rawData.val) || 0;
+                                    displayVal = rawVal.toString();
+                                } else if (g.type === 'gestor') {
+                                    rawVal = parseInt(rawData.val) || 0;
+                                    displayVal = rawVal.toString() + '%';
+                                } else {
+                                    rawVal = rawData.val === 'Sim' ? 1 : 0;
+                                    displayVal = rawData.val || 'Não';
+                                }
+
+                                goalStats[g.id].deliveries.push({
+                                    nome: u.nome,
+                                    raw: rawVal,
+                                    display: displayVal
+                                });
                             });
                             
                             if(resultsForMonth.status === 'agendado') {
@@ -1529,27 +1553,52 @@
                             </div>
                         </div>
 
-                        <!-- Linha 3: Ofensores -->
+                        <!-- Linha 3: Entregas por Indicador -->
                         <div class="glass-card p-8 rounded-3xl mb-8">
-                            <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Foco de Melhoria (Ofensores)</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Detalhamento de Entregas da Equipe</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     `;
 
                     const labels = []; const dataPct = []; const dataVal = [];
 
                     Object.values(goalStats).forEach(gs => {
+                        // Lógica mantida para o Gráfico
                         const avgPct = gs.count > 0 ? (gs.somaMult / gs.count) * 100 : 0;
                         labels.push(gs.name); dataPct.push(avgPct.toFixed(1)); dataVal.push(gs.somaVal.toFixed(2));
                         
-                        gs.worstUsers.sort((a,b) => a.mult - b.mult);
-                        const worst = gs.worstUsers.slice(0, 3).filter(u => u.mult < 1); 
+                        // Ordenação das entregas (maior para o menor)
+                        gs.deliveries.sort((a, b) => b.raw - a.raw);
+                        
+                        // Calculo do total do card
+                        const totalRaw = gs.deliveries.reduce((acc, curr) => acc + curr.raw, 0);
+                        let displayTotal = totalRaw;
+                        if(gs.type === 'gestor') displayTotal = totalRaw + '%';
+                        else if(gs.type === 'boolean') displayTotal = totalRaw + ' Atingiram';
                         
                         html += `
-                            <div class="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                                <div class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 truncate" title="${gs.name}">${gs.name}</div>
-                                ${worst.length === 0 ? `<div class="flex items-center gap-2 text-sm font-medium text-green-500"><i class="fa-solid fa-shield-check"></i> Meta Blindada</div>` : 
-                                    worst.map(w => `<div class="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0"><span class="text-slate-700 dark:text-slate-300 truncate pr-2">${w.nome}</span><span class="font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded text-xs">${(w.mult*100).toFixed(0)}%</span></div>`).join('')
-                                }
+                            <div class="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50 flex flex-col h-full shadow-sm hover:shadow-md transition-shadow">
+                                <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-3">
+                                    <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase truncate pr-2" title="${gs.name}">${gs.name}</div>
+                                    <div class="text-xs font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 rounded-lg border border-blue-100 dark:border-blue-800/50">Total: ${displayTotal}</div>
+                                </div>
+                                <div class="flex-1 overflow-y-auto max-h-48 space-y-1.5 pr-2 custom-scrollbar">
+                        `;
+                        
+                        if (gs.deliveries.length === 0) {
+                            html += `<div class="text-xs text-slate-400 italic text-center mt-4">Nenhum dado lançado neste mês.</div>`;
+                        } else {
+                            gs.deliveries.forEach(d => {
+                                html += `
+                                    <div class="flex justify-between items-center text-sm py-1 border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-100 dark:hover:bg-slate-800/50 px-1 -mx-1 rounded transition-colors">
+                                        <span class="text-slate-700 dark:text-slate-300 truncate pr-2">${d.nome}</span>
+                                        <span class="font-bold text-green-600 dark:text-green-400 shrink-0">${d.display}</span>
+                                    </div>
+                                `;
+                            });
+                        }
+                        
+                        html += `
+                                </div>
                             </div>
                         `;
                     });
