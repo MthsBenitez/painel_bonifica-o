@@ -320,6 +320,51 @@
         </div>
     </div>
 
+    <!-- Modal Visualizar Evento Lindo -->
+    <div id="view-event-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-md w-full mx-4 border border-slate-200 dark:border-dark-border overflow-hidden transform transition-all">
+            <div class="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 text-white relative">
+                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="absolute top-4 right-4 text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <div class="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1" id="ve-tipo">Registro de Calendário</div>
+                <h3 class="font-extrabold text-2xl leading-tight" id="ve-tema">Tema</h3>
+                <div class="flex items-center gap-4 mt-4 text-sm text-blue-100 font-semibold bg-white/10 px-4 py-2 rounded-xl border border-white/20 w-fit">
+                    <span><i class="fa-regular fa-calendar mr-1"></i> <span id="ve-data">00/00/0000</span></span>
+                    <span><i class="fa-regular fa-clock mr-1"></i> <span id="ve-hora">00:00 - 00:00</span></span>
+                </div>
+            </div>
+            <div class="p-6 space-y-5">
+                <div class="flex items-center gap-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                    <div class="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 text-lg"><i class="fa-solid fa-user-tie"></i></div>
+                    <div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400">Responsável / Atribuído</div>
+                        <div class="text-sm font-bold text-slate-700 dark:text-slate-300" id="ve-autor">Nome</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Operação</div>
+                        <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate" id="ve-op">SAC</div>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Status</div>
+                        <div class="text-sm font-black text-slate-800 dark:text-white" id="ve-status">Previsto</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-[10px] uppercase font-bold text-slate-400 mb-1.5">Observações Fixadas</div>
+                    <div class="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[80px]" id="ve-obs">Nenhuma observação.</div>
+                </div>
+                <div id="ve-anexo-box" class="hidden mt-2">
+                    <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40 rounded-xl font-bold text-sm transition-colors border border-indigo-200 dark:border-indigo-800"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
+                </div>
+            </div>
+            <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-5 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Fechar Vista</button>
+                <button id="ve-btn-edit" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white dark:bg-blue-600 dark:hover:bg-blue-700 rounded-xl font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar Dados</button>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden z-10 bg-slate-50 dark:bg-dark-bg">
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -686,6 +731,64 @@
             },
 
             actions: {
+                deleteAction(id) {
+                    app.ui.showConfirm("Aviso", "Excluir esta ação enviada?", `app.actions.executeDelete('${id}')`, true);
+                },
+                executeDelete(id) {
+                    delete app.actionsList[id];
+                    app.storage.saveActions().then(() => app.ui.renderTab('registrar_acao', true));
+                },
+                editAction(id) {
+                    const act = app.actionsList[id];
+                    if(!act) return;
+                    document.getElementById('act-edit-id').value = '';
+                    document.getElementById('act-data').value = act.dataAcao;
+                    document.getElementById('act-codigo').value = act.codigoOpe;
+                    document.getElementById('act-objetivo').value = act.objetivo;
+                    document.getElementById('act-acao').value = act.acaoRealizada;
+                    document.getElementById('act-qtd').value = act.operadores;
+                    document.getElementById('act-gestor').value = act.gestor;
+                    document.getElementById('act-ofensor').value = act.ofensor;
+                    document.getElementById('act-brindes').value = act.brindes;
+                    document.getElementById('file-name-display').innerText = "Evidências já carregadas. Clique se quiser substituir.";
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    app.ui.showAlert("Edição", "O formulário foi preenchido com os dados desta ação. Faça as alterações e envie novamente.", "info");
+                },
+                downloadImages(actId) {
+                    const act = app.actionsList[actId];
+                    if(!act) return;
+                    const photos = act.photos || [act.photo];
+                    photos.forEach((p, i) => {
+                        const l = document.createElement("a");
+                        l.href = p; l.download = `Acao_${act.nome}_Anexo${i+1}.jpg`;
+                        document.body.appendChild(l); l.click(); document.body.removeChild(l);
+                    });
+                },
+                promptRejectAction(id) {
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-ban text-red-500"></i> Motivo da Devolução`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="mb-3 text-slate-600 dark:text-slate-300">Explique por que esta ação está sendo devolvida para o colaborador corrigir:</p>
+                        <textarea id="reject-reason" rows="3" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-red-500" placeholder="Ex: Anexar lista de presença..."></textarea>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
+                        <button onclick="app.actions.executeReject('${id}')" class="px-5 py-2 bg-red-600 text-white rounded-lg font-bold text-sm shadow-md">Devolver Correção</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+                executeReject(id) {
+                    const reason = document.getElementById('reject-reason').value;
+                    if(!reason) return app.ui.showAlert("Aviso", "O motivo da recusa é obrigatório.", "error");
+                    
+                    app.actionsList[id].status = 'reprovado';
+                    app.actionsList[id].comentario = reason;
+                    
+                    app.storage.saveActions().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.notifications.notify(app.actionsList[id].matricula, 'Ação Devolvida', `Sua ação enviada foi devolvida pela auditoria. Acesse o histórico para corrigir.`, 'error');
+                        app.ui.renderTab('validar_acoes', true);
+                    });
+                },
                 compressImageAsync(file) {
                     return new Promise((resolve) => {
                         const reader = new FileReader();
@@ -714,11 +817,12 @@
                     const btn = document.getElementById('btn-submit-action');
                     const fileInput = document.getElementById('act-foto');
                     
+                    const evtEditId = document.getElementById('act-edit-id').value;
                     const payload = {
-                        id: 'act_' + Date.now(),
+                        id: evtEditId || ('act_' + Date.now()),
                         matricula: app.currentUser.matricula,
                         nome: app.currentUser.nome,
-                        month: app.currentMonth, 
+                        month: app.currentMonth,
                         dataAcao: document.getElementById('act-data').value,
                         codigoOpe: document.getElementById('act-codigo').value,
                         objetivo: document.getElementById('act-objetivo').value,
@@ -807,7 +911,124 @@
                 }
             },
 
+            ata: {
+                gerarTemplateHTML() {
+                    const d = document.getElementById('ata-data').value;
+                    const h = document.getElementById('ata-hora').value;
+                    const t = document.getElementById('ata-tema').value;
+                    const o = document.getElementById('ata-op').value;
+                    const q = document.getElementById('ata-qualidade').value;
+                    const g = document.getElementById('ata-gestor').value;
+                    const c = document.getElementById('ata-cliente').value || 'Não aplicável';
+                    const fortes = document.getElementById('ata-fortes').value.replace(/\n/g, '<br/>');
+                    const melh = document.getElementById('ata-melhoria').value.replace(/\n/g, '<br/>');
+                    const acoes = document.getElementById('ata-acao').value.replace(/\n/g, '<br/>');
+
+                    if(!d || !t || !o || !q || !g) { app.ui.showAlert("Aviso", "Preencha todos os campos com (*) asterisco.", "error"); return null; }
+
+                    const dataFormatada = d.split('-').reverse().join('/');
+                    
+                    return `
+                        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                        <head><meta charset='utf-8'><title>Ata de Calibração</title>
+                        <style>body{font-family: Arial, sans-serif;} h1{color: #16a34a; text-align: center; border-bottom: 2px solid #16a34a; padding-bottom: 10px;} .box{background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; margin-bottom: 15px;} .title{font-weight: bold; color: #334155; margin-bottom: 5px;}</style></head>
+                        <body>
+                            <h1>Ata Formal de Calibração e Monitoria</h1>
+                            <table width="100%" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; border-color: #cbd5e1; margin-bottom: 20px;">
+                                <tr><td><strong>Data:</strong> ${dataFormatada}</td><td><strong>Hora:</strong> ${h || '--:--'}</td></tr>
+                                <tr><td colspan="2"><strong>Tema / Foco:</strong> ${t}</td></tr>
+                                <tr><td colspan="2"><strong>Operação / Produto:</strong> ${o}</td></tr>
+                            </table>
+                            <div class="box">
+                                <h3>Participantes Alinhados</h3>
+                                <p><strong>Analista/Avaliador Qualidade:</strong> ${q}</p>
+                                <p><strong>Gestor / Supervisor Operacional:</strong> ${g}</p>
+                                <p><strong>Representante do Cliente/Treinamento:</strong> ${c}</p>
+                            </div>
+                            <div class="box"><div class="title">Pontos Fortes (Diretrizes que estão no Caminho Correto)</div><p>${fortes}</p></div>
+                            <div class="box"><div class="title">Pontos de Atenção / Melhoria (Ofensores de Qualidade)</div><p>${melh}</p></div>
+                            <div class="box"><div class="title">Plano de Ação Acordado</div><p>${acoes}</p></div>
+                            <br/><br/><br/>
+                            <table width="100%" style="text-align: center; margin-top: 40px;">
+                                <tr>
+                                    <td>_________________________________<br/>${q}</td>
+                                    <td>_________________________________<br/>${g}</td>
+                                </tr>
+                            </table>
+                        </body></html>
+                    `;
+                },
+                gerarWord() {
+                    const html = this.gerarTemplateHTML();
+                    if(!html) return;
+                    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a'); link.href = url; link.download = `Ata_Calibracao_${Date.now()}.doc`;
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                },
+                gerarPDF() {
+                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "O motor PDF está carregando, tente novamente.", "error");
+                    const html = this.gerarTemplateHTML();
+                    if(!html) return;
+                    
+                    const doc = new window.jspdf.jsPDF();
+                    doc.setFontSize(18); doc.setTextColor(22, 163, 74); doc.text("Ata Formal de Calibração", 14, 20);
+                    doc.setFontSize(10); doc.setTextColor(50, 50, 50);
+                    
+                    const d = document.getElementById('ata-data').value.split('-').reverse().join('/');
+                    const t = document.getElementById('ata-tema').value;
+                    const g = document.getElementById('ata-gestor').value;
+                    
+                    doc.autoTable({
+                        startY: 30, body: [['Data', d], ['Tema', t], ['Gestor', g], ['Qualidade', document.getElementById('ata-qualidade').value]],
+                        theme: 'grid', styles: {fontSize: 9}
+                    });
+                    
+                    let currY = doc.lastAutoTable.finalY + 10;
+                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("1. Pontos Fortes", 14, currY);
+                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                    let splitFortes = doc.splitTextToSize(document.getElementById('ata-fortes').value, 180);
+                    doc.text(splitFortes, 14, currY + 6); currY += (splitFortes.length * 5) + 15;
+                    
+                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("2. Pontos de Melhoria", 14, currY);
+                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                    let splitMelhoria = doc.splitTextToSize(document.getElementById('ata-melhoria').value, 180);
+                    doc.text(splitMelhoria, 14, currY + 6); currY += (splitMelhoria.length * 5) + 15;
+                    
+                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("3. Plano de Ação", 14, currY);
+                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                    let splitAcao = doc.splitTextToSize(document.getElementById('ata-acao').value, 180);
+                    doc.text(splitAcao, 14, currY + 6);
+                    
+                    doc.save(`Ata_Calibracao_${Date.now()}.pdf`);
+                }
+            },
+
             calendar: {
+                viewEvent(id) {
+                    const evt = app.eventsList[id];
+                    if(!evt) return;
+                    document.getElementById('ve-tipo').textContent = evt.tipo === 'pessoal' ? 'Controle Diário' : 'Evento de Operação';
+                    document.getElementById('ve-tema').textContent = evt.tema || 'Controle Pessoal';
+                    document.getElementById('ve-data').textContent = evt.data ? new Date(evt.data + 'T00:00:00').toLocaleDateString('pt-BR') : 'Indefinido';
+                    document.getElementById('ve-hora').textContent = evt.tipo === 'pessoal' ? 'O dia todo' : `${evt.hora || '--:--'} às ${evt.horaFim || '--:--'}`;
+                    document.getElementById('ve-autor').textContent = evt.autor || evt.matricula;
+                    document.getElementById('ve-op').textContent = evt.op || 'N/A';
+                    document.getElementById('ve-status').textContent = evt.tipo === 'pessoal' ? '-' : evt.status || 'Previsto';
+                    document.getElementById('ve-obs').textContent = evt.obs || (evt.tipo==='pessoal'? `Monitorias Realizadas: ${evt.qtdMon} \nFeedbacks Aplicados: ${evt.qtdFb}` : 'Nenhuma observação extra.');
+                    
+                    if(evt.anexo) {
+                        document.getElementById('ve-anexo-box').classList.remove('hidden');
+                        document.getElementById('ve-anexo-btn').href = evt.anexo;
+                    } else {
+                        document.getElementById('ve-anexo-box').classList.add('hidden');
+                    }
+                    document.getElementById('ve-btn-edit').onclick = () => {
+                        document.getElementById('view-event-modal').classList.add('hidden');
+                        this.openModal(evt.data, id);
+                    };
+                    document.getElementById('view-event-modal').classList.remove('hidden');
+                },
                 toggleCampos() {
                     const tipo = document.getElementById('cal-tipo').value;
                     if(tipo === 'evento') {
@@ -819,12 +1040,10 @@
                     }
                 },
                 openModal(dateStr, evtId = null) {
-                    // Verifica bloqueio de data para operador comum
                     if(!app.isAdmin) {
                         const today = new Date().toISOString().split('T')[0];
-                        if(dateStr < today) return app.ui.showAlert("Acesso Negado", "Você não pode editar ou adicionar registros em dias passados. Solicite ao ADM.", "error");
+                        if(dateStr < today) return app.ui.showAlert("Acesso Negado", "Não é permitido alterar ou incluir dados em datas retroativas. Fale com a Administração.", "error");
                     }
-
                     document.getElementById('cal-data').value = dateStr;
                     document.getElementById('cal-edit-id').value = evtId || '';
                     document.getElementById('cal-anexo-link').classList.add('hidden');
@@ -841,7 +1060,6 @@
                         const evt = app.eventsList[evtId];
                         document.getElementById('cal-tipo').value = evt.tipo || 'evento';
                         this.toggleCampos();
-                        
                         if(evt.tipo === 'pessoal') {
                             document.getElementById('cal-qtd-mon').value = evt.qtdMon || 0;
                             document.getElementById('cal-qtd-fb').value = evt.qtdFb || 0;
@@ -854,31 +1072,29 @@
                             document.getElementById('cal-status').value = evt.status || 'Previsto';
                             if(evt.anexo) {
                                 document.getElementById('cal-anexo-link').classList.remove('hidden');
-                                document.getElementById('cal-anexo-link').innerHTML = `<a href="${evt.anexo}" target="_blank"><i class="fa-solid fa-paperclip"></i> Ver Anexo Salvo</a>`;
+                                document.getElementById('cal-anexo-link').innerHTML = `<a href="${evt.anexo}" target="_blank"><i class="fa-solid fa-paperclip"></i> Evidência Fixada</a>`;
                             }
                         }
                     } else {
-                        // Novo registro
                         document.getElementById('cal-tipo').value = 'evento';
                         this.toggleCampos();
                         document.getElementById('cal-hora-inicio').value = ''; document.getElementById('cal-hora-fim').value = '';
                         document.getElementById('cal-obs').value = ''; document.getElementById('cal-qtd-mon').value = '0'; document.getElementById('cal-qtd-fb').value = '0';
                     }
-                    
                     document.getElementById('calendar-modal').classList.remove('hidden');
                 },
-
                 saveEvent() {
                     const tipo = document.getElementById('cal-tipo').value;
-                    const data = document.getElementById('cal-data').value;
                     const evtId = document.getElementById('cal-edit-id').value;
-                    
-                    // Definir Autor e Alvo
-                    let autor = app.isAdmin ? 'ADM' : app.currentUser.nome;
-                    let matriculaAlvo = app.isAdmin ? document.getElementById('cal-adm-alvo').value : app.currentUser.matricula;
-
                     const id = evtId || 'evt_' + Date.now();
-                    const payload = { id, matricula: matriculaAlvo, data, tipo, autor, timestamp: Date.now() };
+                    const payload = { 
+                        id, 
+                        data: document.getElementById('cal-data').value, 
+                        tipo, 
+                        autor: app.isAdmin ? 'ADM' : app.currentUser.nome, 
+                        matricula: app.isAdmin ? document.getElementById('cal-adm-alvo').value : app.currentUser.matricula,
+                        timestamp: Date.now() 
+                    };
 
                     if(tipo === 'pessoal') {
                         payload.qtdMon = document.getElementById('cal-qtd-mon').value;
@@ -893,20 +1109,17 @@
                         payload.obs = document.getElementById('cal-obs').value.trim();
                         payload.status = document.getElementById('cal-status').value;
 
-                        if(!payload.hora || !payload.horaFim || !payload.obs) return app.ui.showAlert("Aviso", "Preencha Início, Fim e Observação obrigatória.", "error");
-                        if(payload.status === 'Cancelado' && payload.obs.length < 5) return app.ui.showAlert("Aviso", "Justifique o cancelamento na Observação.", "error");
+                        // Validação Forte (Tudo obrigatório, menos o anexo)
+                        if(!payload.hora || !payload.horaFim || !payload.tema || !payload.op || !payload.obs) return app.ui.showAlert("Preenchimento Incompleto", "Apenas o arquivo anexo é opcional. Preencha todos os campos do evento e adicione uma observação.", "error");
 
                         const fileInput = document.getElementById('cal-anexo');
                         if(fileInput.files.length > 0) {
                             app.actions.compressImageAsync(fileInput.files[0]).then(b64 => {
-                                payload.anexo = b64;
-                                app.eventsList[id] = payload;
-                                this.finalizarSave();
+                                payload.anexo = b64; app.eventsList[id] = payload; this.finalizarSave();
                             });
                         } else {
                             if(evtId && app.eventsList[evtId].anexo) payload.anexo = app.eventsList[evtId].anexo;
-                            app.eventsList[id] = payload;
-                            this.finalizarSave();
+                            app.eventsList[id] = payload; this.finalizarSave();
                         }
                     }
                 },
@@ -914,21 +1127,17 @@
                     app.storage.saveEvents().then(() => {
                         document.getElementById('calendar-modal').classList.add('hidden');
                         app.ui.renderTab('calendario', true);
-                        app.ui.showAlert("Sucesso", "Registro salvo no calendário.", "success");
+                        app.ui.showAlert("Operação Concluída", "Calendário atualizado com sucesso.", "success");
                     });
                 },
                 deleteEvent(id) {
                     if(!app.isAdmin) {
-                        const evt = app.eventsList[id];
                         const today = new Date().toISOString().split('T')[0];
-                        if(evt.data < today) return app.ui.showAlert("Acesso Negado", "Você não pode excluir eventos do passado.", "error");
+                        if(app.eventsList[id].data < today) return app.ui.showAlert("Bloqueio", "Registros passados não podem ser excluídos.", "error");
                     }
-                    app.ui.showConfirm("Excluir Registro", "Deseja remover este registro definitivamente?", `app.calendar.executeDelete('${id}')`, true);
+                    app.ui.showConfirm("Aviso", "Remover permanentemente este evento?", `app.calendar.executeDelete('${id}')`, true);
                 },
-                executeDelete(id) {
-                    delete app.eventsList[id];
-                    app.storage.saveEvents().then(() => app.ui.renderTab('calendario', true));
-                }
+                executeDelete(id) { delete app.eventsList[id]; app.storage.saveEvents().then(() => app.ui.renderTab('calendario', true)); }
             },
             
             // --- MOTOR MATEMÁTICO ---
@@ -1216,8 +1425,8 @@
                     const nav = document.getElementById('main-nav');
                     let html = '';
                     const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
-                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Ata de Reunião', icon:'fa-file-signature'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Ata de Reunião', icon:'fa-file-signature'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
                     
                     tabs.forEach(t => {
                         const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
@@ -1272,7 +1481,8 @@
                         else if(tabId === 'legal') this.renderView_Legal(viewDiv);
                         else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
                         else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv);
-                        else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); // <-- COLE AQUI
+                        else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
+                        else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv); // <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -1281,168 +1491,35 @@
                     viewDiv.classList.remove('hidden');
                 },
 
-                renderView_RegistrarAcao(container) {
-                    if(app.isAdmin) return;
-                    const monthLabel = this.formatMonthLabel(app.currentMonth);
-
-                    let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Qualidade em Ação</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Registre suas ações presenciais e de impacto referentes ao mês de <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
-                        </div>
-
-                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-4xl mx-auto">
-                            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-5 mb-8 flex items-start gap-4">
-                                <i class="fa-solid fa-circle-info text-blue-500 mt-1 text-lg"></i>
-                                <div class="text-sm text-slate-600 dark:text-slate-400">
-                                    Ao enviar este formulário, ele será analisado pela Gestão Administrativa. Se aprovado, será automaticamente contabilizado na sua meta de <strong>Ações Presenciais</strong> para o mês de referência selecionado no topo da tela (${monthLabel}).
-                                </div>
-                            </div>
-
-                            <form onsubmit="event.preventDefault(); app.actions.submitAction();" class="space-y-6">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Data da Ação de Qualidade *</label>
-                                        <input type="date" id="act-data" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all cursor-pointer">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Nome da Operação *</label>
-                                        <input type="text" id="act-codigo" required placeholder="Ex: Vendas, SAC..." class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
-                                    </div>
-                                    <div class="md:col-span-2">
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Objetivo da Ação *</label>
-                                        <input type="text" id="act-objetivo" required placeholder="Qual o propósito principal desta ação?" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
-                                    </div>
-                                    <div class="md:col-span-2">
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Ação Realizada *</label>
-                                        <textarea id="act-acao" required rows="3" placeholder="Descreva com detalhes o que foi executado..." class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all resize-none"></textarea>
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Qtd. Operadores Envolvidos *</label>
-                                        <input type="number" id="act-qtd" required min="1" placeholder="Ex: 15" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Alinhado Com Qual Gestor Operacional? *</label>
-                                        <input type="text" id="act-gestor" required placeholder="Nome do Gestor" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Ofensor Alvo *</label>
-                                        <input type="text" id="act-ofensor" required placeholder="Qual indicador foi atacado?" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Quantidade de Brindes *</label>
-                                        <input type="number" id="act-brindes" required min="0" placeholder="Ex: 5" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
-                                    </div>
-                                    <div class="md:col-span-2">
-                                        <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Anexar Foto(s) de Comprovação *</label>
-                                        <div class="flex items-center justify-center w-full">
-                                            <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-xl cursor-pointer bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                                                <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                                                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 mb-2"></i>
-                                                    <p class="text-sm text-slate-500 dark:text-slate-400 font-semibold"><span class="text-green-600">Clique para anexar</span> múltiplas evidências</p>
-                                                    <p class="text-xs text-slate-400 dark:text-slate-500 mt-1" id="file-name-display">JPG, PNG permitidos</p>
-                                                </div>
-                                                <input type="file" id="act-foto" accept="image/*" multiple class="hidden" required onchange="const count = this.files.length; document.getElementById('file-name-display').innerHTML = count > 1 ? '<span class=\'text-green-500 font-bold\'>' + count + ' arquivos selecionados</span>' : '<span class=\'text-green-500 font-bold\'>Arquivo selecionado:</span> ' + this.files[0].name" />
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="pt-6 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-                                    <button type="submit" id="btn-submit-action" class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider flex items-center justify-center">
-                                        Enviar para Validação <i class="fa-solid fa-paper-plane ml-2"></i>
-                                    </button>
-                                </div>
-                            </form>
-                            
-                            <!-- User Action History -->
-                            <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
-                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-6 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Meu Histórico de Envios</h3>
-                    `;
-                    
-                    const myActions = Object.values(app.actionsList).filter(a => a.matricula === app.currentUser.matricula).sort((a,b) => b.timestamp - a.timestamp);
-                    
-                    if(myActions.length === 0) {
-                        html += `<div class="text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl text-center border border-slate-100 dark:border-slate-700">Você ainda não possui histórico de envios registrados no sistema.</div>`;
-                    } else {
-                        html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
-                        myActions.forEach(act => {
-                            let statusBadge = '';
-                            if(act.status === 'pendente') statusBadge = `<span class="bg-orange-100 text-orange-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"><i class="fa-solid fa-clock"></i> Pendente</span>`;
-                            else if(act.status === 'aprovado') statusBadge = `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"><i class="fa-solid fa-check"></i> Aprovado</span>`;
-                            else if(act.status === 'reprovado') statusBadge = `<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"><i class="fa-solid fa-xmark"></i> Reprovado</span>`;
-                            
-                            const photoThumb = act.photos ? act.photos[0] : act.photo;
-
-                            html += `
-                                <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex gap-4 items-center transition-all hover:shadow-md cursor-pointer" onclick="app.actions.showImageFull('${act.id}')">
-                                    <div class="w-16 h-16 shrink-0 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                                        <img src="${photoThumb}" class="w-full h-full object-cover">
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex justify-between items-start mb-1 gap-2">
-                                            <h4 class="font-bold text-slate-800 dark:text-slate-200 text-sm truncate">${act.objetivo}</h4>
-                                            ${statusBadge}
-                                        </div>
-                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Op: ${act.codigoOpe} | Mês: ${app.ui.formatMonthLabel(act.month)}</div>
-                                        <div class="text-[10px] text-slate-400 mt-1">${new Date(act.timestamp).toLocaleString('pt-BR')}</div>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        html += `</div>`;
-                    }
-
-                    html += `</div></div>`;
-                    container.innerHTML = html;
-                },
-
-                setActionFilter(filterType) {
-                    this.currentActionFilter = filterType;
-                    this.renderTab('validar_acoes', true); // Force refresh specific to inside logic
-                },
-
                 renderView_ValidarAcoes(container) {
                     if(!app.isAdmin) return;
-                    
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Ações Presenciais</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Verifique as evidências e gerencie o status de aprovação.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Apresentação Gerencial de Ações</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Modo auditoria para avaliação de impacto e qualidade de processo.</p>
                             </div>
                         </div>
                     `;
-
                     const allActs = Object.values(app.actionsList);
                     const ops = [...new Set(allActs.map(a => a.codigoOpe))].filter(Boolean);
                     const users = [...new Set(allActs.map(a => a.nome))].filter(Boolean);
 
-                    // Filtros Extras de Usuário e Operação
                     html += `
                         <div class="flex flex-col md:flex-row gap-4 mb-4">
-                            <select onchange="app.ui.actionFilterUser = this.value; app.ui.renderTab('validar_acoes', true)" class="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                            <select onchange="app.ui.actionFilterUser = this.value; app.ui.renderTab('validar_acoes', true)" class="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-none w-full md:w-64">
                                 <option value="">Todos os Operadores</option>
                                 ${users.map(u => `<option value="${u}" ${this.actionFilterUser === u ? 'selected':''}>${u}</option>`).join('')}
                             </select>
-                            <select onchange="app.ui.actionFilterOp = this.value; app.ui.renderTab('validar_acoes', true)" class="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                            <select onchange="app.ui.actionFilterOp = this.value; app.ui.renderTab('validar_acoes', true)" class="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-none w-full md:w-64">
                                 <option value="">Todas as Operações</option>
                                 ${ops.map(o => `<option value="${o}" ${this.actionFilterOp === o ? 'selected':''}>${o}</option>`).join('')}
                             </select>
                         </div>
-                    `;
-
-                    html += `
-                        <!-- Filtros Status -->
-                        <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
-                            <button onclick="app.ui.setActionFilter('pendente')" class="px-5 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border ${this.currentActionFilter === 'pendente' ? 'bg-orange-100 text-orange-600 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800/50 dark:text-orange-400' : 'bg-white dark:bg-dark-surface text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}">
-                                Aguardando Validação
-                            </button>
-                            <button onclick="app.ui.setActionFilter('aprovado')" class="px-5 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border ${this.currentActionFilter === 'aprovado' ? 'bg-green-100 text-green-600 border-green-200 dark:bg-green-900/30 dark:border-green-800/50 dark:text-green-400' : 'bg-white dark:bg-dark-surface text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}">
-                                Aprovadas
-                            </button>
-                            <button onclick="app.ui.setActionFilter('reprovado')" class="px-5 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border ${this.currentActionFilter === 'reprovado' ? 'bg-red-100 text-red-600 border-red-200 dark:bg-red-900/30 dark:border-red-800/50 dark:text-red-400' : 'bg-white dark:bg-dark-surface text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}">
-                                Reprovadas
-                            </button>
+                        <div class="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-700">
+                            <button onclick="app.ui.setActionFilter('pendente')" class="px-5 py-2.5 rounded-t-xl text-sm font-bold transition-colors ${this.currentActionFilter === 'pendente' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Aguardando Avaliação</button>
+                            <button onclick="app.ui.setActionFilter('aprovado')" class="px-5 py-2.5 rounded-t-xl text-sm font-bold transition-colors ${this.currentActionFilter === 'aprovado' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Auditadas Aprovadas</button>
+                            <button onclick="app.ui.setActionFilter('reprovado')" class="px-5 py-2.5 rounded-t-xl text-sm font-bold transition-colors ${this.currentActionFilter === 'reprovado' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Devolvidas/Reprovadas</button>
                         </div>
                     `;
 
@@ -1452,84 +1529,197 @@
                     list.sort((a,b) => b.timestamp - a.timestamp);
 
                     if(list.length === 0) {
-                        html += `
-                            <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700 mt-4">
-                                <div class="w-20 h-20 bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center rounded-full text-4xl mx-auto mb-4"><i class="fa-solid fa-folder-open"></i></div>
-                                <h3 class="text-lg font-bold text-slate-800 dark:text-slate-200 mb-1">Nenhum registro encontrado</h3>
-                                <p class="text-slate-500 dark:text-slate-400">Não há ações correspondentes aos filtros aplicados.</p>
-                            </div>
-                        `;
+                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem registros pendentes de auditoria nesta visão.</div>`;
                     } else {
-                        html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">`;
-                        
                         list.forEach(act => {
                             const photoThumb = act.photos ? act.photos[0] : act.photo;
-                            const photoCount = act.photos ? act.photos.length : 1;
-
                             html += `
-                                <div class="glass-card rounded-3xl overflow-hidden flex flex-col shadow-sm border border-slate-200 dark:border-slate-700">
-                                    <div class="h-48 w-full bg-slate-200 dark:bg-slate-800 relative group cursor-pointer" onclick="app.actions.showImageFull('${act.id}')">
-                                        <img src="${photoThumb}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
-                                        <div class="absolute top-3 right-3 bg-black/60 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm"><i class="fa-solid fa-images"></i> ${photoCount}</div>
-                                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2">
-                                            <i class="fa-solid fa-expand"></i> Ver Galeria
-                                        </div>
+                                <div class="glass-card rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row mb-6 hover:shadow-md transition-shadow">
+                                    <div class="md:w-2/5 h-64 md:h-auto bg-slate-200 dark:bg-slate-800 relative group cursor-pointer">
+                                        <img src="${photoThumb}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onclick="app.actions.showImageFull('${act.id}')">
+                                        <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none"></div>
+                                        <button onclick="event.stopPropagation(); app.actions.downloadImages('${act.id}')" class="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-slate-800 p-2.5 rounded-xl shadow-lg transition-colors" title="Baixar Evidências"><i class="fa-solid fa-download"></i></button>
+                                        <div class="absolute top-4 left-4 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm"><i class="fa-solid fa-images"></i> VER GALERIA COMPLETA</div>
                                     </div>
-                                    <div class="p-5 flex-1 flex flex-col">
-                                        <div class="flex justify-between items-start mb-3">
-                                            <div class="flex-1 pr-2 overflow-hidden">
-                                                <div class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-0.5">Mês Alvo: ${this.formatMonthLabel(act.month)}</div>
-                                                <h4 class="font-bold text-slate-800 dark:text-white text-sm leading-tight truncate" title="${act.nome}">${act.nome}</h4>
+                                    <div class="p-6 md:w-3/5 flex flex-col">
+                                        <div class="flex justify-between items-start mb-4">
+                                            <div class="pr-3">
+                                                <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-calendar-day"></i> Ref Mensal: ${this.formatMonthLabel(act.month)}</div>
+                                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white leading-tight">${act.objetivo}</h3>
+                                                <div class="text-sm font-bold text-slate-600 dark:text-slate-400 mt-1.5"><i class="fa-solid fa-user-circle"></i> ${act.nome} <span class="text-slate-300 mx-2">|</span> Op: ${act.codigoOpe}</div>
                                             </div>
-                                            <span class="text-[9px] font-bold px-2 py-1 rounded-md uppercase tracking-wider shrink-0 mt-1 
-                                                ${act.status==='pendente' ? 'bg-orange-100 text-orange-600' : (act.status==='aprovado' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600')}">
+                                            <span class="text-[10px] font-bold px-3 py-1.5 rounded-lg uppercase tracking-wider shrink-0 shadow-sm ${act.status==='pendente' ? 'bg-orange-100 text-orange-600 border border-orange-200' : (act.status==='aprovado' ? 'bg-green-100 text-green-600 border border-green-200' : 'bg-red-100 text-red-600 border border-red-200')}">
                                                 ${act.status}
                                             </span>
                                         </div>
                                         
-                                        <div class="space-y-2 mb-5 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 flex-1 overflow-hidden">
-                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-regular fa-calendar w-4"></i></strong> ${new Date(act.dataAcao + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-solid fa-crosshairs w-4"></i></strong> ${act.codigoOpe}</p>
-                                            <p class="truncate" title="${act.objetivo}"><strong class="text-slate-500"><i class="fa-solid fa-bullseye w-4"></i></strong> ${act.objetivo}</p>
-                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-solid fa-user-tie w-4"></i></strong> ${act.gestor}</p>
-                                            <p class="truncate"><strong class="text-slate-500"><i class="fa-solid fa-users w-4"></i></strong> ${act.operadores} &nbsp;|&nbsp; <strong class="text-slate-500">Brindes:</strong> ${act.brindes}</p>
+                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700/50 mb-5 flex-1">
+                                            <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-4"><strong>Memória da Ação:</strong><br/> ${act.acaoRealizada || 'Nenhuma descrição fornecida.'}</div>
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                <div><strong class="block text-slate-700 dark:text-slate-200 mb-0.5">Data</strong>${new Date(act.dataAcao + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+                                                <div><strong class="block text-slate-700 dark:text-slate-200 mb-0.5">Ofensor</strong>${act.ofensor || 'N/A'}</div>
+                                                <div><strong class="block text-slate-700 dark:text-slate-200 mb-0.5">Impactados</strong>${act.operadores} OP(s)</div>
+                                                <div><strong class="block text-slate-700 dark:text-slate-200 mb-0.5">Aprovação</strong>${act.gestor}</div>
+                                            </div>
+                                            ${act.comentario ? `<div class="mt-3 text-[11px] bg-red-50 text-red-700 p-2 rounded-lg border border-red-200"><strong><i class="fa-solid fa-comment-dots"></i> Feedback da Auditoria:</strong> ${act.comentario}</div>` : ''}
                                         </div>
                                         
-                                        <!-- Actions only visible if pending -->
                                         ${act.status === 'pendente' ? `
-                                        <div class="grid grid-cols-2 gap-3 mt-auto">
-                                            <button onclick="app.actions.rejectAction('${act.id}')" class="py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors border border-red-200 dark:border-red-900/50">Reprovar</button>
-                                            <button onclick="app.actions.approveAction('${act.id}')" class="py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm">Aprovar +1</button>
+                                        <div class="flex gap-3 mt-auto pt-2">
+                                            <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 dark:bg-red-900/20 text-red-600 hover:bg-red-100 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors border border-red-200 dark:border-red-900/50"><i class="fa-solid fa-ban"></i> Reprovar e Devolver</button>
+                                            <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md"><i class="fa-solid fa-check"></i> Validar Meta (+1)</button>
                                         </div>
-                                        ` : `
-                                        <div class="text-center text-[10px] text-slate-400 mt-auto uppercase font-bold tracking-widest border-t border-slate-100 dark:border-slate-800 pt-3">
-                                            Ação Processada
-                                        </div>
-                                        `}
+                                        ` : `<div class="text-center text-[10px] text-slate-400 mt-auto font-bold uppercase tracking-widest pt-2">Ação já Auditada pelo ADM</div>`}
                                     </div>
                                 </div>
                             `;
                         });
-                        
-                        html += `</div>`;
                     }
                     container.innerHTML = html;
                 },
+
+                renderView_RegistrarAcao(container) {
+                    if(app.isAdmin) return;
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Qualidade em Ação</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Registre ou atualize suas ações presenciais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                        </div>
+                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-4xl mx-auto">
+                            <input type="hidden" id="act-edit-id" value="">
+                            <form onsubmit="event.preventDefault(); app.actions.submitAction();" class="space-y-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label><input type="date" id="act-data" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Operação *</label><input type="text" id="act-codigo" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div class="md:col-span-2"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Objetivo *</label><input type="text" id="act-objetivo" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div class="md:col-span-2"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Realizada *</label><textarea id="act-acao" required rows="3" class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></textarea></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operadores Envolvidos *</label><input type="number" id="act-qtd" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Alinhado *</label><input type="text" id="act-gestor" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label><input type="text" id="act-ofensor" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Brindes *</label><input type="number" id="act-brindes" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                    <div class="md:col-span-2">
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Anexar Evidências *</label>
+                                        <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 dark:bg-slate-900 hover:bg-slate-100">
+                                            <p class="text-sm text-green-600 font-bold" id="file-name-display">Clique para anexar FOTOS da ação (Obrigatório)</p>
+                                            <input type="file" id="act-foto" accept="image/*" multiple class="hidden" onchange="document.getElementById('file-name-display').innerText = this.files.length + ' arquivo(s) selecionado(s)'" />
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="pt-6 flex justify-end">
+                                    <button type="submit" id="btn-submit-action" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider">Enviar Formulário <i class="fa-solid fa-paper-plane ml-1"></i></button>
+                                </div>
+                            </form>
+                            
+                            <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
+                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-6"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico / Devolutivas</h3>
+                    `;
+                    const myActions = Object.values(app.actionsList).filter(a => a.matricula === app.currentUser.matricula).sort((a,b) => b.timestamp - a.timestamp);
+                    if(myActions.length === 0) {
+                        html += `<div class="text-sm text-slate-500 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl text-center">Nenhum histórico encontrado.</div>`;
+                    } else {
+                        html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+                        myActions.forEach(act => {
+                            let statusBadge = act.status === 'pendente' ? `<span class="bg-orange-100 text-orange-600 px-2 py-0.5 rounded font-bold uppercase text-[9px]">Pendente</span>` : 
+                                              act.status === 'aprovado' ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold uppercase text-[9px]">Aprovado</span>` : 
+                                              `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold uppercase text-[9px]">Reprovado</span>`;
+                            
+                            let reprovadoTxt = act.status === 'reprovado' && act.comentario ? `<div class="mt-2 text-[10px] text-red-600 bg-red-50 p-2 border border-red-200 rounded"><strong>Motivo:</strong> ${act.comentario}</div>` : '';
+                            
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <h4 class="font-bold text-sm text-slate-800 dark:text-white truncate pr-2">${act.objetivo}</h4>
+                                        ${statusBadge}
+                                    </div>
+                                    <div class="text-[11px] text-slate-500 mb-1">Enviado: ${new Date(act.timestamp).toLocaleDateString()}</div>
+                                    ${reprovadoTxt}
+                                    <div class="mt-auto pt-3 flex gap-2 justify-end border-t border-slate-100 dark:border-slate-700/50 mt-3">
+                                        ${act.status !== 'aprovado' ? `<button onclick="app.actions.editAction('${act.id}')" class="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 transition"><i class="fa-solid fa-pen"></i> Corrigir</button>` : ''}
+                                        <button onclick="app.actions.deleteAction('${act.id}')" class="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100 transition"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
+                    }
+                    html += `</div></div>`;
+                    container.innerHTML = html;
+                },
+
+                calFiltroNome: '', calFiltroOp: '', calFiltroStatus: '', calFiltroTema: '',
 
                 renderView_Calendario(container) {
                     const mat = app.isAdmin ? 'ADM' : app.currentUser.matricula;
                     const [year, month] = app.currentMonth.split('-');
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
                     
+                    // Filtragem Base
+                    let allEvtsMonth = Object.values(app.eventsList).filter(e => e.data.startsWith(`${year}-${month}`));
+                    let myEvts = allEvtsMonth;
+                    if(!app.isAdmin) {
+                        myEvts = allEvtsMonth.filter(e => e.matricula === mat || e.matricula === 'TODOS');
+                    } else if (this.calFiltroNome) {
+                        myEvts = allEvtsMonth.filter(e => e.autor === this.calFiltroNome || e.matricula === this.calFiltroNome);
+                    }
+                    if(this.calFiltroOp) myEvts = myEvts.filter(e => e.op === this.calFiltroOp);
+                    if(this.calFiltroTema) myEvts = myEvts.filter(e => e.tema === this.calFiltroTema);
+                    if(this.calFiltroStatus) myEvts = myEvts.filter(e => e.status === this.calFiltroStatus);
+
+                    const totais = myEvts.length;
+                    const concluidos = myEvts.filter(e => e.status === 'Finalizado').length;
+                    const pendentes = myEvts.filter(e => e.status === 'Previsto').length;
+                    const cancelados = myEvts.filter(e => e.status === 'Cancelado').length;
+
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Calendário de Operação</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Planejamento e rotina referentes a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Painel de Operação (Calendário)</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Visão completa e gestão de compromissos para <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
                             </div>
-                            ${app.isAdmin ? `<button onclick="app.admin.exportCalendarCSV()" class="bg-blue-600 text-white font-bold py-2.5 px-4 rounded-xl shadow-md text-sm"><i class="fa-solid fa-file-csv"></i> Relatório ADM CSV</button>` : ''}
+                            <div class="flex gap-2">
+                                <button onclick="app.calendar.openModal(new Date().toISOString().split('T')[0])" class="bg-blue-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md text-sm transition hover:bg-blue-700"><i class="fa-solid fa-plus"></i> Novo Evento</button>
+                                ${app.isAdmin ? `<button onclick="app.admin.exportCalendarCSV()" class="bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl shadow-md text-sm"><i class="fa-solid fa-file-csv"></i> Exportar CSV</button>` : ''}
+                            </div>
                         </div>
-                        <div class="glass-card p-4 md:p-8 rounded-3xl overflow-hidden">
+
+                        <!-- Dashboard Informativo -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1">Total de Registros</div>
+                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400">${totais}</div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1">Finalizados / Entregues</div>
+                                <div class="text-3xl font-black text-green-600 dark:text-green-400">${concluidos}</div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1">Eventos Previstos</div>
+                                <div class="text-3xl font-black text-orange-500">${pendentes}</div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1">Eventos Cancelados</div>
+                                <div class="text-3xl font-black text-red-500">${cancelados}</div>
+                            </div>
+                        </div>
+
+                        <!-- Filtros (ADM) -->
+                        <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="text-xs font-bold text-slate-500 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros Ativos</div>
+                            ${app.isAdmin ? `<input type="text" placeholder="Nome do Colaborador" value="${this.calFiltroNome}" oninput="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white focus:border-blue-500 w-48">` : ''}
+                            <select onchange="app.ui.calFiltroOp=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white">
+                                <option value="">Todas Operações</option><option value="SAC" ${this.calFiltroOp==='SAC'?'selected':''}>SAC</option><option value="Vendas" ${this.calFiltroOp==='Vendas'?'selected':''}>Vendas</option><option value="Retenção" ${this.calFiltroOp==='Retenção'?'selected':''}>Retenção</option><option value="Backoffice" ${this.calFiltroOp==='Backoffice'?'selected':''}>Backoffice</option>
+                            </select>
+                            <select onchange="app.ui.calFiltroTema=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white">
+                                <option value="">Todos Temas</option><option value="Quality Day" ${this.calFiltroTema==='Quality Day'?'selected':''}>Quality Day</option><option value="Aplicação de Ação" ${this.calFiltroTema==='Aplicação de Ação'?'selected':''}>Aplicação Ação</option><option value="Reunião" ${this.calFiltroTema==='Reunião'?'selected':''}>Reunião</option><option value="Calibração" ${this.calFiltroTema==='Calibração'?'selected':''}>Calibração</option>
+                            </select>
+                            <select onchange="app.ui.calFiltroStatus=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white">
+                                <option value="">Todos Status</option><option value="Previsto" ${this.calFiltroStatus==='Previsto'?'selected':''}>Previsto</option><option value="Finalizado" ${this.calFiltroStatus==='Finalizado'?'selected':''}>Finalizado</option><option value="Cancelado" ${this.calFiltroStatus==='Cancelado'?'selected':''}>Cancelado</option>
+                            </select>
+                        </div>
+
+                        <div class="glass-card p-4 md:p-6 rounded-3xl overflow-hidden">
                             <div class="grid grid-cols-7 gap-1 md:gap-2 mb-2">
                                 ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => `<div class="text-center text-[10px] md:text-[11px] font-bold text-slate-500 uppercase tracking-widest py-2">${d}</div>`).join('')}
                             </div>
@@ -1539,7 +1729,7 @@
                     const daysInMonth = new Date(year, month, 0).getDate();
                     const firstDayIndex = new Date(year, month - 1, 1).getDay();
 
-                    for(let i = 0; i < firstDayIndex; i++) html += `<div class="min-h-[100px] md:min-h-[130px] rounded-xl bg-slate-50/30 dark:bg-slate-800/20 border border-transparent"></div>`;
+                    for(let i = 0; i < firstDayIndex; i++) html += `<div class="min-h-[110px] md:min-h-[140px] rounded-xl bg-slate-50/30 dark:bg-slate-800/20 border border-transparent"></div>`;
 
                     const cores = {
                         'Quality Day': 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/40 dark:text-purple-200',
@@ -1552,49 +1742,77 @@
 
                     for(let day = 1; day <= daysInMonth; day++) {
                         const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
-                        // ADM vê tudo ("TODOS" ou matriculas individuais). Usuário vê os seus e os de "TODOS"
-                        let dayEvents = Object.values(app.eventsList).filter(e => e.data === dateStr && (app.isAdmin || e.matricula === mat || e.matricula === 'TODOS'));
-                        dayEvents.sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
+                        let dayEvents = myEvts.filter(e => e.data === dateStr).sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
                         
                         const isToday = dateStr === new Date().toISOString().split('T')[0];
-                        const bgClass = isToday ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700';
+                        const bgClass = isToday ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700';
 
                         html += `
-                            <div class="min-h-[100px] md:min-h-[130px] rounded-xl border ${bgClass} p-1 md:p-2 relative group hover:shadow-md transition-all flex flex-col z-10" onclick="app.calendar.openModal('${dateStr}')">
+                            <div class="min-h-[110px] md:min-h-[140px] rounded-xl border ${bgClass} p-1 md:p-2 relative group hover:shadow-md transition-all flex flex-col z-10 cursor-pointer" onclick="app.calendar.openModal('${dateStr}')">
                                 <div class="font-bold text-xs md:text-sm text-slate-700 dark:text-slate-300 mb-1 z-20 pointer-events-none">${day}</div>
                                 <div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar z-20">
                         `;
                         
                         dayEvents.forEach(evt => {
                             if(evt.tipo === 'pessoal') {
-                                html += `<div onclick="event.stopPropagation(); app.calendar.openModal('${dateStr}', '${evt.id}')" class="bg-green-100 text-green-800 border border-green-300 rounded p-1 text-[9px] leading-tight cursor-pointer shadow-sm relative group/evt">
-                                    <div class="font-bold mb-0.5"><i class="fa-solid fa-clipboard-check"></i> Controle</div>
-                                    <div>Mon: ${evt.qtdMon} | FB: ${evt.qtdFb}</div>
-                                    <button onclick="event.stopPropagation(); app.calendar.deleteEvent('${evt.id}')" class="absolute top-0.5 right-0.5 text-red-500 opacity-0 group-hover/evt:opacity-100"><i class="fa-solid fa-trash"></i></button>
+                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="bg-green-100 text-green-800 border border-green-300 rounded p-1 text-[9px] leading-tight cursor-pointer shadow-sm relative hover:brightness-95 transition">
+                                    <div class="font-bold mb-0.5"><i class="fa-solid fa-clipboard-check"></i> Controle Dia</div>
+                                    <div>Mon: ${evt.qtdMon || 0} | FB: ${evt.qtdFb || 0}</div>
                                 </div>`;
                             } else {
                                 const baseColor = evt.status === 'Cancelado' ? cores['Cancelado'] : cores[evt.tema] || cores['Outros'];
-                                const iconeStatus = evt.status === 'Finalizado' ? '<i class="fa-solid fa-check-double text-green-600"></i>' : '';
-                                const txtAutor = app.isAdmin && evt.matricula !== 'TODOS' ? `| U: ${evt.matricula}` : (evt.autor ? `| Por: ${evt.autor}` : '');
-
-                                html += `<div onclick="event.stopPropagation(); app.calendar.openModal('${dateStr}', '${evt.id}')" class="${baseColor} border rounded p-1 text-[9px] leading-tight cursor-pointer shadow-sm relative group/evt">
-                                    <div class="font-extrabold mb-0.5">${iconeStatus} ${evt.hora} - ${evt.horaFim}</div>
-                                    <div class="font-bold truncate" title="${evt.tema}">${evt.tema}</div>
-                                    <div class="text-[8px] opacity-80 truncate">${evt.op} ${txtAutor}</div>
-                                    <button onclick="event.stopPropagation(); app.calendar.deleteEvent('${evt.id}')" class="absolute top-0.5 right-0.5 text-red-500 opacity-0 group-hover/evt:opacity-100 bg-white rounded-full w-4 h-4"><i class="fa-solid fa-trash text-[8px]"></i></button>
+                                const iconeStatus = evt.status === 'Finalizado' ? '<i class="fa-solid fa-check-double text-green-600"></i> ' : '';
+                                const txtNome = (evt.autor || evt.matricula || 'N/A').split(' ')[0]; // Mostra 1º nome
+                                
+                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="${baseColor} border rounded p-1.5 text-[9px] leading-tight cursor-pointer shadow-sm relative hover:brightness-95 transition">
+                                    <div class="font-extrabold mb-0.5">${iconeStatus}${evt.hora || '--'} às ${evt.horaFim || '--'}</div>
+                                    <div class="font-bold truncate" title="${evt.tema}">${evt.tema || 'Indefinido'}</div>
+                                    <div class="text-[8px] opacity-80 mt-0.5 border-t border-black/10 pt-0.5 truncate">${evt.op || 'N/A'} | ${txtNome}</div>
                                 </div>`;
                             }
                         });
 
                         html += `
                                 </div>
-                                <div class="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-xl z-0 pointer-events-none">
+                                <div class="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-xl z-0 pointer-events-none transition">
                                     <i class="fa-solid fa-plus text-blue-500 text-2xl opacity-30"></i>
                                 </div>
                             </div>
                         `;
                     }
                     html += `</div></div>`;
+                    container.innerHTML = html;
+                },
+
+                renderView_AtaReuniao(container) {
+                    const html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ata de Calibração Profissional</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário para gerar o documento gerencial em PDF ou Word (Doc).</p>
+                        </div>
+                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-4xl mx-auto">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Reunião *</label><input type="date" id="ata-data" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                <div class="md:col-span-2"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema Principal da Calibração *</label><input type="text" id="ata-tema" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none" placeholder="Ex: Alinhamento de script de vendas e objeções"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação / Produto *</label><input type="text" id="ata-op" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Avaliador (Qualidade) *</label><input type="text" id="ata-qualidade" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none" value="${app.currentUser ? app.currentUser.nome : ''}"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor / Supervisor *</label><input type="text" id="ata-gestor" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Representante Cliente (Opcional)</label><input type="text" id="ata-cliente" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white outline-none"></div>
+                            </div>
+                            
+                            <div class="space-y-6">
+                                <div><label class="block text-[11px] font-bold text-green-600 uppercase mb-1.5"><i class="fa-solid fa-plus"></i> Pontos Fortes Discutidos</label><textarea id="ata-fortes" rows="3" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none outline-none"></textarea></div>
+                                <div><label class="block text-[11px] font-bold text-red-500 uppercase mb-1.5"><i class="fa-solid fa-minus"></i> Pontos de Melhoria / Ofensores</label><textarea id="ata-melhoria" rows="3" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none outline-none"></textarea></div>
+                                <div><label class="block text-[11px] font-bold text-blue-600 uppercase mb-1.5"><i class="fa-solid fa-list-check"></i> Plano de Ação e Definições Finais</label><textarea id="ata-acao" rows="4" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none outline-none" placeholder="1. Ação X (Responsável Y - Prazo Z)"></textarea></div>
+                            </div>
+                            
+                            <div class="flex gap-4 mt-8 pt-6 border-t border-slate-100 dark:border-slate-700">
+                                <button onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                <button onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"><i class="fa-solid fa-file-word"></i> Baixar Documento (.doc)</button>
+                            </div>
+                        </div>
+                    `;
                     container.innerHTML = html;
                 },
 
@@ -1818,6 +2036,12 @@
 
                     // Coletando métricas globais e filtrando Agenda
                     const pendentes = [];
+
+                    pendentes.sort((a,b) => {
+                        const da = a.results[app.currentMonth]?.fbDate || '9999-12-31';
+                        const db = b.results[app.currentMonth]?.fbDate || '9999-12-31';
+                        return da.localeCompare(db);
+                    });
 
                     app.users.forEach(u => {
                         const resultsForMonth = (u.results && u.results[app.currentMonth]);
