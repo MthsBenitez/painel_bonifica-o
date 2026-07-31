@@ -451,16 +451,18 @@
                             <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
                         </div>
 
-                        <!-- Perfil -->
-                        <div class="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
-                            <div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs"><i class="fa-solid fa-user"></i></div>
-                            <span id="header-username" class="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wide uppercase truncate max-w-[120px]">USUÁRIO</span>
-                        </div>
-                        
-                        <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
-
                         <!-- Notificações e Tema agrupados -->
-                        <div class="flex items-center gap-1">
+                        <div class="flex items-center gap-2">
+                            <!-- Novo Perfil Clicável -->
+                            <div onclick="if(!app.isAdmin) app.ui.renderTab('perfil')" class="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs overflow-hidden">
+                                    <img id="header-avatar" src="" class="hidden w-full h-full object-cover">
+                                    <i id="header-avatar-icon" class="fa-solid fa-user"></i>
+                                </div>
+                                <span id="header-username" class="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wide uppercase truncate max-w-[120px]">USUÁRIO</span>
+                            </div>
+                            
+                            <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mr-1"></div>
                             <!-- Dropdown de Notificações -->
                             <div class="relative">
                                 <button onclick="app.notifications.toggleDropdown(event)" class="relative text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Notificações">
@@ -578,6 +580,9 @@
 
                             if (data.events) app.eventsList = data.events;
                             else app.eventsList = {};
+
+                            if (data.atas) app.atasList = data.atas;
+                            else app.atasList = {};
                             
                             if (data.operacoes) {
                                 app.operacoesList = data.operacoes;
@@ -610,7 +615,8 @@
                 saveActions() { return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList); },
                 saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); },
                 saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
-                saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); }
+                saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
+                saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
             },
 
             users: [],
@@ -618,6 +624,7 @@
             notificationsList: {},
             eventsList: {},
             operacoesList: {},
+            atasList: {},
             currentMonth: '',
             config: {
                 baseValue: 400,
@@ -1480,8 +1487,8 @@
                     const nav = document.getElementById('main-nav');
                     let html = '';
                     const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'operacoes', label:'Operações', icon:'fa-network-wired'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Ata de Reunião', icon:'fa-file-signature'}, {id:'perfil', label:'Perfil', icon:'fa-id-badge'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
-                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Ata de Reunião', icon:'fa-file-signature'}, {id:'perfil', label:'Meu Perfil', icon:'fa-id-badge'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'operacoes', label:'Operações', icon:'fa-network-wired'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Nova Ata', icon:'fa-file-signature'}, {id:'gestao_atas', label:'Gestão de Atas', icon:'fa-folder-open'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Nova Ata', icon:'fa-file-signature'}, {id:'minhas_atas', label:'Atas Abertas', icon:'fa-folder-open'}, {id:'perfil', label:'Meu Perfil', icon:'fa-id-badge'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
                     
                     tabs.forEach(t => {
                         const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
@@ -1539,7 +1546,9 @@
                         else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
                         else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
                         else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
-                        else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
+                        else if(tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
+                        else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
