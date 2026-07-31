@@ -3388,15 +3388,6 @@
                     XLSX.writeFile(workbook, `Calendario_Softmarketing_${app.currentMonth}.xlsx`);
                 },
 
-                    const encodedUri = encodeURI(csvContent);
-                    const link = document.createElement("a");
-                    link.setAttribute("href", encodedUri);
-                    link.setAttribute("download", `Calendario_Geral_Softmarketing.csv`);
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                },
-
                 generateLegalPDF() {
                     if (!window.jspdf || !window.jspdf.jsPDF) {
                         return app.ui.showAlert("Aviso", "A biblioteca de geração de PDF está carregando, tente novamente em 3 segundos.", "error");
