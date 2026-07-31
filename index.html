@@ -221,6 +221,23 @@
         </div>
     </div>
 
+    <!-- Modal Novo Evento Calendário -->
+    <div id="calendar-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-slate-200 dark:border-dark-border">
+            <h3 class="font-bold text-lg text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-calendar-plus text-blue-600"></i> Adicionar Evento</h3>
+            <div class="space-y-4">
+                <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Data</label><input type="date" id="cal-data" readonly class="w-full p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 dark:text-white outline-none opacity-70 cursor-not-allowed"></div>
+                <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Hora</label><input type="time" id="cal-hora" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+                <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Tema / Título</label><input type="text" id="cal-tema" placeholder="Ex: Treinamento de Vendas" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+                <div><label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Operação</label><input type="text" id="cal-op" placeholder="Ex: SAC, Retenção..." class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none transition-all"></div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="document.getElementById('calendar-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
+                <button onclick="app.calendar.saveEvent()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Salvar Evento</button>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden z-10 bg-slate-50 dark:bg-dark-bg">
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -408,6 +425,9 @@
 
                             if (data.notifications) app.notificationsList = data.notifications;
                             else app.notificationsList = {};
+
+                            if (data.events) app.eventsList = data.events;
+                            else app.eventsList = {};
                             
                             if (app.currentUser && !app.isAdmin) {
                                 const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
@@ -427,13 +447,15 @@
                 saveUsers() { return firebase.database().ref('sistema_bonificacao/users').set(app.users); },
                 saveConfig() { return firebase.database().ref('sistema_bonificacao/config').set(app.config); },
                 saveActions() { return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList); },
-                saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); }
+                saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); },
+                saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList); }
             },
 
             users: [],
             actionsList: {},
             notificationsList: {},
-            currentMonth: '', 
+            eventsList: {}, // <-- COLE ISSO AQUI
+            currentMonth: '',
             config: {
                 baseValue: 400,
                 goals: [
@@ -676,6 +698,44 @@
                 }
             },
 
+                calendar: {
+                    openModal(dateStr) {
+                        document.getElementById('cal-data').value = dateStr;
+                        document.getElementById('cal-hora').value = '';
+                        document.getElementById('cal-tema').value = '';
+                        document.getElementById('cal-op').value = '';
+                        document.getElementById('calendar-modal').classList.remove('hidden');
+                    },
+                    saveEvent() {
+                        if(!app.currentUser && !app.isAdmin) return;
+                        const mat = app.isAdmin ? 'ADM' : app.currentUser.matricula;
+                        const data = document.getElementById('cal-data').value;
+                        const hora = document.getElementById('cal-hora').value;
+                        const tema = document.getElementById('cal-tema').value.trim();
+                        const op = document.getElementById('cal-op').value.trim();
+    
+                        if(!data || !hora || !tema || !op) return app.ui.showAlert("Aviso", "Preencha todos os campos do evento.", "error");
+    
+                        const id = 'evt_' + Date.now();
+                        app.eventsList[id] = { id, matricula: mat, data, hora, tema, op, timestamp: Date.now() };
+                        
+                        app.storage.saveEvents().then(() => {
+                            document.getElementById('calendar-modal').classList.add('hidden');
+                            app.ui.renderTab('calendario', true);
+                            app.ui.showAlert("Sucesso", "Evento adicionado ao seu calendário.", "success");
+                        });
+                    },
+                    deleteEvent(id) {
+                        app.ui.showConfirm("Excluir Evento", "Deseja remover este evento do planejamento?", `app.calendar.executeDelete('${id}')`, true);
+                    },
+                    executeDelete(id) {
+                        delete app.eventsList[id];
+                        app.storage.saveEvents().then(() => {
+                            app.ui.renderTab('calendario', true);
+                        });
+                    }
+                },
+            
             // --- MOTOR MATEMÁTICO ---
             calc: {
                 getGoalResult(goalId, resultsData) {
@@ -945,8 +1005,8 @@
                     const nav = document.getElementById('main-nav');
                     let html = '';
                     const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
-                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
+                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
+                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
                     
                     tabs.forEach(t => {
                         const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
@@ -1001,6 +1061,7 @@
                         else if(tabId === 'legal') this.renderView_Legal(viewDiv);
                         else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
                         else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv);
+                        else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); // <-- COLE AQUI
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -1241,6 +1302,75 @@
                         
                         html += `</div>`;
                     }
+                    container.innerHTML = html;
+                },
+
+                renderView_Calendario(container) {
+                    const mat = app.isAdmin ? 'ADM' : app.currentUser.matricula;
+                    const [year, month] = app.currentMonth.split('-');
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Meu Calendário Pessoal</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Planejamento e agendamentos de <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
+                            </div>
+                        </div>
+                        <div class="glass-card p-6 md:p-8 rounded-3xl overflow-hidden">
+                            <div class="grid grid-cols-7 gap-1 md:gap-2 mb-2">
+                                ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => `<div class="text-center text-[10px] md:text-[11px] font-bold text-slate-500 uppercase tracking-widest py-2">${d}</div>`).join('')}
+                            </div>
+                            <div class="grid grid-cols-7 gap-1 md:gap-3">
+                    `;
+
+                    const daysInMonth = new Date(year, month, 0).getDate();
+                    const firstDayIndex = new Date(year, month - 1, 1).getDay();
+
+                    // Preenchimento de blocos vazios antes do dia 1
+                    for(let i = 0; i < firstDayIndex; i++) {
+                        html += `<div class="min-h-[80px] md:min-h-[110px] rounded-xl bg-slate-50/30 dark:bg-slate-800/20 border border-transparent"></div>`;
+                    }
+
+                    // Dias Reais do Mês
+                    for(let day = 1; day <= daysInMonth; day++) {
+                        const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
+                        const dayEvents = Object.values(app.eventsList).filter(e => e.matricula === mat && e.data === dateStr).sort((a,b) => a.hora.localeCompare(b.hora));
+                        
+                        const isToday = dateStr === new Date().toISOString().split('T')[0];
+                        const bgClass = isToday ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800' : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700';
+                        const textClass = isToday ? 'text-blue-600 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300';
+
+                        html += `
+                            <div class="min-h-[80px] md:min-h-[110px] rounded-xl border ${bgClass} p-1.5 md:p-2.5 relative group hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all flex flex-col cursor-pointer" onclick="app.calendar.openModal('${dateStr}')">
+                                <div class="font-bold text-xs md:text-sm ${textClass} mb-1 md:mb-2">${day}</div>
+                                <div class="flex-1 space-y-1 md:space-y-1.5 overflow-y-auto custom-scrollbar">
+                        `;
+                        
+                        dayEvents.forEach(evt => {
+                            html += `
+                                <div class="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded p-1.5 text-[9px] md:text-[10px] leading-tight relative group/evt shadow-sm border border-blue-200/50 dark:border-blue-800/50" onclick="event.stopPropagation();">
+                                    <div class="font-extrabold mb-0.5"><i class="fa-regular fa-clock text-blue-500"></i> ${evt.hora}</div>
+                                    <div class="font-bold truncate" title="${evt.tema}">${evt.tema}</div>
+                                    <div class="text-[8px] md:text-[9px] opacity-70 truncate mt-0.5">${evt.op}</div>
+                                    <button onclick="app.calendar.deleteEvent('${evt.id}')" class="absolute top-1 right-1 text-red-500 hover:text-red-600 opacity-0 group-hover/evt:opacity-100 transition-opacity bg-white dark:bg-slate-800 rounded-full w-4 h-4 flex items-center justify-center shadow-sm"><i class="fa-solid fa-trash text-[8px]"></i></button>
+                                </div>
+                            `;
+                        });
+
+                        html += `
+                                </div>
+                                <div class="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-xl pointer-events-none transition-opacity">
+                                    <i class="fa-solid fa-plus text-blue-600 text-2xl opacity-40"></i>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
                     container.innerHTML = html;
                 },
 
