@@ -523,7 +523,12 @@
                     messagingSenderId: "96589923224",
                     appId: "1:96589923224:web:c81d609302104c62f9a1ed"
                 },
+                
                 init() {
+                    if (!window.firebase) {
+                        console.error("Firebase não carregou corretamente.");
+                        return;
+                    }
                     if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
                     
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
@@ -604,8 +609,8 @@
                 saveConfig() { return firebase.database().ref('sistema_bonificacao/config').set(app.config); },
                 saveActions() { return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList); },
                 saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); },
-                saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList); },
-                saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList); }
+                saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
+                saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); }
             },
 
             users: [],
@@ -2967,7 +2972,7 @@
                     const u = app.currentUser || (window.selectedAdminEditUser ? app.users.find(x => x.matricula === window.selectedAdminEditUser) : null);
                     if(!u) return;
                     
-                    const foto = u.foto || 'https://via.placeholder.com/150/cbd5e1/ffffff?text=Perfil';
+                    const foto = u.foto ? u.foto : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(u.nome) + '&background=cbd5e1&color=ffffff&size=150';
                     const opsAtribuidas = u.operacoes ? u.operacoes.join(', ') : 'Nenhuma operação atribuída específica.';
                     
                     let html = `
