@@ -157,14 +157,96 @@
         </div>
     </div>
 
-    <!-- Modal de Troca de Senha -->
+<!-- Modal de Troca de Senha -->
     <div id="pwd-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
             <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mr-3 text-green-600 dark:text-green-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
-            <input type="password" id="new-password-input" placeholder="Digite a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 mb-6 dark:text-white outline-none transition-all">
+            <input type="password" id="new-password-input" placeholder="Nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 mb-3 dark:text-white outline-none transition-all">
+            <input type="password" id="confirm-password-input" placeholder="Confirme a nova senha..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 mb-6 dark:text-white outline-none transition-all">
             <div class="flex justify-end gap-3">
                 <button onclick="app.ui.closePwdModal()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
-                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar Senha</button>
+                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Evento Calendário Expandido -->
+    <div id="calendar-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border max-h-[90vh] overflow-y-auto">
+            <h3 class="font-bold text-lg text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><i class="fa-solid fa-calendar-plus text-blue-600"></i> Gerenciar Registro</h3>
+            
+            <input type="hidden" id="cal-edit-id" value="">
+            
+            <!-- Seletor de Tipo -->
+            <div class="mb-4">
+                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tipo de Registro</label>
+                <select id="cal-tipo" onchange="app.calendar.toggleCampos()" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none cursor-pointer">
+                    <option value="evento">Evento Corporativo</option>
+                    <option value="pessoal">Controle Pessoal Diário</option>
+                </select>
+            </div>
+
+            <!-- ADM View: Atribuir a -->
+            <div id="div-cal-adm-user" class="mb-4 hidden">
+                <label class="block text-[11px] font-bold text-purple-500 uppercase mb-1.5"><i class="fa-solid fa-crown"></i> Atribuir a (Modo ADM)</label>
+                <select id="cal-adm-alvo" class="w-full p-2.5 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 dark:text-white outline-none"></select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data</label><input type="date" id="cal-data" readonly class="w-full p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 outline-none opacity-70"></div>
+                
+                <div class="group-evento"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Início</label><input type="time" id="cal-hora-inicio" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white"></div>
+                <div class="group-evento"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Fim</label><input type="time" id="cal-hora-fim" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white"></div>
+                
+                <div class="group-evento"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Status</label>
+                    <select id="cal-status" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white cursor-pointer">
+                        <option value="Previsto">Previsto</option>
+                        <option value="Finalizado">Finalizado/Entregue</option>
+                        <option value="Cancelado">Cancelado</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Campos Evento -->
+            <div class="space-y-4 group-evento">
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema *</label>
+                        <select id="cal-tema" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white">
+                            <option value="Quality Day">Quality Day</option>
+                            <option value="Aplicação de Ação">Aplicação de Ação</option>
+                            <option value="Reunião">Reunião</option>
+                            <option value="Calibração">Calibração</option>
+                            <option value="Outros">Outros</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
+                        <select id="cal-op" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white">
+                            <option value="SAC">SAC</option>
+                            <option value="Vendas">Vendas</option>
+                            <option value="Retenção">Retenção</option>
+                            <option value="Backoffice">Backoffice</option>
+                            <option value="Outros">Outros</option>
+                        </select>
+                    </div>
+                </div>
+                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Observação (Obrigatório) *</label>
+                    <textarea id="cal-obs" rows="2" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none"></textarea>
+                </div>
+                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Anexo (Opcional)</label>
+                    <input type="file" id="cal-anexo" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                    <p id="cal-anexo-link" class="text-[10px] mt-1 text-blue-500 hidden"></p>
+                </div>
+            </div>
+
+            <!-- Campos Controle Pessoal -->
+            <div class="space-y-4 group-pessoal hidden bg-green-50 dark:bg-green-900/10 p-4 rounded-xl border border-green-200 dark:border-green-800/50">
+                <div><label class="block text-[11px] font-bold text-green-700 dark:text-green-400 uppercase mb-1.5">Monitorias Realizadas no Dia</label><input type="number" id="cal-qtd-mon" class="w-full p-2.5 rounded-xl border border-green-200 dark:bg-slate-900 dark:text-white" value="0"></div>
+                <div><label class="block text-[11px] font-bold text-green-700 dark:text-green-400 uppercase mb-1.5">Feedbacks Aplicados no Dia</label><input type="number" id="cal-qtd-fb" class="w-full p-2.5 rounded-xl border border-green-200 dark:bg-slate-900 dark:text-white" value="0"></div>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="document.getElementById('calendar-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-sm">Cancelar</button>
+                <button id="btn-save-cal" onclick="app.calendar.saveEvent()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm shadow-md">Salvar</button>
             </div>
         </div>
     </div>
@@ -277,6 +359,7 @@
                         Lembrar minha matrícula
                     </label>
                 </div>
+                <button type="button" onclick="app.auth.forgotPassword()" class="text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors">Esqueci a senha</button>
                 <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-4">
                     Acessar Dashboard
                 </button>
@@ -488,29 +571,55 @@
                 },
                 
                 checkDailySchedule() {
-                    const today = new Date().toISOString().split('T')[0];
+                    const now = new Date();
+                    const todayStr = now.toISOString().split('T')[0];
+                    const tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+                    const currentHour = now.getHours();
+                    
                     let needsSave = false;
 
+                    // Lembretes de Feedback Gestor
                     app.users.forEach(u => {
                         const res = u.results && u.results[app.currentMonth];
-                        if(res && res.status === 'agendado' && res.fbDate === today) {
-                            const notifIdADM = 'notif_daily_adm_' + u.matricula + '_' + today;
-                            const notifIdUser = 'notif_daily_usr_' + u.matricula + '_' + today;
-                            
-                            if(!app.notificationsList[notifIdADM]) {
-                                app.notificationsList[notifIdADM] = { id: notifIdADM, userId: 'ADM', title: 'Feedback Hoje!', message: `Lembrete: Você tem feedback presencial agendado com ${u.nome} hoje às ${res.fbTime || '--:--'}.`, type: 'info', read: false, timestamp: Date.now() };
-                                needsSave = true;
-                            }
+                        if(res && res.status === 'agendado' && res.fbDate === todayStr) {
+                            const notifIdUser = 'notif_fb_' + u.matricula + '_' + todayStr;
                             if(!app.notificationsList[notifIdUser]) {
-                                app.notificationsList[notifIdUser] = { id: notifIdUser, userId: u.matricula, title: 'Feedback Hoje!', message: `Lembrete: O seu feedback presencial com o gestor acontecerá hoje às ${res.fbTime || '--:--'}.`, type: 'info', read: false, timestamp: Date.now() };
+                                app.notificationsList[notifIdUser] = { id: notifIdUser, userId: u.matricula, title: 'Feedback Hoje!', message: `Seu feedback será hoje às ${res.fbTime || '--:--'}.`, type: 'info', read: false, timestamp: Date.now() };
                                 needsSave = true;
                             }
                         }
                     });
 
-                    if(needsSave) {
-                        app.storage.saveNotifications();
-                    }
+                    // Lembretes de Calendário (1 dia antes e 1 hora antes)
+                    Object.values(app.eventsList).forEach(evt => {
+                        if(evt.tipo === 'evento' && evt.status === 'Previsto') {
+                            const targetId = evt.matricula === 'TODOS' ? 'ADM' : evt.matricula; // Simplificado para notificar ADM ou Usuário específico
+                            
+                            // 1 dia antes
+                            if(evt.data === tomorrowStr) {
+                                const nid1 = 'n_cal_dia_' + evt.id;
+                                if(!app.notificationsList[nid1]) {
+                                    app.notificationsList[nid1] = { id: nid1, userId: targetId, title: 'Evento Amanhã', message: `${evt.tema} programado para amanhã às ${evt.hora}.`, type: 'info', read: false, timestamp: Date.now() };
+                                    needsSave = true;
+                                }
+                            }
+                            // 1 hora antes (simplificado comparando apenas a hora cheia)
+                            if(evt.data === todayStr && evt.hora) {
+                                const evtHour = parseInt(evt.hora.split(':')[0]);
+                                if(evtHour - currentHour === 1) {
+                                    const nid2 = 'n_cal_hr_' + evt.id;
+                                    if(!app.notificationsList[nid2]) {
+                                        app.notificationsList[nid2] = { id: nid2, userId: targetId, title: 'Evento em 1 Hora!', message: `${evt.tema} inicia às ${evt.hora}.`, type: 'info', read: false, timestamp: Date.now() };
+                                        needsSave = true;
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    if(needsSave) app.storage.saveNotifications();
                 },
 
                 toggleDropdown(e) {
@@ -698,43 +807,129 @@
                 }
             },
 
-                calendar: {
-                    openModal(dateStr) {
-                        document.getElementById('cal-data').value = dateStr;
-                        document.getElementById('cal-hora').value = '';
-                        document.getElementById('cal-tema').value = '';
-                        document.getElementById('cal-op').value = '';
-                        document.getElementById('calendar-modal').classList.remove('hidden');
-                    },
-                    saveEvent() {
-                        if(!app.currentUser && !app.isAdmin) return;
-                        const mat = app.isAdmin ? 'ADM' : app.currentUser.matricula;
-                        const data = document.getElementById('cal-data').value;
-                        const hora = document.getElementById('cal-hora').value;
-                        const tema = document.getElementById('cal-tema').value.trim();
-                        const op = document.getElementById('cal-op').value.trim();
-    
-                        if(!data || !hora || !tema || !op) return app.ui.showAlert("Aviso", "Preencha todos os campos do evento.", "error");
-    
-                        const id = 'evt_' + Date.now();
-                        app.eventsList[id] = { id, matricula: mat, data, hora, tema, op, timestamp: Date.now() };
-                        
-                        app.storage.saveEvents().then(() => {
-                            document.getElementById('calendar-modal').classList.add('hidden');
-                            app.ui.renderTab('calendario', true);
-                            app.ui.showAlert("Sucesso", "Evento adicionado ao seu calendário.", "success");
-                        });
-                    },
-                    deleteEvent(id) {
-                        app.ui.showConfirm("Excluir Evento", "Deseja remover este evento do planejamento?", `app.calendar.executeDelete('${id}')`, true);
-                    },
-                    executeDelete(id) {
-                        delete app.eventsList[id];
-                        app.storage.saveEvents().then(() => {
-                            app.ui.renderTab('calendario', true);
-                        });
+            calendar: {
+                toggleCampos() {
+                    const tipo = document.getElementById('cal-tipo').value;
+                    if(tipo === 'evento') {
+                        document.querySelectorAll('.group-evento').forEach(el => el.classList.remove('hidden'));
+                        document.querySelectorAll('.group-pessoal').forEach(el => el.classList.add('hidden'));
+                    } else {
+                        document.querySelectorAll('.group-evento').forEach(el => el.classList.add('hidden'));
+                        document.querySelectorAll('.group-pessoal').forEach(el => el.classList.remove('hidden'));
                     }
                 },
+                openModal(dateStr, evtId = null) {
+                    // Verifica bloqueio de data para operador comum
+                    if(!app.isAdmin) {
+                        const today = new Date().toISOString().split('T')[0];
+                        if(dateStr < today) return app.ui.showAlert("Acesso Negado", "Você não pode editar ou adicionar registros em dias passados. Solicite ao ADM.", "error");
+                    }
+
+                    document.getElementById('cal-data').value = dateStr;
+                    document.getElementById('cal-edit-id').value = evtId || '';
+                    document.getElementById('cal-anexo-link').classList.add('hidden');
+                    document.getElementById('cal-anexo').value = '';
+
+                    if(app.isAdmin) {
+                        const sel = document.getElementById('cal-adm-alvo');
+                        sel.innerHTML = `<option value="TODOS">Todos os Colaboradores</option>`;
+                        app.users.forEach(u => sel.innerHTML += `<option value="${u.matricula}">${u.nome}</option>`);
+                        document.getElementById('div-cal-adm-user').classList.remove('hidden');
+                    }
+
+                    if(evtId && app.eventsList[evtId]) {
+                        const evt = app.eventsList[evtId];
+                        document.getElementById('cal-tipo').value = evt.tipo || 'evento';
+                        this.toggleCampos();
+                        
+                        if(evt.tipo === 'pessoal') {
+                            document.getElementById('cal-qtd-mon').value = evt.qtdMon || 0;
+                            document.getElementById('cal-qtd-fb').value = evt.qtdFb || 0;
+                        } else {
+                            document.getElementById('cal-hora-inicio').value = evt.hora || '';
+                            document.getElementById('cal-hora-fim').value = evt.horaFim || '';
+                            document.getElementById('cal-tema').value = evt.tema || 'Outros';
+                            document.getElementById('cal-op').value = evt.op || 'Outros';
+                            document.getElementById('cal-obs').value = evt.obs || '';
+                            document.getElementById('cal-status').value = evt.status || 'Previsto';
+                            if(evt.anexo) {
+                                document.getElementById('cal-anexo-link').classList.remove('hidden');
+                                document.getElementById('cal-anexo-link').innerHTML = `<a href="${evt.anexo}" target="_blank"><i class="fa-solid fa-paperclip"></i> Ver Anexo Salvo</a>`;
+                            }
+                        }
+                    } else {
+                        // Novo registro
+                        document.getElementById('cal-tipo').value = 'evento';
+                        this.toggleCampos();
+                        document.getElementById('cal-hora-inicio').value = ''; document.getElementById('cal-hora-fim').value = '';
+                        document.getElementById('cal-obs').value = ''; document.getElementById('cal-qtd-mon').value = '0'; document.getElementById('cal-qtd-fb').value = '0';
+                    }
+                    
+                    document.getElementById('calendar-modal').classList.remove('hidden');
+                },
+
+                saveEvent() {
+                    const tipo = document.getElementById('cal-tipo').value;
+                    const data = document.getElementById('cal-data').value;
+                    const evtId = document.getElementById('cal-edit-id').value;
+                    
+                    // Definir Autor e Alvo
+                    let autor = app.isAdmin ? 'ADM' : app.currentUser.nome;
+                    let matriculaAlvo = app.isAdmin ? document.getElementById('cal-adm-alvo').value : app.currentUser.matricula;
+
+                    const id = evtId || 'evt_' + Date.now();
+                    const payload = { id, matricula: matriculaAlvo, data, tipo, autor, timestamp: Date.now() };
+
+                    if(tipo === 'pessoal') {
+                        payload.qtdMon = document.getElementById('cal-qtd-mon').value;
+                        payload.qtdFb = document.getElementById('cal-qtd-fb').value;
+                        app.eventsList[id] = payload;
+                        this.finalizarSave();
+                    } else {
+                        payload.hora = document.getElementById('cal-hora-inicio').value;
+                        payload.horaFim = document.getElementById('cal-hora-fim').value;
+                        payload.tema = document.getElementById('cal-tema').value;
+                        payload.op = document.getElementById('cal-op').value;
+                        payload.obs = document.getElementById('cal-obs').value.trim();
+                        payload.status = document.getElementById('cal-status').value;
+
+                        if(!payload.hora || !payload.horaFim || !payload.obs) return app.ui.showAlert("Aviso", "Preencha Início, Fim e Observação obrigatória.", "error");
+                        if(payload.status === 'Cancelado' && payload.obs.length < 5) return app.ui.showAlert("Aviso", "Justifique o cancelamento na Observação.", "error");
+
+                        const fileInput = document.getElementById('cal-anexo');
+                        if(fileInput.files.length > 0) {
+                            app.actions.compressImageAsync(fileInput.files[0]).then(b64 => {
+                                payload.anexo = b64;
+                                app.eventsList[id] = payload;
+                                this.finalizarSave();
+                            });
+                        } else {
+                            if(evtId && app.eventsList[evtId].anexo) payload.anexo = app.eventsList[evtId].anexo;
+                            app.eventsList[id] = payload;
+                            this.finalizarSave();
+                        }
+                    }
+                },
+                finalizarSave() {
+                    app.storage.saveEvents().then(() => {
+                        document.getElementById('calendar-modal').classList.add('hidden');
+                        app.ui.renderTab('calendario', true);
+                        app.ui.showAlert("Sucesso", "Registro salvo no calendário.", "success");
+                    });
+                },
+                deleteEvent(id) {
+                    if(!app.isAdmin) {
+                        const evt = app.eventsList[id];
+                        const today = new Date().toISOString().split('T')[0];
+                        if(evt.data < today) return app.ui.showAlert("Acesso Negado", "Você não pode excluir eventos do passado.", "error");
+                    }
+                    app.ui.showConfirm("Excluir Registro", "Deseja remover este registro definitivamente?", `app.calendar.executeDelete('${id}')`, true);
+                },
+                executeDelete(id) {
+                    delete app.eventsList[id];
+                    app.storage.saveEvents().then(() => app.ui.renderTab('calendario', true));
+                }
+            },
             
             // --- MOTOR MATEMÁTICO ---
             calc: {
@@ -901,9 +1096,20 @@
                     document.getElementById('view-login').classList.remove('hidden');
                 },
 
+                forgotPassword() {
+                    const mat = document.getElementById('login-mat').value.trim();
+                    if(!mat) return app.ui.showAlert("Aviso", "Digite sua matrícula no campo antes de clicar em Esqueci a senha.", "error");
+                    
+                    app.notifications.notify('ADM', 'Solicitação de Senha', `O colaborador da matrícula ${mat} solicitou o reset de senha.`, 'error');
+                    app.ui.showAlert("Solicitação Enviada", "A administração foi notificada para redefinir sua senha. Aguarde o retorno do seu gestor.", "success");
+                },
+
                 executeChangePassword() {
                     const newPwd = document.getElementById('new-password-input').value.trim();
+                    const confPwd = document.getElementById('confirm-password-input').value.trim();
+                    
                     if(newPwd.length < 4) return app.ui.showAlert("Aviso", "A senha deve ter pelo menos 4 caracteres.", "error");
+                    if(newPwd !== confPwd) return app.ui.showAlert("Erro", "As senhas não coincidem. Tente novamente.", "error");
                     
                     if(app.currentUser) {
                         const idx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
@@ -917,7 +1123,12 @@
             },
 
             ui: {
-                currentActionFilter: 'pendente', 
+                currentActionFilter: 'pendente',
+                valuesHidden: false,
+                toggleFinanceVisibility() {
+                    this.valuesHidden = !this.valuesHidden;
+                    this.renderTab('meu_painel', true);
+                },
                 actionFilterUser: '',
                 actionFilterOp: '',
                 
@@ -1313,11 +1524,12 @@
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Meu Calendário Pessoal</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Planejamento e agendamentos de <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Calendário de Operação</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Planejamento e rotina referentes a <strong class="text-blue-600 dark:text-blue-400">${monthLabel}</strong>.</p>
                             </div>
+                            ${app.isAdmin ? `<button onclick="app.admin.exportCalendarCSV()" class="bg-blue-600 text-white font-bold py-2.5 px-4 rounded-xl shadow-md text-sm"><i class="fa-solid fa-file-csv"></i> Relatório ADM CSV</button>` : ''}
                         </div>
-                        <div class="glass-card p-6 md:p-8 rounded-3xl overflow-hidden">
+                        <div class="glass-card p-4 md:p-8 rounded-3xl overflow-hidden">
                             <div class="grid grid-cols-7 gap-1 md:gap-2 mb-2">
                                 ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => `<div class="text-center text-[10px] md:text-[11px] font-bold text-slate-500 uppercase tracking-widest py-2">${d}</div>`).join('')}
                             </div>
@@ -1327,50 +1539,62 @@
                     const daysInMonth = new Date(year, month, 0).getDate();
                     const firstDayIndex = new Date(year, month - 1, 1).getDay();
 
-                    // Preenchimento de blocos vazios antes do dia 1
-                    for(let i = 0; i < firstDayIndex; i++) {
-                        html += `<div class="min-h-[80px] md:min-h-[110px] rounded-xl bg-slate-50/30 dark:bg-slate-800/20 border border-transparent"></div>`;
-                    }
+                    for(let i = 0; i < firstDayIndex; i++) html += `<div class="min-h-[100px] md:min-h-[130px] rounded-xl bg-slate-50/30 dark:bg-slate-800/20 border border-transparent"></div>`;
 
-                    // Dias Reais do Mês
+                    const cores = {
+                        'Quality Day': 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/40 dark:text-purple-200',
+                        'Aplicação de Ação': 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/40 dark:text-blue-200',
+                        'Reunião': 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/40 dark:text-orange-200',
+                        'Calibração': 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-900/40 dark:text-teal-200',
+                        'Outros': 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-200',
+                        'Cancelado': 'bg-red-100 text-red-800 border-red-400 opacity-70 line-through'
+                    };
+
                     for(let day = 1; day <= daysInMonth; day++) {
                         const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
-                        const dayEvents = Object.values(app.eventsList).filter(e => e.matricula === mat && e.data === dateStr).sort((a,b) => a.hora.localeCompare(b.hora));
+                        // ADM vê tudo ("TODOS" ou matriculas individuais). Usuário vê os seus e os de "TODOS"
+                        let dayEvents = Object.values(app.eventsList).filter(e => e.data === dateStr && (app.isAdmin || e.matricula === mat || e.matricula === 'TODOS'));
+                        dayEvents.sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
                         
                         const isToday = dateStr === new Date().toISOString().split('T')[0];
-                        const bgClass = isToday ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800' : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700';
-                        const textClass = isToday ? 'text-blue-600 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300';
+                        const bgClass = isToday ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700';
 
                         html += `
-                            <div class="min-h-[80px] md:min-h-[110px] rounded-xl border ${bgClass} p-1.5 md:p-2.5 relative group hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all flex flex-col cursor-pointer" onclick="app.calendar.openModal('${dateStr}')">
-                                <div class="font-bold text-xs md:text-sm ${textClass} mb-1 md:mb-2">${day}</div>
-                                <div class="flex-1 space-y-1 md:space-y-1.5 overflow-y-auto custom-scrollbar">
+                            <div class="min-h-[100px] md:min-h-[130px] rounded-xl border ${bgClass} p-1 md:p-2 relative group hover:shadow-md transition-all flex flex-col z-10" onclick="app.calendar.openModal('${dateStr}')">
+                                <div class="font-bold text-xs md:text-sm text-slate-700 dark:text-slate-300 mb-1 z-20 pointer-events-none">${day}</div>
+                                <div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar z-20">
                         `;
                         
                         dayEvents.forEach(evt => {
-                            html += `
-                                <div class="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded p-1.5 text-[9px] md:text-[10px] leading-tight relative group/evt shadow-sm border border-blue-200/50 dark:border-blue-800/50" onclick="event.stopPropagation();">
-                                    <div class="font-extrabold mb-0.5"><i class="fa-regular fa-clock text-blue-500"></i> ${evt.hora}</div>
+                            if(evt.tipo === 'pessoal') {
+                                html += `<div onclick="event.stopPropagation(); app.calendar.openModal('${dateStr}', '${evt.id}')" class="bg-green-100 text-green-800 border border-green-300 rounded p-1 text-[9px] leading-tight cursor-pointer shadow-sm relative group/evt">
+                                    <div class="font-bold mb-0.5"><i class="fa-solid fa-clipboard-check"></i> Controle</div>
+                                    <div>Mon: ${evt.qtdMon} | FB: ${evt.qtdFb}</div>
+                                    <button onclick="event.stopPropagation(); app.calendar.deleteEvent('${evt.id}')" class="absolute top-0.5 right-0.5 text-red-500 opacity-0 group-hover/evt:opacity-100"><i class="fa-solid fa-trash"></i></button>
+                                </div>`;
+                            } else {
+                                const baseColor = evt.status === 'Cancelado' ? cores['Cancelado'] : cores[evt.tema] || cores['Outros'];
+                                const iconeStatus = evt.status === 'Finalizado' ? '<i class="fa-solid fa-check-double text-green-600"></i>' : '';
+                                const txtAutor = app.isAdmin && evt.matricula !== 'TODOS' ? `| U: ${evt.matricula}` : (evt.autor ? `| Por: ${evt.autor}` : '');
+
+                                html += `<div onclick="event.stopPropagation(); app.calendar.openModal('${dateStr}', '${evt.id}')" class="${baseColor} border rounded p-1 text-[9px] leading-tight cursor-pointer shadow-sm relative group/evt">
+                                    <div class="font-extrabold mb-0.5">${iconeStatus} ${evt.hora} - ${evt.horaFim}</div>
                                     <div class="font-bold truncate" title="${evt.tema}">${evt.tema}</div>
-                                    <div class="text-[8px] md:text-[9px] opacity-70 truncate mt-0.5">${evt.op}</div>
-                                    <button onclick="app.calendar.deleteEvent('${evt.id}')" class="absolute top-1 right-1 text-red-500 hover:text-red-600 opacity-0 group-hover/evt:opacity-100 transition-opacity bg-white dark:bg-slate-800 rounded-full w-4 h-4 flex items-center justify-center shadow-sm"><i class="fa-solid fa-trash text-[8px]"></i></button>
-                                </div>
-                            `;
+                                    <div class="text-[8px] opacity-80 truncate">${evt.op} ${txtAutor}</div>
+                                    <button onclick="event.stopPropagation(); app.calendar.deleteEvent('${evt.id}')" class="absolute top-0.5 right-0.5 text-red-500 opacity-0 group-hover/evt:opacity-100 bg-white rounded-full w-4 h-4"><i class="fa-solid fa-trash text-[8px]"></i></button>
+                                </div>`;
+                            }
                         });
 
                         html += `
                                 </div>
-                                <div class="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-xl pointer-events-none transition-opacity">
-                                    <i class="fa-solid fa-plus text-blue-600 text-2xl opacity-40"></i>
+                                <div class="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-xl z-0 pointer-events-none">
+                                    <i class="fa-solid fa-plus text-blue-500 text-2xl opacity-30"></i>
                                 </div>
                             </div>
                         `;
                     }
-
-                    html += `
-                            </div>
-                        </div>
-                    `;
+                    html += `</div></div>`;
                     container.innerHTML = html;
                 },
 
@@ -1394,7 +1618,8 @@
                         html += `</select>`;
                         if(window.selectedViewUser) targetUser = app.users.find(u => u.matricula === window.selectedViewUser);
                     } else {
-                        html += `<button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
+                        html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
+                        <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
                     }
                     html += `</div></div>`;
 
@@ -1530,7 +1755,7 @@
                                 </div>
                                 <div class="text-right">
                                     <div class="text-[10px] font-bold ${labelColor} uppercase tracking-wide mb-0.5">Fatia Calculada</div>
-                                    <div class="text-lg font-black ${priceColor}">R$ ${r.received.toFixed(2)}</div>
+                                    <div class="text-lg font-black ${priceColor}">${this.valuesHidden ? 'R$ ----' : R$ ${r.received.toFixed(2)}}</div>
                                 </div>
                             </div>
                         </div>`;
@@ -1571,7 +1796,7 @@
                             </div>
                             <div class="mt-6 md:mt-0 text-right ${bannerBadgeBg} backdrop-blur-md px-8 py-5 rounded-2xl border z-10 relative w-full md:w-auto">
                                 <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-1">Bonificação Projetada</div>
-                                <div class="text-4xl font-black ${bannerValueColor}">R$ ${total.received.toFixed(2)}</div>
+                                <div class="text-4xl font-black ${bannerValueColor}">${this.valuesHidden ? 'R$ ----' : R$ ${total.received.toFixed(2)}}</div>
                             </div>
                         </div>
                     `;
@@ -2788,6 +3013,31 @@
                     }
                     
                     doc.save(`Relatorio_Bonificacao_${app.currentMonth}.pdf`);
+                },
+
+                exportCalendarCSV() {
+                    const evts = Object.values(app.eventsList);
+                    if(evts.length === 0) return app.ui.showAlert("Erro", "Não há registros no calendário para exportar.", "error");
+
+                    let csvContent = "data:text/csv;charset=utf-8,";
+                    csvContent += "ID,Data,Tipo,Status,Tema,Operacao,Hora Inicio,Hora Fim,Autor,Matricula Alvo,Monitorias,Feedbacks,Observacao\n";
+
+                    evts.forEach(e => {
+                        const obsLimpa = e.obs ? e.obs.replace(/(\r\n|\n|\r|,)/gm, " ") : "";
+                        const row = [
+                            e.id, e.data, e.tipo, e.status||"-", e.tema||"-", e.op||"-", e.hora||"-", e.horaFim||"-", 
+                            e.autor||"-", e.matricula||"-", e.qtdMon||"0", e.qtdFb||"0", obsLimpa
+                        ];
+                        csvContent += row.join(",") + "\n";
+                    });
+
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `Calendario_Geral_Softmarketing.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
                 },
 
                 generateLegalPDF() {
