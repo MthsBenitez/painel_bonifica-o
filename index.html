@@ -661,7 +661,11 @@
                             }
                             
                             if (data.users) {
-                                app.users = data.users.map(u => {
+                                // FIX: Garante que os usuários sejam lidos como array, mesmo se o Firebase converter para objeto
+                                const rawUsers = Array.isArray(data.users) ? data.users : Object.values(data.users);
+                                
+                                // O .filter(Boolean) remove espaços nulos/vazios deixados pelo Firebase
+                                app.users = rawUsers.filter(u => u !== null && u !== undefined).map(u => {
                                     if(u.results && (u.results.g1 || u.results.g2)) {
                                         const oldData = {...u.results};
                                         u.results = { "2026-06": oldData };
@@ -4061,7 +4065,8 @@ viewEvent(id) {
                 executeDeleteUser() {
                     app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
                     window.selectedAdminEditUser = null;
-                    app.storage.saveUsers().then(() => app.ui.renderTab('cadastros', true));
+                    // Alterado aqui no final para 'gestao_equipe'
+                    app.storage.saveUsers().then(() => app.ui.renderTab('gestao_equipe', true));
                 },
 
                 updateConfigPreview() {
