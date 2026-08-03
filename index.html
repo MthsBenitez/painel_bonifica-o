@@ -2378,6 +2378,7 @@
                             </div>
                         </div>
                         <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-blue-600 shadow-xl">
+                            <input type="hidden" id="ata-edit-id" value="">
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 dark:border-slate-700 pb-8">
                                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data Padrão</label><input type="date" id="ata-data" value="${today}" readonly class="w-full p-3 rounded-xl bg-slate-100 text-slate-500 border border-slate-200 outline-none cursor-not-allowed"></div>
                                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Início *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
@@ -3617,7 +3618,8 @@
                     if(this.atasFiltroAutor) atas = atas.filter(a => (a.autor||'').toLowerCase().includes(this.atasFiltroAutor.toLowerCase()));
 
                     const totais = atas.length;
-                    const comPdca = atas.filter(a => a.pdca && (a.pdca.smartS || a.pdca.pdcaP)).length;
+                    const devolvidas = atas.filter(a => a.status === 'devolvido').length;
+                    const concluidas = totais - devolvidas;
                     
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.atasFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
@@ -3625,30 +3627,28 @@
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão Global de Atas</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe todas as atas da operação, utilize os filtros e gere relatórios.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe todas as atas da operação, solicite correções e gere relatórios.</p>
                             </div>
                             <button type="button" onclick="app.ata.exportAtasXLSX()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-excel"></i> Baixar XLSX
                             </button>
                         </div>
                         
-                        <!-- Dashcards -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                             <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
                                 <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total Filtrado</div>
                                 <div class="text-3xl font-black text-blue-600">${totais}</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
-                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Atas com PDCA (Ação)</div>
-                                <div class="text-3xl font-black text-green-600">${comPdca}</div>
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Atas Concluídas</div>
+                                <div class="text-3xl font-black text-green-600">${concluidas}</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
-                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Pendentes de Ação</div>
-                                <div class="text-3xl font-black text-orange-500">${totais - comPdca}</div>
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Devolvidas p/ Correção</div>
+                                <div class="text-3xl font-black text-red-500">${devolvidas}</div>
                             </div>
                         </div>
 
-                        <!-- Filtros Diversos -->
                         <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
                             <div class="text-xs font-bold text-slate-500 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros de Pesquisa</div>
                             <input type="text" placeholder="Nome do Autor" value="${this.atasFiltroAutor}" onchange="app.ui.atasFiltroAutor=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
@@ -3667,12 +3667,16 @@
                         html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem atas encontradas.</div>`;
                     } else {
                         atas.forEach(ata => {
+                            const isDevolvido = ata.status === 'devolvido';
+                            const badgeStatus = isDevolvido ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold">Devolvida (Correção)</span>` : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold">Concluída</span>`;
+                            const commentHtml = isDevolvido ? `<div class="mt-2 text-xs text-red-600 font-bold bg-red-50 p-2 rounded-lg border border-red-200"><i class="fa-solid fa-reply"></i> Motivo Reprovação: ${ata.comentario}</div>` : '';
+
                             html += `
                                 <div class="glass-card rounded-2xl p-6 border-t-4 border-t-blue-500 shadow-sm flex flex-col relative group">
                                     <button type="button" onclick="app.ata.excluirAta('${ata.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors"><i class="fa-solid fa-trash"></i></button>
                                     
-                                    <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                        <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora} - ${ata.horaFim || '--:--'})
+                                    <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2 flex flex-wrap items-center gap-2">
+                                        <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora} - ${ata.horaFim || '--:--'}) ${badgeStatus}
                                     </div>
                                     <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-2 pr-6">${ata.tema}</h3>
                                     <div class="text-xs font-bold text-slate-600 dark:text-slate-400 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-user-pen"></i> Criado por: ${ata.autor} | Operação: ${ata.op}</div>
@@ -3687,8 +3691,10 @@
                                         <div class="border-t border-slate-200 dark:border-slate-700 pt-2"><span class="font-bold text-purple-600"><i class="fa-solid fa-list-check"></i> Plano de Ação:</span><br/>${ata.acoes || '-'}</div>
                                     </div>
                                     
-                                    <!-- Ações de Download (Sem Botão de PDCA na visão Gestão) -->
-                                    <div class="flex gap-2 mt-auto">
+                                    ${commentHtml}
+
+                                    <div class="flex gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                        ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
                                         <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
                                         <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
                                     </div>
@@ -3716,22 +3722,31 @@
                         html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Você ainda não registrou nenhuma ata.</div>`;
                     } else {
                         atas.forEach(ata => {
-                            const hasPDCA = ata.pdca && (ata.pdca.smartS || ata.pdca.pdcaP);
-                            const badge = hasPDCA ? `<span class="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200 dark:border-green-800"><i class="fa-solid fa-check"></i> PDCA Ativo</span>` : `<span class="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 px-2 py-0.5 rounded text-[9px] font-bold border border-slate-200 dark:border-slate-700">Pendente PDCA</span>`;
+                            const isDevolvido = ata.status === 'devolvido';
+                            const badge = isDevolvido ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200"><i class="fa-solid fa-triangle-exclamation"></i> DEVOLVIDA PARA CORREÇÃO</span>` : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> CONCLUÍDA</span>`;
+
+                            const commentHtml = isDevolvido ? `<div class="mb-3 text-xs text-red-600 font-bold bg-red-50 p-3 rounded-xl border border-red-200"><i class="fa-solid fa-reply"></i> A administração solicitou ajustes: ${ata.comentario}</div>` : '';
 
                             html += `
-                                <div class="glass-card rounded-2xl p-6 shadow-sm border-t-4 border-t-green-500 flex flex-col h-full relative group">
-                                    <div class="text-[10px] font-black text-green-600 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <div class="glass-card rounded-2xl p-6 shadow-sm border-t-4 ${isDevolvido ? 'border-t-red-500' : 'border-t-green-500'} flex flex-col h-full relative group">
+                                    <div class="text-[10px] font-black ${isDevolvido ? 'text-red-600' : 'text-green-600'} uppercase tracking-widest mb-2 flex flex-wrap items-center gap-2">
                                         <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora}) ${badge}
                                     </div>
                                     <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-2">${ata.tema}</h3>
                                     <div class="text-xs font-bold text-slate-500 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">Operação: ${ata.op}</div>
                                     
+                                    ${commentHtml}
+                                    
                                     <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 text-xs text-slate-700 dark:text-slate-300 flex-1 overflow-y-auto max-h-32 custom-scrollbar mb-4 space-y-3">
                                         <div><span class="font-bold text-green-600">Discutido:</span><br/>${ata.fortes || '-'}</div>
                                         <div class="border-t border-slate-200 dark:border-slate-700 pt-2"><span class="font-bold text-purple-600">Plano de Ação:</span><br/>${ata.acoes || '-'}</div>
                                     </div>
-                                    <button type="button" onclick="app.ata.openPDCA('${ata.id}')" class="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-3 rounded-xl text-xs transition-colors border border-slate-200 dark:border-slate-600"><i class="fa-solid fa-bullseye mr-1 text-blue-500"></i> Alimentar SMART / PDCA</button>
+                                    
+                                    <div class="flex gap-2 mt-auto">
+                                        ${isDevolvido ? `<button type="button" onclick="app.ata.editAta('${ata.id}')" class="flex-1 bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold py-3 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> Corrigir Ata</button>` : ''}
+                                        <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-3 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                        <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-3 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
+                                    </div>
                                 </div>
                             `;
                         });
