@@ -425,51 +425,6 @@
         </div>
     </div>
 
-    <!-- Modal PDCA / SMART -->
-    <div id="pdca-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl w-full max-w-4xl mx-4 border border-slate-200 dark:border-dark-border overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-6 text-white flex justify-between items-center">
-                <div>
-                    <h3 class="font-extrabold text-2xl"><i class="fa-solid fa-bullseye mr-2"></i> Quadro de Ação (SMART / PDCA)</h3>
-                    <p class="text-blue-100 text-sm mt-1">Estratégia de resolução vinculada à Ata: <span id="pdca-ata-tema" class="font-bold"></span></p>
-                </div>
-                <button onclick="document.getElementById('pdca-modal').classList.add('hidden')" class="text-white hover:text-red-400 text-2xl"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50 dark:bg-slate-900">
-                <input type="hidden" id="pdca-ata-id" value="">
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- S.M.A.R.T -->
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
-                        <h4 class="font-bold text-blue-600 mb-4 border-b pb-2 uppercase tracking-widest text-xs">Objetivo SMART</h4>
-                        <div class="space-y-3">
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Specific (Específico)</label><input type="text" id="smart-s" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Measurable (Mensurável)</label><input type="text" id="smart-m" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Achievable (Atingível)</label><input type="text" id="smart-a" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Relevant (Relevante)</label><input type="text" id="smart-r" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Time-bound (Temporal)</label><input type="date" id="smart-t" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- P.D.C.A -->
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
-                        <h4 class="font-bold text-green-600 mb-4 border-b pb-2 uppercase tracking-widest text-xs">Ciclo PDCA</h4>
-                        <div class="space-y-3 flex-1 flex flex-col h-full">
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Plan (Planejar)</label><textarea id="pdca-p" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Do (Fazer)</label><textarea id="pdca-d" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Check (Checar/Analisar)</label><textarea id="pdca-c" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Act (Agir/Corrigir)</label><textarea id="pdca-a" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="p-5 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                <button type="button" onclick="app.ata.salvarPDCA()" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md"><i class="fa-solid fa-floppy-disk"></i> Salvar Quadro</button>
-                <button type="button" onclick="app.ata.gerarPDFPDCA()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md"><i class="fa-solid fa-file-pdf"></i> Baixar PDF 16:9</button>
-            </div>
-        </div>
-    </div>
-
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden z-10 bg-slate-50 dark:bg-dark-bg">
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -1098,23 +1053,23 @@
                     document.getElementById('ata-dynamic-participants').innerHTML = '';
                     this.addAcao();
                 },
-                addAcao() {
+                addAcao(texto = '', resp = '', prev = '') {
                     const div = document.createElement('div');
                     div.className = 'grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-300 dark:border-slate-600 relative shadow-sm';
                     div.innerHTML = `
                         <button type="button" onclick="this.parentElement.remove()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600"><i class="fa-solid fa-xmark text-xs"></i></button>
-                        <div class="md:col-span-2"><label class="text-[10px] uppercase font-bold text-slate-500">Ação: o que será feito e resultado</label><textarea class="ata-acao-texto w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" rows="2"></textarea></div>
-                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Responsável (Nome/Área)</label><input type="text" class="ata-acao-resp w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm"></div>
-                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Previsão</label><input type="date" class="ata-acao-prev w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm"></div>
+                        <div class="md:col-span-2"><label class="text-[10px] uppercase font-bold text-slate-500">Ação: o que será feito e resultado</label><textarea class="ata-acao-texto w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" rows="2">${texto}</textarea></div>
+                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Responsável (Nome/Área)</label><input type="text" class="ata-acao-resp w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" value="${resp}"></div>
+                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Previsão</label><input type="date" class="ata-acao-prev w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" value="${prev}"></div>
                     `;
                     document.getElementById('ata-dynamic-actions').appendChild(div);
                 },
-                addParticipante() {
+                addParticipante(nome = '', cargo = '') {
                     const div = document.createElement('div');
                     div.className = 'flex gap-2 items-center';
                     div.innerHTML = `
-                        <input type="text" placeholder="Nome do Extra" class="ata-part-nome flex-1 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm">
-                        <input type="text" placeholder="Papel / Cargo" class="ata-part-cargo w-1/3 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm">
+                        <input type="text" placeholder="Nome do Extra" class="ata-part-nome flex-1 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm" value="${nome}">
+                        <input type="text" placeholder="Papel / Cargo" class="ata-part-cargo w-1/3 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm" value="${cargo}">
                         <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:bg-red-50 p-2 rounded-lg"><i class="fa-solid fa-trash"></i></button>
                     `;
                     document.getElementById('ata-dynamic-participants').appendChild(div);
@@ -1125,10 +1080,23 @@
                     blocos.forEach((b, i) => {
                         const ac = b.querySelector('.ata-acao-texto').value;
                         const re = b.querySelector('.ata-acao-resp').value;
-                        const pr = b.querySelector('.ata-acao-prev').value ? b.querySelector('.ata-acao-prev').value.split('-').reverse().join('/') : '';
+                        let pr = b.querySelector('.ata-acao-prev').value;
+                        if(pr && pr.includes('-')) pr = pr.split('-').reverse().join('/');
                         if(ac) txt += `[AÇÃO ${i+1}] ${ac} | Responsável: ${re} | Previsão: ${pr}\n`;
                     });
                     return txt || 'Nenhuma ação preenchida.';
+                },
+                getRawAcoes() {
+                    const blocos = document.querySelectorAll('#ata-dynamic-actions > div');
+                    let arr = [];
+                    blocos.forEach((b) => {
+                        arr.push({
+                            texto: b.querySelector('.ata-acao-texto').value,
+                            resp: b.querySelector('.ata-acao-resp').value,
+                            prev: b.querySelector('.ata-acao-prev').value
+                        });
+                    });
+                    return arr;
                 },
                 getPartsData() {
                     const blocos = document.querySelectorAll('#ata-dynamic-participants > div');
@@ -1139,6 +1107,17 @@
                         if(n) txt += `${n} (${c}) | `;
                     });
                     return txt || 'Nenhum participante extra.';
+                },
+                getRawExtras() {
+                    const blocos = document.querySelectorAll('#ata-dynamic-participants > div');
+                    let arr = [];
+                    blocos.forEach(b => {
+                        arr.push({
+                            nome: b.querySelector('.ata-part-nome').value,
+                            cargo: b.querySelector('.ata-part-cargo').value
+                        });
+                    });
+                    return arr;
                 },
                 gerarTemplateHTML() {
                     const d = document.getElementById('ata-data').value || '';
@@ -1187,8 +1166,11 @@
                         return false; 
                     }
 
+                    const editIdEl = document.getElementById('ata-edit-id');
+                    const editId = editIdEl ? editIdEl.value : '';
+
                     const payload = {
-                        id: 'ata_' + Date.now(),
+                        id: editId || ('ata_' + Date.now()),
                         data: d, hora: h, horaFim: document.getElementById('ata-hora-fim').value || '',
                         tema: t, op: o, qualidade: q, 
                         qualidade2: document.getElementById('ata-qualidade2').value || '',
@@ -1196,16 +1178,22 @@
                         fortes: document.getElementById('ata-fortes').value || '',
                         acoes: this.getAcoesData(),
                         extras: this.getPartsData(),
+                        rawAcoes: this.getRawAcoes(),
+                        rawExtras: this.getRawExtras(),
                         autor: app.currentUser ? app.currentUser.nome : 'ADM',
                         matricula: app.currentUser ? app.currentUser.matricula : 'ADM',
-                        timestamp: Date.now(),
-                        pdca: null
+                        timestamp: editId && app.atasList[editId] ? app.atasList[editId].timestamp : Date.now(),
+                        status: 'concluido',
+                        comentario: ''
                     };
 
                     app.atasList[payload.id] = payload;
                     app.storage.saveAtas().then(() => {
                         if(!isAuto) app.ui.showAlert("Sucesso", "Ata registrada com sucesso no banco de dados.", "success");
                     });
+
+                    if (editIdEl) editIdEl.value = '';
+                    
                     return true;
                 },
                 gerarWord() {
@@ -1239,32 +1227,11 @@
                     const fortes = document.getElementById('ata-fortes').value || 'Nada registrado.';
                     const acoes = this.getAcoesData();
 
-                    // Título principal mais delicado e alinhado
-                    doc.setFontSize(15); 
-                    doc.setTextColor(51, 65, 85); 
-                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(15); doc.setTextColor(51, 65, 85); doc.setFont("helvetica", "bold");
                     doc.text("Ata de Reunião e Calibração", 105, 16, { align: "center" });
                     
-                    // Constantes de estilo minimalista
-                    const primaryColor = [51, 65, 85];
-                    const headerTextColor = [255, 255, 255]; // Força o texto branco nos cabeçalhos
-                    const bodyTextColor = [71, 85, 105]; // Cinza grafite, mais elegante que o preto puro
-                    const lineColor = [226, 232, 240]; // Bordas super sutis
-
-                    const baseStyles = {
-                        fontSize: 9, // Letra um pouco menor
-                        cellPadding: 2.5, // Diminui a altura/gordura dos blocos
-                        textColor: bodyTextColor,
-                        lineColor: lineColor,
-                        lineWidth: 0.1
-                    };
-
-                    const baseHeadStyles = {
-                        fillColor: primaryColor,
-                        textColor: headerTextColor, 
-                        fontSize: 9.5,
-                        fontStyle: 'bold'
-                    };
+                    const baseStyles = { fontSize: 9, cellPadding: 2.5, textColor: [71, 85, 105], lineColor: [226, 232, 240], lineWidth: 0.1 };
+                    const baseHeadStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontSize: 9.5, fontStyle: 'bold' };
 
                     doc.autoTable({
                         startY: 24,
@@ -1274,9 +1241,7 @@
                             [`Tema / Foco: ${t}`],
                             [`Operação: ${o}`]
                         ],
-                        theme: 'grid',
-                        headStyles: { ...baseHeadStyles, halign: 'center' },
-                        styles: baseStyles
+                        theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
                     });
 
                     doc.autoTable({
@@ -1287,65 +1252,38 @@
                             [`Supervisor Operacional: ${sup}`],
                             [`Outros Participantes: ${extras}`]
                         ],
-                        theme: 'grid',
-                        headStyles: { ...baseHeadStyles, halign: 'center' },
-                        styles: baseStyles
+                        theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
                     });
 
                     doc.autoTable({
                         startY: doc.lastAutoTable.finalY + 4,
                         head: [['1. Pontos Discutidos']],
                         body: [[fortes]],
-                        theme: 'grid',
-                        headStyles: baseHeadStyles,
-                        styles: { ...baseStyles, cellPadding: 3.5 } // Um pouco mais de respiro pro texto longo
+                        theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
                     });
 
                     doc.autoTable({
                         startY: doc.lastAutoTable.finalY + 4,
                         head: [['2. Ações Definidas (Cronograma)']],
                         body: [[acoes]],
-                        theme: 'grid',
-                        headStyles: baseHeadStyles,
-                        styles: { ...baseStyles, cellPadding: 3.5 }
+                        theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
                     });
 
                     doc.save(`Ata_${Date.now()}.pdf`);
                     app.ui.showAlert("Concluído", "O Download do PDF começou e a ata foi gravada no sistema.", "success");
                     setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
                 },
-
                 gerarPDFById(id) {
                     if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "Aguarde, gerador PDF carregando...", "error");
                     const ata = app.atasList[id];
                     if(!ata) return;
                     
                     const doc = new window.jspdf.jsPDF();
-                    
-                    doc.setFontSize(15); 
-                    doc.setTextColor(51, 65, 85); 
-                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(15); doc.setTextColor(51, 65, 85); doc.setFont("helvetica", "bold");
                     doc.text("Ata de Reunião e Calibração", 105, 16, { align: "center" });
                     
-                    const primaryColor = [51, 65, 85];
-                    const headerTextColor = [255, 255, 255]; 
-                    const bodyTextColor = [71, 85, 105]; 
-                    const lineColor = [226, 232, 240]; 
-
-                    const baseStyles = {
-                        fontSize: 9, 
-                        cellPadding: 2.5,
-                        textColor: bodyTextColor,
-                        lineColor: lineColor,
-                        lineWidth: 0.1
-                    };
-
-                    const baseHeadStyles = {
-                        fillColor: primaryColor,
-                        textColor: headerTextColor, 
-                        fontSize: 9.5,
-                        fontStyle: 'bold'
-                    };
+                    const baseStyles = { fontSize: 9, cellPadding: 2.5, textColor: [71, 85, 105], lineColor: [226, 232, 240], lineWidth: 0.1 };
+                    const baseHeadStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontSize: 9.5, fontStyle: 'bold' };
 
                     doc.autoTable({
                         startY: 24,
@@ -1355,9 +1293,7 @@
                             [`Tema / Foco: ${ata.tema}`],
                             [`Operação: ${ata.op}`]
                         ],
-                        theme: 'grid',
-                        headStyles: { ...baseHeadStyles, halign: 'center' },
-                        styles: baseStyles
+                        theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
                     });
 
                     doc.autoTable({
@@ -1368,32 +1304,25 @@
                             [`Supervisor Operacional: ${ata.sup || '-'}`],
                             [`Outros Participantes: ${ata.extras || 'Nenhum'}`]
                         ],
-                        theme: 'grid',
-                        headStyles: { ...baseHeadStyles, halign: 'center' },
-                        styles: baseStyles
+                        theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
                     });
 
                     doc.autoTable({
                         startY: doc.lastAutoTable.finalY + 4,
                         head: [['1. Pontos Discutidos']],
                         body: [[ata.fortes || 'Nada registrado.']],
-                        theme: 'grid',
-                        headStyles: baseHeadStyles,
-                        styles: { ...baseStyles, cellPadding: 3.5 }
+                        theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
                     });
 
                     doc.autoTable({
                         startY: doc.lastAutoTable.finalY + 4,
                         head: [['2. Ações Definidas (Cronograma)']],
                         body: [[ata.acoes || 'Nenhuma ação.']],
-                        theme: 'grid',
-                        headStyles: baseHeadStyles,
-                        styles: { ...baseStyles, cellPadding: 3.5 }
+                        theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
                     });
                     
                     doc.save(`Ata_${id}.pdf`);
                 },
-                
                 gerarWordById(id) {
                     const ata = app.atasList[id];
                     if(!ata) return;
@@ -1423,74 +1352,71 @@
                     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Ata_${id}.doc`;
                     document.body.appendChild(link); link.click(); document.body.removeChild(link);
                 },
-                
-                openPDCA(id) {
+                promptDevolverAta(id) {
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-ban text-red-500"></i> Sugerir Correção na Ata`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="mb-3 text-slate-600 dark:text-slate-300">Explique para o monitor o que precisa ser ajustado nesta Ata:</p>
+                        <textarea id="reject-reason-ata" rows="3" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-red-500" placeholder="Ex: Corrigir plano de ação, faltou incluir um participante..."></textarea>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
+                        <button onclick="app.ata.executeDevolver('${id}')" class="px-5 py-2 bg-red-600 text-white rounded-lg font-bold text-sm shadow-md">Devolver p/ Edição</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+                executeDevolver(id) {
+                    const reason = document.getElementById('reject-reason-ata').value;
+                    if(!reason) return app.ui.showAlert("Aviso", "O comentário é obrigatório.", "error");
+                    
+                    app.atasList[id].status = 'devolvido';
+                    app.atasList[id].comentario = reason;
+                    
+                    app.storage.saveAtas().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.notifications.notify(app.atasList[id].matricula, 'Ata Devolvida', `Sua ata "${app.atasList[id].tema}" precisa de correções. Verifique o painel Minhas Atas.`, 'error');
+                        app.ui.renderTab('gestao_atas', true);
+                    });
+                },
+                editAta(id) {
                     const ata = app.atasList[id];
                     if(!ata) return;
-                    document.getElementById('pdca-ata-id').value = id;
-                    document.getElementById('pdca-ata-tema').textContent = ata.tema;
                     
-                    const p = ata.pdca || {};
-                    document.getElementById('smart-s').value = p.smartS || '';
-                    document.getElementById('smart-m').value = p.smartM || '';
-                    document.getElementById('smart-a').value = p.smartA || '';
-                    document.getElementById('smart-r').value = p.smartR || '';
-                    document.getElementById('smart-t').value = p.smartT || '';
-                    document.getElementById('pdca-p').value = p.pdcaP || '';
-                    document.getElementById('pdca-d').value = p.pdcaD || '';
-                    document.getElementById('pdca-c').value = p.pdcaC || '';
-                    document.getElementById('pdca-a').value = p.pdcaA || '';
-                    
-                    document.getElementById('pdca-modal').classList.remove('hidden');
-                },
-                salvarPDCA() {
-                    const id = document.getElementById('pdca-ata-id').value;
-                    if(!app.atasList[id]) return;
-                    
-                    app.atasList[id].pdca = {
-                        smartS: document.getElementById('smart-s').value,
-                        smartM: document.getElementById('smart-m').value,
-                        smartA: document.getElementById('smart-a').value,
-                        smartR: document.getElementById('smart-r').value,
-                        smartT: document.getElementById('smart-t').value,
-                        pdcaP: document.getElementById('pdca-p').value,
-                        pdcaD: document.getElementById('pdca-d').value,
-                        pdcaC: document.getElementById('pdca-c').value,
-                        pdcaA: document.getElementById('pdca-a').value
-                    };
-                    app.storage.saveAtas().then(() => {
-                        app.ui.showAlert("Sucesso", "O Quadro SMART/PDCA foi salvo nesta ata.", "success");
-                        document.getElementById('pdca-modal').classList.add('hidden');
-                        app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true); // refresh para mostrar a badge
-                    });
-                },
-                gerarPDFPDCA() {
-                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "O motor PDF está carregando.", "error");
-                    this.salvarPDCA(); // Salva primeiro
-                    
-                    const doc = new window.jspdf.jsPDF('landscape');
-                    doc.setFontSize(22); doc.setTextColor(30, 64, 175); doc.text("Framework de Acao - SMART & PDCA", 14, 20);
-                    
-                    doc.setFontSize(10); doc.setTextColor(100);
-                    doc.text("Ata Ref: " + document.getElementById('pdca-ata-tema').textContent, 14, 28);
-                    
-                    doc.autoTable({
-                        startY: 35,
-                        head: [['S.M.A.R.T (Definicao Estrategica)', 'P.D.C.A (Ciclo de Execucao)']],
-                        body: [
-                            [`Specific: ${document.getElementById('smart-s').value}\nMeasurable: ${document.getElementById('smart-m').value}\nAchievable: ${document.getElementById('smart-a').value}\nRelevant: ${document.getElementById('smart-r').value}\nTime-bound: ${document.getElementById('smart-t').value.split('-').reverse().join('/')}`, 
-                             `Plan: ${document.getElementById('pdca-p').value}\nDo: ${document.getElementById('pdca-d').value}\nCheck: ${document.getElementById('pdca-c').value}\nAct: ${document.getElementById('pdca-a').value}`]
-                        ],
-                        theme: 'grid', styles: {fontSize: 11, cellPadding: 5}, headStyles: {fillColor: [30, 64, 175]}
-                    });
-                    
-                    doc.save(`PDCA_${Date.now()}.pdf`);
+                    app.ui.renderTab('ata_reuniao', true);
+                    setTimeout(() => {
+                        let editInput = document.getElementById('ata-edit-id');
+                        if(editInput) editInput.value = id;
+                        
+                        document.getElementById('ata-data').value = ata.data || '';
+                        document.getElementById('ata-hora').value = ata.hora || '';
+                        document.getElementById('ata-hora-fim').value = ata.horaFim || '';
+                        document.getElementById('ata-op').value = ata.op || '';
+                        document.getElementById('ata-tema').value = ata.tema || '';
+                        document.getElementById('ata-qualidade').value = ata.qualidade || '';
+                        document.getElementById('ata-qualidade2').value = ata.qualidade2 || '';
+                        document.getElementById('ata-sup1').value = ata.sup || '';
+                        document.getElementById('ata-fortes').value = ata.fortes || '';
+                        
+                        document.getElementById('ata-dynamic-actions').innerHTML = '';
+                        if(ata.rawAcoes && ata.rawAcoes.length > 0) {
+                            ata.rawAcoes.forEach(a => this.addAcao(a.texto, a.resp, a.prev));
+                        } else {
+                            this.addAcao();
+                        }
+                        
+                        document.getElementById('ata-dynamic-participants').innerHTML = '';
+                        if(ata.rawExtras && ata.rawExtras.length > 0) {
+                            ata.rawExtras.forEach(p => this.addParticipante(p.nome, p.cargo));
+                        }
+                        
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        app.ui.showAlert("Modo Edição", "Os dados da Ata foram carregados. Faça as correções e gere a ata novamente para salvar as alterações.", "info");
+                    }, 200);
                 },
                 excluirAta(id) {
                     if(app.isAdmin) {
                         app.ui.showConfirm("Atenção", "Excluir definitivamente esta ata?", `delete app.atasList['${id}']; app.storage.saveAtas().then(()=>app.ui.renderTab('gestao_atas', true))`, true);
                     } else {
-                        app.ui.showAlert("Permissão Negada", "Apenas a administração pode excluir atas validadas. Clique em 'Solicitar Exclusão'.", "error");
+                        app.ui.showAlert("Permissão Negada", "Apenas a administração pode excluir atas.", "error");
                     }
                 },
                 exportAtasXLSX() {
@@ -1498,10 +1424,12 @@
                     if(atas.length === 0) return app.ui.showAlert("Erro", "Não há atas para exportar.", "error");
 
                     const rows = atas.map(a => ({
+                        "Status": a.status === 'devolvido' ? 'Devolvida' : 'Concluída',
                         "Data Reunião": a.data, "Hora Inicio": a.hora, "Hora Fim": a.horaFim, "Operação": a.op, "Tema": a.tema,
                         "Qualidade": a.qualidade, "Qualidade 2": a.qualidade2, "Supervisor": a.sup,
                         "Criador da Ata": a.autor, "Matrícula Criador": a.matricula,
-                        "Pontos Discutidos": a.fortes, "Plano de Ação": a.acoes, "Outros Participantes": a.extras
+                        "Pontos Discutidos": a.fortes, "Plano de Ação": a.acoes, "Outros Participantes": a.extras,
+                        "Comentário ADM": a.comentario || ''
                     }));
 
                     const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -1512,7 +1440,7 @@
             },
 
             calendar: {
-viewEvent(id) {
+                viewEvent(id) {
                     const evt = app.eventsList[id];
                     if(!evt) return;
                     document.getElementById('ve-tipo').textContent = evt.tipo === 'pessoal' ? 'Controle Diário' : 'Evento de Operação';
