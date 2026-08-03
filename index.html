@@ -1226,35 +1226,74 @@
                     if(!valid) return app.ui.showAlert("Campos Obrigatórios", "Para salvar e gerar o PDF, preencha a Hora, Operação, Tema e Qualidade.", "error");
                     
                     const doc = new window.jspdf.jsPDF();
-                    doc.setFontSize(18); doc.setTextColor(22, 163, 74); doc.text("Ata de Reuniao e Calibracao", 14, 20);
-                    doc.setFontSize(10); doc.setTextColor(50, 50, 50);
                     
+                    // Puxando todos os dados preenchidos no form
                     const d = document.getElementById('ata-data').value || '';
-                    const t = document.getElementById('ata-tema').value || '';
-                    const o = document.getElementById('ata-op').value || '';
-                    const q = document.getElementById('ata-qualidade').value || '';
+                    const h = document.getElementById('ata-hora').value || '';
+                    const hf = document.getElementById('ata-hora-fim').value || '';
+                    const t = document.getElementById('ata-tema').value || 'Tema Não Definido';
+                    const o = document.getElementById('ata-op').value || 'Operação Não Definida';
+                    const q = document.getElementById('ata-qualidade').value || 'Não Definido';
+                    const q2 = document.getElementById('ata-qualidade2').value || '-';
+                    const sup = document.getElementById('ata-sup1').value || '-';
+                    const extras = this.getPartsData(); // Puxa os extras
+                    const fortes = document.getElementById('ata-fortes').value || 'Nada registrado.';
+                    const acoes = this.getAcoesData();
 
+                    // Cabeçalho Profissional
+                    doc.setFontSize(18); 
+                    doc.setTextColor(22, 163, 74); 
+                    doc.setFont("helvetica", "bold");
+                    doc.text("Ata de Reunião e Calibração", 105, 20, { align: "center" });
+                    
+                    // Bloco 1: Informações Gerais
                     doc.autoTable({
-                        startY: 30, body: [['Data', d.split('-').reverse().join('/')], ['Tema', t], ['Operacao', o], ['Qualidade', q]],
-                        theme: 'grid', styles: {fontSize: 9}
+                        startY: 30,
+                        head: [['Informações Gerais']],
+                        body: [
+                            [`Data: ${d ? d.split('-').reverse().join('/') : ''}   |   Horário: ${h} às ${hf}`],
+                            [`Tema / Foco: ${t}`],
+                            [`Operação: ${o}`]
+                        ],
+                        theme: 'grid',
+                        headStyles: { fillColor: [30, 64, 175], fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
                     });
-                    
-                    let currY = doc.lastAutoTable.finalY + 10;
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("1. Pontos Discutidos", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    
-                    let rawFortes = document.getElementById('ata-fortes').value || 'Nada registrado.';
-                    let splitFortes = doc.splitTextToSize(rawFortes, 180);
-                    doc.text(splitFortes, 14, currY + 6); currY += (splitFortes.length * 5) + 15;
-                    
-                    if(currY > 260) { doc.addPage(); currY = 20; }
 
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("2. Acoes Definidas", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    
-                    let splitAcao = doc.splitTextToSize(this.getAcoesData(), 180);
-                    doc.text(splitAcao, 14, currY + 6);
-                    
+                    // Bloco 2: Participantes (agora incluindo os extras, qualidade 2 e supervisor)
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['Participantes da Reunião']],
+                        body: [
+                            [`Líderes de Qualidade: ${q} ${q2 !== '-' ? ' / ' + q2 : ''}`],
+                            [`Supervisor Operacional: ${sup}`],
+                            [`Outros Participantes: ${extras}`]
+                        ],
+                        theme: 'grid',
+                        headStyles: { fillColor: [43, 108, 176], fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
+                    });
+
+                    // Bloco 3: Pontos Discutidos
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['1. Pontos Discutidos']],
+                        body: [[fortes]],
+                        theme: 'grid',
+                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                    });
+
+                    // Bloco 4: Ações Definidas
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['2. Ações Definidas (Cronograma)']],
+                        body: [[acoes]],
+                        theme: 'grid',
+                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                    });
+
                     doc.save(`Ata_${Date.now()}.pdf`);
                     app.ui.showAlert("Concluído", "O Download do PDF começou e a ata foi gravada no sistema.", "success");
                     setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
@@ -1266,31 +1305,64 @@
                     if(!ata) return;
                     
                     const doc = new window.jspdf.jsPDF();
-                    doc.setFontSize(18); doc.setTextColor(22, 163, 74); doc.text("Ata de Reuniao e Calibracao", 14, 20);
-                    doc.setFontSize(10); doc.setTextColor(50, 50, 50);
+                    
+                    // Cabeçalho Profissional
+                    doc.setFontSize(18); 
+                    doc.setTextColor(22, 163, 74); 
+                    doc.setFont("helvetica", "bold");
+                    doc.text("Ata de Reunião e Calibração", 105, 20, { align: "center" });
 
+                    // Bloco 1: Informações Gerais
                     doc.autoTable({
-                        startY: 30, body: [['Data', ata.data.split('-').reverse().join('/')], ['Tema', ata.tema], ['Operacao', ata.op], ['Qualidade', ata.qualidade]],
-                        theme: 'grid', styles: {fontSize: 9}
+                        startY: 30,
+                        head: [['Informações Gerais']],
+                        body: [
+                            [`Data: ${ata.data ? ata.data.split('-').reverse().join('/') : ''}   |   Horário: ${ata.hora} às ${ata.horaFim || '--:--'}`],
+                            [`Tema / Foco: ${ata.tema}`],
+                            [`Operação: ${ata.op}`]
+                        ],
+                        theme: 'grid',
+                        headStyles: { fillColor: [30, 64, 175], fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
                     });
-                    
-                    let currY = doc.lastAutoTable.finalY + 10;
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("1. Pontos Discutidos", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    
-                    let splitFortes = doc.splitTextToSize(ata.fortes || 'Nada registrado.', 180);
-                    doc.text(splitFortes, 14, currY + 6); currY += (splitFortes.length * 5) + 15;
-                    
-                    if(currY > 260) { doc.addPage(); currY = 20; }
 
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("2. Acoes Definidas", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    
-                    let splitAcao = doc.splitTextToSize(ata.acoes || 'Nenhuma ação.', 180);
-                    doc.text(splitAcao, 14, currY + 6);
+                    // Bloco 2: Participantes (incluindo do histórico)
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['Participantes da Reunião']],
+                        body: [
+                            [`Líderes de Qualidade: ${ata.qualidade} ${ata.qualidade2 ? ' / ' + ata.qualidade2 : ''}`],
+                            [`Supervisor Operacional: ${ata.sup || '-'}`],
+                            [`Outros Participantes: ${ata.extras || 'Nenhum'}`]
+                        ],
+                        theme: 'grid',
+                        headStyles: { fillColor: [43, 108, 176], fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
+                    });
+
+                    // Bloco 3: Pontos Discutidos
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['1. Pontos Discutidos']],
+                        body: [[ata.fortes || 'Nada registrado.']],
+                        theme: 'grid',
+                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                    });
+
+                    // Bloco 4: Ações Definidas
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['2. Ações Definidas (Cronograma)']],
+                        body: [[ata.acoes || 'Nenhuma ação.']],
+                        theme: 'grid',
+                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                    });
                     
                     doc.save(`Ata_${id}.pdf`);
                 },
+                
                 gerarWordById(id) {
                     const ata = app.atasList[id];
                     if(!ata) return;
