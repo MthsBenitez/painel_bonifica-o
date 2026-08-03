@@ -1491,22 +1491,37 @@
                     
                     document.getElementById('val-fortes').innerHTML = (ata.fortes || 'Nada registrado.').replace(/\n/g, '<br/>');
                     
-                    // --- RENDERIZAÇÃO EM POST-ITS ---
+                    // --- RENDERIZAÇÃO EM POST-ITS COM FLECHAS DE FLUXO E BOTÃO DE DOWNLOAD ---
+                    let htmlAcoes = '';
                     if (ata.rawAcoes && ata.rawAcoes.length > 0) {
-                        let htmlAcoes = '<div class="grid grid-cols-1 md:grid-cols-2 gap-5">'; 
+                        htmlAcoes = `
+                            <div class="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                                <div>
+                                    <h5 class="text-xs font-black uppercase text-green-800 dark:text-green-300 tracking-wider"><i class="fa-solid fa-map-location-dot mr-1"></i> Plano de Ação Estratégico</h5>
+                                    <p class="text-[11px] text-green-700 dark:text-green-400">Fluxo sequencial das etapas definidas em reunião.</p>
+                                </div>
+                                <div class="flex gap-2 w-full sm:w-auto">
+                                    <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 sm:flex-none px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                    <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 sm:flex-none px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-4 relative">
+                        `;
+                        
                         ata.rawAcoes.forEach((a, i) => {
                             const acaoTexto = a.texto || 'Descrição não informada';
                             const acaoResp = a.resp || 'Não atribuído';
                             const acaoData = a.prev ? a.prev.split('-').reverse().join('/') : 'Sem prazo';
                             
                             htmlAcoes += `
-                                <div class="bg-amber-100 dark:bg-amber-900/40 p-5 rounded-lg border border-amber-300 dark:border-amber-700 shadow-md relative transform transition-transform hover:-translate-y-1">
+                                <div class="bg-amber-100 dark:bg-amber-900/40 p-5 rounded-2xl border border-amber-300 dark:border-amber-700 shadow-md relative transform transition-transform hover:-translate-y-1">
                                     <!-- Efeito Durex/Fita Adesiva -->
                                     <div class="absolute -top-2 left-1/2 -translate-x-1/2 w-10 h-3 bg-white/50 dark:bg-black/30 rotate-3 shadow-sm rounded-sm"></div>
-                                    <div class="text-[10px] font-black text-amber-800 dark:text-amber-500 uppercase tracking-widest mb-3 border-b border-amber-200 dark:border-amber-700/50 pb-2">
-                                        <i class="fa-solid fa-thumbtack text-amber-600 mr-1"></i> Ação ${i + 1}
+                                    <div class="text-[10px] font-black text-amber-800 dark:text-amber-500 uppercase tracking-widest mb-3 border-b border-amber-200 dark:border-amber-700/50 pb-2 flex justify-between items-center">
+                                        <span><i class="fa-solid fa-thumbtack text-amber-600 mr-1"></i> Próximo Passo — Etapa ${i + 1}</span>
+                                        <span class="text-[9px] bg-amber-200 dark:bg-amber-800 px-2 py-0.5 rounded text-amber-900 dark:text-amber-200 font-bold">Passo ${i+1} de ${ata.rawAcoes.length}</span>
                                     </div>
-                                    <div class="text-sm text-amber-900 dark:text-amber-100 font-medium mb-4 leading-relaxed min-h-[60px]">
+                                    <div class="text-sm text-amber-900 dark:text-amber-100 font-medium mb-4 leading-relaxed min-h-[50px]">
                                         ${acaoTexto}
                                     </div>
                                     <div class="flex justify-between items-end mt-4 pt-3 border-t border-amber-200 dark:border-amber-700/50">
@@ -1521,13 +1536,24 @@
                                     </div>
                                 </div>
                             `;
+
+                            // Adiciona flecha de fluxo para o próximo passo (se não for o último)
+                            if (i < ata.rawAcoes.length - 1) {
+                                htmlAcoes += `
+                                    <div class="flex justify-center -my-2 text-green-600 dark:text-emerald-400 z-10">
+                                        <div class="bg-white dark:bg-slate-800 p-1.5 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
+                                            <i class="fa-solid fa-arrow-down text-sm animate-bounce"></i>
+                                        </div>
+                                    </div>
+                                `;
+                            }
                         });
                         htmlAcoes += '</div>';
-                        document.getElementById('val-acoes').innerHTML = htmlAcoes;
                     } else {
-                        document.getElementById('val-acoes').innerHTML = `<div class="text-sm text-slate-600 dark:text-slate-400">${(ata.acoes || 'Nenhuma ação.').replace(/\n/g, '<br/>')}</div>`;
+                        htmlAcoes = `<div class="text-sm text-slate-600 dark:text-slate-400">${(ata.acoes || 'Nenhuma ação.').replace(/\n/g, '<br/>')}</div>`;
                     }
 
+                    document.getElementById('val-acoes').innerHTML = htmlAcoes;
                     document.getElementById('view-ata-legal-modal').classList.remove('hidden');
                 },
             
