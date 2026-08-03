@@ -1236,16 +1236,20 @@
                     const q = document.getElementById('ata-qualidade').value || 'Não Definido';
                     const q2 = document.getElementById('ata-qualidade2').value || '-';
                     const sup = document.getElementById('ata-sup1').value || '-';
-                    const extras = this.getPartsData(); // Puxa os extras
+                    const extras = this.getPartsData(); 
                     const fortes = document.getElementById('ata-fortes').value || 'Nada registrado.';
                     const acoes = this.getAcoesData();
 
-                    // Cabeçalho Profissional
+                    // Cabeçalho Profissional - Tom escuro (Slate-800)
                     doc.setFontSize(18); 
-                    doc.setTextColor(22, 163, 74); 
+                    doc.setTextColor(30, 41, 59); 
                     doc.setFont("helvetica", "bold");
                     doc.text("Ata de Reunião e Calibração", 105, 20, { align: "center" });
                     
+                    // Paleta neutra corporativa (Slate-700) para todos os cabeçalhos
+                    const primaryColor = [51, 65, 85];
+                    const textColor = [50, 50, 50];
+
                     // Bloco 1: Informações Gerais
                     doc.autoTable({
                         startY: 30,
@@ -1256,11 +1260,11 @@
                             [`Operação: ${o}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: [30, 64, 175], fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
                     });
 
-                    // Bloco 2: Participantes (agora incluindo os extras, qualidade 2 e supervisor)
+                    // Bloco 2: Participantes
                     doc.autoTable({
                         startY: doc.lastAutoTable.finalY + 5,
                         head: [['Participantes da Reunião']],
@@ -1270,8 +1274,8 @@
                             [`Outros Participantes: ${extras}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: [43, 108, 176], fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
                     });
 
                     // Bloco 3: Pontos Discutidos
@@ -1280,8 +1284,8 @@
                         head: [['1. Pontos Discutidos']],
                         body: [[fortes]],
                         theme: 'grid',
-                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
                     });
 
                     // Bloco 4: Ações Definidas
@@ -1290,8 +1294,8 @@
                         head: [['2. Ações Definidas (Cronograma)']],
                         body: [[acoes]],
                         theme: 'grid',
-                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
                     });
 
                     doc.save(`Ata_${Date.now()}.pdf`);
@@ -1306,11 +1310,15 @@
                     
                     const doc = new window.jspdf.jsPDF();
                     
-                    // Cabeçalho Profissional
+                    // Cabeçalho Profissional - Tom escuro (Slate-800)
                     doc.setFontSize(18); 
-                    doc.setTextColor(22, 163, 74); 
+                    doc.setTextColor(30, 41, 59); 
                     doc.setFont("helvetica", "bold");
                     doc.text("Ata de Reunião e Calibração", 105, 20, { align: "center" });
+
+                    // Paleta neutra corporativa (Slate-700)
+                    const primaryColor = [51, 65, 85];
+                    const textColor = [50, 50, 50];
 
                     // Bloco 1: Informações Gerais
                     doc.autoTable({
@@ -1322,11 +1330,11 @@
                             [`Operação: ${ata.op}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: [30, 64, 175], fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
                     });
 
-                    // Bloco 2: Participantes (incluindo do histórico)
+                    // Bloco 2: Participantes
                     doc.autoTable({
                         startY: doc.lastAutoTable.finalY + 5,
                         head: [['Participantes da Reunião']],
@@ -1336,8 +1344,8 @@
                             [`Outros Participantes: ${ata.extras || 'Nenhum'}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: [43, 108, 176], fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
                     });
 
                     // Bloco 3: Pontos Discutidos
@@ -1346,8 +1354,8 @@
                         head: [['1. Pontos Discutidos']],
                         body: [[ata.fortes || 'Nada registrado.']],
                         theme: 'grid',
-                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
                     });
 
                     // Bloco 4: Ações Definidas
@@ -1356,8 +1364,8 @@
                         head: [['2. Ações Definidas (Cronograma)']],
                         body: [[ata.acoes || 'Nenhuma ação.']],
                         theme: 'grid',
-                        headStyles: { fillColor: [71, 85, 105], fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: [50, 50, 50] }
+                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
+                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
                     });
                     
                     doc.save(`Ata_${id}.pdf`);
