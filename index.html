@@ -1729,32 +1729,59 @@ viewEvent(id) {
                     const nav = document.getElementById('main-nav');
                     const menus = app.isAdmin 
                         ? [
-                            { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}] },
+                            { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}] },
                             { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}] },
                             { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
-                            { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                            { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ] : [
-                            { group: 'Meu Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
+                            { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
                             { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
                             { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ];
 
-                    let html = '<div class="flex gap-4 pb-2 w-full">';
-                    menus.forEach(m => {
-                        const hasActive = m.items.some(i => i.id === app.currentTab);
-                        const btnColor = hasActive ? 'bg-green-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50';
+                    let html = '<div class="flex flex-col w-full gap-2">';
+                    
+                    // 1. Renderiza a barra principal de grupos
+                    html += '<div class="flex gap-2 pb-1 overflow-x-auto no-scrollbar w-full">';
+                    let activeGroup = null;
+                    
+                    menus.forEach((m, idx) => {
+                        const isActiveGroup = m.items.some(i => i.id === app.currentTab);
+                        if (isActiveGroup) activeGroup = m;
                         
+                        const btnClass = isActiveGroup 
+                            ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)] rounded-t-xl' 
+                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800';
+                            
+                        // Ao clicar no grupo, renderiza a primeira aba desse grupo por padrão
                         html += `
-                            <div class="relative group">
-                                <button class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 border border-slate-200 dark:border-slate-700 transition-all ${btnColor}">
-                                    <i class="fa-solid ${m.icon}"></i> ${m.group} <i class="fa-solid fa-chevron-down text-[10px] ml-1"></i>
-                                </button>
-                                <div class="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-                                    ${m.items.map(i => `<button onclick="app.ui.renderTab('${i.id}')" class="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 ${app.currentTab === i.id ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/10' : 'text-slate-700 dark:text-slate-300'}">${i.label}</button>`).join('')}
-                                </div>
-                            </div>
+                            <button type="button" onclick="app.ui.renderTab('${m.items[0].id}')" class="px-5 py-3 font-semibold text-sm transition-all flex items-center gap-2 whitespace-nowrap ${btnClass}">
+                                <i class="fa-solid ${m.icon}"></i> ${m.group}
+                            </button>
                         `;
                     });
+                    html += '</div>';
+
+                    // 2. Se houver um grupo ativo, renderiza as sub-abas embaixo dele em uma linha menor
+                    if (activeGroup && activeGroup.items.length > 1) {
+                        html += '<div class="flex gap-2 pb-3 overflow-x-auto no-scrollbar w-full border-b border-slate-200 dark:border-slate-800 px-4">';
+                        activeGroup.items.forEach(sub => {
+                            const isSubActive = app.currentTab === sub.id;
+                            const subClass = isSubActive 
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shadow-sm border border-green-200 dark:border-green-800' 
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700';
+                                
+                            html += `
+                                <button type="button" onclick="app.ui.renderTab('${sub.id}')" class="px-4 py-1.5 font-bold text-xs rounded-lg transition-all whitespace-nowrap ${subClass}">
+                                    ${sub.label}
+                                </button>
+                            `;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<div class="w-full border-b border-slate-200 dark:border-slate-800 pb-3"></div>';
+                    }
+
                     html += '</div>';
                     nav.innerHTML = html;
                 },
