@@ -383,11 +383,12 @@
     <!-- Modal Visualizar Evento Lindo -->
     <div id="view-event-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-md w-full mx-4 border border-slate-200 dark:border-dark-border overflow-hidden transform transition-all">
-            <div class="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 text-white relative">
+            <!-- MODIFICADO AQUI: bg-gradient para tons de verde -->
+            <div class="bg-gradient-to-br from-green-600 to-emerald-700 p-6 text-white relative">
                 <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="absolute top-4 right-4 text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
-                <div class="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1" id="ve-tipo">Registro de Calendário</div>
+                <div class="text-[10px] font-black uppercase tracking-widest text-green-200 mb-1" id="ve-tipo">Registro de Calendário</div>
                 <h3 class="font-extrabold text-2xl leading-tight" id="ve-tema">Tema</h3>
-                <div class="flex items-center gap-4 mt-4 text-sm text-blue-100 font-semibold bg-white/10 px-4 py-2 rounded-xl border border-white/20 w-fit">
+                <div class="flex items-center gap-4 mt-4 text-sm text-green-100 font-semibold bg-white/10 px-4 py-2 rounded-xl border border-white/20 w-fit">
                     <span><i class="fa-regular fa-calendar mr-1"></i> <span id="ve-data">00/00/0000</span></span>
                     <span><i class="fa-regular fa-clock mr-1"></i> <span id="ve-hora">00:00 - 00:00</span></span>
                 </div>
@@ -415,12 +416,13 @@
                     <div class="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[80px]" id="ve-obs">Nenhuma observação.</div>
                 </div>
                 <div id="ve-anexo-box" class="hidden mt-2">
-                    <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40 rounded-xl font-bold text-sm transition-colors border border-indigo-200 dark:border-indigo-800"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
+                    <!-- MODIFICADO AQUI: botão de anexo adaptado para as cores esmeralda/verde -->
+                    <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 rounded-xl font-bold text-sm transition-colors border border-green-200 dark:border-green-800"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
                 </div>
             </div>
             <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
                 <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-5 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Fechar</button>
-                <button id="ve-btn-edit" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white dark:bg-blue-600 dark:hover:bg-blue-700 rounded-xl font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar Dados</button>
+                <button id="ve-btn-edit" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white dark:bg-green-600 dark:hover:bg-green-700 rounded-xl font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar Dados</button>
             </div>
         </div>
     </div>
@@ -428,12 +430,12 @@
     <!-- Modal Visualização Legal Ata -->
     <div id="view-ata-legal-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
         <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
-            <!-- Header Estilizado -->
-            <div class="bg-gradient-to-r from-blue-700 via-indigo-600 to-blue-800 p-6 relative shrink-0">
+            <!-- MODIFICADO AQUI: bg-gradient para verde/esmeralda -->
+            <div class="bg-gradient-to-r from-green-700 via-emerald-600 to-green-800 p-6 relative shrink-0">
                 <button onclick="app.ata.closeAtaLegal()" class="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
-                <div class="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i> Registro Oficial de Qualidade</div>
+                <div class="text-[10px] font-black uppercase tracking-widest text-green-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i> Registro Oficial de Qualidade</div>
                 <h3 class="font-extrabold text-2xl text-white leading-tight pr-8" id="val-tema">Tema da Ata</h3>
-                <div class="flex flex-wrap items-center gap-3 mt-4 text-sm text-blue-100 font-semibold">
+                <div class="flex flex-wrap items-center gap-3 mt-4 text-sm text-green-100 font-semibold">
                     <span class="bg-black/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10"><i class="fa-regular fa-calendar mr-1"></i> <span id="val-data">00/00/0000 (00:00 - 00:00)</span></span>
                     <span class="bg-black/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10"><i class="fa-solid fa-network-wired mr-1"></i> Op: <span id="val-op">SAC</span></span>
                 </div>
@@ -445,12 +447,12 @@
                 <!-- Participantes -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-user-tie text-blue-500"></i> Liderança Envolvida</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-user-tie text-green-500"></i> Liderança Envolvida</div>
                         <div class="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">Qualidade: <span class="font-normal" id="val-lideres"></span></div>
                         <div class="text-sm font-bold text-slate-700 dark:text-slate-200">Supervisão: <span class="font-normal" id="val-sup"></span></div>
                     </div>
                     <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-users text-purple-500"></i> Outros Participantes</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-users text-emerald-500"></i> Outros Participantes</div>
                         <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed" id="val-extras"></div>
                     </div>
                 </div>
@@ -464,7 +466,8 @@
                 <!-- Plano de Ação -->
                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
                     <h4 class="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-orange-500"></i> Ações Definidas (Cronograma)</h4>
-                    <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50" id="val-acoes"></div>
+                    <!-- MODIFICADO AQUI: Removemos os paddings e cores padrão desta div para que o JS insira os blocos livremente -->
+                    <div id="val-acoes" class="w-full"></div>
                 </div>
             </div>
             
@@ -516,7 +519,7 @@
                 </div>
                 <button type="button" onclick="app.auth.forgotPassword()" class="text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors">Esqueci a senha</button>
                 <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-4">
-                    Acessar Dashboard
+                    ENTRAR
                 </button>
             </form>
             <div class="text-center mt-6">
@@ -1473,6 +1476,7 @@
                 closeAtaLegal() {
                     document.getElementById('view-ata-legal-modal').classList.add('hidden');
                 },
+                
                 viewAtaLegal(id) {
                     const ata = app.atasList[id];
                     if(!ata) return;
@@ -1486,7 +1490,54 @@
                     document.getElementById('val-extras').textContent = ata.extras || 'Nenhum participante extra.';
                     
                     document.getElementById('val-fortes').innerHTML = (ata.fortes || 'Nada registrado.').replace(/\n/g, '<br/>');
-                    document.getElementById('val-acoes').innerHTML = (ata.acoes || 'Nenhuma ação.').replace(/\n/g, '<br/>');
+                    
+                    // --- MODIFICADO AQUI: Nova renderização em blocos baseada no seu desenho ---
+                    if (ata.rawAcoes && ata.rawAcoes.length > 0) {
+                        let htmlAcoes = '<div class="space-y-4">';
+                        
+                        ata.rawAcoes.forEach((a, i) => {
+                            const acaoTexto = a.texto || 'Descrição não informada';
+                            const acaoResp = a.resp || 'Não atribuído';
+                            const acaoData = a.prev ? a.prev.split('-').reverse().join('/') : 'Sem prazo';
+                            
+                            htmlAcoes += `
+                                <div class="bg-slate-50 dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-700/50 shadow-sm relative pt-7 mt-3">
+                                    <div class="absolute -top-3 left-4 bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-md uppercase tracking-widest shadow-sm">
+                                        Ação ${i + 1}
+                                    </div>
+                                    <div class="text-sm text-slate-700 dark:text-slate-300 font-semibold mb-4 leading-relaxed">
+                                        ${acaoTexto}
+                                    </div>
+                                    
+                                    <div class="flex flex-col md:flex-row md:items-center gap-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+                                        <!-- Bloco Responsável -->
+                                        <div class="flex-1 flex items-center gap-3">
+                                            <div class="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-user-check text-sm"></i></div>
+                                            <div class="leading-tight text-xs text-slate-500 dark:text-slate-400">
+                                                <span class="uppercase text-[9px] font-bold">Responsável</span><br>
+                                                <span class="text-slate-800 dark:text-slate-200 font-bold text-sm truncate block mt-0.5">${acaoResp}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Bloco Data -->
+                                        <div class="flex-1 flex items-center gap-3 md:pl-4 md:border-l border-slate-200 dark:border-slate-700">
+                                            <div class="w-9 h-9 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 flex items-center justify-center shrink-0"><i class="fa-regular fa-calendar-check text-sm"></i></div>
+                                            <div class="leading-tight text-xs text-slate-500 dark:text-slate-400">
+                                                <span class="uppercase text-[9px] font-bold">Prazo / Previsão</span><br>
+                                                <span class="text-slate-800 dark:text-slate-200 font-bold text-sm block mt-0.5">${acaoData}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        htmlAcoes += '</div>';
+                        document.getElementById('val-acoes').innerHTML = htmlAcoes;
+                    } else {
+                        // Fallback de segurança para atas antigas geradas antes dessa atualização
+                        document.getElementById('val-acoes').innerHTML = `<div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">${(ata.acoes || 'Nenhuma ação.').replace(/\n/g, '<br/>')}</div>`;
+                    }
+                    // --- FIM DA MODIFICAÇÃO ---
 
                     document.getElementById('view-ata-legal-modal').classList.remove('hidden');
                 },
