@@ -1920,7 +1920,7 @@ viewEvent(id) {
                             
                         // Ao clicar no grupo, renderiza a primeira aba desse grupo por padrão
                         html += `
-                            <button type="button" onclick="app.ui.renderTab('${m.items[0].id}')" class="px-5 py-3 font-semibold text-sm transition-all flex items-center gap-2 whitespace-nowrap ${btnClass}">
+                            <button type="button" onclick="app.ui.renderTab('${m.items[0].id}', true)" class="px-5 py-3 font-semibold text-sm transition-all flex items-center gap-2 whitespace-nowrap ${btnClass}">
                                 <i class="fa-solid ${m.icon}"></i> ${m.group}
                             </button>
                         `;
@@ -1937,7 +1937,7 @@ viewEvent(id) {
                                 : 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700';
                                 
                             html += `
-                                <button type="button" onclick="app.ui.renderTab('${sub.id}')" class="px-4 py-1.5 font-bold text-xs rounded-lg transition-all whitespace-nowrap ${subClass}">
+                                <button type="button" onclick="app.ui.renderTab('${sub.id}', true)" class="px-4 py-1.5 font-bold text-xs rounded-lg transition-all whitespace-nowrap ${subClass}">
                                     ${sub.label}
                                 </button>
                             `;
@@ -3795,7 +3795,8 @@ viewEvent(id) {
                         document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
                         app.ui.closeAddUserModal();
                         app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado!", "success");
-                        app.ui.renderTab('cadastros', true);
+                        // FIX: Agora a tela atualiza na aba correta (Gestão Equipe)
+                        app.ui.renderTab('gestao_equipe', true);
                     };
 
                     if(fileInput.files.length > 0) {
