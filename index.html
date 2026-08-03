@@ -1491,63 +1491,68 @@
                     
                     document.getElementById('val-fortes').innerHTML = (ata.fortes || 'Nada registrado.').replace(/\n/g, '<br/>');
                     
-                    // --- RENDERIZAÇÃO EM POST-ITS COM FLECHAS DE FLUXO E BOTÃO DE DOWNLOAD ---
+                    // --- RENDERIZAÇÃO: PRÓXIMOS PASSOS (POST-ITS COM FLECHAS E DOWNLOAD) ---
                     let htmlAcoes = '';
                     if (ata.rawAcoes && ata.rawAcoes.length > 0) {
-                        htmlAcoes = `
-                            <div class="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                        
+                        // Cabeçalho de Próximos Passos + Botões de Download
+                        htmlAcoes += `
+                            <div class="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4 bg-slate-100 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                                 <div>
-                                    <h5 class="text-xs font-black uppercase text-green-800 dark:text-green-300 tracking-wider"><i class="fa-solid fa-map-location-dot mr-1"></i> Plano de Ação Estratégico</h5>
-                                    <p class="text-[11px] text-green-700 dark:text-green-400">Fluxo sequencial das etapas definidas em reunião.</p>
+                                    <h4 class="font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest text-sm"><i class="fa-solid fa-map-location-dot text-blue-500 mr-2"></i> Próximos Passos</h4>
+                                    <p class="text-[11px] text-slate-500">Plano de ação e fluxo de execução</p>
                                 </div>
                                 <div class="flex gap-2 w-full sm:w-auto">
-                                    <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 sm:flex-none px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
-                                    <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 sm:flex-none px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
+                                    <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 sm:flex-none px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-lg text-xs transition border border-red-200 shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                    <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 sm:flex-none px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold rounded-lg text-xs transition border border-blue-200 shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
                                 </div>
                             </div>
-                            <div class="flex flex-col gap-4 relative">
+                            
+                            <div class="flex flex-col items-center w-full gap-2">
                         `;
-                        
+
                         ata.rawAcoes.forEach((a, i) => {
-                            const acaoTexto = a.texto || 'Descrição não informada';
-                            const acaoResp = a.resp || 'Não atribuído';
+                            const acaoTexto = a.texto || 'Sem descrição';
+                            const acaoResp = a.resp || 'Sem responsável';
                             const acaoData = a.prev ? a.prev.split('-').reverse().join('/') : 'Sem prazo';
                             
+                            // Define uma rotação leve alternada para parecer Post-its grudados na parede
+                            const rotation = i % 2 === 0 ? 'rotate-1' : '-rotate-1';
+                            
                             htmlAcoes += `
-                                <div class="bg-amber-100 dark:bg-amber-900/40 p-5 rounded-2xl border border-amber-300 dark:border-amber-700 shadow-md relative transform transition-transform hover:-translate-y-1">
-                                    <!-- Efeito Durex/Fita Adesiva -->
-                                    <div class="absolute -top-2 left-1/2 -translate-x-1/2 w-10 h-3 bg-white/50 dark:bg-black/30 rotate-3 shadow-sm rounded-sm"></div>
-                                    <div class="text-[10px] font-black text-amber-800 dark:text-amber-500 uppercase tracking-widest mb-3 border-b border-amber-200 dark:border-amber-700/50 pb-2 flex justify-between items-center">
-                                        <span><i class="fa-solid fa-thumbtack text-amber-600 mr-1"></i> Próximo Passo — Etapa ${i + 1}</span>
-                                        <span class="text-[9px] bg-amber-200 dark:bg-amber-800 px-2 py-0.5 rounded text-amber-900 dark:text-amber-200 font-bold">Passo ${i+1} de ${ata.rawAcoes.length}</span>
+                                <!-- Post-it Card -->
+                                <div class="w-full max-w-md bg-yellow-200 dark:bg-yellow-600/90 text-yellow-900 dark:text-yellow-50 p-5 shadow-lg relative transform ${rotation} hover:rotate-0 transition-transform rounded-sm">
+                                    <!-- Fita Adesiva Translúcida -->
+                                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-5 bg-white/50 dark:bg-white/20 backdrop-blur-[2px] shadow-sm rotate-[-3deg]"></div>
+                                    
+                                    <div class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-yellow-300 dark:border-yellow-500/50 pb-2 flex justify-between items-center">
+                                        <span><i class="fa-solid fa-thumbtack text-yellow-600 dark:text-yellow-300 mr-1"></i> Passo ${i + 1}</span>
                                     </div>
-                                    <div class="text-sm text-amber-900 dark:text-amber-100 font-medium mb-4 leading-relaxed min-h-[50px]">
-                                        ${acaoTexto}
-                                    </div>
-                                    <div class="flex justify-between items-end mt-4 pt-3 border-t border-amber-200 dark:border-amber-700/50">
+                                    <div class="text-sm font-medium mb-4 leading-relaxed min-h-[50px] whitespace-pre-wrap">${acaoTexto}</div>
+                                    
+                                    <div class="flex justify-between items-end mt-4 pt-3 border-t border-yellow-300 dark:border-yellow-500/50">
                                         <div class="leading-tight">
-                                            <span class="text-[9px] uppercase font-bold text-amber-600 dark:text-amber-500">Responsável</span><br>
-                                            <span class="text-xs font-bold text-amber-900 dark:text-amber-200">${acaoResp}</span>
+                                            <span class="text-[9px] uppercase font-bold opacity-70">Responsável</span><br>
+                                            <span class="text-xs font-bold">${acaoResp}</span>
                                         </div>
                                         <div class="leading-tight text-right">
-                                            <span class="text-[9px] uppercase font-bold text-amber-600 dark:text-amber-500">Previsão</span><br>
-                                            <span class="text-xs font-bold text-amber-900 dark:text-amber-200"><i class="fa-regular fa-calendar"></i> ${acaoData}</span>
+                                            <span class="text-[9px] uppercase font-bold opacity-70">Previsão</span><br>
+                                            <span class="text-xs font-bold"><i class="fa-regular fa-calendar"></i> ${acaoData}</span>
                                         </div>
                                     </div>
                                 </div>
                             `;
 
-                            // Adiciona flecha de fluxo para o próximo passo (se não for o último)
+                            // Flecha apontando para baixo (se não for o último passo)
                             if (i < ata.rawAcoes.length - 1) {
                                 htmlAcoes += `
-                                    <div class="flex justify-center -my-2 text-green-600 dark:text-emerald-400 z-10">
-                                        <div class="bg-white dark:bg-slate-800 p-1.5 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
-                                            <i class="fa-solid fa-arrow-down text-sm animate-bounce"></i>
-                                        </div>
+                                    <div class="text-slate-300 dark:text-slate-600 text-3xl my-2 animate-bounce">
+                                        <i class="fa-solid fa-arrow-down"></i>
                                     </div>
                                 `;
                             }
                         });
+                        
                         htmlAcoes += '</div>';
                     } else {
                         htmlAcoes = `<div class="text-sm text-slate-600 dark:text-slate-400">${(ata.acoes || 'Nenhuma ação.').replace(/\n/g, '<br/>')}</div>`;
@@ -3865,7 +3870,7 @@
 
                                     <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
                                         <div class="col-span-2 flex gap-2">
-                                            <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualização Legal</button>
+                                            <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualização</button>
                                             ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
                                         </div>
                                         <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
