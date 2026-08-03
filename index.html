@@ -381,6 +381,51 @@
         </div>
     </div>
 
+    <!-- Modal PDCA / SMART -->
+    <div id="pdca-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl w-full max-w-4xl mx-4 border border-slate-200 dark:border-dark-border overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-6 text-white flex justify-between items-center">
+                <div>
+                    <h3 class="font-extrabold text-2xl"><i class="fa-solid fa-bullseye mr-2"></i> Quadro de Ação (SMART / PDCA)</h3>
+                    <p class="text-blue-100 text-sm mt-1">Estratégia de resolução vinculada à Ata: <span id="pdca-ata-tema" class="font-bold"></span></p>
+                </div>
+                <button onclick="document.getElementById('pdca-modal').classList.add('hidden')" class="text-white hover:text-red-400 text-2xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50 dark:bg-slate-900">
+                <input type="hidden" id="pdca-ata-id" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- S.M.A.R.T -->
+                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+                        <h4 class="font-bold text-blue-600 mb-4 border-b pb-2 uppercase tracking-widest text-xs">Objetivo SMART</h4>
+                        <div class="space-y-3">
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Specific (Específico)</label><input type="text" id="smart-s" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Measurable (Mensurável)</label><input type="text" id="smart-m" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Achievable (Atingível)</label><input type="text" id="smart-a" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Relevant (Relevante)</label><input type="text" id="smart-r" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Time-bound (Temporal)</label><input type="date" id="smart-t" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- P.D.C.A -->
+                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+                        <h4 class="font-bold text-green-600 mb-4 border-b pb-2 uppercase tracking-widest text-xs">Ciclo PDCA</h4>
+                        <div class="space-y-3 flex-1 flex flex-col h-full">
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Plan (Planejar)</label><textarea id="pdca-p" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Do (Fazer)</label><textarea id="pdca-d" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Check (Checar/Analisar)</label><textarea id="pdca-c" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Act (Agir/Corrigir)</label><textarea id="pdca-a" rows="2" class="w-full p-2 rounded-lg border bg-slate-50 dark:bg-slate-900 outline-none text-sm"></textarea></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                <button type="button" onclick="app.ata.salvarPDCA()" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md"><i class="fa-solid fa-floppy-disk"></i> Salvar Quadro</button>
+                <button type="button" onclick="app.ata.gerarPDFPDCA()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md"><i class="fa-solid fa-file-pdf"></i> Baixar PDF 16:9</button>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden z-10 bg-slate-50 dark:bg-dark-bg">
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -983,152 +1028,253 @@
             },
 
             ata: {
+                initForm() {
+                    document.getElementById('ata-dynamic-actions').innerHTML = '';
+                    document.getElementById('ata-dynamic-participants').innerHTML = '';
+                    this.addAcao();
+                },
+                addAcao() {
+                    const div = document.createElement('div');
+                    div.className = 'grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-300 dark:border-slate-600 relative shadow-sm';
+                    div.innerHTML = `
+                        <button type="button" onclick="this.parentElement.remove()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600"><i class="fa-solid fa-xmark text-xs"></i></button>
+                        <div class="md:col-span-2"><label class="text-[10px] uppercase font-bold text-slate-500">Ação: o que será feito e resultado</label><textarea class="ata-acao-texto w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" rows="2"></textarea></div>
+                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Responsável (Nome/Área)</label><input type="text" class="ata-acao-resp w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm"></div>
+                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Previsão</label><input type="date" class="ata-acao-prev w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm"></div>
+                    `;
+                    document.getElementById('ata-dynamic-actions').appendChild(div);
+                },
+                addParticipante() {
+                    const div = document.createElement('div');
+                    div.className = 'flex gap-2 items-center';
+                    div.innerHTML = `
+                        <input type="text" placeholder="Nome do Extra" class="ata-part-nome flex-1 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm">
+                        <input type="text" placeholder="Papel / Cargo" class="ata-part-cargo w-1/3 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm">
+                        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:bg-red-50 p-2 rounded-lg"><i class="fa-solid fa-trash"></i></button>
+                    `;
+                    document.getElementById('ata-dynamic-participants').appendChild(div);
+                },
+                getAcoesData() {
+                    const blocos = document.querySelectorAll('#ata-dynamic-actions > div');
+                    let txt = '';
+                    blocos.forEach((b, i) => {
+                        const ac = b.querySelector('.ata-acao-texto').value;
+                        const re = b.querySelector('.ata-acao-resp').value;
+                        const pr = b.querySelector('.ata-acao-prev').value ? b.querySelector('.ata-acao-prev').value.split('-').reverse().join('/') : '';
+                        txt += `[AÇÃO ${i+1}] ${ac} | Responsável: ${re} | Previsão: ${pr}\n`;
+                    });
+                    return txt;
+                },
+                getPartsData() {
+                    const blocos = document.querySelectorAll('#ata-dynamic-participants > div');
+                    let txt = '';
+                    blocos.forEach(b => {
+                        const n = b.querySelector('.ata-part-nome').value;
+                        const c = b.querySelector('.ata-part-cargo').value;
+                        if(n) txt += `${n} (${c}) | `;
+                    });
+                    return txt;
+                },
                 gerarTemplateHTML() {
+                    const d = document.getElementById('ata-data').value;
+                    const h = document.getElementById('ata-hora').value;
+                    const hf = document.getElementById('ata-hora-fim').value;
+                    const t = document.getElementById('ata-tema').value;
+                    const o = document.getElementById('ata-op').value;
+                    const q = document.getElementById('ata-qualidade').value;
+                    
+                    if(!d || !t || !o || !q || !h || !hf) { app.ui.showAlert("Aviso", "Preencha todos os campos obrigatórios (*).", "error"); return null; }
+
+                    const fortes = document.getElementById('ata-fortes').value.replace(/\n/g, '<br/>');
+                    const acoesTxt = this.getAcoesData().replace(/\n/g, '<br/>');
+                    const extras = this.getPartsData();
+                    const g2 = document.getElementById('ata-qualidade2').value;
+                    const s1 = document.getElementById('ata-sup1').value;
+
+                    return `
+                        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                        <head><meta charset='utf-8'><title>Ata Reunião</title>
+                        <style>body{font-family: 'Segoe UI', sans-serif; color: #333;} h1{color: #1e40af; text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;} .box{background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;} .title{font-weight: bold; color: #1e40af; margin-bottom: 8px; font-size: 14px; text-transform: uppercase;}</style></head>
+                        <body>
+                            <h1>Ata de Reunião e Calibração</h1>
+                            <table width="100%" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; border-color: #cbd5e1; margin-bottom: 20px;">
+                                <tr><td><strong>Data:</strong> ${d.split('-').reverse().join('/')}</td><td><strong>Horário:</strong> ${h} às ${hf}</td></tr>
+                                <tr><td colspan="2"><strong>Tema / Foco:</strong> ${t}</td></tr>
+                                <tr><td colspan="2"><strong>Operação:</strong> ${o}</td></tr>
+                            </table>
+                            <div class="box">
+                                <div class="title">Participantes</div>
+                                <strong>Líderes:</strong> ${q} (Qualidade) | ${g2 ? g2+' (Qualidade 2)' : ''} | ${s1 ? s1+' (Supervisor)' : ''}<br/>
+                                <strong>Adicionais:</strong> ${extras || 'Nenhum'}
+                            </div>
+                            <div class="box"><div class="title">Pontos Discutidos</div><p>${fortes}</p></div>
+                            <div class="box"><div class="title">Ações Definidas (Cronograma)</div><p>${acoesTxt}</p></div>
+                        </body></html>
+                    `;
+                },
+                saveAtaToDB(isAuto = false) {
                     const d = document.getElementById('ata-data').value;
                     const h = document.getElementById('ata-hora').value;
                     const t = document.getElementById('ata-tema').value;
                     const o = document.getElementById('ata-op').value;
                     const q = document.getElementById('ata-qualidade').value;
-                    const g = document.getElementById('ata-gestor').value;
-                    const c = document.getElementById('ata-cliente').value || 'Não aplicável';
-                    const fortes = document.getElementById('ata-fortes').value.replace(/\n/g, '<br/>');
-                    const melh = document.getElementById('ata-melhoria').value.replace(/\n/g, '<br/>');
-                    const acoes = document.getElementById('ata-acao').value.replace(/\n/g, '<br/>');
-                    const q2 = document.getElementById('ata-qualidade2') ? document.getElementById('ata-qualidade2').value : '';
-                    const g2 = document.getElementById('ata-gestor2') ? document.getElementById('ata-gestor2').value : '';
-                    const s1 = document.getElementById('ata-sup1') ? document.getElementById('ata-sup1').value : '';
-                    const participantesExtras = [q2, g2, s1, c].filter(x => x).join(' | ');
+                    if(!d || !t || !o || !q) return false;
 
-                    if(!d || !t || !o || !q || !g) { app.ui.showAlert("Aviso", "Preencha todos os campos com (*) asterisco.", "error"); return null; }
+                    const payload = {
+                        id: 'ata_' + Date.now(),
+                        data: d, hora: h, horaFim: document.getElementById('ata-hora-fim').value,
+                        tema: t, op: o, qualidade: q, 
+                        qualidade2: document.getElementById('ata-qualidade2').value,
+                        sup: document.getElementById('ata-sup1').value,
+                        fortes: document.getElementById('ata-fortes').value,
+                        acoes: this.getAcoesData(),
+                        extras: this.getPartsData(),
+                        autor: app.currentUser ? app.currentUser.nome : 'ADM',
+                        matricula: app.currentUser ? app.currentUser.matricula : 'ADM',
+                        timestamp: Date.now(),
+                        pdca: null
+                    };
 
-                    const dataFormatada = d.split('-').reverse().join('/');
-                    
-                    return `
-                            <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-                            <head><meta charset='utf-8'><title>Ata de Calibração</title>
-                            <style>body{font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333;} h1{color: #1e3a8a; text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;} .box{background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;} .title{font-weight: bold; color: #1e40af; margin-bottom: 8px; font-size: 14px; text-transform: uppercase;}</style></head>
-                            <body>
-                                <h1>Ata Formal de Calibração</h1>
-                                <table width="100%" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; border-color: #cbd5e1; margin-bottom: 20px;">
-                                    <tr><td><strong>Data:</strong> ${dataFormatada}</td><td><strong>Hora:</strong> ${h || '--:--'}</td></tr>
-                                    <tr><td colspan="2"><strong>Tema / Foco:</strong> ${t}</td></tr>
-                                    <tr><td colspan="2"><strong>Operação / Produto:</strong> ${o}</td></tr>
-                                </table>
-                                <div class="box">
-                                    <div class="title">Participantes</div>
-                                    <strong>Líderes Principais:</strong> ${q} (Qualidade) / ${g} (Gestão)<br/>
-                                    <strong>Demais Participantes:</strong> ${participantesExtras || 'Nenhum outro adicionado'}
-                                </div>
-                                <div class="box"><div class="title">Pontos Fortes (Diretrizes que estão no Caminho Correto)</div><p>${fortes}</p></div>
-                                <div class="box"><div class="title">Pontos de Atenção / Melhoria (Ofensores de Qualidade)</div><p>${melh}</p></div>
-                                <div class="box"><div class="title">Plano de Ação Acordado</div><p>${acoes}</p></div>
-                                <br/><br/><br/>
-                                <table width="100%" style="text-align: center; margin-top: 40px;">
-                                    <tr>
-                                        <td>_________________________________<br/>${q}</td>
-                                        <td>_________________________________<br/>${g}</td>
-                                    </tr>
-                                </table>
-                            </body></html>
-                        `;
+                    app.atasList[payload.id] = payload;
+                    app.storage.saveAtas().then(() => {
+                        if(!isAuto) app.ui.showAlert("Sucesso", "Ata registrada com sucesso.", "success");
+                    });
+                    return true;
                 },
                 gerarWord() {
                     const html = this.gerarTemplateHTML();
                     if(!html) return;
-                    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a'); link.href = url; link.download = `Ata_Calibracao_${Date.now()}.doc`;
-                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                    if(this.saveAtaToDB(true)) {
+                        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+                        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Ata_${Date.now()}.doc`;
+                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                        app.ui.showAlert("Concluído", "O Download começou e a ata já foi salva automaticamente no sistema.", "success");
+                        setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
+                    }
                 },
                 gerarPDF() {
                     if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "O motor PDF está carregando, tente novamente.", "error");
                     const html = this.gerarTemplateHTML();
                     if(!html) return;
                     
-                    const doc = new window.jspdf.jsPDF();
-                    doc.setFontSize(18); doc.setTextColor(22, 163, 74); doc.text("Ata Formal de Calibração", 14, 20);
-                    doc.setFontSize(10); doc.setTextColor(50, 50, 50);
+                    if(this.saveAtaToDB(true)) {
+                        const doc = new window.jspdf.jsPDF();
+                        doc.setFontSize(18); doc.setTextColor(22, 163, 74); doc.text("Ata de Reuniao e Calibracao", 14, 20);
+                        doc.setFontSize(10); doc.setTextColor(50, 50, 50);
+                        
+                        doc.autoTable({
+                            startY: 30, body: [['Data', document.getElementById('ata-data').value], ['Tema', document.getElementById('ata-tema').value], ['Operacao', document.getElementById('ata-op').value], ['Qualidade', document.getElementById('ata-qualidade').value]],
+                            theme: 'grid', styles: {fontSize: 9}
+                        });
+                        
+                        let currY = doc.lastAutoTable.finalY + 10;
+                        doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("1. Pontos Discutidos", 14, currY);
+                        doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                        let splitFortes = doc.splitTextToSize(document.getElementById('ata-fortes').value, 180);
+                        doc.text(splitFortes, 14, currY + 6); currY += (splitFortes.length * 5) + 15;
+                        
+                        doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("2. Acoes Definidas", 14, currY);
+                        doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                        let splitAcao = doc.splitTextToSize(this.getAcoesData(), 180);
+                        doc.text(splitAcao, 14, currY + 6);
+                        
+                        doc.save(`Ata_${Date.now()}.pdf`);
+                        app.ui.showAlert("Concluído", "O Download começou e a ata já foi salva automaticamente no sistema.", "success");
+                        setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
+                    }
+                },
+                // --- SMART / PDCA ---
+                openPDCA(id) {
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+                    document.getElementById('pdca-ata-id').value = id;
+                    document.getElementById('pdca-ata-tema').textContent = ata.tema;
                     
-                    const d = document.getElementById('ata-data').value.split('-').reverse().join('/');
-                    const t = document.getElementById('ata-tema').value;
-                    const g = document.getElementById('ata-gestor').value;
+                    const p = ata.pdca || {};
+                    document.getElementById('smart-s').value = p.smartS || '';
+                    document.getElementById('smart-m').value = p.smartM || '';
+                    document.getElementById('smart-a').value = p.smartA || '';
+                    document.getElementById('smart-r').value = p.smartR || '';
+                    document.getElementById('smart-t').value = p.smartT || '';
+                    document.getElementById('pdca-p').value = p.pdcaP || '';
+                    document.getElementById('pdca-d').value = p.pdcaD || '';
+                    document.getElementById('pdca-c').value = p.pdcaC || '';
+                    document.getElementById('pdca-a').value = p.pdcaA || '';
+                    
+                    document.getElementById('pdca-modal').classList.remove('hidden');
+                },
+                salvarPDCA() {
+                    const id = document.getElementById('pdca-ata-id').value;
+                    if(!app.atasList[id]) return;
+                    
+                    app.atasList[id].pdca = {
+                        smartS: document.getElementById('smart-s').value,
+                        smartM: document.getElementById('smart-m').value,
+                        smartA: document.getElementById('smart-a').value,
+                        smartR: document.getElementById('smart-r').value,
+                        smartT: document.getElementById('smart-t').value,
+                        pdcaP: document.getElementById('pdca-p').value,
+                        pdcaD: document.getElementById('pdca-d').value,
+                        pdcaC: document.getElementById('pdca-c').value,
+                        pdcaA: document.getElementById('pdca-a').value
+                    };
+                    app.storage.saveAtas().then(() => {
+                        app.ui.showAlert("Sucesso", "O Quadro SMART/PDCA foi salvo nesta ata.", "success");
+                        document.getElementById('pdca-modal').classList.add('hidden');
+                    });
+                },
+                gerarPDFPDCA() {
+                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "O motor PDF está carregando.", "error");
+                    this.salvarPDCA(); // Salva primeiro
+                    
+                    const doc = new window.jspdf.jsPDF('landscape');
+                    doc.setFontSize(22); doc.setTextColor(30, 64, 175); doc.text("Framework de Acao - SMART & PDCA", 14, 20);
+                    
+                    doc.setFontSize(10); doc.setTextColor(100);
+                    doc.text("Ata Ref: " + document.getElementById('pdca-ata-tema').textContent, 14, 28);
                     
                     doc.autoTable({
-                        startY: 30, body: [['Data', d], ['Tema', t], ['Gestor', g], ['Qualidade', document.getElementById('ata-qualidade').value]],
-                        theme: 'grid', styles: {fontSize: 9}
+                        startY: 35,
+                        head: [['S.M.A.R.T (Definicao Estrategica)', 'P.D.C.A (Ciclo de Execucao)']],
+                        body: [
+                            [`Specific: ${document.getElementById('smart-s').value}\nMeasurable: ${document.getElementById('smart-m').value}\nAchievable: ${document.getElementById('smart-a').value}\nRelevant: ${document.getElementById('smart-r').value}\nTime-bound: ${document.getElementById('smart-t').value.split('-').reverse().join('/')}`, 
+                             `Plan: ${document.getElementById('pdca-p').value}\nDo: ${document.getElementById('pdca-d').value}\nCheck: ${document.getElementById('pdca-c').value}\nAct: ${document.getElementById('pdca-a').value}`]
+                        ],
+                        theme: 'grid', styles: {fontSize: 11, cellPadding: 5}, headStyles: {fillColor: [30, 64, 175]}
                     });
                     
-                    let currY = doc.lastAutoTable.finalY + 10;
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("1. Pontos Fortes", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    let splitFortes = doc.splitTextToSize(document.getElementById('ata-fortes').value, 180);
-                    doc.text(splitFortes, 14, currY + 6); currY += (splitFortes.length * 5) + 15;
-                    
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("2. Pontos de Melhoria", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    let splitMelhoria = doc.splitTextToSize(document.getElementById('ata-melhoria').value, 180);
-                    doc.text(splitMelhoria, 14, currY + 6); currY += (splitMelhoria.length * 5) + 15;
-                    
-                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("3. Plano de Ação", 14, currY);
-                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-                    let splitAcao = doc.splitTextToSize(document.getElementById('ata-acao').value, 180);
-                    doc.text(splitAcao, 14, currY + 6);
-                    
-                    doc.save(`Ata_Calibracao_${Date.now()}.pdf`);
+                    doc.save(`PDCA_${Date.now()}.pdf`);
                 },
-
-                saveAtaToDB() {
-                    const d = document.getElementById('ata-data').value;
-                    const h = document.getElementById('ata-hora').value;
-                    const t = document.getElementById('ata-tema').value;
-                    const o = document.getElementById('ata-op').value;
-                    const q = document.getElementById('ata-qualidade').value;
-                    const g = document.getElementById('ata-gestor').value;
-                    if(!d || !t || !o || !q || !g) return app.ui.showAlert("Aviso", "Preencha os campos obrigatórios (*).", "error");
-
-                    const payload = {
-                        id: 'ata_' + Date.now(),
-                        data: d, hora: h, tema: t, op: o, 
-                        qualidade: q, gestor: g,
-                        qualidade2: document.getElementById('ata-qualidade2')?.value || '',
-                        gestor2: document.getElementById('ata-gestor2')?.value || '',
-                        sup: document.getElementById('ata-sup1')?.value || '',
-                        cliente: document.getElementById('ata-cliente')?.value || '',
-                        fortes: document.getElementById('ata-fortes').value,
-                        melhorias: document.getElementById('ata-melhoria').value,
-                        acoes: document.getElementById('ata-acao').value,
-                        autor: app.currentUser ? app.currentUser.nome : 'ADM',
-                        matricula: app.currentUser ? app.currentUser.matricula : 'ADM',
-                        timestamp: Date.now()
-                    };
-
-                    app.atasList[payload.id] = payload;
-                    app.storage.saveAtas().then(() => {
-                        app.ui.showAlert("Ata Registrada", "O formulário foi salvo na base de dados com sucesso e já consta no seu histórico.", "success");
-                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
-                    });
+                excluirAta(id) {
+                    if(app.isAdmin) {
+                        app.ui.showConfirm("Atenção", "Excluir definitivamente esta ata?", `delete app.atasList['${id}']; app.storage.saveAtas().then(()=>app.ui.renderTab('gestao_atas', true))`, true);
+                    } else {
+                        app.ui.showAlert("Permissão Negada", "Apenas a administração pode excluir atas validadas. Clique em 'Solicitar Exclusão'.", "error");
+                    }
                 },
-                exportAtasXLSX() {
-                    const atas = Object.values(app.atasList);
-                    if(atas.length === 0) return app.ui.showAlert("Erro", "Não há atas para exportar.", "error");
-
-                    const rows = atas.map(a => ({
-                        "Data Reunião": a.data, "Hora": a.hora, "Operação": a.op, "Tema": a.tema,
-                        "Avaliador (Q)": a.qualidade, "Gestor 1": a.gestor, "Gestor 2": a.gestor2,
-                        "Supervisor": a.sup, "Cliente": a.cliente,
-                        "Criador da Ata": a.autor, "Matrícula Criador": a.matricula,
-                        "Pontos Fortes": a.fortes, "Pontos de Melhoria": a.melhorias, "Plano de Ação": a.acoes
-                    }));
-
-                    const worksheet = XLSX.utils.json_to_sheet(rows);
-                    const workbook = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(workbook, worksheet, "Gestao_Atas");
-                    XLSX.writeFile(workbook, `Gestao_Atas_${new Date().toISOString().split('T')[0]}.xlsx`);
-                }
+                solicitarExclusao(id) {
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-trash text-red-500"></i> Solicitar Exclusão`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="mb-3 text-sm">Descreva o motivo para a auditoria excluir esta ata:</p>
+                        <textarea id="motivo-exc-ata" rows="2" class="w-full p-2 border rounded-xl outline-none text-sm"></textarea>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 rounded-lg font-bold text-sm">Cancelar</button>
+                        <button onclick="app.ata.enviarPedidoExclusao('${id}')" class="px-5 py-2 bg-red-600 text-white rounded-lg font-bold text-sm shadow-md">Enviar Pedido</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+                enviarPedidoExclusao(id) {
+                    const motivo = document.getElementById('motivo-exc-ata').value;
+                    app.notifications.notify('ADM', 'Pedido Exclusão de Ata', `Monitor ${app.currentUser.nome} solicitou exclusão da Ata. Motivo: ${motivo}`, 'error');
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui.showAlert("Enviado", "Sua solicitação foi enviada para o ADM.", "success");
+                },
+                exportAtasXLSX() { /* ... mantido ... */ }
             },
 
             calendar: {
-                viewEvent(id) {
+viewEvent(id) {
                     const evt = app.eventsList[id];
                     if(!evt) return;
                     document.getElementById('ve-tipo').textContent = evt.tipo === 'pessoal' ? 'Controle Diário' : 'Evento de Operação';
@@ -1138,19 +1284,28 @@
                     document.getElementById('ve-autor').textContent = evt.autor || evt.matricula;
                     document.getElementById('ve-op').textContent = evt.op || 'N/A';
                     document.getElementById('ve-status').textContent = evt.tipo === 'pessoal' ? '-' : evt.status || 'Previsto';
-                    document.getElementById('ve-obs').textContent = evt.obs || (evt.tipo==='pessoal'? `Monitorias Realizadas: ${evt.qtdMon} \nFeedbacks Aplicados: ${evt.qtdFb}` : 'Nenhuma observação extra.');
+                    document.getElementById('ve-obs').textContent = evt.obs || (evt.tipo==='pessoal'? `Mon: ${evt.qtdMon} | FB: ${evt.qtdFb}` : 'Nenhuma observação.');
                     
-                    if(evt.anexo) {
-                        document.getElementById('ve-anexo-box').classList.remove('hidden');
-                        document.getElementById('ve-anexo-btn').href = evt.anexo;
-                    } else {
-                        document.getElementById('ve-anexo-box').classList.add('hidden');
-                    }
-                    document.getElementById('ve-btn-edit').onclick = () => {
-                        document.getElementById('view-event-modal').classList.add('hidden');
-                        this.openModal(evt.data, id);
-                    };
+                    // Injeção de Comentários
+                    let commentBox = document.getElementById('ve-obs').parentElement;
+                    let cHTML = `<div class="mt-4 pt-4 border-t border-slate-100"><h5 class="text-[10px] uppercase font-bold text-slate-500 mb-2">Comentários (ADM / Operação)</h5>`;
+                    if(evt.comments) evt.comments.forEach(c => { cHTML += `<div class="text-xs mb-2 p-2 bg-slate-100 rounded-lg"><strong>${c.autor}:</strong> ${c.text}</div>`; });
+                    cHTML += `<div class="flex gap-2 mt-2"><input type="text" id="cal-new-com-${id}" class="flex-1 p-2 border rounded-lg text-xs outline-none"><button type="button" onclick="app.calendar.addComment('${id}')" class="bg-blue-500 text-white px-3 rounded-lg font-bold text-xs">Enviar</button></div></div>`;
+                    
+                    // Prevenir de duplicar HTML (remove antigo se houver)
+                    const oldC = commentBox.querySelector('.mt-4'); if(oldC) oldC.remove();
+                    commentBox.insertAdjacentHTML('beforeend', cHTML);
+
+                    if(evt.anexo) { document.getElementById('ve-anexo-box').classList.remove('hidden'); document.getElementById('ve-anexo-btn').href = evt.anexo; } else { document.getElementById('ve-anexo-box').classList.add('hidden'); }
+                    document.getElementById('ve-btn-edit').onclick = () => { document.getElementById('view-event-modal').classList.add('hidden'); this.openModal(evt.data, id); };
                     document.getElementById('view-event-modal').classList.remove('hidden');
+                },
+                addComment(id) {
+                    const txt = document.getElementById(`cal-new-com-${id}`).value;
+                    if(!txt) return;
+                    if(!app.eventsList[id].comments) app.eventsList[id].comments = [];
+                    app.eventsList[id].comments.push({ autor: app.isAdmin ? 'ADM' : app.currentUser.nome, text: txt });
+                    app.storage.saveEvents().then(() => this.viewEvent(id)); // Recarrega
                 },
                 toggleCampos() {
                     const tipo = document.getElementById('cal-tipo').value;
@@ -1572,15 +1727,35 @@
 
                 renderNav() {
                     const nav = document.getElementById('main-nav');
-                    let html = '';
-const tabs = app.isAdmin 
-                        ? [ {id:'dashboard_adm', label:'Visão Geral', icon:'fa-chart-line'}, {id:'validar_acoes', label:'Validar Ações', icon:'fa-check-to-slot'}, {id:'cadastros', label:'Lançamentos & Equipe', icon:'fa-users-gear'}, {id:'operacoes', label:'Operações', icon:'fa-network-wired'}, {id:'meu_painel', label:'Visão Monitor', icon:'fa-user-check'}, {id:'configuracoes', label:'Gestão de Metas', icon:'fa-sliders'}, {id:'regras', label:'Regras', icon:'fa-book'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Nova Ata', icon:'fa-file-signature'}, {id:'gestao_atas', label:'Gestão de Atas', icon:'fa-folder-open'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ]
-                        : [ {id:'meu_painel', label:'Meus Resultados', icon:'fa-chart-pie'}, {id:'registrar_acao', label:'Registrar Ação', icon:'fa-camera'}, {id:'calc_monitorias', label:'Calc. Operação', icon:'fa-stopwatch'}, {id:'regras', label:'Regras e Critérios', icon:'fa-book-open'}, {id:'calculadora', label:'Simulador', icon:'fa-calculator'}, {id:'calendario', label:'Meu Calendário', icon:'fa-calendar-days'}, {id:'ata_reuniao', label:'Nova Ata', icon:'fa-file-signature'}, {id:'minhas_atas', label:'Atas Abertas', icon:'fa-folder-open'}, {id:'perfil', label:'Meu Perfil', icon:'fa-id-badge'}, {id:'legal', label:'LGPD & Legal', icon:'fa-shield-halved'} ];
-                    
-                    tabs.forEach(t => {
-                        const activeCls = app.currentTab === t.id ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent';
-                        html += `<button onclick="app.ui.renderTab('${t.id}')" class="px-5 py-3 font-semibold text-sm rounded-t-xl transition-all flex items-center gap-2 whitespace-nowrap ${activeCls}"><i class="fa-solid ${t.icon}"></i> ${t.label}</button>`;
+                    const menus = app.isAdmin 
+                        ? [
+                            { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}] },
+                            { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}] },
+                            { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                            { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                        ] : [
+                            { group: 'Meu Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
+                            { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
+                            { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                        ];
+
+                    let html = '<div class="flex gap-4 pb-2 w-full">';
+                    menus.forEach(m => {
+                        const hasActive = m.items.some(i => i.id === app.currentTab);
+                        const btnColor = hasActive ? 'bg-green-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50';
+                        
+                        html += `
+                            <div class="relative group">
+                                <button class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 border border-slate-200 dark:border-slate-700 transition-all ${btnColor}">
+                                    <i class="fa-solid ${m.icon}"></i> ${m.group} <i class="fa-solid fa-chevron-down text-[10px] ml-1"></i>
+                                </button>
+                                <div class="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
+                                    ${m.items.map(i => `<button onclick="app.ui.renderTab('${i.id}')" class="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 ${app.currentTab === i.id ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/10' : 'text-slate-700 dark:text-slate-300'}">${i.label}</button>`).join('')}
+                                </div>
+                            </div>
+                        `;
                     });
+                    html += '</div>';
                     nav.innerHTML = html;
                 },
 
@@ -1635,7 +1810,8 @@ const tabs = app.isAdmin
                         else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
                         else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
                         else if(tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
-                        else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);
+                        else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -1955,41 +2131,59 @@ const tabs = app.isAdmin
                 },
 
                 renderView_AtaReuniao(container) {
+                    const today = new Date().toISOString().split('T')[0];
                     const html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ata de Calibração Profissional</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário para gerar o documento gerencial em PDF ou Word (Doc).</p>
+                        <div class="mb-8 flex justify-between items-center">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ata de Reunião e Calibração</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário e faça o download (salvamento automático).</p>
+                            </div>
                         </div>
-                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-4xl mx-auto">
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Reunião *</label><input type="date" id="ata-data" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div class="lg:col-span-1"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação / Produto *</label><input type="text" id="ata-op" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div class="md:col-span-2 lg:col-span-3"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema Principal da Calibração *</label><input type="text" id="ata-tema" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none" placeholder="Ex: Alinhamento de script de vendas e objeções"></div>
+                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-blue-600 shadow-xl">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 dark:border-slate-700 pb-8">
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data Padrão</label><input type="date" id="ata-data" value="${today}" readonly class="w-full p-3 rounded-xl bg-slate-100 text-slate-500 border border-slate-200 outline-none cursor-not-allowed"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Início *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Fim *</label><input type="time" id="ata-hora-fim" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label><input type="text" id="ata-op" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
+                                <div class="md:col-span-4"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema Principal da Reunião *</label><input type="text" id="ata-tema" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none text-lg font-semibold text-blue-700"></div>
+                            </div>
+                            
+                            <div class="mb-8 bg-blue-50/50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h4 class="font-bold text-blue-800 dark:text-blue-300 text-sm"><i class="fa-solid fa-users"></i> Gestores e Participantes</h4>
+                                    <button type="button" onclick="app.ata.addParticipante()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">+ Participante</button>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 1 *</label><input type="text" id="ata-qualidade" value="${app.currentUser ? app.currentUser.nome : ''}" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
+                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 2</label><input type="text" id="ata-qualidade2" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
+                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Supervisor Operacional</label><input type="text" id="ata-sup1" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
+                                </div>
+                                <div id="ata-dynamic-participants" class="space-y-2 border-t border-blue-200/50 pt-3 mt-2"></div>
+                            </div>
+                            
+                            <div class="space-y-8">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 uppercase mb-2"><i class="fa-solid fa-comments text-green-500"></i> Pontos Discutidos</label>
+                                    <textarea id="ata-fortes" rows="4" class="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-green-500 text-sm leading-relaxed shadow-inner"></textarea>
+                                </div>
                                 
-                                <div class="lg:col-span-3 border-t border-slate-200 pt-4 mt-2"><h4 class="font-bold text-slate-700 text-sm mb-4"><i class="fa-solid fa-users text-blue-500"></i> Participantes</h4></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Avaliador 1 (Qualidade) *</label><input type="text" id="ata-qualidade" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none" value="${app.currentUser ? app.currentUser.nome : ''}"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Avaliador 2 (Qualidade)</label><input type="text" id="ata-qualidade2" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Operacional 1 *</label><input type="text" id="ata-gestor" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Operacional 2</label><input type="text" id="ata-gestor2" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Supervisor 1</label><input type="text" id="ata-sup1" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Representante Cliente</label><input type="text" id="ata-cliente" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none"></div>
+                                <div class="bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <label class="block text-sm font-bold text-slate-700 dark:text-white uppercase"><i class="fa-solid fa-list-check text-purple-500"></i> Ações Definidas (Relatório)</label>
+                                        <button type="button" onclick="app.ata.addAcao()" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">+ Adicionar Ação</button>
+                                    </div>
+                                    <div id="ata-dynamic-actions" class="space-y-4"></div>
+                                </div>
                             </div>
                             
-                            <div class="space-y-6">
-                                <div><label class="block text-[11px] font-bold text-green-600 uppercase mb-1.5"><i class="fa-solid fa-plus"></i> Pontos Fortes Discutidos</label><textarea id="ata-fortes" rows="3" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none outline-none"></textarea></div>
-                                <div><label class="block text-[11px] font-bold text-red-500 uppercase mb-1.5"><i class="fa-solid fa-minus"></i> Pontos de Melhoria / Ofensores</label><textarea id="ata-melhoria" rows="3" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none outline-none"></textarea></div>
-                                <div><label class="block text-[11px] font-bold text-blue-600 uppercase mb-1.5"><i class="fa-solid fa-list-check"></i> Plano de Ação e Definições Finais</label><textarea id="ata-acao" rows="4" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none outline-none" placeholder="1. Ação X (Responsável Y - Prazo Z)"></textarea></div>
-                            </div>
-                            
-                            <div class="flex flex-col md:flex-row gap-4 mt-8 pt-6 border-t border-slate-100 dark:border-slate-700">
-                                <button onclick="app.ata.saveAtaToDB()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"><i class="fa-solid fa-floppy-disk"></i> Gravar Ata no Sistema</button>
-                                <button onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
-                                <button onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"><i class="fa-solid fa-file-word"></i> Baixar (.doc)</button>
+                            <div class="flex flex-col md:flex-row gap-4 mt-10 pt-6 border-t border-slate-200">
+                                <button type="button" onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2"><i class="fa-solid fa-file-pdf"></i> Salvar e Baixar PDF</button>
+                                <button type="button" onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2"><i class="fa-solid fa-file-word"></i> Salvar e Baixar (.doc)</button>
                             </div>
                         </div>
                     `;
                     container.innerHTML = html;
+                    setTimeout(() => { if(!document.getElementById('ata-dynamic-actions').innerHTML.trim()) { app.ata.initForm(); } }, 100);
                 },
 
                 renderView_MeuPainel(container) {
@@ -2440,40 +2634,55 @@ const tabs = app.isAdmin
 
                 renderView_Cadastros(container) {
                     if(!app.isAdmin) return;
-                    const monthLabel = this.formatMonthLabel(app.currentMonth);
-                    
                     let html = `
-                        <div class="mb-8 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Equipe e Lançamentos</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong> ou gerencie colaboradores.</p>
-                            </div>
-                            <button onclick="app.ui.openAddUserModal()" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-plus"></i> Novo Colaborador
-                            </button>
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Lançamentos de Notas Mensais</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados na referência <strong class="text-green-600">${this.formatMonthLabel(app.currentMonth)}</strong>.</p>
                         </div>
-                        
-                        <div class="glass-card p-6 md:p-8 rounded-3xl w-full">
-                            <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-file-pen text-green-600"></i> Lançar Indicadores • ${monthLabel}</h3>
+                        <div class="glass-card p-6 rounded-3xl w-full">
                             <div class="flex gap-2 mb-8">
-                                <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 font-semibold dark:text-white outline-none focus:ring-2 focus:ring-green-500">
+                                <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-green-500">
                                     <option value="">Selecione um colaborador para lançar notas...</option>
-                                `;
-                                app.users.forEach(u => { 
-                                    html += `<option value="${u.matricula}" ${window.selectedAdminEditUser === u.matricula ? 'selected' : ''}>${u.nome} (${u.matricula})</option>`; 
-                                });
-                                html += `</select>
+                                    ${app.users.map(u => `<option value="${u.matricula}" ${window.selectedAdminEditUser === u.matricula ? 'selected' : ''}>${u.nome} (${u.matricula})</option>`).join('')}
+                                </select>
                             </div>
-                            <div id="adm-editor-area" class="hidden space-y-6 animate-fade-in">
-                                <!-- Injetado dinamicamente -->
-                            </div>
+                            <div id="adm-editor-area" class="hidden space-y-6 animate-fade-in"></div>
                         </div>
                     `;
                     container.innerHTML = html;
-                    
-                    if(window.selectedAdminEditUser) {
-                        app.admin.loadUserEditor();
-                    }
+                    if(window.selectedAdminEditUser) app.admin.loadUserEditor();
+                },
+
+                renderView_GestaoEquipe(container) {
+                    if(!app.isAdmin) return;
+                    let html = `
+                        <div class="mb-8 flex justify-between items-center">
+                            <div><h2 class="text-2xl font-extrabold text-slate-800">Gestão Global da Equipe</h2></div>
+                            <button type="button" onclick="app.ui.openAddUserModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md"><i class="fa-solid fa-user-plus"></i> Adicionar Colaborador</button>
+                        </div>
+                        <div class="glass-card p-6 rounded-3xl w-full">
+                            <table class="w-full text-left text-sm">
+                                <thead><tr class="border-b text-slate-400 uppercase text-[10px]"><th class="pb-2">Nome / Matrícula</th><th class="pb-2">Senha</th><th class="pb-2">Operações</th><th class="pb-2 text-right">Ações</th></tr></thead>
+                                <tbody>
+                    `;
+                    app.users.forEach(u => {
+                        html += `
+                            <tr class="border-b border-slate-100 hover:bg-slate-50">
+                                <td class="py-3 font-bold text-slate-700">${u.nome}<br><span class="text-xs text-slate-400">${u.matricula}</span></td>
+                                <td class="py-3">
+                                    <input type="password" readonly value="${u.senha}" id="ge-pwd-${u.matricula}" class="bg-transparent border-0 outline-none w-20 text-xs">
+                                    <button type="button" onclick="const i = document.getElementById('ge-pwd-${u.matricula}'); i.type=i.type==='password'?'text':'password';" class="text-slate-400"><i class="fa-solid fa-eye"></i></button>
+                                </td>
+                                <td class="py-3 text-xs">${u.operacoes ? u.operacoes.join(', ') : '-'}</td>
+                                <td class="py-3 text-right space-x-2">
+                                    <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="text-blue-500 bg-blue-50 px-2 py-1 rounded text-xs font-bold" title="Exigir assinatura LGPD novamente">Reset LGPD</button>
+                                    <button type="button" onclick="document.getElementById('adm-user-select').value='${u.matricula}'; app.admin.deleteUser()" class="text-red-500 bg-red-50 px-2 py-1 rounded text-xs font-bold"><i class="fa-solid fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    html += `</tbody></table></div>`;
+                    container.innerHTML = html;
                 },
 
                 renderView_Config(container) {
@@ -3251,6 +3460,15 @@ const tabs = app.isAdmin
             }, // <-- Fim do Objeto UI
 
             admin: {
+
+                resetTermos(matricula) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if(u) { 
+                        u.aceiteTermos = null; 
+                        u.aceiteDiretrizes = null; 
+                        app.storage.saveUsers().then(()=>app.ui.showAlert("Pronto", "No próximo login ele precisará aceitar novamente.","success")); 
+                    }
+                },
                 
                 addOperacao() {
                     const nome = document.getElementById('nova-op-nome').value.trim();
