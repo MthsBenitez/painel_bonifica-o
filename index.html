@@ -1786,14 +1786,25 @@ viewEvent(id) {
                 
                 init() {
                     this.checkTheme();
-                    this.initThemeColors(); // LINHA ADICIONADA AQUI
+                    this.initThemeColors(); 
                     
                     const savedMat = localStorage.getItem('soft_saved_mat');
                     if(savedMat) {
                         document.getElementById('login-mat').value = savedMat;
                         document.getElementById('login-remember').checked = true;
                     }
-                    /* ... código mantido ... */
+                    
+                    // --- O CÓDIGO ABAIXO TINHA SIDO APAGADO SEM QUERER ---
+                    const today = new Date();
+                    const mm = String(today.getMonth() + 1).padStart(2, '0');
+                    const yyyy = today.getFullYear();
+                    app.currentMonth = `${yyyy}-${mm}`;
+                    document.getElementById('global-month').value = app.currentMonth;
+                    
+                    // É esta linha que carrega os usuários do Banco de Dados!
+                    app.storage.init(); 
+                    // -----------------------------------------------------
+                    
                     document.getElementById('view-login').classList.remove('hidden');
                 },
 
