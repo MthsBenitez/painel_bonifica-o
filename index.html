@@ -17,7 +17,18 @@
                 extend: {
                     fontFamily: { sans: ['Inter', 'sans-serif'] },
                     colors: {
-                        brand: { 50: '#f0fdf4', 100: '#dcfce7', 500: '#22c55e', 600: '#16a34a', 700: '#15803d' },
+                        green: {
+                            50: 'color-mix(in srgb, var(--theme-color) 10%, white)',
+                            100: 'color-mix(in srgb, var(--theme-color) 20%, white)',
+                            200: 'color-mix(in srgb, var(--theme-color) 30%, white)',
+                            300: 'color-mix(in srgb, var(--theme-color) 50%, white)',
+                            400: 'color-mix(in srgb, var(--theme-color) 70%, white)',
+                            500: 'var(--theme-color)',
+                            600: 'color-mix(in srgb, var(--theme-color) 85%, black)',
+                            700: 'color-mix(in srgb, var(--theme-color) 70%, black)',
+                            800: 'color-mix(in srgb, var(--theme-color) 50%, black)',
+                            900: 'color-mix(in srgb, var(--theme-color) 30%, black)'
+                        },
                         dark: { bg: '#0b1120', surface: '#1e293b', border: '#334155' }
                     }
                 }
@@ -39,6 +50,10 @@
     <!-- Firebase (V8 Compat) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        :root { --theme-color: #22c55e; /* Padrão atual verde */ }
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease; }
 
     <style>
         body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease; }
@@ -556,8 +571,18 @@
                                 </div>
                             </div>
 
-                            <!-- Botão Tema -->
-                            <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Trocar Tema">
+                            <!-- Botão Cor do Tema -->
+                            <div class="relative">
+                                <button onclick="document.getElementById('theme-color-dropdown').classList.toggle('hidden')" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Cor do Tema">
+                                    <i class="fa-solid fa-palette text-lg"></i>
+                                </button>
+                                <div id="theme-color-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 p-3 grid grid-cols-5 gap-2">
+                                    <!-- Injetado via JS -->
+                                </div>
+                            </div>
+
+                            <!-- Botão Tema (Dark/Light) -->
+                            <button onclick="app.ui.toggleTheme()" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Trocar Tema Escuro/Claro">
                                 <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
                             </button>
                         </div>
@@ -1226,6 +1251,68 @@
                     app.ui.showAlert("Concluído", "O Download do PDF começou e a ata foi gravada no sistema.", "success");
                     setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
                 },
+
+                gerarPDFById(id) {
+                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "Aguarde, gerador PDF carregando...", "error");
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+                    
+                    const doc = new window.jspdf.jsPDF();
+                    doc.setFontSize(18); doc.setTextColor(22, 163, 74); doc.text("Ata de Reuniao e Calibracao", 14, 20);
+                    doc.setFontSize(10); doc.setTextColor(50, 50, 50);
+
+                    doc.autoTable({
+                        startY: 30, body: [['Data', ata.data.split('-').reverse().join('/')], ['Tema', ata.tema], ['Operacao', ata.op], ['Qualidade', ata.qualidade]],
+                        theme: 'grid', styles: {fontSize: 9}
+                    });
+                    
+                    let currY = doc.lastAutoTable.finalY + 10;
+                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("1. Pontos Discutidos", 14, currY);
+                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                    
+                    let splitFortes = doc.splitTextToSize(ata.fortes || 'Nada registrado.', 180);
+                    doc.text(splitFortes, 14, currY + 6); currY += (splitFortes.length * 5) + 15;
+                    
+                    if(currY > 260) { doc.addPage(); currY = 20; }
+
+                    doc.setFontSize(12); doc.setTextColor(0, 0, 0); doc.text("2. Acoes Definidas", 14, currY);
+                    doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+                    
+                    let splitAcao = doc.splitTextToSize(ata.acoes || 'Nenhuma ação.', 180);
+                    doc.text(splitAcao, 14, currY + 6);
+                    
+                    doc.save(`Ata_${id}.pdf`);
+                },
+                gerarWordById(id) {
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+                    
+                    const html = `
+                        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                        <head><meta charset='utf-8'><title>Ata Reunião</title>
+                        <style>body{font-family: 'Segoe UI', sans-serif; color: #333;} h1{color: #1e40af; text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;} .box{background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;} .title{font-weight: bold; color: #1e40af; margin-bottom: 8px; font-size: 14px; text-transform: uppercase;}</style></head>
+                        <body>
+                            <h1>Ata de Reunião e Calibração</h1>
+                            <table width="100%" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; border-color: #cbd5e1; margin-bottom: 20px;">
+                                <tr><td><strong>Data:</strong> ${ata.data ? ata.data.split('-').reverse().join('/') : ''}</td><td><strong>Horário:</strong> ${ata.hora} às ${ata.horaFim}</td></tr>
+                                <tr><td colspan="2"><strong>Tema / Foco:</strong> ${ata.tema}</td></tr>
+                                <tr><td colspan="2"><strong>Operação:</strong> ${ata.op}</td></tr>
+                            </table>
+                            <div class="box">
+                                <div class="title">Participantes</div>
+                                <strong>Líderes:</strong> ${ata.qualidade} (Qualidade) | ${ata.qualidade2 ? ata.qualidade2+' (Qualidade 2)' : ''} | ${ata.sup ? ata.sup+' (Supervisor)' : ''}<br/>
+                                <strong>Adicionais:</strong> ${ata.extras || 'Nenhum'}
+                            </div>
+                            <div class="box"><div class="title">Pontos Discutidos</div><p>${(ata.fortes||'').replace(/\n/g, '<br/>')}</p></div>
+                            <div class="box"><div class="title">Ações Definidas (Cronograma)</div><p>${(ata.acoes||'').replace(/\n/g, '<br/>')}</p></div>
+                        </body></html>
+                    `;
+                    
+                    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+                    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Ata_${id}.doc`;
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                },
+                
                 openPDCA(id) {
                     const ata = app.atasList[id];
                     if(!ata) return;
@@ -1691,20 +1778,46 @@ viewEvent(id) {
                 
                 init() {
                     this.checkTheme();
+                    this.initThemeColors(); // LINHA ADICIONADA AQUI
                     
                     const savedMat = localStorage.getItem('soft_saved_mat');
                     if(savedMat) {
                         document.getElementById('login-mat').value = savedMat;
                         document.getElementById('login-remember').checked = true;
                     }
-                    
-                    const today = new Date();
-                    const mm = String(today.getMonth() + 1).padStart(2, '0');
-                    const yyyy = today.getFullYear();
-                    app.currentMonth = `${yyyy}-${mm}`;
-                    document.getElementById('global-month').value = app.currentMonth;
-                    app.storage.init();
+                    /* ... código mantido ... */
                     document.getElementById('view-login').classList.remove('hidden');
+                },
+
+                initThemeColors() {
+                    const themes = [
+                        { name: 'Verde Atual', hex: '#22c55e' }, { name: 'Rosa Pastel', hex: '#FFD1DC' },
+                        { name: 'Vermelho Pastel', hex: '#FF6961' }, { name: 'Laranja Pastel', hex: '#FFB347' },
+                        { name: 'Pêssego Pastel', hex: '#FFE5B4' }, { name: 'Amarelo Pastel', hex: '#FDFD96' },
+                        { name: 'Baunilha', hex: '#F3E5AB' }, { name: 'Limão Pastel', hex: '#FAF884' },
+                        { name: 'Verde Pastel', hex: '#77DD77' }, { name: 'Verde Menta', hex: '#98FF98' },
+                        { name: 'Ciano Pastel', hex: '#E0FFFF' }, { name: 'Turquesa Pastel', hex: '#AFEEEE' },
+                        { name: 'Azul Pastel', hex: '#AEC6CF' }, { name: 'Azul Bebê', hex: '#89CFF0' },
+                        { name: 'Pervinca', hex: '#CCCCFF' }, { name: 'Roxo Pastel', hex: '#C3B1E1' },
+                        { name: 'Lilás', hex: '#C8A2C8' }, { name: 'Lavanda', hex: '#E6E6FA' },
+                        { name: 'Magenta Pastel', hex: '#F49AC2' }, { name: 'Rosa Coral', hex: '#F88379' },
+                        { name: 'Salmão Pastel', hex: '#FFB09C' }
+                    ];
+                    
+                    const savedColor = localStorage.getItem('theme_color');
+                    if(savedColor) document.documentElement.style.setProperty('--theme-color', savedColor);
+                    
+                    const container = document.getElementById('theme-color-dropdown');
+                    if(container) {
+                        container.innerHTML = themes.map(t => 
+                            `<button onclick="app.ui.changeThemeColor('${t.hex}')" class="w-8 h-8 rounded-full border-2 border-slate-200 dark:border-slate-600 shadow-sm hover:scale-110 transition-transform" style="background-color: ${t.hex};" title="${t.name}"></button>`
+                        ).join('');
+                    }
+                },
+                changeThemeColor(hex) {
+                    document.documentElement.style.setProperty('--theme-color', hex);
+                    localStorage.setItem('theme_color', hex);
+                    document.getElementById('theme-color-dropdown').classList.add('hidden');
                 },
                 
                 checkTheme() {
@@ -2710,9 +2823,14 @@ viewEvent(id) {
                 renderView_Cadastros(container) {
                     if(!app.isAdmin) return;
                     let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Lançamentos de Notas Mensais</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados na referência <strong class="text-green-600">${this.formatMonthLabel(app.currentMonth)}</strong>.</p>
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Lançamentos de Notas Mensais</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados na referência <strong class="text-green-600">${this.formatMonthLabel(app.currentMonth)}</strong>.</p>
+                            </div>
+                            <button type="button" onclick="app.admin.clearAllUsersMonth()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 font-bold py-2.5 px-5 rounded-xl border border-red-200 dark:border-red-800 shadow-sm flex items-center gap-2 text-sm transition-colors">
+                                <i class="fa-solid fa-trash-can"></i> Zerar Lançamentos do Mês
+                            </button>
                         </div>
                         <div class="glass-card p-6 rounded-3xl w-full">
                             <div class="flex gap-2 mb-8">
@@ -2730,14 +2848,31 @@ viewEvent(id) {
 
                 renderView_GestaoEquipe(container) {
                     if(!app.isAdmin) return;
+                    
+                    const totais = app.users.length;
+                    const logados = app.users.filter(u => u.loginCount > 0).length;
+                    
                     let html = `
                         <div class="mb-8 flex justify-between items-center">
                             <div><h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Gestão Global da Equipe</h2></div>
                             <button type="button" onclick="app.ui.openAddUserModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md"><i class="fa-solid fa-user-plus"></i> Adicionar Colaborador</button>
                         </div>
+                        
+                        <!-- Dashcards Equipe -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
+                                <div class="text-3xl text-blue-500"><i class="fa-solid fa-users"></i></div>
+                                <div><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total de Colaboradores</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totais}</div></div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
+                                <div class="text-3xl text-green-500"><i class="fa-solid fa-user-check"></i></div>
+                                <div><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Acessaram a Plataforma</div><div class="text-2xl font-black text-slate-800 dark:text-white">${logados}</div></div>
+                            </div>
+                        </div>
+
                         <div class="glass-card p-6 rounded-3xl w-full">
                             <table class="w-full text-left text-sm">
-                                <thead><tr class="border-b text-slate-400 uppercase text-[10px]"><th class="pb-2">Nome / Matrícula</th><th class="pb-2">Senha</th><th class="pb-2">Operações</th><th class="pb-2 text-right">Ações</th></tr></thead>
+                                <thead><tr class="border-b text-slate-400 uppercase text-[10px]"><th class="pb-2">Nome / Matrícula</th><th class="pb-2">Operações</th><th class="pb-2 text-right">Ações Rápidas</th></tr></thead>
                                 <tbody>
                     `;
                     app.users.forEach(u => {
@@ -2748,14 +2883,9 @@ viewEvent(id) {
                                     <img src="${avatar}" class="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div>${u.nome}<br><span class="text-xs text-slate-400 font-normal">${u.matricula}</span></div>
                                 </td>
-                                <td class="py-3">
-                                    <div class="flex items-center">
-                                        <input type="password" readonly value="${u.senha}" id="ge-pwd-${u.matricula}" class="bg-transparent border-0 outline-none w-20 text-xs font-mono dark:text-slate-300">
-                                        <button type="button" onclick="const i = document.getElementById('ge-pwd-${u.matricula}'); i.type=i.type==='password'?'text':'password';" class="text-slate-400 hover:text-blue-500"><i class="fa-solid fa-eye"></i></button>
-                                    </div>
-                                </td>
                                 <td class="py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[150px] truncate">${u.operacoes ? u.operacoes.join(', ') : '-'}</td>
                                 <td class="py-3 text-right space-x-1">
+                                    <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar Reset de Senha (12345)"><i class="fa-solid fa-key"></i></button>
                                     <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Editar Perfil"><i class="fa-solid fa-pen"></i></button>
                                     <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar re-assinatura LGPD">LGPD</button>
                                     <button type="button" onclick="document.getElementById('adm-user-select').value='${u.matricula}'; app.admin.deleteUser()" class="text-red-500 bg-red-50 dark:bg-red-900/30 dark:text-red-400 px-2 py-1.5 rounded text-xs font-bold transition-colors"><i class="fa-solid fa-trash"></i></button>
@@ -3426,37 +3556,73 @@ viewEvent(id) {
                     container.innerHTML = html;
                 },
 
+                atasFiltroOp: '', atasFiltroTema: '', atasFiltroAutor: '',
+                
                 renderView_GestaoAtas(container) {
                     if(!app.isAdmin) return;
-                    const atas = Object.values(app.atasList).sort((a,b) => b.timestamp - a.timestamp);
+                    let atas = Object.values(app.atasList).sort((a,b) => b.timestamp - a.timestamp);
+                    
+                    if(this.atasFiltroOp) atas = atas.filter(a => a.op === this.atasFiltroOp);
+                    if(this.atasFiltroTema) atas = atas.filter(a => a.tema === this.atasFiltroTema);
+                    if(this.atasFiltroAutor) atas = atas.filter(a => (a.autor||'').toLowerCase().includes(this.atasFiltroAutor.toLowerCase()));
+
+                    const totais = atas.length;
+                    const comPdca = atas.filter(a => a.pdca && (a.pdca.smartS || a.pdca.pdcaP)).length;
+                    
+                    const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.atasFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão Global de Atas</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe todas as atas registradas pelas operações e acesse os quadros de PDCA.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe todas as atas da operação, utilize os filtros e gere relatórios.</p>
                             </div>
                             <button type="button" onclick="app.ata.exportAtasXLSX()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-excel"></i> Baixar XLSX
                             </button>
                         </div>
                         
+                        <!-- Dashcards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total Filtrado</div>
+                                <div class="text-3xl font-black text-blue-600">${totais}</div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Atas com PDCA (Ação)</div>
+                                <div class="text-3xl font-black text-green-600">${comPdca}</div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Pendentes de Ação</div>
+                                <div class="text-3xl font-black text-orange-500">${totais - comPdca}</div>
+                            </div>
+                        </div>
+
+                        <!-- Filtros Diversos -->
+                        <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="text-xs font-bold text-slate-500 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros de Pesquisa</div>
+                            <input type="text" placeholder="Nome do Autor" value="${this.atasFiltroAutor}" onchange="app.ui.atasFiltroAutor=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
+                            <select onchange="app.ui.atasFiltroOp=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
+                                <option value="">Todas Operações</option>${operacoes}
+                            </select>
+                            <select onchange="app.ui.atasFiltroTema=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
+                                <option value="">Todos Temas</option><option value="Quality Day" ${this.atasFiltroTema==='Quality Day'?'selected':''}>Quality Day</option><option value="Aplicação de Ação" ${this.atasFiltroTema==='Aplicação de Ação'?'selected':''}>Aplicação Ação</option><option value="Reunião" ${this.atasFiltroTema==='Reunião'?'selected':''}>Reunião</option><option value="Calibração" ${this.atasFiltroTema==='Calibração'?'selected':''}>Calibração</option>
+                            </select>
+                        </div>
+                        
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     `;
 
                     if(atas.length === 0) {
-                        html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem atas registradas.</div>`;
+                        html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem atas encontradas.</div>`;
                     } else {
                         atas.forEach(ata => {
-                            const hasPDCA = ata.pdca && (ata.pdca.smartS || ata.pdca.pdcaP);
-                            const badge = hasPDCA ? `<span class="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200 dark:border-green-800"><i class="fa-solid fa-check"></i> PDCA Ativo</span>` : `<span class="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 px-2 py-0.5 rounded text-[9px] font-bold border border-slate-200 dark:border-slate-700">Pendente PDCA</span>`;
-                            
                             html += `
                                 <div class="glass-card rounded-2xl p-6 border-t-4 border-t-blue-500 shadow-sm flex flex-col relative group">
                                     <button type="button" onclick="app.ata.excluirAta('${ata.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors"><i class="fa-solid fa-trash"></i></button>
                                     
                                     <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                        <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora} - ${ata.horaFim || '--:--'}) ${badge}
+                                        <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora} - ${ata.horaFim || '--:--'})
                                     </div>
                                     <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-2 pr-6">${ata.tema}</h3>
                                     <div class="text-xs font-bold text-slate-600 dark:text-slate-400 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-user-pen"></i> Criado por: ${ata.autor} | Operação: ${ata.op}</div>
@@ -3471,7 +3637,11 @@ viewEvent(id) {
                                         <div class="border-t border-slate-200 dark:border-slate-700 pt-2"><span class="font-bold text-purple-600"><i class="fa-solid fa-list-check"></i> Plano de Ação:</span><br/>${ata.acoes || '-'}</div>
                                     </div>
                                     
-                                    <button type="button" onclick="app.ata.openPDCA('${ata.id}')" class="w-full bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-bullseye mr-1"></i> Preencher Quadro de Ação (PDCA)</button>
+                                    <!-- Ações de Download (Sem Botão de PDCA na visão Gestão) -->
+                                    <div class="flex gap-2 mt-auto">
+                                        <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                        <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
+                                    </div>
                                 </div>
                             `;
                         });
@@ -3556,6 +3726,38 @@ viewEvent(id) {
                         u.aceiteTermos = null; 
                         u.aceiteDiretrizes = null; 
                         app.storage.saveUsers().then(()=>app.ui.showAlert("Pronto", "No próximo login ele precisará aceitar novamente.","success")); 
+                    }
+                },
+
+                forcePasswordReset(matricula) {
+                    app.ui.showConfirm("Resetar Senha", `A senha do colaborador <b>${matricula}</b> será redefinida para <b>12345</b>. O sistema forçará a troca no primeiro login. Continuar?`, `app.admin.executeForcePasswordReset('${matricula}')`, true);
+                },
+                executeForcePasswordReset(matricula) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if(u) {
+                        u.senha = '12345';
+                        app.storage.saveUsers().then(() => app.ui.showAlert("Senha Resetada", "A senha foi alterada para 12345 com sucesso.", "success"));
+                    }
+                },
+
+                clearAllUsersMonth() {
+                    app.ui.showConfirm("Zerar Lançamentos do Mês", `Atenção: Isso excluirá <b>TODOS</b> os lançamentos e notas de <b>TODOS</b> os colaboradores (apenas no mês de <b>${app.ui.formatMonthLabel(app.currentMonth)}</b>). Esta ação não pode ser desfeita. Deseja continuar?`, "app.admin.executeClearAllUsersMonth()", true);
+                },
+                executeClearAllUsersMonth() {
+                    let cleared = false;
+                    app.users.forEach(u => {
+                        if(u.results && u.results[app.currentMonth]) {
+                            delete u.results[app.currentMonth];
+                            cleared = true;
+                        }
+                    });
+                    if(cleared) {
+                        app.storage.saveUsers().then(() => {
+                            app.ui.showAlert("Mês Zerado", `Todos os lançamentos e notas de ${app.ui.formatMonthLabel(app.currentMonth)} foram removidos.`, "success");
+                            app.ui.renderTab('cadastros', true);
+                        });
+                    } else {
+                        app.ui.showAlert("Aviso", "Não há lançamentos registrados neste mês para serem apagados.", "info");
                     }
                 },
                 
