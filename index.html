@@ -1227,7 +1227,6 @@
                     
                     const doc = new window.jspdf.jsPDF();
                     
-                    // Puxando todos os dados preenchidos no form
                     const d = document.getElementById('ata-data').value || '';
                     const h = document.getElementById('ata-hora').value || '';
                     const hf = document.getElementById('ata-hora-fim').value || '';
@@ -1240,19 +1239,35 @@
                     const fortes = document.getElementById('ata-fortes').value || 'Nada registrado.';
                     const acoes = this.getAcoesData();
 
-                    // Cabeçalho Profissional - Tom escuro (Slate-800)
-                    doc.setFontSize(18); 
-                    doc.setTextColor(30, 41, 59); 
+                    // Título principal mais delicado e alinhado
+                    doc.setFontSize(15); 
+                    doc.setTextColor(51, 65, 85); 
                     doc.setFont("helvetica", "bold");
-                    doc.text("Ata de Reunião e Calibração", 105, 20, { align: "center" });
+                    doc.text("Ata de Reunião e Calibração", 105, 16, { align: "center" });
                     
-                    // Paleta neutra corporativa (Slate-700) para todos os cabeçalhos
+                    // Constantes de estilo minimalista
                     const primaryColor = [51, 65, 85];
-                    const textColor = [50, 50, 50];
+                    const headerTextColor = [255, 255, 255]; // Força o texto branco nos cabeçalhos
+                    const bodyTextColor = [71, 85, 105]; // Cinza grafite, mais elegante que o preto puro
+                    const lineColor = [226, 232, 240]; // Bordas super sutis
 
-                    // Bloco 1: Informações Gerais
+                    const baseStyles = {
+                        fontSize: 9, // Letra um pouco menor
+                        cellPadding: 2.5, // Diminui a altura/gordura dos blocos
+                        textColor: bodyTextColor,
+                        lineColor: lineColor,
+                        lineWidth: 0.1
+                    };
+
+                    const baseHeadStyles = {
+                        fillColor: primaryColor,
+                        textColor: headerTextColor, 
+                        fontSize: 9.5,
+                        fontStyle: 'bold'
+                    };
+
                     doc.autoTable({
-                        startY: 30,
+                        startY: 24,
                         head: [['Informações Gerais']],
                         body: [
                             [`Data: ${d ? d.split('-').reverse().join('/') : ''}   |   Horário: ${h} às ${hf}`],
@@ -1260,13 +1275,12 @@
                             [`Operação: ${o}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
+                        headStyles: { ...baseHeadStyles, halign: 'center' },
+                        styles: baseStyles
                     });
 
-                    // Bloco 2: Participantes
                     doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 5,
+                        startY: doc.lastAutoTable.finalY + 4,
                         head: [['Participantes da Reunião']],
                         body: [
                             [`Líderes de Qualidade: ${q} ${q2 !== '-' ? ' / ' + q2 : ''}`],
@@ -1274,28 +1288,26 @@
                             [`Outros Participantes: ${extras}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
+                        headStyles: { ...baseHeadStyles, halign: 'center' },
+                        styles: baseStyles
                     });
 
-                    // Bloco 3: Pontos Discutidos
                     doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 5,
+                        startY: doc.lastAutoTable.finalY + 4,
                         head: [['1. Pontos Discutidos']],
                         body: [[fortes]],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
+                        headStyles: baseHeadStyles,
+                        styles: { ...baseStyles, cellPadding: 3.5 } // Um pouco mais de respiro pro texto longo
                     });
 
-                    // Bloco 4: Ações Definidas
                     doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 5,
+                        startY: doc.lastAutoTable.finalY + 4,
                         head: [['2. Ações Definidas (Cronograma)']],
                         body: [[acoes]],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
+                        headStyles: baseHeadStyles,
+                        styles: { ...baseStyles, cellPadding: 3.5 }
                     });
 
                     doc.save(`Ata_${Date.now()}.pdf`);
@@ -1310,19 +1322,33 @@
                     
                     const doc = new window.jspdf.jsPDF();
                     
-                    // Cabeçalho Profissional - Tom escuro (Slate-800)
-                    doc.setFontSize(18); 
-                    doc.setTextColor(30, 41, 59); 
+                    doc.setFontSize(15); 
+                    doc.setTextColor(51, 65, 85); 
                     doc.setFont("helvetica", "bold");
-                    doc.text("Ata de Reunião e Calibração", 105, 20, { align: "center" });
-
-                    // Paleta neutra corporativa (Slate-700)
+                    doc.text("Ata de Reunião e Calibração", 105, 16, { align: "center" });
+                    
                     const primaryColor = [51, 65, 85];
-                    const textColor = [50, 50, 50];
+                    const headerTextColor = [255, 255, 255]; 
+                    const bodyTextColor = [71, 85, 105]; 
+                    const lineColor = [226, 232, 240]; 
 
-                    // Bloco 1: Informações Gerais
+                    const baseStyles = {
+                        fontSize: 9, 
+                        cellPadding: 2.5,
+                        textColor: bodyTextColor,
+                        lineColor: lineColor,
+                        lineWidth: 0.1
+                    };
+
+                    const baseHeadStyles = {
+                        fillColor: primaryColor,
+                        textColor: headerTextColor, 
+                        fontSize: 9.5,
+                        fontStyle: 'bold'
+                    };
+
                     doc.autoTable({
-                        startY: 30,
+                        startY: 24,
                         head: [['Informações Gerais']],
                         body: [
                             [`Data: ${ata.data ? ata.data.split('-').reverse().join('/') : ''}   |   Horário: ${ata.hora} às ${ata.horaFim || '--:--'}`],
@@ -1330,13 +1356,12 @@
                             [`Operação: ${ata.op}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
+                        headStyles: { ...baseHeadStyles, halign: 'center' },
+                        styles: baseStyles
                     });
 
-                    // Bloco 2: Participantes
                     doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 5,
+                        startY: doc.lastAutoTable.finalY + 4,
                         head: [['Participantes da Reunião']],
                         body: [
                             [`Líderes de Qualidade: ${ata.qualidade} ${ata.qualidade2 ? ' / ' + ata.qualidade2 : ''}`],
@@ -1344,28 +1369,26 @@
                             [`Outros Participantes: ${ata.extras || 'Nenhum'}`]
                         ],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold', halign: 'center' },
-                        styles: { fontSize: 10, cellPadding: 4, textColor: textColor }
+                        headStyles: { ...baseHeadStyles, halign: 'center' },
+                        styles: baseStyles
                     });
 
-                    // Bloco 3: Pontos Discutidos
                     doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 5,
+                        startY: doc.lastAutoTable.finalY + 4,
                         head: [['1. Pontos Discutidos']],
                         body: [[ata.fortes || 'Nada registrado.']],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
+                        headStyles: baseHeadStyles,
+                        styles: { ...baseStyles, cellPadding: 3.5 }
                     });
 
-                    // Bloco 4: Ações Definidas
                     doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 5,
+                        startY: doc.lastAutoTable.finalY + 4,
                         head: [['2. Ações Definidas (Cronograma)']],
                         body: [[ata.acoes || 'Nenhuma ação.']],
                         theme: 'grid',
-                        headStyles: { fillColor: primaryColor, fontSize: 11, fontStyle: 'bold' },
-                        styles: { fontSize: 10, cellPadding: 5, textColor: textColor }
+                        headStyles: baseHeadStyles,
+                        styles: { ...baseStyles, cellPadding: 3.5 }
                     });
                     
                     doc.save(`Ata_${id}.pdf`);
