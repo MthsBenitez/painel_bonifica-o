@@ -425,6 +425,56 @@
         </div>
     </div>
 
+    <!-- Modal Visualização Legal Ata -->
+    <div id="view-ata-legal-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
+        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
+            <!-- Header Estilizado -->
+            <div class="bg-gradient-to-r from-blue-700 via-indigo-600 to-blue-800 p-6 relative shrink-0">
+                <button onclick="app.ata.closeAtaLegal()" class="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <div class="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i> Registro Oficial de Qualidade</div>
+                <h3 class="font-extrabold text-2xl text-white leading-tight pr-8" id="val-tema">Tema da Ata</h3>
+                <div class="flex flex-wrap items-center gap-3 mt-4 text-sm text-blue-100 font-semibold">
+                    <span class="bg-black/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10"><i class="fa-regular fa-calendar mr-1"></i> <span id="val-data">00/00/0000 (00:00 - 00:00)</span></span>
+                    <span class="bg-black/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10"><i class="fa-solid fa-network-wired mr-1"></i> Op: <span id="val-op">SAC</span></span>
+                </div>
+            </div>
+            
+            <!-- Corpo do Modal com Scroll -->
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6 bg-slate-50 dark:bg-slate-900">
+                
+                <!-- Participantes -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-user-tie text-blue-500"></i> Liderança Envolvida</div>
+                        <div class="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">Qualidade: <span class="font-normal" id="val-lideres"></span></div>
+                        <div class="text-sm font-bold text-slate-700 dark:text-slate-200">Supervisão: <span class="font-normal" id="val-sup"></span></div>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-users text-purple-500"></i> Outros Participantes</div>
+                        <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed" id="val-extras"></div>
+                    </div>
+                </div>
+
+                <!-- Pontos Fortes -->
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                    <h4 class="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2"><i class="fa-solid fa-comments text-green-500"></i> Pontos Discutidos</h4>
+                    <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50" id="val-fortes"></div>
+                </div>
+
+                <!-- Plano de Ação -->
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                    <h4 class="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-orange-500"></i> Ações Definidas (Cronograma)</h4>
+                    <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50" id="val-acoes"></div>
+                </div>
+            </div>
+            
+            <!-- Footer de Ações -->
+            <div class="p-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3 shrink-0">
+                <button onclick="app.ata.closeAtaLegal()" class="px-6 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl font-bold text-sm transition-colors">Fechar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW LOGIN -->
     <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden z-10 bg-slate-50 dark:bg-dark-bg">
         <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -1419,6 +1469,28 @@
                         app.ui.showAlert("Permissão Negada", "Apenas a administração pode excluir atas.", "error");
                     }
                 },
+
+                closeAtaLegal() {
+                    document.getElementById('view-ata-legal-modal').classList.add('hidden');
+                },
+                viewAtaLegal(id) {
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+                    
+                    document.getElementById('val-tema').textContent = ata.tema || 'Tema Não Definido';
+                    document.getElementById('val-data').textContent = `${ata.data ? ata.data.split('-').reverse().join('/') : ''} (${ata.hora} às ${ata.horaFim || '--:--'})`;
+                    document.getElementById('val-op').textContent = ata.op || 'N/A';
+                    
+                    document.getElementById('val-lideres').textContent = `${ata.qualidade} ${ata.qualidade2 ? ' / ' + ata.qualidade2 : ''}`;
+                    document.getElementById('val-sup').textContent = ata.sup || '-';
+                    document.getElementById('val-extras').textContent = ata.extras || 'Nenhum participante extra.';
+                    
+                    document.getElementById('val-fortes').innerHTML = (ata.fortes || 'Nada registrado.').replace(/\n/g, '<br/>');
+                    document.getElementById('val-acoes').innerHTML = (ata.acoes || 'Nenhuma ação.').replace(/\n/g, '<br/>');
+
+                    document.getElementById('view-ata-legal-modal').classList.remove('hidden');
+                },
+            
                 exportAtasXLSX() {
                     const atas = Object.values(app.atasList);
                     if(atas.length === 0) return app.ui.showAlert("Erro", "Não há atas para exportar.", "error");
@@ -3671,15 +3743,27 @@
                             const badgeStatus = isDevolvido ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold">Devolvida (Correção)</span>` : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold">Concluída</span>`;
                             const commentHtml = isDevolvido ? `<div class="mt-2 text-xs text-red-600 font-bold bg-red-50 p-2 rounded-lg border border-red-200"><i class="fa-solid fa-reply"></i> Motivo Reprovação: ${ata.comentario}</div>` : '';
 
+                            // Lógica para resgatar a foto do autor da Ata
+                            const ataUser = app.users.find(u => u.matricula === ata.matricula);
+                            const ataAvatar = (ataUser && ataUser.foto) ? ataUser.foto : \`https://ui-avatars.com/api/?name=\${encodeURIComponent(ata.autor || 'User')}&background=cbd5e1&color=ffffff\`;
+
                             html += `
                                 <div class="glass-card rounded-2xl p-6 border-t-4 border-t-blue-500 shadow-sm flex flex-col relative group">
-                                    <button type="button" onclick="app.ata.excluirAta('${ata.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors"><i class="fa-solid fa-trash"></i></button>
+                                    <button type="button" onclick="app.ata.excluirAta('${ata.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors z-10"><i class="fa-solid fa-trash"></i></button>
                                     
                                     <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2 flex flex-wrap items-center gap-2">
                                         <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora} - ${ata.horaFim || '--:--'}) ${badgeStatus}
                                     </div>
-                                    <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-2 pr-6">${ata.tema}</h3>
-                                    <div class="text-xs font-bold text-slate-600 dark:text-slate-400 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3"><i class="fa-solid fa-user-pen"></i> Criado por: ${ata.autor} | Operação: ${ata.op}</div>
+                                    <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-4 pr-6">${ata.tema}</h3>
+                                    
+                                    <!-- Bloco do Autor com Foto -->
+                                    <div class="flex items-center gap-3 mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                                        <img src="${ataAvatar}" class="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-600 shadow-sm">
+                                        <div class="text-xs font-bold text-slate-500 dark:text-slate-400 leading-tight">
+                                            <span class="text-slate-800 dark:text-white">${ata.autor}</span><br>
+                                            <span class="text-[10px] uppercase font-normal">Operação: ${ata.op}</span>
+                                        </div>
+                                    </div>
                                     
                                     <div class="grid grid-cols-2 gap-2 mb-4">
                                         <div class="bg-slate-50 dark:bg-slate-800 p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 text-center"><div class="text-[9px] uppercase font-bold text-slate-400">Qualidade (Líder)</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">${ata.qualidade}</div></div>
@@ -3693,10 +3777,14 @@
                                     
                                     ${commentHtml}
 
-                                    <div class="flex gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                        ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
-                                        <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="flex-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
-                                        <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
+                                    <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                        <!-- Novo Botão de Visualização Legal Ocupando Linha Inteira (se for devolvido, divide espaço com o 'Sugerir Correção') -->
+                                        <div class="col-span-2 flex gap-2">
+                                            <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualização Legal</button>
+                                            ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
+                                        </div>
+                                        <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                        <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="col-span-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
                                     </div>
                                 </div>
                             `;
