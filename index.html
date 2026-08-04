@@ -4542,28 +4542,47 @@
                         try {
                             if(!app.isAdmin) return;
                             
-                            let state = app.admin.monitoriasState || { ranking: [], diario: {}, totalLido: 0 };
+                            let state = app.admin.monitoriasState || { ranking: [] };
                             
                             let html = `
                                 <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                     <div>
-                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Importação de Monitorias</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Faça o upload do relatório diário. O sistema recalcula automaticamente a cada envio (Meta: 400/mês).</p>
+                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou ajuste manualmente os valores. Foco total nos cadastrados.</p>
                                     </div>
                                     <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                        <i class="fa-solid fa-upload"></i> Subir Planilha CSV/XLSX
+                                        <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
                                         <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
                                     </label>
                                 </div>
                             `;
                             
-                            if(state.totalLido > 0) {
+                            if(state.ranking && state.ranking.length > 0) {
+                                // Calcula totais do Dash
+                                const totalMonitorias = state.ranking.reduce((acc, curr) => acc + curr.total, 0);
+                                const totalFaltante = state.ranking.reduce((acc, curr) => acc + curr.falta, 0);
+                                const totalFeedbacks = state.ranking.reduce((acc, curr) => acc + curr.pendenteFeedback, 0);
+                            
                                 html += `
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                        <!-- Ranking e Feedbacks -->
-                                        <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
-                                            <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Status por Monitor</h3>
-                                            <div class="overflow-y-auto max-h-[350px] custom-scrollbar pr-2 space-y-3 flex-1">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                            <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
+                                            <div><div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalMonitorias}</div></div>
+                                        </div>
+                                        <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                            <div class="text-3xl text-orange-500"><i class="fa-solid fa-bullseye"></i></div>
+                                            <div><div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Faltam para Meta Global</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFaltante}</div></div>
+                                        </div>
+                                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                            <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                            <div><div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Atrasados</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFeedbacks}</div></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Ranking e Feedbacks -->
+                                    <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[550px]">
+                                        <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Status e Quantidades por Monitor</h3>
+                                        <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
                                 `;
                                 
                                 state.ranking.forEach((r, idx) => {
@@ -4571,31 +4590,29 @@
                                         ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Atrasados (< 85)</span>` 
                                         : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
                                         
+                                    let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Lançado Manualmente"><i class="fa-solid fa-hand"></i> Editado</span>` : '';
+                                    
                                     html += `
-                                        <div class="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center hover:border-blue-300 transition-colors">
+                                        <div class="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center hover:border-blue-300 transition-colors gap-2">
                                             <div class="flex items-center gap-3">
                                                 <div class="w-7 h-7 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-xs font-black shrink-0">${idx+1}º</div>
                                                 <div>
-                                                    <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome}</div>
+                                                    <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome} ${manualBadge}</div>
                                                     <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
                                                         <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
                                                         ${pendenteBadge}
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="text-xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-lg">${r.total}</div>
+                                            <div class="flex items-center gap-2 w-full md:w-auto">
+                                                <div class="text-xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg flex-1 md:flex-none text-center">${r.total}</div>
+                                                <button onclick="app.admin.overrideMonitoria('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i> Editar</button>
+                                            </div>
                                         </div>
                                     `;
                                 });
                                 
                                 html += `
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Gráfico Diário -->
-                                        <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
-                                            <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-chart-line text-green-500"></i> Volume Diário (Total Equipe)</h3>
-                                            <div class="relative flex-1 min-h-[250px] w-full"><canvas id="chart-monitorias-dia"></canvas></div>
                                         </div>
                                     </div>
                                 `;
@@ -4604,45 +4621,19 @@
                                     <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
                                         <i class="fa-solid fa-file-csv text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
                                         <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Nenhum dado carregado</h4>
-                                        <p class="text-slate-500 text-sm">Faça o upload do relatório CSV/XLSX para visualizar o progresso da equipe.</p>
+                                        <p class="text-slate-500 text-sm mb-4">Faça o upload do relatório CSV/XLSX ou inicie o quadro com seus usuários cadastrados.</p>
+                                        <button onclick="app.admin.calcularPlanilhaMonitoria([])" class="bg-slate-100 text-slate-600 font-bold px-4 py-2 rounded-lg text-sm border hover:bg-slate-200 transition">Exibir Quadro em Branco para Lançamento Manual</button>
                                     </div>
                                 `;
                             }
                             
                             container.innerHTML = html;
                             
-                            // Renderiza o gráfico se houver dados
-                            if(state.totalLido > 0) {
-                                setTimeout(() => {
-                                    const ctx = document.getElementById('chart-monitorias-dia');
-                                    if(ctx) {
-                                        const labels = Object.keys(state.diario).sort();
-                                        const data = labels.map(l => state.diario[l]);
-                                        const isDark = document.documentElement.classList.contains('dark');
-                                        const textColor = isDark ? '#94a3b8' : '#64748b';
-                                        const gridColor = isDark ? '#334155' : '#e2e8f0';
-                                        
-                                        if(window.myChartMonDia) window.myChartMonDia.destroy();
-                                        window.myChartMonDia = new Chart(ctx, {
-                                            type: 'bar',
-                                            data: { 
-                                                labels: labels, 
-                                                datasets: [{ label: 'Monitorias Realizadas', data: data, backgroundColor: '#10b981', borderRadius: 4 }] 
-                                            },
-                                            options: { 
-                                                responsive: true, maintainAspectRatio: false, 
-                                                scales: { y: { beginAtZero: true, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, 
-                                                plugins: { legend: { display: false } } 
-                                            }
-                                        });
-                                    }
-                                }, 100);
-                            }
                         } catch (err) {
                             container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
                             console.error(err);
                         }
-                    } // <-- FECHAMENTO DA NOVA ABA
+                    } // <-- FECHAMENTO DA FUNÇÃO
             
                 }, // <-- Fim do Objeto UI
 
@@ -4702,7 +4693,6 @@
                     const file = input.files[0];
                     if(!file) return;
                     
-                    // Alerta de carregamento
                     app.ui.showAlert("Processando...", "Aguarde enquanto o sistema lê o arquivo e cruza as matrículas...", "info");
                     
                     const reader = new FileReader();
@@ -4710,87 +4700,87 @@
                         const data = new Uint8Array(e.target.result);
                         const workbook = XLSX.read(data, {type: 'array'});
                         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        // Converte para JSON garantindo que não pule colunas vazias
                         const json = XLSX.utils.sheet_to_json(firstSheet, {defval: ""}); 
                         this.calcularPlanilhaMonitoria(json);
-                        document.getElementById('global-modal').classList.add('hidden'); // Fecha alerta
+                        document.getElementById('global-modal').classList.add('hidden'); 
                     };
                     reader.readAsArrayBuffer(file);
-                    input.value = ''; // Reseta o input para permitir enviar o mesmo arquivo novamente
+                    input.value = ''; 
                 },
                 
                 calcularPlanilhaMonitoria(json) {
-                    // Zera o estado anterior (como pedido: sempre que alimenta, ele reseta)
-                    this.monitoriasState = {
-                        ranking: [],
-                        diario: {},
-                        totalLido: 0
-                    };
-                    
+                    this.monitoriasState = { ranking: [] };
                     const mapMonitor = {};
                     
+                    // PREENCHE A LISTA INICIAL COM TODOS OS USUÁRIOS CADASTRADOS (ZERA OS VALORES)
+                    app.users.forEach(u => {
+                        mapMonitor[u.matricula] = {
+                            matricula: u.matricula,
+                            nome: u.nome,
+                            total: 0,
+                            falta: 400,
+                            pendenteFeedback: 0,
+                            manual: false
+                        };
+                    });
+
+                    // PERCORRE A PLANILHA (SE EXISTIR) PARA SOMAR PONTOS
                     json.forEach(row => {
-                        // Função flexível para pegar a coluna ignorando Case Sensitive e espaços
                         const getCol = (name) => {
                             const key = Object.keys(row).find(k => String(k).trim().toUpperCase() === name.toUpperCase());
                             return row[key];
                         };
                         
                         const matriculaRaw = getCol('MATRÍCULA') || getCol('MATRICULA');
-                        if(!matriculaRaw) return; // Pula linha se não houver matrícula
+                        if(!matriculaRaw) return; 
                         
                         const matStr = String(matriculaRaw).trim();
                         
-                        // Se for a primeira vez que essa matrícula aparece no loop, prepara o objeto cruzando com app.users
-                        if(!mapMonitor[matStr]) {
-                            const userDB = app.users.find(x => String(x.matricula) === matStr);
-                            mapMonitor[matStr] = {
-                                matricula: matStr,
-                                nome: userDB ? userDB.nome : `Não Cadastrado (${matStr})`,
-                                total: 0,
-                                falta: 400,
-                                pendenteFeedback: 0
-                            };
-                        }
+                        // REGRA: "os que aparecem não cadastrados não irão aparecer"
+                        // Se o usuário não está no mapMonitor (não é cadastrado no sistema), ignoramos.
+                        if(!mapMonitor[matStr]) return;
                         
-                        // +1 Monitoria realizada
+                        // Atualiza as contagens
                         mapMonitor[matStr].total++;
                         mapMonitor[matStr].falta = Math.max(0, 400 - mapMonitor[matStr].total);
                         
-                        // Regra de Feedback Obrigatório (< 85 e sem status 'feedback_aplicado')
                         const notaRaw = getCol('NOTA MONITORIA');
                         const statusRaw = getCol('STATUS MONITORIA');
-                        
-                        // Garante conversão segura para número (trata vírgula como ponto, se houver)
                         const nota = parseFloat(String(notaRaw).replace(',', '.'));
                         const status = String(statusRaw).trim().toLowerCase();
                         
-                        if(!isNaN(nota) && nota < 85) {
-                            if(status !== 'feedback_aplicado') {
-                                mapMonitor[matStr].pendenteFeedback++;
-                            }
+                        // Verifica Feedback
+                        if(!isNaN(nota) && nota < 85 && status !== 'feedback_aplicado') {
+                            mapMonitor[matStr].pendenteFeedback++;
                         }
-                        
-                        // Contagem Diária para o Gráfico (Busca coluna de data ou usa genérico)
-                        let dataStr = getCol('DATA') || getCol('DATA MONITORIA') || getCol('CRIADO EM');
-                        if(!dataStr) {
-                            dataStr = 'Sem Data Especificada';
-                        } else {
-                            // Se o excel converter data para serial, tentamos usar os 10 primeiros caracteres se for string
-                            dataStr = String(dataStr).substring(0, 10); 
-                        }
-                        
-                        if(!this.monitoriasState.diario[dataStr]) this.monitoriasState.diario[dataStr] = 0;
-                        this.monitoriasState.diario[dataStr]++;
-                        
-                        this.monitoriasState.totalLido++;
                     });
                     
-                    // Transforma em array e ordena por quem tem mais (Ranking Total)
+                    // Converte pra Array e Ordena
                     this.monitoriasState.ranking = Object.values(mapMonitor).sort((a, b) => b.total - a.total);
                     
                     app.ui.renderTab('import_monitorias', true);
-                    app.ui.showAlert("Sucesso!", "Planilha importada e dados calculados com sucesso.", "success");
+                    if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha cruzada com sua equipe com sucesso.", "success");
+                },
+
+                overrideMonitoria(matricula) {
+                    if(!this.monitoriasState || !this.monitoriasState.ranking) return;
+                    const r = this.monitoriasState.ranking.find(x => x.matricula === matricula);
+                    if(!r) return;
+                    
+                    const novoTotal = prompt(`Aplicar total manual para ${r.nome} :\n(Atual lido pelo sistema: ${r.total})`, r.total);
+                    
+                    if(novoTotal !== null && novoTotal.trim() !== '') {
+                        const parsed = parseInt(novoTotal);
+                        if(!isNaN(parsed)) {
+                            r.total = parsed;
+                            r.falta = Math.max(0, 400 - r.total);
+                            r.manual = true; // Flag visual pro usuário saber que foi editado na mão
+                            
+                            // Reordena e renderiza
+                            this.monitoriasState.ranking.sort((a, b) => b.total - a.total);
+                            app.ui.renderTab('import_monitorias', true);
+                        }
+                    }
                 },
 
                 renderView_ImportMonitorias(container) {
