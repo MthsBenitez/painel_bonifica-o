@@ -4594,10 +4594,29 @@
                             `;
                             
                             if(state.ranking && state.ranking.length > 0) {
-                                const totalMonitorias = state.ranking.reduce((acc, curr) => acc + curr.total, 0);
-                                const totalFaltante = state.ranking.reduce((acc, curr) => acc + curr.falta, 0);
-                                const totalFeedbacks = state.ranking.reduce((acc, curr) => acc + curr.pendenteFeedback, 0);
-                                const metaGlobal = state.ranking.length * 400; 
+                                // 1. CÁLCULOS GLOBAIS DA EQUIPE
+                                const numUsers = state.ranking.length;
+                                const metaGlobal = numUsers * 400; 
+                                const metaGlobal80 = numUsers * 320; // O alvo de 80%
+                                
+                                let totalMonitorias = 0;
+                                let totalFaltante = 0;
+                                let totalFeedbacks = 0;
+                                let totalAbaixo85Global = 0;
+                                let feedbacksAplicadosGlobal = 0;
+                                
+                                state.ranking.forEach(r => {
+                                    totalMonitorias += r.total;
+                                    totalFaltante += r.falta;
+                                    totalFeedbacks += r.pendenteFeedback;
+                                    totalAbaixo85Global += r.totalAbaixo85 || 0;
+                                    feedbacksAplicadosGlobal += r.feedbacksAplicados || 0;
+                                });
+                                
+                                let pctGlobal = metaGlobal > 0 ? Math.min(100, (totalMonitorias / metaGlobal) * 100).toFixed(1) : 0;
+                                let projecaoGlobal = Math.round((totalMonitorias / wd.passed) * wd.total);
+                                let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-green-500' : (projecaoGlobal >= metaGlobal80 ? 'text-blue-500' : 'text-orange-500');
+                                let taxaFbGlobal = totalAbaixo85Global > 0 ? ((feedbacksAplicadosGlobal / totalAbaixo85Global) * 100).toFixed(0) : 100;
                             
                                 html += `
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4618,9 +4637,59 @@
                                         </div>
                                     </div>
 
-                                    <!-- Tabela de Supervisão -->
+                                    <!-- 2. PAINEL GLOBAL DA EQUIPE -->
+                                    <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative overflow-hidden border-t-4 border-t-blue-500 shadow-md">
+                                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+                                            <i class="fa-solid fa-globe text-blue-500"></i> Desempenho Global da Equipe
+                                        </h3>
+                                        
+                                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+                                            <div>
+                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Volume Validado Total</div>
+                                                <div class="text-4xl font-black text-slate-800 dark:text-white flex items-baseline gap-2">
+                                                    ${totalMonitorias} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span>
+                                                </div>
+                                            </div>
+                                            <div class="text-left md:text-right">
+                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Projeção Mês (Equipe)</div>
+                                                <div class="text-4xl font-black ${projColorGlobal}">${projecaoGlobal} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span></div>
+                                            </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            <!-- Barra Global Monitorias -->
+                                            <div class="relative pt-3">
+                                                <div class="flex justify-between items-end text-xs font-bold text-slate-500 mb-2">
+                                                    <span class="uppercase tracking-widest">Progresso Monitorias</span>
+                                                    <span class="text-blue-600 dark:text-blue-400 font-black">${pctGlobal}%</span>
+                                                </div>
+                                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-3.5 relative shadow-inner border border-slate-300 dark:border-slate-600">
+                                                    <div class="bg-blue-500 h-3.5 rounded-full transition-all duration-1000" style="width: ${pctGlobal}%"></div>
+                                                    <!-- Marcador 80% Global -->
+                                                    <div class="absolute top-[-5px] bottom-[-5px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
+                                                    <div class="absolute -top-6 left-[80%] -translate-x-1/2 text-[10px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-2 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">${metaGlobal80}</div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Barra Global Feedback -->
+                                            <div class="relative pt-3">
+                                                <div class="flex justify-between items-end text-xs font-bold text-slate-500 mb-2">
+                                                    <span class="uppercase tracking-widest">Feedbacks Aplicados</span>
+                                                    <span class="text-purple-600 dark:text-purple-400 font-black">${taxaFbGlobal}%</span>
+                                                </div>
+                                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-3.5 relative shadow-inner border border-slate-300 dark:border-slate-600">
+                                                    <div class="bg-purple-500 h-3.5 rounded-full transition-all duration-1000" style="width: ${taxaFbGlobal}%"></div>
+                                                    <!-- Marcador 80% Global -->
+                                                    <div class="absolute top-[-5px] bottom-[-5px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
+                                                    <div class="absolute -top-6 left-[80%] -translate-x-1/2 text-[10px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-2 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">80%</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 3. Tabela de Supervisão Individual -->
                                     <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[650px]">
-                                        <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Performance Operacional</h3>
+                                        <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Performance Operacional (Individual)</h3>
                                         <div class="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
                                 `;
                                 
@@ -4723,7 +4792,6 @@
                             console.error(err);
                         }
                     },
-
                     renderView_RankingMonitorias(container) {
                         try {
                             if(app.isAdmin) return;
