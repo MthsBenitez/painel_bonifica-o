@@ -2286,7 +2286,7 @@
                             { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ] : [
                             { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, // NOVA ABA USUÁRIO
-                            { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Ranking Qualidade'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
+                            { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
                             { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
                             { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ];
@@ -4566,14 +4566,10 @@
                             const wd = app.utils.getWorkingDays(app.currentMonth);
                             
                             let html = `
-                                <style>
-                                    @keyframes progress-shine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-                                    .animate-progress-shine { animation: progress-shine 2s infinite linear; }
-                                </style>
                                 <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                     <div>
                                         <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou ajuste manualmente os valores. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou some valores manualmente. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
                                     </div>
                                     <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
                                         <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
@@ -4603,7 +4599,7 @@
                                         </div>
                                     </div>
 
-                                    <!-- Ranking -->
+                                    <!-- Tabela de Supervisão -->
                                     <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[600px]">
                                         <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Performance Operacional</h3>
                                         <div class="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
@@ -4614,9 +4610,8 @@
                                         ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Atrasados (< 85)</span>` 
                                         : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
                                         
-                                    let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Lançado Manualmente"><i class="fa-solid fa-hand"></i> Editado</span>` : '';
+                                    let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Soma Manual Adicionada"><i class="fa-solid fa-plus-minus"></i> Ajustado</span>` : '';
                                     
-                                    // Progress Bar & Projeção Math
                                     let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
                                     let projecao = Math.round((r.total / wd.passed) * wd.total);
                                     let projColor = projecao >= 400 ? 'text-green-500' : 'text-orange-500';
@@ -4641,14 +4636,8 @@
                                                     </div>
                                                     <div class="flex items-center gap-2">
                                                         <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
-                                                        <button onclick="app.admin.overrideMonitoria('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i></button>
+                                                        <button onclick="app.admin.addMonitoriasManual('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-plus"></i> Somar</button>
                                                     </div>
-                                                </div>
-                                            </div>
-                                            <!-- Barra de Progresso com Efeito -->
-                                            <div class="w-full bg-slate-100 dark:bg-slate-900 rounded-full h-2.5 relative overflow-hidden shadow-inner">
-                                                <div class="bg-gradient-to-r from-blue-500 to-blue-400 h-2.5 rounded-full transition-all duration-1000 ease-out relative" style="width: ${pct}%">
-                                                    <div class="absolute top-0 left-0 right-0 bottom-0 bg-white/20 animate-progress-shine"></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -4674,92 +4663,142 @@
                             
                         } catch (err) {
                             container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
-                            console.error(err);
                         }
                     },
 
                     renderView_RankingMonitorias(container) {
-                        // VISÃO LIMPA PARA O USUÁRIO
+                        if(app.isAdmin) return;
+                        
                         let state = app.monitoriasData || { ranking: [] };
                         const wd = app.utils.getWorkingDays(app.currentMonth);
                         
+                        // Busca o usuário logado no meio do cruzamento
+                        const r = state.ranking.find(x => x.matricula === app.currentUser.matricula) || { 
+                            total: 0, falta: 400, totalAbaixo85: 0, feedbacksAplicados: 0, pendenteFeedback: 0 
+                        };
+                        
+                        // Cálculos Matemáticos e Projeções
+                        const pctAtual = Math.min(100, (r.total / 400) * 100).toFixed(2);
+                        const projecao = Math.round((r.total / wd.passed) * wd.total);
+                        
+                        const diasRestantes = Math.max(1, wd.total - wd.passed);
+                        const ritmoDiario = Math.ceil(Math.max(0, 400 - r.total) / diasRestantes);
+                        
+                        // Taxa de Feedbacks %
+                        const taxaFb = r.totalAbaixo85 > 0 ? ((r.feedbacksAplicados / r.totalAbaixo85) * 100).toFixed(0) : 100;
+                        
+                        // Dinheiro (Baseado no Peso da Meta de Monitorias - Ex: g1)
+                        const g1 = app.config.goals.find(g => g.id === 'g1');
+                        const maxVal = g1 ? app.config.baseValue * g1.weight : 0;
+                        
+                        // Função interna para classificar o quadrante financeiro
+                        const getQuad = (p) => {
+                            if(p >= 100) return { q: 'Q1 (Excelente)', m: 1.0, c: 'text-green-500', bg: 'bg-green-500' };
+                            if(p >= 90) return { q: 'Q2 (Bom)', m: 0.75, c: 'text-blue-500', bg: 'bg-blue-500' };
+                            if(p >= 80) return { q: 'Q3 (Regular)', m: 0.50, c: 'text-orange-500', bg: 'bg-orange-500' };
+                            if(p >= 70) return { q: 'Q4 (Atenção)', m: 0.25, c: 'text-amber-500', bg: 'bg-amber-500' };
+                            return { q: 'Q5 (Insuficiente)', m: 0, c: 'text-red-500', bg: 'bg-red-500' };
+                        };
+                        
+                        const quadAtual = getQuad((r.total / 400) * 100);
+                        const quadProj = getQuad((projecao / 400) * 100);
+                        
+                        const granaGarantida = maxVal * quadAtual.m;
+                        const granaProj = maxVal * quadProj.m;
+                        
                         let html = `
                             <style>
-                                @keyframes progress-shine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-                                .animate-progress-shine { animation: progress-shine 2s infinite linear; }
+                                @keyframes spark-flow { 0% { left: -100%; opacity: 0; } 50% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+                                .spark-effect { position: relative; overflow: hidden; }
+                                .spark-effect::after { content: ''; position: absolute; top: 0; bottom: 0; width: 60%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent); animation: spark-flow 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1); transform: skewX(-20deg); z-index: 10; }
+                                
+                                .metric-card { background: linear-gradient(145deg, rgba(255,255,255,1) 0%, rgba(248,250,252,1) 100%); border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -2px rgba(0,0,0,0.02); border-radius: 1.5rem; transition: transform 0.3s; }
+                                .dark .metric-card { background: linear-gradient(145deg, rgba(30,41,59,1) 0%, rgba(15,23,42,1) 100%); border-color: #334155; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+                                .metric-card:hover { transform: translateY(-5px); }
                             </style>
+                            
                             <div class="mb-8">
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ranking de Qualidade (Monitorias)</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe a sua evolução em tempo real. A meta de ouro é de 400 monitorias entregues no mês!</p>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Meu Desempenho Operacional</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe sua jornada analítica. A meta de ouro é a entrega de 400 monitorias.</p>
+                            </div>
+                            
+                            <!-- Barra de Progresso Master -->
+                            <div class="glass-card p-8 rounded-3xl mb-8 relative overflow-hidden">
+                                <div class="absolute -right-10 -top-10 text-9xl text-green-500 opacity-5"><i class="fa-solid fa-trophy"></i></div>
+                                
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 relative z-10 gap-4">
+                                    <div>
+                                        <div class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Volume Validado</div>
+                                        <div class="text-5xl font-black text-slate-800 dark:text-white flex items-baseline gap-2">
+                                            ${r.total} <span class="text-xl text-slate-400 font-medium">/ 400</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-left md:text-right">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Progresso</div>
+                                        <div class="text-4xl font-black ${quadAtual.c} drop-shadow-sm">${pctAtual}%</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-8 relative shadow-inner overflow-hidden border border-slate-300 dark:border-slate-600">
+                                    <div class="${quadAtual.bg} h-8 rounded-full transition-all duration-1000 ease-out spark-effect shadow-[0_0_10px_rgba(34,197,94,0.5)]" style="width: ${pctAtual}%"></div>
+                                </div>
+                            </div>
+
+                            <!-- Cartões de Dopamina (Dash) -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+                                
+                                <!-- Card: Ritmo Diário -->
+                                <div class="metric-card p-6 flex flex-col justify-between">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="w-12 h-12 rounded-xl bg-orange-50 dark:bg-orange-900/30 text-orange-500 flex items-center justify-center text-xl"><i class="fa-solid fa-stopwatch"></i></div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Ritmo para<br>bater 100%</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${porDia} <span class="text-sm text-slate-500 font-medium">/ dia</span></div>
+                                        <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5"><i class="fa-regular fa-calendar-days"></i> Restam ${diasRestantes} dias úteis</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Card: Projeção -->
+                                <div class="metric-card p-6 flex flex-col justify-between">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-500 flex items-center justify-center text-xl"><i class="fa-solid fa-rocket"></i></div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Projeção<br>Mensal</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${projecao}</div>
+                                        <div class="text-[11px] font-bold ${quadProj.c} flex items-center gap-1.5"><i class="fa-solid fa-chart-line"></i> Atingirá o ${quadProj.q}</div>
+                                    </div>
+                                </div>
+
+                                <!-- Card: Financeiro Garantido -->
+                                <div class="metric-card p-6 flex flex-col justify-between">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="w-12 h-12 rounded-xl bg-green-50 dark:bg-green-900/30 text-green-500 flex items-center justify-center text-xl"><i class="fa-solid fa-sack-dollar"></i></div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Valor Pela<br>Regra Atual</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-3xl font-black text-green-600 dark:text-green-400 mb-1">R$ ${granaGarantida.toFixed(2).replace('.', ',')}</div>
+                                        <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5"><i class="fa-solid fa-piggy-bank"></i> Estimação Projetada: R$ ${granaProj.toFixed(2).replace('.', ',')}</div>
+                                    </div>
+                                </div>
+
+                                <!-- Card: Feedbacks Aplicados -->
+                                <div class="metric-card p-6 flex flex-col justify-between border-b-4 ${r.pendenteFeedback > 0 ? 'border-b-red-500' : 'border-b-purple-500'}">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-500 flex items-center justify-center text-xl"><i class="fa-solid fa-comments"></i></div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Qualidade<br>(Notas < 85)</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${taxaFb}% <span class="text-sm font-medium text-slate-500">aplicados</span></div>
+                                        <div class="text-[11px] font-bold ${r.pendenteFeedback > 0 ? 'text-red-500' : 'text-green-500'} flex items-center gap-1.5">
+                                            ${r.pendenteFeedback > 0 ? `<i class="fa-solid fa-triangle-exclamation"></i> ${r.pendenteFeedback} atrasado(s)` : `<i class="fa-solid fa-check-double"></i> Nenhum pendente`}
+                                        </div>
+                                    </div>
+                                </div>
+
                             </div>
                         `;
-                        
-                        if(state.ranking && state.ranking.length > 0) {
-                            html += `
-                                <div class="glass-card p-6 md:p-8 rounded-3xl flex flex-col mb-8 h-auto">
-                                    <div class="space-y-4">
-                            `;
-                            
-                            state.ranking.forEach((r, idx) => {
-                                // Destaque visual se for o próprio usuário logado
-                                const isMe = app.currentUser && r.matricula === app.currentUser.matricula;
-                                const borderClass = isMe ? 'border-blue-400 ring-2 ring-blue-400/20 bg-blue-50/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80';
-                                
-                                let pendenteBadge = r.pendenteFeedback > 0 
-                                    ? `<span class="text-red-500 text-[10px] font-bold ml-2"><i class="fa-solid fa-triangle-exclamation"></i> Feedbacks Pendentes</span>` 
-                                    : ``;
-                                    
-                                let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
-                                let projecao = Math.round((r.total / wd.passed) * wd.total);
-                                let projColor = projecao >= 400 ? 'text-green-500' : 'text-orange-500';
-                                
-                                html += `
-                                    <div class="p-4 rounded-xl border shadow-sm transition-colors ${borderClass}">
-                                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-3">
-                                            <div class="flex items-center gap-3 w-full md:w-auto">
-                                                <div class="w-8 h-8 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700 shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-sm font-black shrink-0">${idx+1}º</div>
-                                                <div>
-                                                    <div class="font-bold text-base text-slate-800 dark:text-white leading-tight flex items-center gap-2">
-                                                        ${r.nome} ${isMe ? '<span class="bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">Você</span>' : ''}
-                                                    </div>
-                                                    <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                                                        <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
-                                                        ${isMe ? pendenteBadge : ''}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="flex items-center justify-between w-full md:w-auto gap-6">
-                                                <div class="text-right">
-                                                    <div class="text-[9px] uppercase font-bold text-slate-400">Projeção</div>
-                                                    <div class="font-black text-sm ${projColor}">${projecao} <span class="text-slate-400 text-[10px] font-normal">/ 400</span></div>
-                                                </div>
-                                                <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
-                                            </div>
-                                        </div>
-                                        <!-- Barra de Progresso com Efeito -->
-                                        <div class="w-full bg-slate-100 dark:bg-slate-900 rounded-full h-2.5 relative overflow-hidden shadow-inner mt-2">
-                                            <div class="bg-gradient-to-r ${isMe ? 'from-green-500 to-emerald-400' : 'from-blue-500 to-blue-400'} h-2.5 rounded-full transition-all duration-1000 ease-out relative" style="width: ${pct}%">
-                                                <div class="absolute top-0 left-0 right-0 bottom-0 bg-white/20 animate-progress-shine"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            });
-                            
-                            html += `
-                                    </div>
-                                </div>
-                            `;
-                        } else {
-                            html += `
-                                <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
-                                    <i class="fa-solid fa-ranking-star text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
-                                    <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Ranking em Apuração</h4>
-                                    <p class="text-slate-500 text-sm">O ranking oficial de monitorias deste mês será publicado em breve.</p>
-                                </div>
-                            `;
-                        }
-                        
                         container.innerHTML = html;
                     }, // <-- FECHAMENTO DA FUNÇÃO (Vírgula de separação obrigatória) // <-- FECHAMENTO DA FUNÇÃO
             
@@ -4847,6 +4886,8 @@
                             nome: u.nome,
                             total: 0,
                             falta: 400,
+                            totalAbaixo85: 0,
+                            feedbacksAplicados: 0,
                             pendenteFeedback: 0,
                             manual: false
                         };
@@ -4876,9 +4917,14 @@
                         const nota = parseFloat(String(notaRaw).replace(',', '.'));
                         const status = String(statusRaw).trim().toLowerCase();
                         
-                        // Verifica Feedback
-                        if(!isNaN(nota) && nota < 85 && status !== 'feedback_aplicado') {
-                            mapMonitor[matStr].pendenteFeedback++;
+                        // Verifica Feedbacks Exigidos (Abaixo de 85)
+                        if(!isNaN(nota) && nota < 85) {
+                            mapMonitor[matStr].totalAbaixo85++;
+                            if(status === 'feedback_aplicado') {
+                                mapMonitor[matStr].feedbacksAplicados++;
+                            } else {
+                                mapMonitor[matStr].pendenteFeedback++;
+                            }
                         }
                     });
                     
@@ -4890,6 +4936,29 @@
                         app.ui.renderTab('import_monitorias', true);
                         if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada e salva no banco de dados com sucesso.", "success");
                     });
+                },
+
+                addMonitoriasManual(matricula) {
+                    if(!app.monitoriasData || !app.monitoriasData.ranking) return;
+                    const r = app.monitoriasData.ranking.find(x => x.matricula === matricula);
+                    if(!r) return;
+                    
+                    const extra = prompt(`Quantas monitorias você deseja SOMAR para ${r.nome}?\n(Total Atualizado Pelo Sistema: ${r.total})`, "0");
+                    
+                    if(extra !== null && extra.trim() !== '') {
+                        const parsed = parseInt(extra);
+                        if(!isNaN(parsed) && parsed !== 0) {
+                            r.total += parsed; // Aqui está somando com o que já tem!
+                            r.falta = Math.max(0, 400 - r.total);
+                            r.manual = true; 
+                            
+                            app.monitoriasData.ranking.sort((a, b) => b.total - a.total);
+                            // Salva a alteração manual no banco de dados
+                            app.storage.saveMonitorias().then(() => {
+                                app.ui.renderTab('import_monitorias', true);
+                            });
+                        }
+                    }
                 },
 
                 overrideMonitoria(matricula) {
