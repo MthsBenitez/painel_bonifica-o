@@ -4535,10 +4535,116 @@
                         html += `<tr class="border-b border-slate-100"><td class="py-3 font-bold">${op.nome}</td><td class="py-3">${op.max || '-'}</td><td class="py-3 text-right"><button onclick="app.admin.deleteOperacao('${op.id}')" class="text-red-500 font-bold bg-red-50 px-3 py-1 rounded-lg">Excluir</button></td></tr>`;
                     });
                     html += `</tbody></table></div></div>`;
-                    container.innerHTML = html;
-                }
-        
-            }, // <-- Fim do Objeto UI
+                        container.innerHTML = html;
+                    }, // <-- VÍRGULA MUITO IMPORTANTE AQUI
+
+                    renderView_ImportMonitorias(container) {
+                        try {
+                            if(!app.isAdmin) return;
+                            
+                            let state = app.admin.monitoriasState || { ranking: [], diario: {}, totalLido: 0 };
+                            
+                            let html = `
+                                <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <div>
+                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Importação de Monitorias</h2>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Faça o upload do relatório diário. O sistema recalcula automaticamente a cada envio (Meta: 400/mês).</p>
+                                    </div>
+                                    <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                        <i class="fa-solid fa-upload"></i> Subir Planilha CSV/XLSX
+                                        <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
+                                    </label>
+                                </div>
+                            `;
+                            
+                            if(state.totalLido > 0) {
+                                html += `
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                        <!-- Ranking e Feedbacks -->
+                                        <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
+                                            <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Status por Monitor</h3>
+                                            <div class="overflow-y-auto max-h-[350px] custom-scrollbar pr-2 space-y-3 flex-1">
+                                `;
+                                
+                                state.ranking.forEach((r, idx) => {
+                                    let pendenteBadge = r.pendenteFeedback > 0 
+                                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Atrasados (< 85)</span>` 
+                                        : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
+                                        
+                                    html += `
+                                        <div class="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center hover:border-blue-300 transition-colors">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-7 h-7 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-xs font-black shrink-0">${idx+1}º</div>
+                                                <div>
+                                                    <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome}</div>
+                                                    <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
+                                                        <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
+                                                        ${pendenteBadge}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="text-xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-lg">${r.total}</div>
+                                        </div>
+                                    `;
+                                });
+                                
+                                html += `
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Gráfico Diário -->
+                                        <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
+                                            <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-chart-line text-green-500"></i> Volume Diário (Total Equipe)</h3>
+                                            <div class="relative flex-1 min-h-[250px] w-full"><canvas id="chart-monitorias-dia"></canvas></div>
+                                        </div>
+                                    </div>
+                                `;
+                            } else {
+                                html += `
+                                    <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
+                                        <i class="fa-solid fa-file-csv text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
+                                        <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Nenhum dado carregado</h4>
+                                        <p class="text-slate-500 text-sm">Faça o upload do relatório CSV/XLSX para visualizar o progresso da equipe.</p>
+                                    </div>
+                                `;
+                            }
+                            
+                            container.innerHTML = html;
+                            
+                            // Renderiza o gráfico se houver dados
+                            if(state.totalLido > 0) {
+                                setTimeout(() => {
+                                    const ctx = document.getElementById('chart-monitorias-dia');
+                                    if(ctx) {
+                                        const labels = Object.keys(state.diario).sort();
+                                        const data = labels.map(l => state.diario[l]);
+                                        const isDark = document.documentElement.classList.contains('dark');
+                                        const textColor = isDark ? '#94a3b8' : '#64748b';
+                                        const gridColor = isDark ? '#334155' : '#e2e8f0';
+                                        
+                                        if(window.myChartMonDia) window.myChartMonDia.destroy();
+                                        window.myChartMonDia = new Chart(ctx, {
+                                            type: 'bar',
+                                            data: { 
+                                                labels: labels, 
+                                                datasets: [{ label: 'Monitorias Realizadas', data: data, backgroundColor: '#10b981', borderRadius: 4 }] 
+                                            },
+                                            options: { 
+                                                responsive: true, maintainAspectRatio: false, 
+                                                scales: { y: { beginAtZero: true, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, 
+                                                plugins: { legend: { display: false } } 
+                                            }
+                                        });
+                                    }
+                                }, 100);
+                            }
+                        } catch (err) {
+                            container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
+                            console.error(err);
+                        }
+                    } // <-- FECHAMENTO DA NOVA ABA
+            
+                }, // <-- Fim do Objeto UI
 
             admin: {
                 
