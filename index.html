@@ -2497,70 +2497,49 @@
 
                 renderView_CampanhaMes(container) {
                     const equipes = Object.values(app.campanhaData).sort((a,b) => b.pontos - a.pontos);
-                    
                     const firstPlace = equipes[0];
                     
-                    // INPUT PARA O LÍDER: Escolher o Emoji com Teclado Customizado
+                    // PAINEL DO LÍDER: Emoji + Frase + Emojis Flutuantes
                     let userInFirstPlaceHtml = '';
                     if (firstPlace && firstPlace.membros && app.currentUser && firstPlace.membros.includes(app.currentUser.matricula)) {
                         const stock = firstPlace.emojiStock !== undefined ? firstPlace.emojiStock : 50;
                         userInFirstPlaceHtml = `
                             <div class="mt-8 mb-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/50 p-5 rounded-3xl max-w-2xl mx-auto shadow-lg animate-fade-in">
-                                <h4 class="font-black text-yellow-700 dark:text-yellow-400 text-sm mb-3 uppercase tracking-widest text-center"><i class="fa-solid fa-bullhorn"></i> Privilégio do Líder</h4>
+                                <h4 class="font-black text-yellow-700 dark:text-yellow-400 text-sm mb-4 uppercase tracking-widest text-center"><i class="fa-solid fa-bullhorn"></i> Privilégio do Líder</h4>
                                 
-                                <div class="flex flex-col sm:flex-row gap-3 mb-4 items-center">
-                                    <div class="flex-1 text-xs font-bold text-yellow-800 dark:text-yellow-500">Escolha o emoji que representará a vitória da sua equipe no topo do pódio:</div>
-                                    
-                                    <!-- TECLADO DE EMOJIS CUSTOMIZADO -->
-                                    <div class="relative flex-none">
-                                        <button type="button" onclick="document.getElementById('emoji-picker-menu').classList.toggle('hidden')" id="eq-emoji-btn" class="w-16 h-12 flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-2xl shadow-sm hover:scale-105 transition-transform cursor-pointer">
-                                            ${firstPlace.emojiSymbol || '🏆'}
-                                        </button>
-                                        <input type="hidden" id="eq-emoji-input" value="${firstPlace.emojiSymbol || '🏆'}">
-                                        
-                                        <div id="emoji-picker-menu" class="hidden absolute bottom-14 left-1/2 transform -translate-x-1/2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 z-50">
-                                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 text-center">Selecione o Ícone</div>
-                                            <div class="grid grid-cols-5 gap-1 max-h-48 overflow-y-auto custom-scrollbar p-1">
-                                                ${['🏆','👑','⭐','🔥','🚀','💎','🎯','⚡','😎','💪','🎉','🥇','🌟','✨','💥','👊','🦅','🦁','🐺','🐉','🐯','🦈','🦍','🎲','🕹️','🎮','💸','💰','💳','🪙'].map(e => 
-                                                    `<button type="button" onclick="document.getElementById('eq-emoji-input').value='${e}'; document.getElementById('eq-emoji-btn').innerText='${e}'; document.getElementById('emoji-picker-menu').classList.add('hidden')" class="text-2xl hover:scale-125 transition-transform hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg p-1.5 flex items-center justify-center">${e}</button>`
-                                                ).join('')}
+                                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-4 items-center">
+                                    <!-- Escolha de Emoji -->
+                                    <div class="sm:col-span-4 flex items-center gap-2">
+                                        <span class="text-[10px] font-bold text-yellow-800 dark:text-yellow-500 uppercase tracking-widest">Símbolo:</span>
+                                        <div class="relative flex-1">
+                                            <button type="button" onclick="document.getElementById('emoji-picker-menu').classList.toggle('hidden')" id="eq-emoji-btn" class="w-full h-12 flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-2xl shadow-sm hover:scale-105 transition-transform cursor-pointer">
+                                                ${firstPlace.emojiSymbol || '🏆'}
+                                            </button>
+                                            <input type="hidden" id="eq-emoji-input" value="${firstPlace.emojiSymbol || '🏆'}">
+                                            <div id="emoji-picker-menu" class="hidden absolute top-14 left-0 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 z-50">
+                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 text-center">Selecione o Ícone</div>
+                                                <div class="grid grid-cols-5 gap-1 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                                                    ${['🏆','👑','⭐','🔥','🚀','💎','🎯','⚡','😎','💪','🎉','🥇','🌟','✨','💥','👊','🦅','🦁','🐺','🐉','🐯','🦈','🦍','🎲','🕹️','🎮','💸','💰','💳','🪙'].map(e => 
+                                                        `<button type="button" onclick="document.getElementById('eq-emoji-input').value='${e}'; document.getElementById('eq-emoji-btn').innerText='${e}'; document.getElementById('emoji-picker-menu').classList.add('hidden')" class="text-2xl hover:scale-125 transition-transform hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg p-1.5 flex items-center justify-center">${e}</button>`
+                                                    ).join('')}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-
-                                    <button onclick="app.admin.saveEquipeEmoji('${firstPlace.id}')" class="bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-white px-6 h-12 rounded-xl font-bold shadow-md transition transform hover:-translate-y-0.5 whitespace-nowrap"><i class="fa-solid fa-thumbtack"></i> Fixar Emoji</button>
+                                    
+                                    <!-- Input de Frase e Botão de Salvar -->
+                                    <div class="sm:col-span-8 flex flex-col sm:flex-row gap-2">
+                                        <input type="text" id="eq-quote-input" maxlength="40" placeholder="Frase de Vitória (Máx 40 caracteres)..." value="${firstPlace.quote || ''}" class="flex-1 p-3 rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-sm dark:text-white font-bold focus:ring-2 focus:ring-yellow-500">
+                                        <button onclick="app.admin.saveEquipeHighlight('${firstPlace.id}')" class="bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-white px-5 h-12 rounded-xl font-bold shadow-md transition transform hover:-translate-y-0.5 whitespace-nowrap"><i class="fa-solid fa-check"></i> Salvar</button>
+                                    </div>
                                 </div>
 
                                 <div class="border-t border-yellow-300 dark:border-yellow-700/50 pt-4 flex items-center justify-between">
                                     <div>
-                                        <div class="text-xs font-black uppercase text-yellow-800 dark:text-yellow-400">Celebração Épica</div>
+                                        <div class="text-xs font-black uppercase text-yellow-800 dark:text-yellow-400">Chuva de Emojis</div>
                                         <div class="text-[10px] text-yellow-700 dark:text-yellow-500">Restam <strong id="emoji-stock-display">${stock}</strong> Lançamentos</div>
                                     </div>
                                     <button onclick="app.ui.sendEmoji('${firstPlace.id}')" class="bg-white dark:bg-slate-800 text-2xl p-3 rounded-xl border border-yellow-400 shadow-md hover:scale-110 transition-transform disabled:opacity-50" ${stock <= 0 ? 'disabled' : ''}>🚀</button>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
-                    // BANNER DE DESTAQUE DO CAMPEÃO (A Nova UI para a frase sem quebrar o layout)
-                    let championQuoteHtml = '';
-                    if (firstPlace && firstPlace.quote) {
-                        let quoteAvatar = 'https://ui-avatars.com/api/?name=Lider&background=fef08a&color=854d0e';
-                        if (firstPlace.quoteAutor) {
-                            const autorObj = app.users.find(u => u.matricula === firstPlace.quoteAutor);
-                            if (autorObj) quoteAvatar = autorObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(autorObj.nome)}&background=fef08a&color=854d0e`;
-                        }
-                        championQuoteHtml = `
-                            <div class="max-w-2xl mx-auto w-full mb-10 px-4">
-                                <div class="bg-white dark:bg-slate-800 p-1.5 rounded-full shadow-lg border-2 border-yellow-400 flex items-center gap-4 animate-fade-in relative overflow-hidden pr-6 transform hover:scale-[1.02] transition-transform">
-                                    <div class="w-12 h-12 rounded-full bg-gradient-to-r from-yellow-300 to-yellow-500 p-0.5 shrink-0 shadow-inner z-10">
-                                        <img src="${quoteAvatar}" class="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-800 bg-white">
-                                    </div>
-                                    <div class="flex-1 py-2 z-10">
-                                        <div class="text-[9px] font-black uppercase text-yellow-600 dark:text-yellow-500 tracking-widest leading-none mb-0.5">Voz da Liderança</div>
-                                        <div class="text-sm font-bold text-slate-700 dark:text-slate-200 italic leading-tight truncate">"${firstPlace.quote}"</div>
-                                    </div>
-                                    <div class="absolute right-0 top-0 text-7xl text-yellow-500 opacity-10 transform translate-x-4 -translate-y-4 pointer-events-none"><i class="fa-solid fa-quote-right"></i></div>
                                 </div>
                             </div>
                         `;
@@ -2589,11 +2568,9 @@
                                     <div class="text-center"><div id="cd-seconds" class="text-3xl md:text-4xl font-black text-yellow-400 drop-shadow">00</div><div class="text-[9px] uppercase tracking-widest text-white/80 font-bold mt-1">Seg</div></div>
                                 </div>
                             </div>
-                            
-                            ${championQuoteHtml}
 
-                            <!-- O PÓDIO (RANKING) -->
-                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-8 px-4">
+                            <!-- O PÓDIO (RANKING) COM ESTRUTURA BLINDADA CONTRA OVERLAP -->
+                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-48 px-4">
                     `;
 
                     // Ordem: 2º (idx 1), 1º (idx 0), 3º (idx 2), 4º (idx 3)
@@ -2606,38 +2583,61 @@
                         const myTeamBadge = isMyTeam ? `<div class="absolute -top-3 sm:-top-4 bg-green-500 text-white px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black shadow-lg animate-pulse border-2 border-white dark:border-slate-800 z-50">SUA EQUIPE</div>` : '';
                         const myTeamRing = isMyTeam ? 'ring-4 ring-green-400 dark:ring-green-500' : '';
                         
-                        let rankStyle, heightClass, crownHtml = '', iconHtml = '';
+                        let rankStyle, heightClass, icon, stackHtml = '';
                         
                         if(idx === 0) { 
                             rankStyle = 'ranking-podium-1 text-yellow-900'; 
                             heightClass = 'h-[20rem] md:h-[24rem]'; 
                             
                             let displayEmoji = eq.emojiSymbol || '🏆';
+                            let quoteHtml = '';
                             
-                            // A Coroa agora fica flutuando livremente no topo sem atrapalhar
-                            crownHtml = `<div class="absolute -top-10 left-1/2 transform -translate-x-1/2 trophy-float z-20"><i class="fa-solid fa-crown text-[45px] text-yellow-500 drop-shadow-lg"></i></div>`;
-                            
-                            // O ícone padrão vira o Emoji selecionado em um balãozinho limpo
-                            iconHtml = `
-                                <div class="bg-white dark:bg-slate-800 text-3xl p-2 rounded-full relative border-2 border-yellow-400 flex items-center justify-center w-14 h-14 shadow-lg mb-2 z-30 animate-bounce">
-                                    ${displayEmoji}
+                            if (eq.quote) {
+                                let quoteAvatar = 'https://ui-avatars.com/api/?name=Lider&background=fef08a&color=854d0e';
+                                if (eq.quoteAutor) {
+                                    const autorObj = app.users.find(u => u.matricula === eq.quoteAutor);
+                                    if (autorObj) quoteAvatar = autorObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(autorObj.nome)}&background=fef08a&color=854d0e`;
+                                }
+                                // Balãozinho flexível montado de baixo pra cima
+                                quoteHtml = `
+                                    <div class="bg-white dark:bg-slate-800 p-2 rounded-2xl shadow-xl border-2 border-yellow-400 flex items-center gap-3 w-64 mb-3 animate-fade-in relative z-50">
+                                        <img src="${quoteAvatar}" class="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0 bg-slate-100">
+                                        <div class="flex-1 min-w-0 text-left">
+                                            <div class="text-[8px] font-black uppercase text-yellow-600 mb-0.5 tracking-wider">Voz da Liderança</div>
+                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate italic" title="${eq.quote}">"${eq.quote}"</div>
+                                        </div>
+                                        <div class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-slate-800 border-b-2 border-r-2 border-yellow-400 rotate-45"></div>
+                                    </div>
+                                `;
+                            }
+
+                            // Essa estrutura bottom-[100%] obriga tudo a subir e não se sobrepor
+                            stackHtml = `
+                                <div class="absolute bottom-[100%] left-1/2 transform -translate-x-1/2 flex flex-col items-center w-max z-40">
+                                    ${quoteHtml}
+                                    <div class="relative flex flex-col items-center">
+                                        <i class="fa-solid fa-crown text-[45px] text-yellow-500 drop-shadow-lg mb-[-10px] z-20 trophy-float"></i>
+                                        <div class="bg-white dark:bg-slate-800 text-4xl p-2 rounded-full relative border-2 border-yellow-400 flex items-center justify-center shadow-lg z-10 w-16 h-16 mb-2">
+                                            ${displayEmoji}
+                                        </div>
+                                    </div>
                                 </div>
                             `;
                         }
                         else if(idx === 1) { 
                             rankStyle = 'ranking-podium-2 text-slate-800'; 
                             heightClass = 'h-[16rem] md:h-[20rem]'; 
-                            iconHtml = `<div class="text-4xl mb-1 opacity-80 mt-2"><i class="fa-solid fa-medal text-slate-500"></i></div>`; 
+                            icon = '<i class="fa-solid fa-medal text-slate-500"></i>'; 
                         }
                         else if(idx === 2) { 
                             rankStyle = 'ranking-podium-3 text-orange-900'; 
                             heightClass = 'h-[14rem] md:h-[17rem]'; 
-                            iconHtml = `<div class="text-4xl mb-1 opacity-80 mt-2"><i class="fa-solid fa-award text-orange-700"></i></div>`; 
+                            icon = '<i class="fa-solid fa-award text-orange-700"></i>'; 
                         }
                         else { 
                             rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; 
                             heightClass = 'h-[12rem] md:h-[14rem]'; 
-                            iconHtml = `<div class="text-4xl mb-1 opacity-80 mt-2"><i class="fa-solid fa-thumbs-up text-slate-400"></i></div>`; 
+                            icon = '<i class="fa-solid fa-thumbs-up text-slate-400"></i>'; 
                         }
 
                         // Agrupar avatares sobrepostos (Limitando a 5 visíveis)
@@ -2660,10 +2660,10 @@
                         avatarsHtml += '</div>';
 
                         html += `
-                                <div class="w-full md:w-48 ${heightClass} ${rankStyle} ${myTeamRing} rounded-t-3xl relative flex flex-col items-center justify-start pt-6 transition-all duration-500 shrink-0 mt-4 md:mt-0">
+                                <div class="w-full md:w-48 ${heightClass} ${rankStyle} ${myTeamRing} rounded-t-3xl relative flex flex-col items-center justify-start pt-6 transition-all duration-500 shrink-0 mt-12 md:mt-0">
                                     ${myTeamBadge}
-                                    ${crownHtml}
-                                    ${iconHtml}
+                                    ${stackHtml}
+                                    ${idx !== 0 ? `<div class="text-4xl mb-1 opacity-80 mt-2">${icon}</div>` : `<div class="mt-1"></div>`}
                                     <div class="font-black text-lg md:text-xl uppercase text-center leading-tight px-2">${eq.nome}</div>
                                     ${avatarsHtml}
                                     <div class="mt-auto mb-4 bg-black/10 backdrop-blur-sm px-4 py-1.5 rounded-full font-black text-lg shadow-inner">${eq.pontos} pts</div>
