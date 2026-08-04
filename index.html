@@ -789,6 +789,12 @@
                                     equipe4: { id: 'equipe4', nome: 'Equipe 4', pontos: 0, membros: [] }
                                 };
                             }
+
+                            if (data.monitorias) {
+                                app.monitoriasData = data.monitorias;
+                            } else {
+                                app.monitoriasData = { ranking: [] };
+                            }
                             
                             if (data.operacoes) {
                                 app.operacoesList = data.operacoes;
@@ -824,26 +830,39 @@
                 saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
                 saveCampanha() { return firebase.database().ref('sistema_bonificacao/campanha').set(app.campanhaData || {}); },
+                saveMonitorias() { return firebase.database().ref('sistema_bonificacao/monitorias').set(app.monitoriasData || { ranking: [] }); }
             },
 
             users: [],
-            actionsList: {},
-            notificationsList: {},
-            eventsList: {},
-            operacoesList: {},
-            atasList: {},
-            currentMonth: '',
-            campanhaData: {},
-            config: {
-                baseValue: 400,
-                goals: [
-                    { id: 'g1', title: "Monitorias Realizadas", weight: 0.20, type: 'percent', icon: 'fa-headphones' },
-                    { id: 'g2', title: "Feedbacks Presenciais", weight: 0.20, type: 'percent', icon: 'fa-comments' },
-                    { id: 'g3', title: "Calibragens", weight: 0.15, type: 'calibracao', icon: 'fa-scale-balanced' },
-                    { id: 'g4', title: "Ações Presenciais", weight: 0.15, type: 'actions', icon: 'fa-people-group' },
-                    { id: 'g6', title: "Avaliação Gestor", weight: 0.15, type: 'gestor', icon: 'fa-thumbs-up' },
-                    { id: 'g7', title: "Ação de Alto Impacto", weight: 0.15, type: 'boolean', icon: 'fa-lightbulb' }
-                ]
+            monitoriasData: { ranking: [] },
+            utils: {
+                getWorkingDays(yearMonthStr) {
+                    if(!yearMonthStr) return { total: 22, passed: 11 };
+                    const [year, month] = yearMonthStr.split('-').map(Number);
+                    const totalDaysInMonth = new Date(year, month, 0).getDate();
+                    let totalWorkingDays = 0;
+                    let passedWorkingDays = 0;
+                    const today = new Date();
+                    const currentYear = today.getFullYear();
+                    const currentMonth = today.getMonth() + 1;
+                    const currentDay = today.getDate();
+                    
+                    for(let d = 1; d <= totalDaysInMonth; d++) {
+                        const date = new Date(year, month - 1, d);
+                        const dayOfWeek = date.getDay();
+                        // 0 = Domingo, 6 = Sábado
+                        if(dayOfWeek !== 0 && dayOfWeek !== 6) {
+                            totalWorkingDays++;
+                            if(year === currentYear && month === currentMonth) {
+                                if(d <= currentDay) passedWorkingDays++;
+                            } else if (year < currentYear || (year === currentYear && month < currentMonth)) {
+                                passedWorkingDays++;
+                            }
+                        }
+                    }
+                    if(passedWorkingDays === 0) passedWorkingDays = 1;
+                    return { total: totalWorkingDays, passed: passedWorkingDays };
+                }
             },
             
             currentUser: null,
@@ -2267,7 +2286,7 @@
                             { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ] : [
                             { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, // NOVA ABA USUÁRIO
-                            { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
+                            { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Ranking Qualidade'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
                             { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
                             { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ];
@@ -2382,7 +2401,8 @@
                         else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
                         else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
                         else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
-                        else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);
+                        else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -4542,13 +4562,18 @@
                         try {
                             if(!app.isAdmin) return;
                             
-                            let state = app.admin.monitoriasState || { ranking: [] };
+                            let state = app.monitoriasData || { ranking: [] };
+                            const wd = app.utils.getWorkingDays(app.currentMonth);
                             
                             let html = `
+                                <style>
+                                    @keyframes progress-shine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+                                    .animate-progress-shine { animation: progress-shine 2s infinite linear; }
+                                </style>
                                 <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                     <div>
                                         <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou ajuste manualmente os valores. Foco total nos cadastrados.</p>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou ajuste manualmente os valores. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
                                     </div>
                                     <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
                                         <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
@@ -4558,7 +4583,6 @@
                             `;
                             
                             if(state.ranking && state.ranking.length > 0) {
-                                // Calcula totais do Dash
                                 const totalMonitorias = state.ranking.reduce((acc, curr) => acc + curr.total, 0);
                                 const totalFaltante = state.ranking.reduce((acc, curr) => acc + curr.falta, 0);
                                 const totalFeedbacks = state.ranking.reduce((acc, curr) => acc + curr.pendenteFeedback, 0);
@@ -4579,10 +4603,10 @@
                                         </div>
                                     </div>
 
-                                    <!-- Ranking e Feedbacks -->
-                                    <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[550px]">
-                                        <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Status e Quantidades por Monitor</h3>
-                                        <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
+                                    <!-- Ranking -->
+                                    <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[600px]">
+                                        <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Performance Operacional</h3>
+                                        <div class="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
                                 `;
                                 
                                 state.ranking.forEach((r, idx) => {
@@ -4592,21 +4616,40 @@
                                         
                                     let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Lançado Manualmente"><i class="fa-solid fa-hand"></i> Editado</span>` : '';
                                     
+                                    // Progress Bar & Projeção Math
+                                    let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
+                                    let projecao = Math.round((r.total / wd.passed) * wd.total);
+                                    let projColor = projecao >= 400 ? 'text-green-500' : 'text-orange-500';
+                                    
                                     html += `
-                                        <div class="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center hover:border-blue-300 transition-colors gap-2">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-7 h-7 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-xs font-black shrink-0">${idx+1}º</div>
-                                                <div>
-                                                    <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome} ${manualBadge}</div>
-                                                    <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                                                        <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
-                                                        ${pendenteBadge}
+                                        <div class="p-4 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-300 transition-colors">
+                                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-3">
+                                                <div class="flex items-center gap-3 w-full md:w-auto">
+                                                    <div class="w-8 h-8 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700 shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-sm font-black shrink-0">${idx+1}º</div>
+                                                    <div>
+                                                        <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome} ${manualBadge}</div>
+                                                        <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
+                                                            <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
+                                                            ${pendenteBadge}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center justify-between w-full md:w-auto gap-4">
+                                                    <div class="text-right">
+                                                        <div class="text-[9px] uppercase font-bold text-slate-400">Projeção Mês</div>
+                                                        <div class="font-black text-sm ${projColor}">${projecao} <span class="text-slate-400 text-[10px] font-normal">/ 400</span></div>
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
+                                                        <button onclick="app.admin.overrideMonitoria('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i></button>
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="flex items-center gap-2 w-full md:w-auto">
-                                                <div class="text-xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg flex-1 md:flex-none text-center">${r.total}</div>
-                                                <button onclick="app.admin.overrideMonitoria('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i> Editar</button>
+                                            <!-- Barra de Progresso com Efeito -->
+                                            <div class="w-full bg-slate-100 dark:bg-slate-900 rounded-full h-2.5 relative overflow-hidden shadow-inner">
+                                                <div class="bg-gradient-to-r from-blue-500 to-blue-400 h-2.5 rounded-full transition-all duration-1000 ease-out relative" style="width: ${pct}%">
+                                                    <div class="absolute top-0 left-0 right-0 bottom-0 bg-white/20 animate-progress-shine"></div>
+                                                </div>
                                             </div>
                                         </div>
                                     `;
@@ -4633,7 +4676,92 @@
                             container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
                             console.error(err);
                         }
-                    } // <-- FECHAMENTO DA FUNÇÃO
+                    },
+
+                    renderView_RankingMonitorias(container) {
+                        // VISÃO LIMPA PARA O USUÁRIO
+                        let state = app.monitoriasData || { ranking: [] };
+                        const wd = app.utils.getWorkingDays(app.currentMonth);
+                        
+                        let html = `
+                            <style>
+                                @keyframes progress-shine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+                                .animate-progress-shine { animation: progress-shine 2s infinite linear; }
+                            </style>
+                            <div class="mb-8">
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ranking de Qualidade (Monitorias)</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe a sua evolução em tempo real. A meta de ouro é de 400 monitorias entregues no mês!</p>
+                            </div>
+                        `;
+                        
+                        if(state.ranking && state.ranking.length > 0) {
+                            html += `
+                                <div class="glass-card p-6 md:p-8 rounded-3xl flex flex-col mb-8 h-auto">
+                                    <div class="space-y-4">
+                            `;
+                            
+                            state.ranking.forEach((r, idx) => {
+                                // Destaque visual se for o próprio usuário logado
+                                const isMe = app.currentUser && r.matricula === app.currentUser.matricula;
+                                const borderClass = isMe ? 'border-blue-400 ring-2 ring-blue-400/20 bg-blue-50/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80';
+                                
+                                let pendenteBadge = r.pendenteFeedback > 0 
+                                    ? `<span class="text-red-500 text-[10px] font-bold ml-2"><i class="fa-solid fa-triangle-exclamation"></i> Feedbacks Pendentes</span>` 
+                                    : ``;
+                                    
+                                let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
+                                let projecao = Math.round((r.total / wd.passed) * wd.total);
+                                let projColor = projecao >= 400 ? 'text-green-500' : 'text-orange-500';
+                                
+                                html += `
+                                    <div class="p-4 rounded-xl border shadow-sm transition-colors ${borderClass}">
+                                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-3">
+                                            <div class="flex items-center gap-3 w-full md:w-auto">
+                                                <div class="w-8 h-8 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700 shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-sm font-black shrink-0">${idx+1}º</div>
+                                                <div>
+                                                    <div class="font-bold text-base text-slate-800 dark:text-white leading-tight flex items-center gap-2">
+                                                        ${r.nome} ${isMe ? '<span class="bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">Você</span>' : ''}
+                                                    </div>
+                                                    <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
+                                                        <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
+                                                        ${isMe ? pendenteBadge : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center justify-between w-full md:w-auto gap-6">
+                                                <div class="text-right">
+                                                    <div class="text-[9px] uppercase font-bold text-slate-400">Projeção</div>
+                                                    <div class="font-black text-sm ${projColor}">${projecao} <span class="text-slate-400 text-[10px] font-normal">/ 400</span></div>
+                                                </div>
+                                                <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
+                                            </div>
+                                        </div>
+                                        <!-- Barra de Progresso com Efeito -->
+                                        <div class="w-full bg-slate-100 dark:bg-slate-900 rounded-full h-2.5 relative overflow-hidden shadow-inner mt-2">
+                                            <div class="bg-gradient-to-r ${isMe ? 'from-green-500 to-emerald-400' : 'from-blue-500 to-blue-400'} h-2.5 rounded-full transition-all duration-1000 ease-out relative" style="width: ${pct}%">
+                                                <div class="absolute top-0 left-0 right-0 bottom-0 bg-white/20 animate-progress-shine"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                            
+                            html += `
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
+                                    <i class="fa-solid fa-ranking-star text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
+                                    <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Ranking em Apuração</h4>
+                                    <p class="text-slate-500 text-sm">O ranking oficial de monitorias deste mês será publicado em breve.</p>
+                                </div>
+                            `;
+                        }
+                        
+                        container.innerHTML = html;
+                    }, // <-- FECHAMENTO DA FUNÇÃO (Vírgula de separação obrigatória) // <-- FECHAMENTO DA FUNÇÃO
             
                 }, // <-- Fim do Objeto UI
 
@@ -4709,7 +4837,7 @@
                 },
                 
                 calcularPlanilhaMonitoria(json) {
-                    this.monitoriasState = { ranking: [] };
+                    app.monitoriasData = { ranking: [] };
                     const mapMonitor = {};
                     
                     // PREENCHE A LISTA INICIAL COM TODOS OS USUÁRIOS CADASTRADOS (ZERA OS VALORES)
@@ -4737,7 +4865,6 @@
                         const matStr = String(matriculaRaw).trim();
                         
                         // REGRA: "os que aparecem não cadastrados não irão aparecer"
-                        // Se o usuário não está no mapMonitor (não é cadastrado no sistema), ignoramos.
                         if(!mapMonitor[matStr]) return;
                         
                         // Atualiza as contagens
@@ -4756,29 +4883,34 @@
                     });
                     
                     // Converte pra Array e Ordena
-                    this.monitoriasState.ranking = Object.values(mapMonitor).sort((a, b) => b.total - a.total);
+                    app.monitoriasData.ranking = Object.values(mapMonitor).sort((a, b) => b.total - a.total);
                     
-                    app.ui.renderTab('import_monitorias', true);
-                    if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha cruzada com sua equipe com sucesso.", "success");
+                    // Salva no Banco de Dados
+                    app.storage.saveMonitorias().then(() => {
+                        app.ui.renderTab('import_monitorias', true);
+                        if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada e salva no banco de dados com sucesso.", "success");
+                    });
                 },
 
                 overrideMonitoria(matricula) {
-                    if(!this.monitoriasState || !this.monitoriasState.ranking) return;
-                    const r = this.monitoriasState.ranking.find(x => x.matricula === matricula);
+                    if(!app.monitoriasData || !app.monitoriasData.ranking) return;
+                    const r = app.monitoriasData.ranking.find(x => x.matricula === matricula);
                     if(!r) return;
                     
-                    const novoTotal = prompt(`Aplicar total manual para ${r.nome} :\n(Atual lido pelo sistema: ${r.total})`, r.total);
+                    const novoTotal = prompt(`Aplicar total manual para ${r.nome} :\n(Atual: ${r.total})`, r.total);
                     
                     if(novoTotal !== null && novoTotal.trim() !== '') {
                         const parsed = parseInt(novoTotal);
                         if(!isNaN(parsed)) {
                             r.total = parsed;
                             r.falta = Math.max(0, 400 - r.total);
-                            r.manual = true; // Flag visual pro usuário saber que foi editado na mão
+                            r.manual = true; 
                             
-                            // Reordena e renderiza
-                            this.monitoriasState.ranking.sort((a, b) => b.total - a.total);
-                            app.ui.renderTab('import_monitorias', true);
+                            app.monitoriasData.ranking.sort((a, b) => b.total - a.total);
+                            // Salva a alteração manual no banco de dados
+                            app.storage.saveMonitorias().then(() => {
+                                app.ui.renderTab('import_monitorias', true);
+                            });
                         }
                     }
                 },
