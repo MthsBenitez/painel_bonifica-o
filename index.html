@@ -136,6 +136,48 @@
             0% { opacity: 0.5; }
             100% { opacity: 1; transform: scale(1.05); }
         }
+
+        /* ========================================================
+           EFEITOS DA CAMPANHA (DOPAMINA & GAMIFICAÇÃO)
+           ======================================================== */
+        .tab-campanha-glow {
+            background: linear-gradient(90deg, #ffd700, #ff8c00, #ff0080) !important;
+            background-size: 200% auto !important;
+            color: white !important;
+            animation: shine-tab 3s linear infinite !important;
+            border: none !important;
+            box-shadow: 0 0 10px rgba(255, 140, 0, 0.6) !important;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        @keyframes shine-tab {
+            to { background-position: 200% center; }
+        }
+        .ranking-podium-1 {
+            background: linear-gradient(135deg, #FFD700 0%, #FDB931 100%);
+            box-shadow: 0 10px 25px -5px rgba(255, 215, 0, 0.5);
+            border: 2px solid #FFF8DC;
+            transform: scale(1.05);
+            z-index: 10;
+        }
+        .ranking-podium-2 {
+            background: linear-gradient(135deg, #E0E0E0 0%, #BDBDBD 100%);
+            box-shadow: 0 10px 25px -5px rgba(189, 189, 189, 0.4);
+            border: 1px solid #F5F5F5;
+        }
+        .ranking-podium-3 {
+            background: linear-gradient(135deg, #CD7F32 0%, #A0522D 100%);
+            box-shadow: 0 10px 25px -5px rgba(205, 127, 50, 0.4);
+            border: 1px solid #D2B48C;
+        }
+        .trophy-float {
+            animation: float-up-down 3s ease-in-out infinite;
+        }
+        @keyframes float-up-down {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="app.notifications.closeDropdown(event)">
@@ -719,6 +761,17 @@
 
                             if (data.atas) app.atasList = data.atas;
                             else app.atasList = {};
+
+                            if (data.campanha) {
+                                app.campanhaData = data.campanha;
+                            } else {
+                                app.campanhaData = {
+                                    equipe1: { id: 'equipe1', nome: 'Equipe 1', pontos: 0, membros: [] },
+                                    equipe2: { id: 'equipe2', nome: 'Equipe 2', pontos: 0, membros: [] },
+                                    equipe3: { id: 'equipe3', nome: 'Equipe 3', pontos: 0, membros: [] },
+                                    equipe4: { id: 'equipe4', nome: 'Equipe 4', pontos: 0, membros: [] }
+                                };
+                            }
                             
                             if (data.operacoes) {
                                 app.operacoesList = data.operacoes;
@@ -753,6 +806,7 @@
                 saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
                 saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
+                saveCampanha() { return firebase.database().ref('sistema_bonificacao/campanha').set(app.campanhaData || {}); },
             },
 
             users: [],
@@ -762,6 +816,7 @@
             operacoesList: {},
             atasList: {},
             currentMonth: '',
+            campanhaData: {},
             config: {
                 baseValue: 400,
                 goals: [
@@ -2125,9 +2180,11 @@
                         ? [
                             { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}] },
                             { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}] },
+                            { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, // NOVA ABA ADM
                             { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                             { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ] : [
+                            { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, // NOVA ABA USUÁRIO
                             { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
                             { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
                             { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
@@ -2143,9 +2200,14 @@
                         const isActiveGroup = m.items.some(i => i.id === app.currentTab);
                         if (isActiveGroup) activeGroup = m;
                         
-                        const btnClass = isActiveGroup 
+                        let btnClass = isActiveGroup 
                             ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)] rounded-t-xl' 
                             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800';
+                        
+                        // Injeção da Dopamina visual no Menu
+                        if(m.group.includes('Destaque')) {
+                            btnClass = isActiveGroup ? 'tab-campanha-glow rounded-t-xl' : 'text-orange-500 hover:text-orange-600 font-black border-t-2 border-transparent rounded-xl hover:bg-orange-50 dark:hover:bg-orange-900/20';
+                        }
                             
                         // Ao clicar no grupo, renderiza a primeira aba desse grupo por padrão
                         html += `
@@ -2232,7 +2294,9 @@
                         else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
                         else if(tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
                         else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);
-                        else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
+                        else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
+                        else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -2343,6 +2407,184 @@
                             `;
                         });
                     }
+                    container.innerHTML = html;
+                },
+
+                renderView_CampanhaMes(container) {
+                    const equipes = Object.values(app.campanhaData).sort((a,b) => b.pontos - a.pontos);
+                    
+                    let html = `
+                        <div class="max-w-6xl mx-auto animate-fade-in pb-10">
+                            <!-- HEADER ÉPICO -->
+                            <div class="banner-legendary rounded-3xl p-8 md:p-12 shadow-2xl flex flex-col md:flex-row justify-between items-center mb-8 relative overflow-hidden shine-effect-legendary text-white">
+                                <div class="absolute right-[-5%] top-[-20%] text-9xl opacity-20 trophy-float"><i class="fa-solid fa-trophy"></i></div>
+                                <div class="relative z-10 text-center md:text-left">
+                                    <div class="inline-block bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-white/30 mb-4 shadow-lg"><i class="fa-solid fa-fire text-yellow-300"></i> Evento de Junho, Julho e Agosto</div>
+                                    <h1 class="text-4xl md:text-6xl font-black tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-white drop-shadow-md">A GRANDE JORNADA</h1>
+                                    <p class="text-lg md:text-xl font-medium text-blue-100 max-w-2xl">Batalha de Equipes focada em Excelência, Engajamento e Qualidade Absoluta.</p>
+                                </div>
+                            </div>
+
+                            <!-- O PÓDIO (RANKING) -->
+                            <h2 class="text-2xl font-black text-slate-800 dark:text-white text-center mb-6 uppercase tracking-wider"><i class="fa-solid fa-ranking-star text-orange-500"></i> Ranking Atual</h2>
+                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-64 mt-16 px-4">
+                    `;
+
+                    // Lógica do Pódio (Ordem: 2º, 1º, 3º, 4º)
+                    const order = [1, 0, 2, 3]; // Índices baseados no array ordenado
+                    order.forEach((idx, pos) => {
+                        const eq = equipes[idx];
+                        if(!eq) return;
+                        
+                        let rankStyle, heightClass, icon, crown;
+                        if(idx === 0) { rankStyle = 'ranking-podium-1 text-yellow-900'; heightClass = 'h-52 md:h-64'; icon = 'fa-trophy text-yellow-600'; crown = '<i class="fa-solid fa-crown text-4xl text-yellow-500 absolute -top-12 left-1/2 transform -translate-x-1/2 trophy-float drop-shadow-lg"></i>'; }
+                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-40 md:h-48'; icon = 'fa-medal text-slate-500'; crown=''; }
+                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-32 md:h-40'; icon = 'fa-award text-orange-700'; crown=''; }
+                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-24 md:h-28'; icon = 'fa-thumbs-up text-slate-400'; crown=''; }
+
+                        html += `
+                                <div class="w-full md:w-48 ${heightClass} ${rankStyle} rounded-t-3xl relative flex flex-col items-center justify-start pt-6 transition-all duration-500">
+                                    ${crown}
+                                    <div class="text-4xl mb-2 opacity-80"><i class="fa-solid ${icon}"></i></div>
+                                    <div class="font-black text-lg md:text-xl uppercase text-center leading-tight px-2">${eq.nome}</div>
+                                    <div class="mt-auto mb-4 bg-black/10 backdrop-blur-sm px-4 py-1.5 rounded-full font-black text-lg">${eq.pontos} pts</div>
+                                </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+
+                            <!-- PREMIAÇÕES E REGRAS LADO A LADO -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                
+                                <!-- CARD DE PREMIAÇÕES -->
+                                <div class="glass-card rounded-3xl p-8 border-t-4 border-t-yellow-400 shadow-lg relative overflow-hidden">
+                                    <div class="absolute -right-6 -bottom-6 text-9xl text-yellow-400 opacity-10"><i class="fa-solid fa-gift"></i></div>
+                                    <h3 class="text-2xl font-black text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-3"><i class="fa-solid fa-gifts text-yellow-500"></i> Premiações</h3>
+                                    
+                                    <div class="space-y-4 relative z-10">
+                                        <div class="flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-r from-yellow-50 to-amber-100 dark:from-yellow-900/30 dark:to-amber-900/20 border border-yellow-200 dark:border-yellow-700/50 shadow-sm transform hover:scale-105 transition-transform">
+                                            <div class="w-12 h-12 rounded-full bg-yellow-400 text-white flex items-center justify-center text-xl font-black shadow-md">1º</div>
+                                            <div><div class="text-[10px] uppercase font-bold text-yellow-700 dark:text-yellow-500 tracking-widest">Campeões</div><div class="font-black text-lg text-slate-800 dark:text-white">Prêmio Surpresa Extraordinário <i class="fa-solid fa-star text-yellow-500 text-sm"></i></div></div>
+                                        </div>
+                                        
+                                        <div class="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow">
+                                            <div class="w-12 h-12 rounded-full bg-slate-300 dark:bg-slate-600 text-slate-700 dark:text-white flex items-center justify-center text-xl font-black">2º</div>
+                                            <div><div class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Vice-Campeões</div><div class="font-black text-slate-800 dark:text-white">Par de Ingressos para o Cinema <i class="fa-solid fa-film text-slate-400 text-sm"></i></div></div>
+                                        </div>
+                                        
+                                        <div class="flex items-center gap-4 p-4 rounded-2xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 hover:shadow-md transition-shadow">
+                                            <div class="w-12 h-12 rounded-full bg-orange-400 text-white flex items-center justify-center text-xl font-black">3º</div>
+                                            <div><div class="text-[10px] uppercase font-bold text-orange-700 dark:text-orange-500 tracking-widest">Pódio de Bronze</div><div class="font-black text-slate-800 dark:text-white">Cesta Mix de Delícias <i class="fa-solid fa-cookie-bite text-orange-500 text-sm"></i></div></div>
+                                        </div>
+                                        
+                                        <div class="flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 opacity-80">
+                                            <div class="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xl font-black">4º</div>
+                                            <div><div class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Esforço Honroso</div><div class="font-bold text-slate-700 dark:text-slate-300">Caixa de Chocolate <i class="fa-solid fa-candy-cane text-pink-500 text-sm"></i></div></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- CARD DE CRONOGRAMA E ESTRUTURA -->
+                                <div class="glass-card rounded-3xl p-8 border-t-4 border-t-blue-500 shadow-lg">
+                                    <h3 class="text-2xl font-black text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-3"><i class="fa-solid fa-map-location-dot text-blue-500"></i> Cronograma & Regras</h3>
+                                    
+                                    <div class="space-y-6">
+                                        <div class="relative pl-6 border-l-2 border-blue-500">
+                                            <div class="absolute -left-2 top-0 w-4 h-4 rounded-full bg-blue-500 ring-4 ring-white dark:ring-dark-surface"></div>
+                                            <h4 class="font-black text-slate-800 dark:text-white text-md">Fase 01 - 1ª Quinzena (Diagnóstico)</h4>
+                                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">Focada em monitoria intensiva e mapeamento detalhado dos principais ofensores e pontuações da qualidade na operação. O trabalho duro começa aqui!</p>
+                                        </div>
+                                        
+                                        <div class="relative pl-6 border-l-2 border-green-500">
+                                            <div class="absolute -left-2 top-0 w-4 h-4 rounded-full bg-green-500 ring-4 ring-white dark:ring-dark-surface"></div>
+                                            <h4 class="font-black text-slate-800 dark:text-white text-md">Fase 02 - 2ª Quinzena (Execução)</h4>
+                                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">Aplicação prática das ações de melhoria baseadas no diagnóstico. Acompanhamento contínuo da evolução dos indicadores. É hora de virar o jogo.</p>
+                                        </div>
+                                        
+                                        <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50 mt-4">
+                                            <h4 class="font-bold text-blue-800 dark:text-blue-300 text-xs uppercase tracking-widest mb-2"><i class="fa-solid fa-bullseye"></i> Como Pontuar?</h4>
+                                            <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">O sucesso será avaliado pelo <strong>volume total de ações de engajamento</strong> realizadas (quanto mais criatividade nas fotos, maior a pontuação!) e pela <strong>avaliação qualitativa dos gestores</strong> sobre o impacto das ações apresentadas.</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mt-8 text-center bg-gradient-to-r from-gray-800 to-black text-white py-4 px-6 rounded-2xl shadow-xl transform hover:scale-105 transition-transform cursor-default">
+                                        <div class="font-black text-lg uppercase tracking-widest"><i class="fa-solid fa-rocket text-orange-400"></i> Início Imediato!</div>
+                                        <div class="text-xs text-slate-300 mt-1">Foco total na análise inicial para elevar a qualidade e conquistar os prêmios.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                },
+
+                renderView_GestaoCampanha(container) {
+                    if(!app.isAdmin) return;
+                    
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão da Campanha do Trimestre</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Organize as equipes e lance as pontuações (Fotos criativas + Avaliação qualitativa).</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    `;
+
+                    // Renderizar as 4 equipes para o Admin
+                    Object.keys(app.campanhaData).forEach(eqKey => {
+                        const eq = app.campanhaData[eqKey];
+                        
+                        html += `
+                            <div class="glass-card rounded-3xl p-5 border-t-4 border-t-blue-500 shadow-sm flex flex-col h-full">
+                                <div class="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+                                    <h3 class="font-black text-lg text-slate-800 dark:text-white uppercase">${eq.nome}</h3>
+                                    <div class="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-black px-3 py-1 rounded-lg text-sm">${eq.pontos} pts</div>
+                                </div>
+                                
+                                <div class="mb-4">
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Adicionar Pontos (Registros + Qualitativo)</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="pts-add-${eq.id}" class="w-full p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white" placeholder="Ex: 50">
+                                        <button onclick="app.admin.addPontosCampanha('${eq.id}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 rounded-lg font-bold shadow-sm transition"><i class="fa-solid fa-plus"></i></button>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex-1 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-y-auto max-h-40 custom-scrollbar mb-4">
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-2">Membros Alocados:</div>
+                                    <div class="space-y-1">
+                        `;
+                        
+                        if(!eq.membros || eq.membros.length === 0) {
+                            html += `<div class="text-xs text-slate-400 italic">Sem membros...</div>`;
+                        } else {
+                            eq.membros.forEach(matr => {
+                                const user = app.users.find(u => u.matricula === matr);
+                                const nome = user ? user.nome.split(' ')[0] : matr;
+                                html += `<div class="text-xs font-bold text-slate-600 dark:text-slate-300 flex justify-between items-center bg-white dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <span class="truncate pr-2"><i class="fa-solid fa-user text-slate-400 text-[10px] mr-1"></i> ${nome}</span>
+                                    <button onclick="app.admin.removeMembroCampanha('${eq.id}', '${matr}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button>
+                                </div>`;
+                            });
+                        }
+                        
+                        html += `
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700">
+                                    <select id="user-sel-${eq.id}" class="w-full p-2 mb-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-none">
+                                        <option value="">Selecionar Colaborador...</option>
+                                        ${app.users.map(u => `<option value="${u.matricula}">${u.nome}</option>`).join('')}
+                                    </select>
+                                    <button onclick="app.admin.addMembroCampanha('${eq.id}')" class="w-full bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2 rounded-lg text-xs transition uppercase tracking-widest">Alocar na Equipe</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += `</div>`;
                     container.innerHTML = html;
                 },
 
@@ -4542,6 +4784,49 @@
                     const workbook = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(workbook, worksheet, "Calendario");
                     XLSX.writeFile(workbook, `Calendario_Softmarketing_${app.currentMonth}.xlsx`);
+                },
+
+                // --- LÓGICA DA CAMPANHA DESTE TRIMESTRE ---
+                addPontosCampanha(eqId) {
+                    const input = document.getElementById(`pts-add-${eqId}`);
+                    const val = parseInt(input.value);
+                    if(isNaN(val) || val <= 0) return app.ui.showAlert("Aviso", "Digite um valor de pontos válido.", "error");
+                    
+                    app.campanhaData[eqId].pontos += val;
+                    app.storage.saveCampanha().then(() => {
+                        app.ui.showAlert("Sucesso!", `+${val} pontos adicionados à ${app.campanhaData[eqId].nome}!`, "success");
+                        input.value = '';
+                        app.ui.renderTab('gestao_campanha', true);
+                    });
+                },
+                
+                addMembroCampanha(eqId) {
+                    const select = document.getElementById(`user-sel-${eqId}`);
+                    const matricula = select.value;
+                    if(!matricula) return;
+                    
+                    // Verifica se já está em alguma equipe para evitar duplicação
+                    let alreadyIn = null;
+                    Object.keys(app.campanhaData).forEach(k => {
+                        if(app.campanhaData[k].membros && app.campanhaData[k].membros.includes(matricula)) {
+                            alreadyIn = app.campanhaData[k].nome;
+                        }
+                    });
+                    if(alreadyIn) return app.ui.showAlert("Conflito", `Este colaborador já está na ${alreadyIn}.`, "error");
+
+                    if(!app.campanhaData[eqId].membros) app.campanhaData[eqId].membros = [];
+                    app.campanhaData[eqId].membros.push(matricula);
+                    
+                    app.storage.saveCampanha().then(() => {
+                        app.ui.renderTab('gestao_campanha', true);
+                    });
+                },
+                
+                removeMembroCampanha(eqId, matricula) {
+                    app.campanhaData[eqId].membros = app.campanhaData[eqId].membros.filter(m => m !== matricula);
+                    app.storage.saveCampanha().then(() => {
+                        app.ui.renderTab('gestao_campanha', true);
+                    });
                 },
 
                 generateLegalPDF() {
