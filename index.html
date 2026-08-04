@@ -4937,20 +4937,28 @@
                         const matStr = String(matriculaRaw).trim();
                         if(!mapMonitor[matStr]) return;
                         
-                        // Conta para a meta (100% dos registros válidos)
+                        // Conta para a meta (100% dos registros válidos somam na quantidade)
                         mapMonitor[matStr].total++;
                         mapMonitor[matStr].falta = Math.max(0, 400 - mapMonitor[matStr].total);
                         
-                        // Extrai a regra de Feedback
+                        // REGRAS DE ISENÇÃO DE FEEDBACK (Neutros)
                         const tituloRaw = getCol('TITULO QUESTIONARIO') || getCol('TÍTULO QUESTIONÁRIO') || '';
-                        const isNeutro = String(tituloRaw).toLowerCase().includes('neutro');
+                        const operacaoRaw = getCol('OPERAÇÃO') || getCol('OPERACAO') || '';
+                        
+                        // 1. Título contém neutro?
+                        const isTituloNeutro = String(tituloRaw).toLowerCase().includes('neutro');
+                        // 2. Operação contém a frase (dividida para driblar o bug de acentuação do Excel ex: FORMULÃRIOS)
+                        const stringOperacao = String(operacaoRaw).toLowerCase();
+                        const isOperacaoNeutra = stringOperacao.includes('qualidade - formul') && stringOperacao.includes('neutro');
+                        
+                        const isNeutro = isTituloNeutro || isOperacaoNeutra;
 
                         const notaRaw = getCol('NOTA MONITORIA');
                         const statusRaw = getCol('STATUS MONITORIA');
                         const nota = parseFloat(String(notaRaw).replace(',', '.'));
                         const status = String(statusRaw).trim().toLowerCase();
                         
-                        // Regra: Conta como alvo de feedback SOMENTE SE a nota < 85 E não for "neutro"
+                        // Regra: Conta como alvo de feedback SOMENTE SE a nota < 85 E NÃO for classificado como neutro
                         if(!isNaN(nota) && nota < 85 && !isNeutro) {
                             mapMonitor[matStr].totalAbaixo85++;
                             if(status === 'feedback_aplicado') {
@@ -4965,7 +4973,7 @@
                     
                     app.storage.saveMonitorias().then(() => {
                         app.ui.renderTab('import_monitorias', true);
-                        if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada com a nova regra de Neutros e salva na base de dados.", "success");
+                        if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada aplicando as regras de isenção de Formulários Neutros.", "success");
                     });
                 },
 
