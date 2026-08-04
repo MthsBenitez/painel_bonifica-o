@@ -5079,9 +5079,7 @@
                     // Salva na memória do front para ser lido pelo renderView
                     app.analyticsData = analytics;
                 },
-                
-                // ... (mantenha qualquer outra função de admin que você já tivesse aqui)
-            }
+
                 viewUserProfile(matricula) {
                     const u = app.users.find(x => x.matricula === matricula);
                     if(!u) return;
