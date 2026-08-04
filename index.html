@@ -4574,224 +4574,149 @@
                     }, // <-- VÍRGULA MUITO IMPORTANTE AQUI
 
                     renderView_ImportMonitorias(container) {
-                        try {
-                            if(!app.isAdmin) return;
+                    if(!app.isAdmin) return;
+                    
+                    const wd = app.utils.getWorkingDays(app.currentMonth);
+                    
+                    // Cabeçalho Padrão e Botão de Upload
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias e Qualidade</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório CSV/XLSX para gerar a inteligência de dados operacionais.</p>
+                            </div>
+                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
+                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
+                            </label>
+                        </div>
+                    `;
+                    
+                    // Se a inteligência já processou os dados, renderiza o Dashboard
+                    if (app.analyticsData) {
+                        const data = app.analyticsData;
+                        
+                        // 6. Controle de SLA (Média e Pico Máximo)
+                        const mediaSla = data.slaList.length > 0 ? (data.slaList.reduce((a,b)=>a+b,0) / data.slaList.length).toFixed(1) : '0';
+                        const maxSla = data.slaList.length > 0 ? Math.max(...data.slaList) : '0';
+
+                        // 1. Top e Bottom Performers (Ranqueamento)
+                        const topOps = data.rankOperadores.slice(0, 5);
+                        const bottomOps = [...data.rankOperadores].reverse().slice(0, 5);
+
+                        // 2. Gaps de Treinamento (Falhas Comuns)
+                        const falhasComuns = Object.entries(data.falhasComuns).sort((a,b) => b[1] - a[1]).slice(0, 5);
+
+                        // 4. Inteligência Qualitativa (Nuvem de palavras simplificada)
+                        const topPalavras = Object.entries(data.palavrasObs).sort((a,b) => b[1] - a[1]).slice(0, 10);
+
+                        html += `
+                        <div class="animate-fade-in space-y-6">
                             
-                            let state = app.monitoriasData || { ranking: [] };
-                            const wd = app.utils.getWorkingDays(app.currentMonth);
-                            
-                            let html = `
-                                <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                    <div>
-                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e acompanhe as projeções da equipe. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
-                                    </div>
-                                    <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                        <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
-                                        <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
-                                    </label>
+                            <!-- Cards Resumo / SLA -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div class="glass-card p-6 rounded-3xl border-l-4 border-l-blue-500 shadow-sm flex items-center gap-4">
+                                    <div class="text-3xl text-blue-500"><i class="fa-solid fa-file-csv"></i></div>
+                                    <div><div class="text-[10px] uppercase font-bold text-slate-400">Total Analisado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${data.totalLinhas} <span class="text-sm font-medium text-slate-500">ligações</span></div></div>
                                 </div>
-                            `;
-                            
-                            if(state.ranking && state.ranking.length > 0) {
-                                // 1. CÁLCULOS GLOBAIS DA EQUIPE
-                                const numUsers = state.ranking.length;
-                                const metaGlobal = numUsers * 400; 
-                                const metaGlobal80 = numUsers * 320; // O alvo de 80%
-                                
-                                let totalMonitorias = 0;
-                                let totalFaltante = 0;
-                                let totalFeedbacks = 0;
-                                let totalAbaixo85Global = 0;
-                                let feedbacksAplicadosGlobal = 0;
-                                
-                                state.ranking.forEach(r => {
-                                    totalMonitorias += r.total;
-                                    totalFaltante += r.falta;
-                                    totalFeedbacks += r.pendenteFeedback;
-                                    totalAbaixo85Global += r.totalAbaixo85 || 0;
-                                    feedbacksAplicadosGlobal += r.feedbacksAplicados || 0;
-                                });
-                                
-                                let pctGlobal = metaGlobal > 0 ? Math.min(100, (totalMonitorias / metaGlobal) * 100).toFixed(1) : 0;
-                                let projecaoGlobal = Math.round((totalMonitorias / wd.passed) * wd.total);
-                                let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-green-500' : (projecaoGlobal >= metaGlobal80 ? 'text-blue-500' : 'text-orange-500');
-                                let taxaFbGlobal = totalAbaixo85Global > 0 ? ((feedbacksAplicadosGlobal / totalAbaixo85Global) * 100).toFixed(0) : 100;
-                            
-                                html += `
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                            <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
-                                            <div><div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalMonitorias}</div></div>
+                                <div class="glass-card p-6 rounded-3xl border-l-4 border-l-purple-500 shadow-sm flex items-center gap-4">
+                                    <div class="text-3xl text-purple-500"><i class="fa-solid fa-stopwatch"></i></div>
+                                    <div><div class="text-[10px] uppercase font-bold text-slate-400">SLA Médio (Feedback)</div><div class="text-2xl font-black text-slate-800 dark:text-white">${mediaSla} <span class="text-sm font-medium text-slate-500">dias</span></div></div>
+                                </div>
+                                <div class="glass-card p-6 rounded-3xl border-l-4 border-l-red-500 shadow-sm flex items-center gap-4">
+                                    <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div><div class="text-[10px] uppercase font-bold text-slate-400">Falhas Críticas (Zeras)</div><div class="text-2xl font-black text-slate-800 dark:text-white">${Object.keys(data.falhasCriticas).length} <span class="text-sm font-medium text-slate-500">ofensores</span></div></div>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <!-- 1. Desempenho e Ranqueamento -->
+                                <div class="glass-card p-6 rounded-3xl">
+                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-trophy text-yellow-500"></i> Termômetro de Operadores</h3>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <div class="text-xs font-black text-green-600 mb-2">Top Performers</div>
+                                            <div class="space-y-2">
+                                                ${topOps.map(op => `<div class="flex justify-between text-xs p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><span class="truncate pr-2 font-semibold text-slate-700 dark:text-slate-300">${op.nome}</span><span class="font-black text-green-700 dark:text-green-400">${op.media.toFixed(1)}</span></div>`).join('')}
+                                            </div>
                                         </div>
-                                        <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                            <div class="text-3xl text-orange-500"><i class="fa-solid fa-bullseye"></i></div>
+                                        <div>
+                                            <div class="text-xs font-black text-red-600 mb-2">Foco em Reciclagem</div>
+                                            <div class="space-y-2">
+                                                ${bottomOps.map(op => `<div class="flex justify-between text-xs p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><span class="truncate pr-2 font-semibold text-slate-700 dark:text-slate-300">${op.nome}</span><span class="font-black text-red-700 dark:text-red-400">${op.media.toFixed(1)}</span></div>`).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 2. Gaps de Treinamento -->
+                                <div class="glass-card p-6 rounded-3xl">
+                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-bullseye text-blue-500"></i> Top 5 Gaps de Treinamento</h3>
+                                    <div class="space-y-3">
+                                        ${falhasComuns.map(f => `
                                             <div>
-                                                <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Meta Global: ${metaGlobal}</div>
-                                                <div class="text-2xl font-black text-slate-800 dark:text-white">${totalFaltante} <span class="text-sm font-medium text-slate-500">faltam</span></div>
+                                                <div class="flex justify-between text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                                                    <span class="truncate pr-4">${f[0].split('=')[0]}</span>
+                                                    <span class="text-red-500">${f[1]} Erros</span>
+                                                </div>
+                                                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5"><div class="bg-red-500 h-1.5 rounded-full" style="width: ${(f[1]/data.totalLinhas*100).toFixed(0)}%"></div></div>
                                             </div>
-                                        </div>
-                                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                            <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                            <div><div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Pendentes</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFeedbacks}</div></div>
+                                        `).join('') || '<div class="text-xs text-slate-400 italic">Sem falhas comuns registradas.</div>'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <!-- 5. Produtividade dos Monitores -->
+                                <div class="glass-card p-6 rounded-3xl">
+                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-headphones-simple text-purple-500"></i> Produtividade da Qualidade</h3>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-left text-sm">
+                                            <thead><tr class="text-[10px] text-slate-400 uppercase border-b border-slate-200 dark:border-slate-700"><th class="pb-2">Avaliador</th><th class="pb-2 text-center">Volume</th><th class="pb-2 text-center">Média Aplicada</th></tr></thead>
+                                            <tbody>
+                                                ${Object.values(data.monitorProdutividade).sort((a,b)=>b.qtd - a.qtd).map(m => `
+                                                    <tr class="border-b border-slate-100 dark:border-slate-800/50">
+                                                        <td class="py-2 font-semibold text-slate-700 dark:text-slate-300">${m.nome}</td>
+                                                        <td class="py-2 text-center font-black">${m.qtd}</td>
+                                                        <td class="py-2 text-center font-black text-blue-600">${m.mediaNota.toFixed(1)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-col gap-6">
+                                    <!-- 4. Nuvem Qualitativa -->
+                                    <div class="glass-card p-6 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 text-white shadow-lg">
+                                        <h3 class="font-bold text-sm uppercase tracking-wider mb-4 border-b border-slate-700 pb-2"><i class="fa-solid fa-cloud text-blue-400"></i> Assuntos Recorrentes (Observações)</h3>
+                                        <div class="flex flex-wrap gap-2">
+                                            ${topPalavras.map(p => `<span class="bg-blue-500/20 border border-blue-400/50 text-blue-200 px-3 py-1 rounded-full text-xs font-bold">${p[0].toUpperCase()} (${p[1]})</span>`).join('') || '<span class="text-xs text-slate-400 italic">Sem observações descritivas.</span>'}
                                         </div>
                                     </div>
-
-                                    <!-- 2. PAINEL GLOBAL DA EQUIPE -->
-                                    <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative overflow-hidden border-t-4 border-t-blue-500 shadow-md">
-                                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
-                                            <i class="fa-solid fa-globe text-blue-500"></i> Desempenho Global da Equipe
-                                        </h3>
-                                        
-                                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
-                                            <div>
-                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Volume Validado Total</div>
-                                                <div class="text-4xl font-black text-slate-800 dark:text-white flex items-baseline gap-2">
-                                                    ${totalMonitorias} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span>
-                                                </div>
-                                            </div>
-                                            <div class="text-left md:text-right">
-                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Projeção Mês (Equipe)</div>
-                                                <div class="text-4xl font-black ${projColorGlobal}">${projecaoGlobal} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span></div>
-                                            </div>
-                                        </div>
-
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                            <!-- Barra Global Monitorias -->
-                                            <div class="relative pt-3">
-                                                <div class="flex justify-between items-end text-xs font-bold text-slate-500 mb-2">
-                                                    <span class="uppercase tracking-widest">Progresso Monitorias</span>
-                                                    <span class="text-blue-600 dark:text-blue-400 font-black">${pctGlobal}%</span>
-                                                </div>
-                                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-3.5 relative shadow-inner border border-slate-300 dark:border-slate-600">
-                                                    <div class="bg-blue-500 h-3.5 rounded-full transition-all duration-1000" style="width: ${pctGlobal}%"></div>
-                                                    <!-- Marcador 80% Global -->
-                                                    <div class="absolute top-[-5px] bottom-[-5px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
-                                                    <div class="absolute -top-6 left-[80%] -translate-x-1/2 text-[10px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-2 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">${metaGlobal80}</div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Barra Global Feedback -->
-                                            <div class="relative pt-3">
-                                                <div class="flex justify-between items-end text-xs font-bold text-slate-500 mb-2">
-                                                    <span class="uppercase tracking-widest">Feedbacks Aplicados</span>
-                                                    <span class="text-purple-600 dark:text-purple-400 font-black">${taxaFbGlobal}%</span>
-                                                </div>
-                                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-3.5 relative shadow-inner border border-slate-300 dark:border-slate-600">
-                                                    <div class="bg-purple-500 h-3.5 rounded-full transition-all duration-1000" style="width: ${taxaFbGlobal}%"></div>
-                                                    <!-- Marcador 80% Global -->
-                                                    <div class="absolute top-[-5px] bottom-[-5px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
-                                                    <div class="absolute -top-6 left-[80%] -translate-x-1/2 text-[10px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-2 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">80%</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- 3. Tabela de Supervisão Individual -->
-                                    <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[650px]">
-                                        <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Performance Operacional (Individual)</h3>
-                                        <div class="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
-                                `;
-                                
-                                state.ranking.forEach((r, idx) => {
-                                    let pendenteBadge = r.pendenteFeedback > 0 
-                                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Pendentes (< 85)</span>` 
-                                        : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
-                                        
-                                    let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Ajustado Manualmente"><i class="fa-solid fa-pen"></i> Editado</span>` : '';
                                     
-                                    let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
-                                    let projecao = Math.round((r.total / wd.passed) * wd.total);
-                                    let projColor = projecao >= 400 ? 'text-green-500' : (projecao >= 320 ? 'text-blue-500' : 'text-orange-500');
-                                    
-                                    let taxaFb = r.totalAbaixo85 > 0 ? ((r.feedbacksAplicados / r.totalAbaixo85) * 100).toFixed(0) : 100;
-                                    
-                                    html += `
-                                        <div class="p-4 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-300 transition-colors flex flex-col gap-2">
-                                            
-                                            <!-- Topo: Info e Projeção -->
-                                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                                <div class="flex items-center gap-3 w-full md:w-auto">
-                                                    <div class="w-8 h-8 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700 shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-sm font-black shrink-0">${idx+1}º</div>
-                                                    <div>
-                                                        <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome} ${manualBadge}</div>
-                                                        <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                                                            <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
-                                                            ${pendenteBadge}
-                                                        </div>
-                                                    </div>
+                                    <!-- 3. Falhas Críticas -->
+                                    <div class="glass-card p-6 rounded-3xl border border-red-200 dark:border-red-900/50">
+                                        <h3 class="font-bold text-sm text-red-600 dark:text-red-400 uppercase tracking-wider mb-3"><i class="fa-solid fa-ban"></i> Alerta de Falhas Críticas (Peso 100)</h3>
+                                        <div class="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                                            ${Object.entries(data.falhasCriticas).map(crit => `
+                                                <div class="bg-red-50 dark:bg-red-900/20 p-2 rounded-lg border border-red-100 dark:border-red-800/30">
+                                                    <div class="text-[10px] font-black text-red-600 dark:text-red-400 mb-1 uppercase">${crit[0].split('=')[0]}</div>
+                                                    <div class="text-xs text-slate-700 dark:text-slate-300"><span class="font-bold">Infratores:</span> ${[...new Set(crit[1])].join(', ')}</div>
                                                 </div>
-                                                <div class="flex items-center justify-between w-full md:w-auto gap-4">
-                                                    <div class="text-right">
-                                                        <div class="text-[9px] uppercase font-bold text-slate-400">Projeção Mês</div>
-                                                        <div class="font-black text-sm ${projColor}">${projecao} <span class="text-slate-400 text-[10px] font-normal">/ 400</span></div>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
-                                                        <button onclick="app.admin.editMonitoriasManual('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i> Ajustar</button>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Barras de Progresso -->
-                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3 border-t border-slate-100 dark:border-slate-700/50 mt-1">
-                                                
-                                                <!-- Barra Monitorias -->
-                                                <div class="relative pt-3">
-                                                    <div class="flex justify-between items-end text-[10px] font-bold text-slate-500 mb-1.5">
-                                                        <span>Progresso Monitorias</span>
-                                                        <span class="text-blue-600 dark:text-blue-400 text-xs">${pct}%</span>
-                                                    </div>
-                                                    <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-2.5 relative">
-                                                        <div class="bg-blue-500 h-2.5 rounded-full transition-all duration-1000" style="width: ${pct}%"></div>
-                                                        <!-- Marcador 80% (320) -->
-                                                        <div class="absolute top-[-4px] bottom-[-4px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
-                                                        <div class="absolute -top-5 left-[80%] -translate-x-1/2 text-[9px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-1.5 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">320</div>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Barra Feedback -->
-                                                <div class="relative pt-3">
-                                                    <div class="flex justify-between items-end text-[10px] font-bold text-slate-500 mb-1.5">
-                                                        <span>Feedbacks Aplicados</span>
-                                                        <span class="text-purple-600 dark:text-purple-400 text-xs">${taxaFb}%</span>
-                                                    </div>
-                                                    <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-2.5 relative">
-                                                        <div class="bg-purple-500 h-2.5 rounded-full transition-all duration-1000" style="width: ${taxaFb}%"></div>
-                                                        <!-- Marcador 80% -->
-                                                        <div class="absolute top-[-4px] bottom-[-4px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
-                                                        <div class="absolute -top-5 left-[80%] -translate-x-1/2 text-[9px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-1.5 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">80%</div>
-                                                    </div>
-                                                </div>
-
-                                            </div>
-                                            
-                                        </div>
-                                    `;
-                                });
-                                
-                                html += `
+                                            `).join('') || '<div class="text-xs text-slate-400 italic">Nenhum zeramento crítico encontrado! 🎉</div>'}
                                         </div>
                                     </div>
-                                `;
-                            } else {
-                                html += `
-                                    <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
-                                        <i class="fa-solid fa-file-csv text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
-                                        <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Nenhum dado carregado</h4>
-                                        <p class="text-slate-500 text-sm mb-4">Faça o upload do relatório CSV/XLSX ou inicie o quadro com seus usuários cadastrados.</p>
-                                        <button onclick="app.admin.calcularPlanilhaMonitoria([])" class="bg-slate-100 text-slate-600 font-bold px-4 py-2 rounded-lg text-sm border hover:bg-slate-200 transition">Exibir Quadro em Branco para Lançamento Manual</button>
-                                    </div>
-                                `;
-                            }
-                            
-                            container.innerHTML = html;
-                            
-                        } catch (err) {
-                            container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200 shadow-sm"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
-                            console.error(err);
-                        }
-                    },
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    } else {
+                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Aguardando importação de arquivo. Nenhuma métrica gerada.</div>`;
+                    }
+                    
+                    container.innerHTML = html;
+                },
                     renderView_RankingMonitorias(container) {
                         try {
                             if(app.isAdmin) return;
@@ -4942,8 +4867,147 @@
                 }, // <-- Fim do Objeto UI
 
             admin: {
+                processarPlanilhaMonitoria(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    app.ui.showAlert("Processando", "Analisando algoritmos e cruzando dados...", "info");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const data = e.target.result;
+                        // Faz a leitura binária compatível tanto com CSV quanto XLSX
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        const firstSheet = workbook.SheetNames[0];
+                        // Mapeia para JSON usando a primeira linha como chave
+                        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+
+                        if (rows.length === 0) {
+                            return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
+                        }
+
+                        this.analisarDadosAvancados(rows);
+
+                        // Renderiza a tela atualizada com o dashboard
+                        app.ui.renderTab('import_monitorias', true);
+                        app.ui.showAlert("Sucesso!", "O processamento inteligente foi concluído.", "success");
+                    };
+                    reader.readAsBinaryString(file);
+                },
+
+                analisarDadosAvancados(rows) {
+                    const analytics = {
+                        totalLinhas: rows.length,
+                        operadores: {},
+                        falhasComuns: {},
+                        falhasCriticas: {},
+                        monitorProdutividade: {},
+                        slaList: [],
+                        palavrasObs: {}
+                    };
+
+                    const chaves = Object.keys(rows[0] || {});
+                    
+                    // Identificadores de colunas, buscando variâncias textuais
+                    const colObsStr = chaves.find(k => k.toUpperCase().includes('OBSERVAÇÃO') || k.toUpperCase().includes('OBSERVACOES'));
+                    const colNome = chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('OPERADOR')) || chaves[0];
+                    const colNota = chaves.find(k => k.toUpperCase() === 'NOTA') || 'NOTA';
+                    const colMonitor = chaves.find(k => k.toUpperCase().includes('MONITOR') || k.toUpperCase().includes('AVALIADOR')) || 'MONITOR';
+                    const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') || 'DATA';
+                    const colDataGrav = chaves.find(k => k.toUpperCase().includes('DATA GRAVACAO') || k.toUpperCase().includes('GRAVAÇÃO'));
+
+                    // Filtra dinamicamente as colunas avaliadas, independente de como chamam, desde que tenham "PESO"
+                    const colunasAvaliadas = chaves.filter(k => k.toUpperCase().includes('PESO'));
+                    const colunasComuns = colunasAvaliadas.filter(k => !k.includes('100.00') && !k.includes('100,00'));
+                    const colunasCriticas = colunasAvaliadas.filter(k => k.includes('100.00') || k.includes('100,00'));
+
+                    rows.forEach(row => {
+                        const op = row[colNome] || 'Desconhecido';
+                        const notaStr = String(row[colNota] || '0').replace(',', '.');
+                        const nota = parseFloat(notaStr) || 0;
+                        const monitor = row[colMonitor] || 'Desconhecido';
+                        const obs = colObsStr ? row[colObsStr] : '';
+
+                        // 1. Desempenho (Média por operador)
+                        if (!analytics.operadores[op]) {
+                            analytics.operadores[op] = { nome: op, notas: [], min: 100, max: 0 };
+                        }
+                        analytics.operadores[op].notas.push(nota);
+                        if (nota < analytics.operadores[op].min) analytics.operadores[op].min = nota;
+                        if (nota > analytics.operadores[op].max) analytics.operadores[op].max = nota;
+
+                        // 2. Mapeamento de Falhas Comuns (Contagem de "Não")
+                        colunasComuns.forEach(col => {
+                            const resposta = (row[col] || '').toString().trim().toUpperCase();
+                            if (resposta === 'NÃO' || resposta === 'NAO') {
+                                analytics.falhasComuns[col] = (analytics.falhasComuns[col] || 0) + 1;
+                            }
+                        });
+
+                        // 3. Mapeamento de Falhas Críticas (Risco)
+                        colunasCriticas.forEach(col => {
+                            const resposta = (row[col] || '').toString().trim().toUpperCase();
+                            if (resposta === 'NÃO' || resposta === 'NAO') {
+                                if (!analytics.falhasCriticas[col]) analytics.falhasCriticas[col] = [];
+                                analytics.falhasCriticas[col].push(op);
+                            }
+                        });
+
+                        // 4. Inteligência Qualitativa (Nuvem de Palavras)
+                        if (obs && typeof obs === 'string') {
+                            const palavras = obs.toLowerCase().replace(/[.,;:()]/g, '').split(/\s+/);
+                            // Palavras de parada para não poluir o dashboard
+                            const ignorar = ['o','a','os','as','e','de','do','da','em','um','uma','para','com','que','na','no','cliente','atendimento','operador','não','sim','foi','por','ao','se','dos'];
+                            palavras.forEach(p => {
+                                if (p.length > 3 && !ignorar.includes(p)) {
+                                    analytics.palavrasObs[p] = (analytics.palavrasObs[p] || 0) + 1;
+                                }
+                            });
+                        }
+
+                        // 5. Produtividade Monitores
+                        if (!analytics.monitorProdutividade[monitor]) {
+                            analytics.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
+                        }
+                        analytics.monitorProdutividade[monitor].qtd += 1;
+                        analytics.monitorProdutividade[monitor].somaNotas += nota;
+
+                        // 6. SLA - Subtração da Data (Gravacao X Auditoria)
+                        if (row[colDataAudit] && row[colDataGrav]) {
+                            const parseDate = (val) => {
+                                if(typeof val === 'number') return new Date((val - 25569)*86400*1000); // Excel serial 
+                                const parts = val.toString().split('/');
+                                if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
+                                return new Date(val);
+                            };
+                            const dA = parseDate(row[colDataAudit]);
+                            const dG = parseDate(row[colDataGrav]);
+                            
+                            if (!isNaN(dA) && !isNaN(dG)) {
+                                const diffTime = Math.abs(dA - dG);
+                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                analytics.slaList.push(diffDays);
+                            }
+                        }
+                    });
+
+                    // Consolidação de Médias
+                    Object.values(analytics.operadores).forEach(op => {
+                        op.media = op.notas.reduce((a,b) => a+b, 0) / op.notas.length;
+                    });
+                    Object.values(analytics.monitorProdutividade).forEach(m => {
+                        m.mediaNota = m.somaNotas / m.qtd;
+                    });
+
+                    // Ordena pelo maior ranking
+                    analytics.rankOperadores = Object.values(analytics.operadores).sort((a,b) => b.media - a.media);
+                    
+                    // Salva na memória do front para ser lido pelo renderView
+                    app.analyticsData = analytics;
+                },
                 
-                // NOVO BLOCO: Função que abre o modal e monta a linha do tempo (Log)
+                // ... (mantenha qualquer outra função de admin que você já tivesse aqui)
+            }
                 viewUserProfile(matricula) {
                     const u = app.users.find(x => x.matricula === matricula);
                     if(!u) return;
