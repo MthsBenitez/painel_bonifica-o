@@ -4940,7 +4940,11 @@
                     }
                 },
 
+            
             admin: {
+                // ==========================================
+                // NOVAS FUNÇÕES: INTELIGÊNCIA AVANÇADA
+                // ==========================================
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -5065,6 +5069,9 @@
                     app.analyticsData = analytics;
                 },
 
+                // ==========================================
+                // FUNÇÕES ORIGINAIS DE ADMINISTRAÇÃO
+                // ==========================================
                 viewUserProfile(mat) {
                     const u = app.users.find(x => x.matricula === mat);
                     if(!u) return;
