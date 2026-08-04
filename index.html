@@ -2549,7 +2549,9 @@
 
                             <!-- O PÓDIO (RANKING) -->
                             <h2 class="text-2xl font-black text-slate-800 dark:text-white text-center mb-6 uppercase tracking-wider"><i class="fa-solid fa-ranking-star text-orange-500"></i> Ranking Atual</h2>
-                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-16 px-4">
+                            
+                            <!-- Aumentamos o MT (margin-top) de 16 para 36 para não esbarrar no balão e na coroa -->
+                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-36 px-4">
                     `;
 
                     // Ordem: 2º (idx 1), 1º (idx 0), 3º (idx 2), 4º (idx 3)
@@ -2565,24 +2567,33 @@
                         let rankStyle, heightClass, icon, crownOrQuote = '';
                         if(idx === 0) { 
                             rankStyle = 'ranking-podium-1 text-yellow-900'; 
-                            heightClass = 'h-[22rem] md:h-[26rem]'; 
+                            heightClass = 'h-[20rem] md:h-[26rem]'; 
                             icon = 'fa-trophy text-yellow-600'; 
                             
-                            crownOrQuote = `<div class="absolute -top-12 left-0 w-full flex justify-center trophy-float z-20"><i class="fa-solid fa-crown text-[50px] text-yellow-500 drop-shadow-lg"></i></div>`;
+                            crownOrQuote = `<div class="absolute -top-14 left-0 w-full flex justify-center trophy-float z-20"><i class="fa-solid fa-crown text-[50px] text-yellow-500 drop-shadow-lg"></i></div>`;
+                            
                             if (eq.quote) {
+                                // Puxa a foto de quem publicou a frase
+                                let quoteAvatar = 'https://ui-avatars.com/api/?name=Lider&background=fef08a&color=854d0e';
+                                if (eq.quoteAutor) {
+                                    const autorObj = app.users.find(u => u.matricula === eq.quoteAutor);
+                                    if (autorObj) quoteAvatar = autorObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(autorObj.nome)}&background=fef08a&color=854d0e`;
+                                }
+
                                 crownOrQuote += `
-                                    <div class="absolute -top-28 left-0 w-full flex justify-center z-30 drop-shadow-xl animate-fade-in">
-                                        <div class="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-5 py-2.5 rounded-2xl text-xs font-black text-center max-w-[90%] relative border-2 border-yellow-400">
-                                            "${eq.quote}"
+                                    <div class="absolute -top-32 left-1/2 transform -translate-x-1/2 w-[110%] sm:w-64 flex justify-center z-30 drop-shadow-xl animate-fade-in">
+                                        <div class="bg-white dark:bg-slate-800 text-slate-800 dark:text-white pl-8 pr-4 py-3 rounded-2xl text-[11px] font-black text-center w-full relative border-2 border-yellow-400 flex items-center min-h-[50px]">
+                                            <img src="${quoteAvatar}" class="absolute -left-4 top-1/2 transform -translate-y-1/2 w-12 h-12 rounded-full border-2 border-yellow-400 object-cover bg-white shadow-sm">
+                                            <div class="italic w-full leading-tight">"${eq.quote}"</div>
                                             <div class="absolute -bottom-2.5 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-slate-800 border-b-2 border-r-2 border-yellow-400 rotate-45"></div>
                                         </div>
                                     </div>
                                 `;
                             }
                         }
-                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[18rem] md:h-[22rem]'; icon = 'fa-medal text-slate-500'; }
-                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[16rem] md:h-[19rem]'; icon = 'fa-award text-orange-700'; }
-                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-[14rem] md:h-[16rem]'; icon = 'fa-thumbs-up text-slate-400'; }
+                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[16rem] md:h-[22rem]'; icon = 'fa-medal text-slate-500'; }
+                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[14rem] md:h-[19rem]'; icon = 'fa-award text-orange-700'; }
+                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-[12rem] md:h-[16rem]'; icon = 'fa-thumbs-up text-slate-400'; }
 
                         // Agrupar avatares sobrepostos (Limitando a 5 visíveis)
                         let avatarsHtml = '<div class="flex -space-x-3 overflow-hidden my-3 justify-center px-2 w-full">';
@@ -5089,12 +5100,13 @@
                     if(!val) return app.ui.showAlert("Aviso", "Digite uma frase antes de salvar.", "error");
 
                     app.campanhaData[eqId].quote = val;
+                    app.campanhaData[eqId].quoteAutor = app.currentUser.matricula; // NOVO: Salva a matrícula de quem digitou para mostrar a foto
+                    
                     app.storage.saveCampanha().then(() => {
                         app.ui.showAlert("Pronto!", "A frase da sua equipe foi cravada no topo do pódio para toda a operação ver!", "success");
                         app.ui.renderTab('campanha_mes', true);
                     });
                 },
-                
                 addMembroCampanha(eqId) {
                     const select = document.getElementById(`user-sel-${eqId}`);
                     const matricula = select.value;
