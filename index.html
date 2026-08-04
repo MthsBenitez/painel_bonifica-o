@@ -177,6 +177,23 @@
             50% { transform: translateY(-10px); }
             100% { transform: translateY(0px); }
         }
+
+        /* Emojis Flutuantes da Vitória */
+        .floating-emoji {
+            position: fixed;
+            bottom: -50px;
+            font-size: 2.5rem;
+            animation: fly-up linear forwards;
+            z-index: 9999;
+            pointer-events: none;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));
+        }
+        @keyframes fly-up {
+            0% { transform: translateY(0) scale(0.8) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-110vh) scale(1.5) rotate(180deg); opacity: 0; }
+        }
         
     </style>
 </head>
@@ -2187,6 +2204,39 @@
                     this.timerInterval = setInterval(update, 1000);
                 },
 
+                sendEmoji(eqId) {
+                    const eq = app.campanhaData[eqId];
+                    if(!eq) return;
+                    if(eq.emojiStock === undefined) eq.emojiStock = 50; // Estoque inicial
+                    if(eq.emojisSent === undefined) eq.emojisSent = 0;
+                    
+                    if(eq.emojiStock <= 0) return app.ui.showAlert("Acabou!", "Sua equipe já lançou todo o estoque de comemorações disponíveis nesta campanha.", "info");
+
+                    eq.emojiStock -= 1;
+                    eq.emojisSent += 1;
+                    
+                    document.getElementById('emoji-stock-display').textContent = eq.emojiStock;
+                    
+                    app.storage.saveCampanha().then(() => {
+                        this.playFloatingEmojis(1); // Solta 1 agora para quem apertou
+                    });
+                },
+
+                playFloatingEmojis(count) {
+                    const emojis = ['🚀', '🎉', '🔥', '🏆', '⭐', '💎', '👑'];
+                    for(let i=0; i<count; i++) {
+                        setTimeout(() => {
+                            const el = document.createElement('div');
+                            el.className = 'floating-emoji';
+                            el.innerText = emojis[Math.floor(Math.random() * emojis.length)];
+                            el.style.left = Math.random() * 90 + 5 + 'vw'; // Posição horizontal aleatória
+                            el.style.animationDuration = (Math.random() * 2 + 3) + 's'; // Velocidade entre 3 e 5 seg
+                            document.body.appendChild(el);
+                            setTimeout(() => el.remove(), 5000); // Limpa o dom
+                        }, i * 150); // Delay suave entre um emoji e outro
+                    }
+                },
+
                 showApp() {
                     document.getElementById('header-username').textContent = app.isAdmin ? 'Administração' : app.currentUser.nome;
 
@@ -2452,12 +2502,22 @@
                     let userInFirstPlaceHtml = '';
                     const firstPlace = equipes[0];
                     if (firstPlace && firstPlace.membros && app.currentUser && firstPlace.membros.includes(app.currentUser.matricula)) {
+                        const stock = firstPlace.emojiStock !== undefined ? firstPlace.emojiStock : 50;
                         userInFirstPlaceHtml = `
                             <div class="mt-8 mb-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/50 p-5 rounded-3xl max-w-2xl mx-auto shadow-lg animate-fade-in">
-                                <h4 class="font-black text-yellow-700 dark:text-yellow-400 text-sm mb-3 uppercase tracking-widest text-center"><i class="fa-solid fa-bullhorn"></i> Privilégio do Líder: Ditar a Frase de Destaque</h4>
-                                <div class="flex flex-col sm:flex-row gap-3">
-                                    <input type="text" id="eq-quote-input" maxlength="60" placeholder="Digite uma frase de vitória para sua equipe (Max 60 caracteres)..." value="${firstPlace.quote || ''}" class="flex-1 p-3 rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-sm dark:text-white font-bold focus:ring-2 focus:ring-yellow-500">
-                                    <button onclick="app.admin.saveEquipeQuote('${firstPlace.id}')" class="bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-white px-6 py-3 rounded-xl font-bold shadow-md transition transform hover:-translate-y-0.5"><i class="fa-solid fa-thumbtack"></i> Fixar no Pódio</button>
+                                <h4 class="font-black text-yellow-700 dark:text-yellow-400 text-sm mb-3 uppercase tracking-widest text-center"><i class="fa-solid fa-bullhorn"></i> Privilégio do Líder</h4>
+                                
+                                <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                                    <input type="text" id="eq-quote-input" maxlength="60" placeholder="Digite a frase de vitória (Max 60 caracteres)..." value="${firstPlace.quote || ''}" class="flex-1 p-3 rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-sm dark:text-white font-bold focus:ring-2 focus:ring-yellow-500">
+                                    <button onclick="app.admin.saveEquipeQuote('${firstPlace.id}')" class="bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-white px-6 py-3 rounded-xl font-bold shadow-md transition transform hover:-translate-y-0.5"><i class="fa-solid fa-thumbtack"></i> Fixar Frase</button>
+                                </div>
+
+                                <div class="border-t border-yellow-300 dark:border-yellow-700/50 pt-4 flex items-center justify-between">
+                                    <div>
+                                        <div class="text-xs font-black uppercase text-yellow-800 dark:text-yellow-400">Celebração Épica</div>
+                                        <div class="text-[10px] text-yellow-700 dark:text-yellow-500">Restam <strong id="emoji-stock-display">${stock}</strong> Lançamentos</div>
+                                    </div>
+                                    <button onclick="app.ui.sendEmoji('${firstPlace.id}')" class="bg-white dark:bg-slate-800 text-2xl p-3 rounded-xl border border-yellow-400 shadow-md hover:scale-110 transition-transform disabled:opacity-50" ${stock <= 0 ? 'disabled' : ''}>🚀</button>
                                 </div>
                             </div>
                         `;
@@ -2489,7 +2549,7 @@
 
                             <!-- O PÓDIO (RANKING) -->
                             <h2 class="text-2xl font-black text-slate-800 dark:text-white text-center mb-6 uppercase tracking-wider"><i class="fa-solid fa-ranking-star text-orange-500"></i> Ranking Atual</h2>
-                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[22rem] mt-16 px-4">
+                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-16 px-4">
                     `;
 
                     // Ordem: 2º (idx 1), 1º (idx 0), 3º (idx 2), 4º (idx 3)
@@ -2498,14 +2558,17 @@
                         const eq = equipes[idx];
                         if(!eq) return;
                         
+                        const isMyTeam = app.currentUser && eq.membros && eq.membros.includes(app.currentUser.matricula);
+                        const myTeamBadge = isMyTeam ? `<div class="absolute -top-3 sm:-top-4 bg-green-500 text-white px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black shadow-lg animate-pulse border-2 border-white dark:border-slate-800 z-50">SUA EQUIPE</div>` : '';
+                        const myTeamRing = isMyTeam ? 'ring-4 ring-green-400 dark:ring-green-500' : '';
+                        
                         let rankStyle, heightClass, icon, crownOrQuote = '';
                         if(idx === 0) { 
                             rankStyle = 'ranking-podium-1 text-yellow-900'; 
-                            heightClass = 'h-[20rem] md:h-80'; 
+                            heightClass = 'h-[22rem] md:h-[26rem]'; 
                             icon = 'fa-trophy text-yellow-600'; 
                             
                             crownOrQuote = `<div class="absolute -top-12 left-0 w-full flex justify-center trophy-float z-20"><i class="fa-solid fa-crown text-[50px] text-yellow-500 drop-shadow-lg"></i></div>`;
-                            
                             if (eq.quote) {
                                 crownOrQuote += `
                                     <div class="absolute -top-28 left-0 w-full flex justify-center z-30 drop-shadow-xl animate-fade-in">
@@ -2517,9 +2580,9 @@
                                 `;
                             }
                         }
-                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[16rem] md:h-64'; icon = 'fa-medal text-slate-500'; }
-                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[14rem] md:h-56'; icon = 'fa-award text-orange-700'; }
-                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-[12rem] md:h-48'; icon = 'fa-thumbs-up text-slate-400'; }
+                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[18rem] md:h-[22rem]'; icon = 'fa-medal text-slate-500'; }
+                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[16rem] md:h-[19rem]'; icon = 'fa-award text-orange-700'; }
+                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-[14rem] md:h-[16rem]'; icon = 'fa-thumbs-up text-slate-400'; }
 
                         // Agrupar avatares sobrepostos (Limitando a 5 visíveis)
                         let avatarsHtml = '<div class="flex -space-x-3 overflow-hidden my-3 justify-center px-2 w-full">';
@@ -2541,7 +2604,8 @@
                         avatarsHtml += '</div>';
 
                         html += `
-                                <div class="w-full md:w-48 ${heightClass} ${rankStyle} rounded-t-3xl relative flex flex-col items-center justify-start pt-6 transition-all duration-500 shrink-0">
+                                <div class="w-full md:w-48 ${heightClass} ${rankStyle} ${myTeamRing} rounded-t-3xl relative flex flex-col items-center justify-start pt-6 transition-all duration-500 shrink-0">
+                                    ${myTeamBadge}
                                     ${crownOrQuote}
                                     <div class="text-4xl mb-1 opacity-80 mt-2"><i class="fa-solid ${icon}"></i></div>
                                     <div class="font-black text-lg md:text-xl uppercase text-center leading-tight px-2">${eq.nome}</div>
@@ -2650,7 +2714,13 @@
                         </div>
                     `;
                     container.innerHTML = html;
-                    setTimeout(() => { app.ui.initTimer(); }, 50);
+                    
+                    // Inicialização dos eventos assíncronos
+                    const emojisToSend = firstPlace ? (firstPlace.emojisSent || 0) : 0;
+                    setTimeout(() => { 
+                        app.ui.initTimer(); 
+                        if(emojisToSend > 0) app.ui.playFloatingEmojis(emojisToSend);
+                    }, 50);
                 },
 
                 renderView_GestaoCampanha(container) {
@@ -2672,7 +2742,10 @@
                             <div class="glass-card rounded-3xl p-5 border-t-4 border-t-blue-500 shadow-sm flex flex-col h-full bg-white dark:bg-dark-surface">
                                 <div class="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-slate-700 pb-3">
                                     <h3 class="font-black text-lg text-slate-800 dark:text-white uppercase">${eq.nome}</h3>
-                                    <div class="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 font-black px-3 py-1.5 rounded-lg text-sm shadow-sm">${eq.pontos} pts</div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 font-black px-3 py-1.5 rounded-lg text-sm shadow-sm">${eq.pontos} pts</div>
+                                        <button onclick="app.admin.resetPontosCampanha('${eq.id}')" class="text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 p-1.5 rounded-md transition" title="Zerar Equipe"><i class="fa-solid fa-arrow-rotate-left"></i></button>
+                                    </div>
                                 </div>
                                 
                                 <div class="mb-5 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -4994,6 +5067,19 @@
                             app.ui.renderTab('gestao_campanha', true);
                         });
                     }
+                },
+
+                resetPontosCampanha(eqId) {
+                    app.ui.showConfirm("Zerar Equipe", "Tem certeza que deseja ZERAR os pontos e apagar todo o histórico desta equipe? Esta ação não tem volta.", `app.admin.executeResetPontos('${eqId}')`, true);
+                },
+
+                executeResetPontos(eqId) {
+                    app.campanhaData[eqId].pontos = 0;
+                    app.campanhaData[eqId].history = [];
+                    app.storage.saveCampanha().then(() => {
+                        app.ui.renderTab('gestao_campanha', true);
+                        app.ui.showAlert("Zerado", "Pontuação e histórico da equipe foram limpos com sucesso.", "success");
+                    });
                 },
 
                 saveEquipeQuote(eqId) {
