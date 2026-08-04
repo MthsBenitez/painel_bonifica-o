@@ -2261,7 +2261,7 @@
                     const menus = app.isAdmin 
                         ? [
                             { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}] },
-                            { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}] },
+                            { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
                             { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, // NOVA ABA ADM
                             { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                             { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
@@ -2381,7 +2381,8 @@
                         else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);
                         else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
                         else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
-                        else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
+                        else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -4589,6 +4590,202 @@
 
                     document.getElementById('up-timeline').innerHTML = htmlTl;
                     document.getElementById('user-profile-modal').classList.remove('hidden');
+                },
+
+                processarPlanilhaMonitoria(input) {
+                    const file = input.files[0];
+                    if(!file) return;
+                    
+                    // Alerta de carregamento
+                    app.ui.showAlert("Processando...", "Aguarde enquanto o sistema lê o arquivo e cruza as matrículas...", "info");
+                    
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        // Converte para JSON garantindo que não pule colunas vazias
+                        const json = XLSX.utils.sheet_to_json(firstSheet, {defval: ""}); 
+                        this.calcularPlanilhaMonitoria(json);
+                        document.getElementById('global-modal').classList.add('hidden'); // Fecha alerta
+                    };
+                    reader.readAsArrayBuffer(file);
+                    input.value = ''; // Reseta o input para permitir enviar o mesmo arquivo novamente
+                },
+                
+                calcularPlanilhaMonitoria(json) {
+                    // Zera o estado anterior (como pedido: sempre que alimenta, ele reseta)
+                    this.monitoriasState = {
+                        ranking: [],
+                        diario: {},
+                        totalLido: 0
+                    };
+                    
+                    const mapMonitor = {};
+                    
+                    json.forEach(row => {
+                        // Função flexível para pegar a coluna ignorando Case Sensitive e espaços
+                        const getCol = (name) => {
+                            const key = Object.keys(row).find(k => String(k).trim().toUpperCase() === name.toUpperCase());
+                            return row[key];
+                        };
+                        
+                        const matriculaRaw = getCol('MATRÍCULA') || getCol('MATRICULA');
+                        if(!matriculaRaw) return; // Pula linha se não houver matrícula
+                        
+                        const matStr = String(matriculaRaw).trim();
+                        
+                        // Se for a primeira vez que essa matrícula aparece no loop, prepara o objeto cruzando com app.users
+                        if(!mapMonitor[matStr]) {
+                            const userDB = app.users.find(x => String(x.matricula) === matStr);
+                            mapMonitor[matStr] = {
+                                matricula: matStr,
+                                nome: userDB ? userDB.nome : `Não Cadastrado (${matStr})`,
+                                total: 0,
+                                falta: 400,
+                                pendenteFeedback: 0
+                            };
+                        }
+                        
+                        // +1 Monitoria realizada
+                        mapMonitor[matStr].total++;
+                        mapMonitor[matStr].falta = Math.max(0, 400 - mapMonitor[matStr].total);
+                        
+                        // Regra de Feedback Obrigatório (< 85 e sem status 'feedback_aplicado')
+                        const notaRaw = getCol('NOTA MONITORIA');
+                        const statusRaw = getCol('STATUS MONITORIA');
+                        
+                        // Garante conversão segura para número (trata vírgula como ponto, se houver)
+                        const nota = parseFloat(String(notaRaw).replace(',', '.'));
+                        const status = String(statusRaw).trim().toLowerCase();
+                        
+                        if(!isNaN(nota) && nota < 85) {
+                            if(status !== 'feedback_aplicado') {
+                                mapMonitor[matStr].pendenteFeedback++;
+                            }
+                        }
+                        
+                        // Contagem Diária para o Gráfico (Busca coluna de data ou usa genérico)
+                        let dataStr = getCol('DATA') || getCol('DATA MONITORIA') || getCol('CRIADO EM');
+                        if(!dataStr) {
+                            dataStr = 'Sem Data Especificada';
+                        } else {
+                            // Se o excel converter data para serial, tentamos usar os 10 primeiros caracteres se for string
+                            dataStr = String(dataStr).substring(0, 10); 
+                        }
+                        
+                        if(!this.monitoriasState.diario[dataStr]) this.monitoriasState.diario[dataStr] = 0;
+                        this.monitoriasState.diario[dataStr]++;
+                        
+                        this.monitoriasState.totalLido++;
+                    });
+                    
+                    // Transforma em array e ordena por quem tem mais (Ranking Total)
+                    this.monitoriasState.ranking = Object.values(mapMonitor).sort((a, b) => b.total - a.total);
+                    
+                    app.ui.renderTab('import_monitorias', true);
+                    app.ui.showAlert("Sucesso!", "Planilha importada e dados calculados com sucesso.", "success");
+                },
+
+                renderView_ImportMonitorias(container) {
+                    if(!app.isAdmin) return;
+                    
+                    let state = app.admin.monitoriasState || { ranking: [], diario: {}, totalLido: 0 };
+                    
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Importação de Monitorias</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Faça o upload do relatório diário. O sistema recalcula automaticamente a cada envio (Meta: 400/mês).</p>
+                            </div>
+                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-upload"></i> Subir Planilha
+                                <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
+                            </label>
+                        </div>
+                    `;
+                    
+                    if(state.totalLido > 0) {
+                        html += `
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                <!-- Ranking e Feedbacks -->
+                                <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
+                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Status por Monitor</h3>
+                                    <div class="overflow-y-auto max-h-[350px] custom-scrollbar pr-2 space-y-3 flex-1">
+                        `;
+                        
+                        state.ranking.forEach((r, idx) => {
+                            let pendenteBadge = r.pendenteFeedback > 0 
+                                ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Atrasados (< 85)</span>` 
+                                : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
+                                
+                            html += `
+                                <div class="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center hover:border-blue-300 transition-colors">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-7 h-7 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-xs font-black shrink-0">${idx+1}º</div>
+                                        <div>
+                                            <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome}</div>
+                                            <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
+                                                <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
+                                                ${pendenteBadge}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="text-xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-lg">${r.total}</div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += `
+                                    </div>
+                                </div>
+                                
+                                <!-- Gráfico Diário -->
+                                <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
+                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-chart-line text-green-500"></i> Volume Diário (Total Equipe)</h3>
+                                    <div class="relative flex-1 min-h-[250px] w-full"><canvas id="chart-monitorias-dia"></canvas></div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
+                                <i class="fa-solid fa-file-csv text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
+                                <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Nenhum dado carregado</h4>
+                                <p class="text-slate-500 text-sm">Faça o upload do relatório CSV/XLSX para visualizar o progresso da equipe.</p>
+                            </div>
+                        `;
+                    }
+                    
+                    container.innerHTML = html;
+                    
+                    // Renderiza o gráfico se houver dados
+                    if(state.totalLido > 0) {
+                        setTimeout(() => {
+                            const ctx = document.getElementById('chart-monitorias-dia');
+                            if(ctx) {
+                                const labels = Object.keys(state.diario).sort();
+                                const data = labels.map(l => state.diario[l]);
+                                const isDark = document.documentElement.classList.contains('dark');
+                                const textColor = isDark ? '#94a3b8' : '#64748b';
+                                const gridColor = isDark ? '#334155' : '#e2e8f0';
+                                
+                                if(window.myChartMonDia) window.myChartMonDia.destroy();
+                                window.myChartMonDia = new Chart(ctx, {
+                                    type: 'bar',
+                                    data: { 
+                                        labels: labels, 
+                                        datasets: [{ label: 'Monitorias Realizadas', data: data, backgroundColor: '#10b981', borderRadius: 4 }] 
+                                    },
+                                    options: { 
+                                        responsive: true, maintainAspectRatio: false, 
+                                        scales: { y: { beginAtZero: true, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, 
+                                        plugins: { legend: { display: false } } 
+                                    }
+                                });
+                            }
+                        }, 50);
+                    }
                 },
 
                 resetTermos(matricula) {
