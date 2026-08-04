@@ -4584,7 +4584,7 @@
                                 <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                     <div>
                                         <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou ajuste valores manualmente. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e acompanhe as projeções da equipe. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
                                     </div>
                                     <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
                                         <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
@@ -4597,7 +4597,7 @@
                                 const totalMonitorias = state.ranking.reduce((acc, curr) => acc + curr.total, 0);
                                 const totalFaltante = state.ranking.reduce((acc, curr) => acc + curr.falta, 0);
                                 const totalFeedbacks = state.ranking.reduce((acc, curr) => acc + curr.pendenteFeedback, 0);
-                                const metaGlobal = state.ranking.length * 400; // Meta real baseada nos usuários da equipe
+                                const metaGlobal = state.ranking.length * 400; 
                             
                                 html += `
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4619,7 +4619,7 @@
                                     </div>
 
                                     <!-- Tabela de Supervisão -->
-                                    <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[600px]">
+                                    <div class="glass-card p-6 rounded-3xl flex flex-col mb-8 h-[650px]">
                                         <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Performance Operacional</h3>
                                         <div class="overflow-y-auto custom-scrollbar pr-2 space-y-4 flex-1">
                                 `;
@@ -4633,11 +4633,15 @@
                                     
                                     let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
                                     let projecao = Math.round((r.total / wd.passed) * wd.total);
-                                    let projColor = projecao >= 400 ? 'text-green-500' : 'text-orange-500';
+                                    let projColor = projecao >= 400 ? 'text-green-500' : (projecao >= 320 ? 'text-blue-500' : 'text-orange-500');
+                                    
+                                    let taxaFb = r.totalAbaixo85 > 0 ? ((r.feedbacksAplicados / r.totalAbaixo85) * 100).toFixed(0) : 100;
                                     
                                     html += `
-                                        <div class="p-4 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-300 transition-colors">
-                                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-3">
+                                        <div class="p-4 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-300 transition-colors flex flex-col gap-2">
+                                            
+                                            <!-- Topo: Info e Projeção -->
+                                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                                 <div class="flex items-center gap-3 w-full md:w-auto">
                                                     <div class="w-8 h-8 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700 shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-sm font-black shrink-0">${idx+1}º</div>
                                                     <div>
@@ -4659,6 +4663,40 @@
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            <!-- Barras de Progresso -->
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3 border-t border-slate-100 dark:border-slate-700/50 mt-1">
+                                                
+                                                <!-- Barra Monitorias -->
+                                                <div class="relative pt-3">
+                                                    <div class="flex justify-between items-end text-[10px] font-bold text-slate-500 mb-1.5">
+                                                        <span>Progresso Monitorias</span>
+                                                        <span class="text-blue-600 dark:text-blue-400 text-xs">${pct}%</span>
+                                                    </div>
+                                                    <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-2.5 relative">
+                                                        <div class="bg-blue-500 h-2.5 rounded-full transition-all duration-1000" style="width: ${pct}%"></div>
+                                                        <!-- Marcador 80% (320) -->
+                                                        <div class="absolute top-[-4px] bottom-[-4px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
+                                                        <div class="absolute -top-5 left-[80%] -translate-x-1/2 text-[9px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-1.5 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">320</div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Barra Feedback -->
+                                                <div class="relative pt-3">
+                                                    <div class="flex justify-between items-end text-[10px] font-bold text-slate-500 mb-1.5">
+                                                        <span>Feedbacks Aplicados</span>
+                                                        <span class="text-purple-600 dark:text-purple-400 text-xs">${taxaFb}%</span>
+                                                    </div>
+                                                    <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-2.5 relative">
+                                                        <div class="bg-purple-500 h-2.5 rounded-full transition-all duration-1000" style="width: ${taxaFb}%"></div>
+                                                        <!-- Marcador 80% -->
+                                                        <div class="absolute top-[-4px] bottom-[-4px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
+                                                        <div class="absolute -top-5 left-[80%] -translate-x-1/2 text-[9px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-1.5 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">80%</div>
+                                                    </div>
+                                                </div>
+
+                                            </div>
+                                            
                                         </div>
                                     `;
                                 });
