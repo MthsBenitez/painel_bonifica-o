@@ -4714,58 +4714,28 @@
                                             <div class="flex items-center gap-3 w-full md:w-auto">
                                                 <div class="w-8 h-8 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700 shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-sm font-black shrink-0">${idx+1}º</div>
                                                 <div>
-                                                    <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome} ${manualBadge}</div>
-                                                    <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                                                        <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
-                                                        ${pendenteBadge}
-                                                    </div>
+                                                    <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome}</div>
+                                                    <div class="text-[10px] text-slate-500 uppercase tracking-widest">${r.matricula} ${manualBadge}</div>
                                                 </div>
                                             </div>
-                                            <div class="flex items-center justify-between w-full md:w-auto gap-4">
-                                                <div class="text-right">
-                                                    <div class="text-[9px] uppercase font-bold text-slate-400">Projeção Mês</div>
-                                                    <div class="font-black text-sm ${projColor}">${projecao} <span class="text-slate-400 text-[10px] font-normal">/ 400</span></div>
-                                                </div>
-                                                <div class="flex items-center gap-2">
-                                                    <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
-                                                    <button onclick="app.admin.editMonitoriasManual('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i> Ajustar</button>
-                                                </div>
+                                            <div class="text-right flex flex-col md:items-end w-full md:w-auto">
+                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Entregas / Meta Mensal</div>
+                                                <div class="text-xl font-black ${projColor}">${r.total} <span class="text-sm font-medium text-slate-500">/ 400</span></div>
                                             </div>
                                         </div>
-
-                                        <!-- Barras de Progresso -->
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3 border-t border-slate-100 dark:border-slate-700/50 mt-1">
-                                            
-                                            <!-- Barra Monitorias -->
-                                            <div class="relative pt-3">
-                                                <div class="flex justify-between items-end text-[10px] font-bold text-slate-500 mb-1.5">
-                                                    <span>Progresso Monitorias</span>
-                                                    <span class="text-blue-600 dark:text-blue-400 text-xs">${pct}%</span>
-                                                </div>
-                                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-2.5 relative">
-                                                    <div class="bg-blue-500 h-2.5 rounded-full transition-all duration-1000" style="width: ${pct}%"></div>
-                                                    <!-- Marcador 80% (320) -->
-                                                    <div class="absolute top-[-4px] bottom-[-4px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
-                                                    <div class="absolute -top-5 left-[80%] -translate-x-1/2 text-[9px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-1.5 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">320</div>
-                                                </div>
+                                        <div class="grid grid-cols-2 gap-4 mt-2 border-t border-slate-100 dark:border-slate-700/50 pt-3">
+                                            <div>
+                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ritmo Atual</div>
+                                                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mb-1"><div class="bg-blue-500 h-1.5 rounded-full" style="width: ${pct}%"></div></div>
+                                                <div class="text-[9px] font-bold text-blue-600 dark:text-blue-400">${pct}% Concluído (Proj: ${projecao})</div>
                                             </div>
-
-                                            <!-- Barra Feedback -->
-                                            <div class="relative pt-3">
-                                                <div class="flex justify-between items-end text-[10px] font-bold text-slate-500 mb-1.5">
-                                                    <span>Feedbacks Aplicados</span>
-                                                    <span class="text-purple-600 dark:text-purple-400 text-xs">${taxaFb}%</span>
-                                                </div>
-                                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-2.5 relative">
-                                                    <div class="bg-purple-500 h-2.5 rounded-full transition-all duration-1000" style="width: ${taxaFb}%"></div>
-                                                    <!-- Marcador 80% -->
-                                                    <div class="absolute top-[-4px] bottom-[-4px] left-[80%] border-l-2 border-slate-800 dark:border-white z-10 opacity-70"></div>
-                                                    <div class="absolute -top-5 left-[80%] -translate-x-1/2 text-[9px] font-black text-slate-800 dark:text-white bg-white dark:bg-slate-600 px-1.5 py-0.5 rounded shadow-md border border-slate-200 dark:border-slate-500">80%</div>
-                                                </div>
+                                            <div>
+                                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Qualidade do Feedback</div>
+                                                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mb-1"><div class="bg-purple-500 h-1.5 rounded-full" style="width: ${taxaFb}%"></div></div>
+                                                <div class="text-[9px] font-bold text-purple-600 dark:text-purple-400">${r.feedbacksAplicados}/${r.totalAbaixo85} Aplicados</div>
                                             </div>
-
                                         </div>
-                                        
+                                        <div class="mt-2 text-right">${pendenteBadge}</div>
                                     </div>
                                 `;
                             });
@@ -4775,176 +4745,17 @@
                                 </div>
                             `;
                         } else {
-                            html += `
-                                <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
-                                    <i class="fa-solid fa-file-csv text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
-                                    <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Nenhum dado carregado</h4>
-                                    <p class="text-slate-500 text-sm mb-4">Faça o upload do relatório CSV/XLSX ou inicie o quadro com seus usuários cadastrados.</p>
-                                    <button onclick="app.admin.calcularPlanilhaMonitoria([])" class="bg-slate-100 text-slate-600 font-bold px-4 py-2 rounded-lg text-sm border hover:bg-slate-200 transition">Exibir Quadro em Branco para Lançamento Manual</button>
-                                </div>
-                            `;
+                            html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Aguardando importação de arquivo. Nenhuma métrica gerada.</div>`;
                         }
                         
                         container.innerHTML = html;
-                        
-                    } catch (err) {
-                        container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200 shadow-sm"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
-                        console.error(err);
+                    } catch(err) {
+                        console.error("Erro na importação:", err);
                     }
-                },
+                }, // <--- AQUI FECHA A ABA DE IMPORTAÇÃO
+            }, // <--- AQUI FECHA A CLASSE 'ui' COM A VÍRGULA VITAL
 
-                renderView_RankingMonitorias(container) {
-                    try {
-                        if(app.isAdmin) return;
-                        
-                        let state = app.monitoriasData || { ranking: [] };
-                        const wd = app.utils.getWorkingDays(app.currentMonth);
-                        
-                        const r = state.ranking.find(x => x.matricula === app.currentUser.matricula) || { 
-                            total: 0, falta: 400, totalAbaixo85: 0, feedbacksAplicados: 0, pendenteFeedback: 0 
-                        };
-                        
-                        // Cálculos Matemáticos e Projeções
-                        const pctAtual = Math.min(100, (r.total / 400) * 100).toFixed(2);
-                        const projecao = Math.round((r.total / wd.passed) * wd.total);
-                        const diasRestantes = Math.max(1, wd.total - wd.passed);
-                        const ritmoDiario = Math.ceil(Math.max(0, 400 - r.total) / diasRestantes);
-                        
-                        // Taxa de Feedbacks %
-                        const taxaFb = r.totalAbaixo85 > 0 ? ((r.feedbacksAplicados / r.totalAbaixo85) * 100).toFixed(0) : 100;
-                        
-                        // Dinheiro
-                        const g1 = app.config.goals.find(g => g.id === 'g1');
-                        const maxVal = g1 ? app.config.baseValue * g1.weight : 0;
-                        
-                        const getQuad = (p) => {
-                            if(p >= 100) return { q: 'Q1 (Excelente)', m: 1.0, c: 'text-green-500', bg: 'bg-green-500' };
-                            if(p >= 90) return { q: 'Q2 (Bom)', m: 0.75, c: 'text-blue-500', bg: 'bg-blue-500' };
-                            if(p >= 80) return { q: 'Q3 (Regular)', m: 0.50, c: 'text-orange-500', bg: 'bg-orange-500' };
-                            if(p >= 70) return { q: 'Q4 (Atenção)', m: 0.25, c: 'text-amber-500', bg: 'bg-amber-500' };
-                            return { q: 'Q5 (Insuficiente)', m: 0, c: 'text-red-500', bg: 'bg-red-500' };
-                        };
-                        
-                        const quadAtual = getQuad((r.total / 400) * 100);
-                        const quadProj = getQuad((projecao / 400) * 100);
-                        
-                        const granaGarantida = maxVal * quadAtual.m;
-                        const granaProj = maxVal * quadProj.m;
-                        
-                        let html = `
-                            <style>
-                                @keyframes spark-flow { 0% { left: -100%; opacity: 0; } 50% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
-                                .spark-effect { position: relative; overflow: hidden; }
-                                .spark-effect::after { content: ''; position: absolute; top: 0; bottom: 0; width: 60%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent); animation: spark-flow 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1); transform: skewX(-20deg); z-index: 10; }
-                                
-                                .metric-card { background: linear-gradient(145deg, rgba(255,255,255,1) 0%, rgba(248,250,252,1) 100%); border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -2px rgba(0,0,0,0.02); border-radius: 1.5rem; transition: transform 0.3s; }
-                                .dark .metric-card { background: linear-gradient(145deg, rgba(30,41,59,1) 0%, rgba(15,23,42,1) 100%); border-color: #334155; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
-                                .metric-card:hover { transform: translateY(-5px); }
-                            </style>
-                            
-                            <div class="mb-8">
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Meu Desempenho Operacional</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe sua jornada analítica. A meta de ouro é a entrega de 400 monitorias.</p>
-                            </div>
-                            
-                            <!-- Barra de Progresso Master -->
-                            <div class="glass-card p-8 rounded-3xl mb-8 relative overflow-hidden">
-                                <div class="absolute -right-10 -top-10 text-9xl text-green-500 opacity-5"><i class="fa-solid fa-trophy"></i></div>
-                                
-                                <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 relative z-10 gap-4">
-                                    <div>
-                                        <div class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Volume Validado</div>
-                                        <div class="text-5xl font-black text-slate-800 dark:text-white flex items-baseline gap-2">
-                                            ${r.total} <span class="text-xl text-slate-400 font-medium">/ 400</span>
-                                        </div>
-                                    </div>
-                                    <div class="text-left md:text-right">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Progresso</div>
-                                        <div class="text-4xl font-black ${quadAtual.c} drop-shadow-sm">${pctAtual}%</div>
-                                    </div>
-                                </div>
-                                
-                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-8 relative shadow-inner overflow-hidden border border-slate-300 dark:border-slate-600">
-                                    <div class="${quadAtual.bg} h-8 rounded-full transition-all duration-1000 ease-out spark-effect shadow-[0_0_10px_rgba(34,197,94,0.5)]" style="width: ${pctAtual}%"></div>
-                                </div>
-                            </div>
-
-                            <!-- Cartões de Dopamina (Dash) -->
-                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-                                
-                                <!-- Card: Ritmo Diário -->
-                                <div class="metric-card p-6 flex flex-col justify-between">
-                                    <div class="flex justify-between items-start mb-4">
-                                        <div class="w-12 h-12 rounded-xl bg-orange-50 dark:bg-orange-900/30 text-orange-500 flex items-center justify-center text-xl"><i class="fa-solid fa-stopwatch"></i></div>
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Ritmo para<br>bater 100%</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${ritmoDiario} <span class="text-sm text-slate-500 font-medium">/ dia</span></div>
-                                        <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5"><i class="fa-regular fa-calendar-days"></i> Restam ${diasRestantes} dias úteis</div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Card: Projeção -->
-                                <div class="metric-card p-6 flex flex-col justify-between">
-                                    <div class="flex justify-between items-start mb-4">
-                                        <div class="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-500 flex items-center justify-center text-xl"><i class="fa-solid fa-rocket"></i></div>
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Projeção<br>Mensal</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${projecao}</div>
-                                        <div class="text-[11px] font-bold ${quadProj.c} flex items-center gap-1.5"><i class="fa-solid fa-chart-line"></i> Atingirá o ${quadProj.q}</div>
-                                    </div>
-                                </div>
-
-                                <!-- Card: Financeiro Garantido -->
-                                <div class="metric-card p-6 flex flex-col justify-between">
-                                    <div class="flex justify-between items-start mb-4">
-                                        <div class="w-12 h-12 rounded-xl bg-green-50 dark:bg-green-900/30 text-green-500 flex items-center justify-center text-xl"><i class="fa-solid fa-sack-dollar"></i></div>
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Valor Pela<br>Regra Atual</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-3xl font-black text-green-600 dark:text-green-400 mb-1">R$ ${granaGarantida.toFixed(2).replace('.', ',')}</div>
-                                        <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5"><i class="fa-solid fa-piggy-bank"></i> Projeção Estimada: R$ ${granaProj.toFixed(2).replace('.', ',')}</div>
-                                    </div>
-                                </div>
-
-                                <!-- Card: Feedbacks Aplicados -->
-                                <div class="metric-card p-6 flex flex-col justify-between border-b-4 ${r.pendenteFeedback > 0 ? 'border-b-red-500' : 'border-b-purple-500'}">
-                                    <div class="flex justify-between items-start mb-4">
-                                        <div class="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-500 flex items-center justify-center text-xl"><i class="fa-solid fa-comments"></i></div>
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Qualidade<br>(Notas < 85)</div>
-                                    </div>
-                                    <div>
-                                        <div class="flex items-end gap-2 mb-2">
-                                            <div class="text-3xl font-black text-slate-800 dark:text-white leading-none">${taxaFb}%</div>
-                                            <div class="text-xs font-medium text-slate-500 pb-1">aplicados</div>
-                                        </div>
-                                        
-                                        <!-- Barra de Progresso Feedback -->
-                                        <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-1.5 mb-3 overflow-hidden">
-                                            <div class="bg-purple-500 h-1.5 rounded-full transition-all duration-1000" style="width: ${taxaFb}%"></div>
-                                        </div>
-
-                                        <div class="text-[11px] font-bold ${r.pendenteFeedback > 0 ? 'text-red-500' : 'text-green-500'} flex items-center gap-1.5">
-                                            ${r.pendenteFeedback > 0 ? `<i class="fa-solid fa-triangle-exclamation"></i> ${r.pendenteFeedback} pendente(s)` : `<i class="fa-solid fa-check-double"></i> Nenhum pendente`}
-                                        </div>
-                                    </div>
-                                </div>
-
-                            </div>
-                        `;
-                        container.innerHTML = html;
-                    } catch (err) {
-                        container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200 shadow-sm"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
-                        console.error(err);
-                    }
-                },
-
-            
             admin: {
-                // ==========================================
-                // NOVAS FUNÇÕES: INTELIGÊNCIA AVANÇADA
-                // ==========================================
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -5070,7 +4881,7 @@
                 },
 
                 // ==========================================
-                // FUNÇÕES ORIGINAIS DE ADMINISTRAÇÃO
+                // TODAS AS SUAS FUNÇÕES ANTIGAS DO ADMIN RESTAURADAS AQUI PARA BAIXO
                 // ==========================================
                 viewUserProfile(mat) {
                     const u = app.users.find(x => x.matricula === mat);
