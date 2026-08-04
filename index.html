@@ -1767,6 +1767,12 @@
                     document.getElementById('cal-anexo-link').classList.add('hidden');
                     document.getElementById('cal-anexo').value = '';
 
+                    // CORREÇÃO: Injetar sempre a lista de operações assim que o Modal abrir!
+                    const opSelect = document.getElementById('cal-op');
+                    if(opSelect) {
+                        opSelect.innerHTML = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('') + '<option value="Outros">Outros</option>';
+                    }
+
                     if(app.isAdmin) {
                         const sel = document.getElementById('cal-adm-alvo');
                         sel.innerHTML = `<option value="TODOS">Todos os Colaboradores</option>`;
@@ -3055,7 +3061,6 @@
                         html += `<div class="min-h-[110px] md:min-h-[140px] rounded-xl border ${bgClass} p-1 md:p-2 relative flex flex-col cursor-pointer hover:shadow-md" onclick="app.calendar.openModal('${dateStr}')"><div class="font-bold text-xs md:text-sm text-slate-700 mb-1 z-20 pointer-events-none">${day}</div><div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar z-20">`;
                         
                         dayEvents.forEach(evt => {
-                            document.getElementById('cal-op').innerHTML = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('') + `<option value="Outros">Outros</option>`;
                             if(evt.tipo === 'pessoal') {
                                 html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="bg-green-100 text-green-800 border border-green-300 rounded p-1 text-[9px] cursor-pointer shadow-sm"><div class="font-bold"><i class="fa-solid fa-clipboard-check"></i> Controle Dia</div><div>Mon: ${evt.qtdMon || 0} | FB: ${evt.qtdFb || 0}</div></div>`;
                             } else {
