@@ -2498,9 +2498,10 @@
                 renderView_CampanhaMes(container) {
                     const equipes = Object.values(app.campanhaData).sort((a,b) => b.pontos - a.pontos);
                     
-                    // Verifica se o usuário atual está na equipe Campeã
-                    let userInFirstPlaceHtml = '';
                     const firstPlace = equipes[0];
+                    
+                    // 1. INPUT PARA O LÍDER (Privilégio)
+                    let userInFirstPlaceHtml = '';
                     if (firstPlace && firstPlace.membros && app.currentUser && firstPlace.membros.includes(app.currentUser.matricula)) {
                         const stock = firstPlace.emojiStock !== undefined ? firstPlace.emojiStock : 50;
                         userInFirstPlaceHtml = `
@@ -2518,6 +2519,30 @@
                                         <div class="text-[10px] text-yellow-700 dark:text-yellow-500">Restam <strong id="emoji-stock-display">${stock}</strong> Lançamentos</div>
                                     </div>
                                     <button onclick="app.ui.sendEmoji('${firstPlace.id}')" class="bg-white dark:bg-slate-800 text-2xl p-3 rounded-xl border border-yellow-400 shadow-md hover:scale-110 transition-transform disabled:opacity-50" ${stock <= 0 ? 'disabled' : ''}>🚀</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    // 2. BANNER DE DESTAQUE DO CAMPEÃO (A Nova UI para a frase)
+                    let championQuoteHtml = '';
+                    if (firstPlace && firstPlace.quote) {
+                        let quoteAvatar = 'https://ui-avatars.com/api/?name=Lider&background=fef08a&color=854d0e';
+                        if (firstPlace.quoteAutor) {
+                            const autorObj = app.users.find(u => u.matricula === firstPlace.quoteAutor);
+                            if (autorObj) quoteAvatar = autorObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(autorObj.nome)}&background=fef08a&color=854d0e`;
+                        }
+                        championQuoteHtml = `
+                            <div class="mb-12 max-w-4xl mx-auto animate-fade-in mt-6">
+                                <div class="bg-gradient-to-r from-yellow-100 to-amber-50 dark:from-yellow-900/40 dark:to-amber-900/20 border border-yellow-400 p-6 md:p-8 rounded-3xl shadow-xl flex items-center gap-6 relative overflow-hidden">
+                                    <div class="absolute right-0 top-0 text-9xl text-yellow-500 opacity-10 transform translate-x-4 -translate-y-4"><i class="fa-solid fa-quote-right"></i></div>
+                                    
+                                    <img src="${quoteAvatar}" class="w-16 h-16 md:w-20 md:h-20 rounded-full border-4 border-yellow-400 shadow-lg object-cover z-10 bg-white shrink-0">
+                                    
+                                    <div class="z-10 flex-1">
+                                        <div class="text-[10px] md:text-xs font-black uppercase text-yellow-700 dark:text-yellow-400 tracking-widest mb-1.5 flex items-center gap-2"><i class="fa-solid fa-crown text-yellow-500"></i> A Voz dos Campeões (${firstPlace.nome})</div>
+                                        <div class="text-lg md:text-2xl font-bold text-slate-800 dark:text-white italic leading-snug">"${firstPlace.quote}"</div>
+                                    </div>
                                 </div>
                             </div>
                         `;
@@ -2546,12 +2571,14 @@
                                     <div class="text-center"><div id="cd-seconds" class="text-3xl md:text-4xl font-black text-yellow-400 drop-shadow">00</div><div class="text-[9px] uppercase tracking-widest text-white/80 font-bold mt-1">Seg</div></div>
                                 </div>
                             </div>
+                            
+                            ${championQuoteHtml} <!-- Frase inserida no fluxo natural da página -->
 
                             <!-- O PÓDIO (RANKING) -->
                             <h2 class="text-2xl font-black text-slate-800 dark:text-white text-center mb-6 uppercase tracking-wider"><i class="fa-solid fa-ranking-star text-orange-500"></i> Ranking Atual</h2>
                             
-                            <!-- Aumentamos o MT (margin-top) de 16 para 36 para não esbarrar no balão e na coroa -->
-                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-36 px-4">
+                            <!-- Margem top reduzida para mt-16, pois o balão de fala absoluto não existe mais -->
+                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-16 px-4">
                     `;
 
                     // Ordem: 2º (idx 1), 1º (idx 0), 3º (idx 2), 4º (idx 3)
@@ -2565,31 +2592,13 @@
                         const myTeamRing = isMyTeam ? 'ring-4 ring-green-400 dark:ring-green-500' : '';
                         
                         let rankStyle, heightClass, icon, crownOrQuote = '';
+                        
+                        // Removido o balão absoluto daqui. Deixamos só a coroa flutuando!
                         if(idx === 0) { 
                             rankStyle = 'ranking-podium-1 text-yellow-900'; 
                             heightClass = 'h-[20rem] md:h-[26rem]'; 
                             icon = 'fa-trophy text-yellow-600'; 
-                            
                             crownOrQuote = `<div class="absolute -top-14 left-0 w-full flex justify-center trophy-float z-20"><i class="fa-solid fa-crown text-[50px] text-yellow-500 drop-shadow-lg"></i></div>`;
-                            
-                            if (eq.quote) {
-                                // Puxa a foto de quem publicou a frase
-                                let quoteAvatar = 'https://ui-avatars.com/api/?name=Lider&background=fef08a&color=854d0e';
-                                if (eq.quoteAutor) {
-                                    const autorObj = app.users.find(u => u.matricula === eq.quoteAutor);
-                                    if (autorObj) quoteAvatar = autorObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(autorObj.nome)}&background=fef08a&color=854d0e`;
-                                }
-
-                                crownOrQuote += `
-                                    <div class="absolute -top-32 left-1/2 transform -translate-x-1/2 w-[110%] sm:w-64 flex justify-center z-30 drop-shadow-xl animate-fade-in">
-                                        <div class="bg-white dark:bg-slate-800 text-slate-800 dark:text-white pl-8 pr-4 py-3 rounded-2xl text-[11px] font-black text-center w-full relative border-2 border-yellow-400 flex items-center min-h-[50px]">
-                                            <img src="${quoteAvatar}" class="absolute -left-4 top-1/2 transform -translate-y-1/2 w-12 h-12 rounded-full border-2 border-yellow-400 object-cover bg-white shadow-sm">
-                                            <div class="italic w-full leading-tight">"${eq.quote}"</div>
-                                            <div class="absolute -bottom-2.5 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-slate-800 border-b-2 border-r-2 border-yellow-400 rotate-45"></div>
-                                        </div>
-                                    </div>
-                                `;
-                            }
                         }
                         else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[16rem] md:h-[22rem]'; icon = 'fa-medal text-slate-500'; }
                         else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[14rem] md:h-[19rem]'; icon = 'fa-award text-orange-700'; }
