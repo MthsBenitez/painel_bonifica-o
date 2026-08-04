@@ -2500,7 +2500,7 @@
                     
                     const firstPlace = equipes[0];
                     
-                    // 1. INPUT PARA O LÍDER (Privilégio)
+                    // INPUT PARA O LÍDER: Escolher o Emoji
                     let userInFirstPlaceHtml = '';
                     if (firstPlace && firstPlace.membros && app.currentUser && firstPlace.membros.includes(app.currentUser.matricula)) {
                         const stock = firstPlace.emojiStock !== undefined ? firstPlace.emojiStock : 50;
@@ -2508,9 +2508,10 @@
                             <div class="mt-8 mb-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/50 p-5 rounded-3xl max-w-2xl mx-auto shadow-lg animate-fade-in">
                                 <h4 class="font-black text-yellow-700 dark:text-yellow-400 text-sm mb-3 uppercase tracking-widest text-center"><i class="fa-solid fa-bullhorn"></i> Privilégio do Líder</h4>
                                 
-                                <div class="flex flex-col sm:flex-row gap-3 mb-4">
-                                    <input type="text" id="eq-quote-input" maxlength="60" placeholder="Digite a frase de vitória (Max 60 caracteres)..." value="${firstPlace.quote || ''}" class="flex-1 p-3 rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-sm dark:text-white font-bold focus:ring-2 focus:ring-yellow-500">
-                                    <button onclick="app.admin.saveEquipeQuote('${firstPlace.id}')" class="bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-white px-6 py-3 rounded-xl font-bold shadow-md transition transform hover:-translate-y-0.5"><i class="fa-solid fa-thumbtack"></i> Fixar Frase</button>
+                                <div class="flex flex-col sm:flex-row gap-3 mb-4 items-center">
+                                    <div class="flex-1 text-xs font-bold text-yellow-800 dark:text-yellow-500">Escolha o emoji que representará a vitória da sua equipe no topo do pódio:</div>
+                                    <input type="text" id="eq-emoji-input" maxlength="2" placeholder="🏆" value="${firstPlace.emojiSymbol || ''}" class="w-16 h-12 p-2 rounded-xl bg-white dark:bg-slate-900 border border-yellow-400 dark:border-yellow-600 outline-none text-2xl text-center dark:text-white font-bold focus:ring-2 focus:ring-yellow-500 shrink-0">
+                                    <button onclick="app.admin.saveEquipeEmoji('${firstPlace.id}')" class="bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-white px-6 h-12 rounded-xl font-bold shadow-md transition transform hover:-translate-y-0.5 whitespace-nowrap"><i class="fa-solid fa-thumbtack"></i> Fixar Emoji</button>
                                 </div>
 
                                 <div class="border-t border-yellow-300 dark:border-yellow-700/50 pt-4 flex items-center justify-between">
@@ -2519,30 +2520,6 @@
                                         <div class="text-[10px] text-yellow-700 dark:text-yellow-500">Restam <strong id="emoji-stock-display">${stock}</strong> Lançamentos</div>
                                     </div>
                                     <button onclick="app.ui.sendEmoji('${firstPlace.id}')" class="bg-white dark:bg-slate-800 text-2xl p-3 rounded-xl border border-yellow-400 shadow-md hover:scale-110 transition-transform disabled:opacity-50" ${stock <= 0 ? 'disabled' : ''}>🚀</button>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
-                    // 2. BANNER DE DESTAQUE DO CAMPEÃO (A Nova UI para a frase)
-                    let championQuoteHtml = '';
-                    if (firstPlace && firstPlace.quote) {
-                        let quoteAvatar = 'https://ui-avatars.com/api/?name=Lider&background=fef08a&color=854d0e';
-                        if (firstPlace.quoteAutor) {
-                            const autorObj = app.users.find(u => u.matricula === firstPlace.quoteAutor);
-                            if (autorObj) quoteAvatar = autorObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(autorObj.nome)}&background=fef08a&color=854d0e`;
-                        }
-                        championQuoteHtml = `
-                            <div class="mb-12 max-w-4xl mx-auto animate-fade-in mt-6">
-                                <div class="bg-gradient-to-r from-yellow-100 to-amber-50 dark:from-yellow-900/40 dark:to-amber-900/20 border border-yellow-400 p-6 md:p-8 rounded-3xl shadow-xl flex items-center gap-6 relative overflow-hidden">
-                                    <div class="absolute right-0 top-0 text-9xl text-yellow-500 opacity-10 transform translate-x-4 -translate-y-4"><i class="fa-solid fa-quote-right"></i></div>
-                                    
-                                    <img src="${quoteAvatar}" class="w-16 h-16 md:w-20 md:h-20 rounded-full border-4 border-yellow-400 shadow-lg object-cover z-10 bg-white shrink-0">
-                                    
-                                    <div class="z-10 flex-1">
-                                        <div class="text-[10px] md:text-xs font-black uppercase text-yellow-700 dark:text-yellow-400 tracking-widest mb-1.5 flex items-center gap-2"><i class="fa-solid fa-crown text-yellow-500"></i> A Voz dos Campeões (${firstPlace.nome})</div>
-                                        <div class="text-lg md:text-2xl font-bold text-slate-800 dark:text-white italic leading-snug">"${firstPlace.quote}"</div>
-                                    </div>
                                 </div>
                             </div>
                         `;
@@ -2572,13 +2549,9 @@
                                 </div>
                             </div>
                             
-                            ${championQuoteHtml} <!-- Frase inserida no fluxo natural da página -->
-
                             <!-- O PÓDIO (RANKING) -->
-                            <h2 class="text-2xl font-black text-slate-800 dark:text-white text-center mb-6 uppercase tracking-wider"><i class="fa-solid fa-ranking-star text-orange-500"></i> Ranking Atual</h2>
-                            
-                            <!-- Margem top reduzida para mt-16, pois o balão de fala absoluto não existe mais -->
-                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-16 px-4">
+                            <!-- Frase "Ranking Atual" removida e margem encurtada -->
+                            <div class="flex flex-col md:flex-row justify-center items-end gap-4 md:gap-6 mb-12 h-auto md:h-[24rem] mt-24 px-4">
                     `;
 
                     // Ordem: 2º (idx 1), 1º (idx 0), 3º (idx 2), 4º (idx 3)
@@ -2593,16 +2566,27 @@
                         
                         let rankStyle, heightClass, icon, crownOrQuote = '';
                         
-                        // Removido o balão absoluto daqui. Deixamos só a coroa flutuando!
+                        // Balãozinho do Emoji
                         if(idx === 0) { 
                             rankStyle = 'ranking-podium-1 text-yellow-900'; 
-                            heightClass = 'h-[20rem] md:h-[26rem]'; 
+                            heightClass = 'h-[20rem] md:h-[24rem]'; 
                             icon = 'fa-trophy text-yellow-600'; 
-                            crownOrQuote = `<div class="absolute -top-14 left-0 w-full flex justify-center trophy-float z-20"><i class="fa-solid fa-crown text-[50px] text-yellow-500 drop-shadow-lg"></i></div>`;
+                            
+                            let displayEmoji = eq.emojiSymbol || '🏆'; // Emoji padrão caso não tenha
+                            
+                            crownOrQuote = `
+                                <div class="absolute -top-12 left-0 w-full flex justify-center trophy-float z-20"><i class="fa-solid fa-crown text-[50px] text-yellow-500 drop-shadow-lg"></i></div>
+                                <div class="absolute -top-28 left-1/2 transform -translate-x-1/2 z-30 drop-shadow-xl animate-fade-in animate-bounce">
+                                    <div class="bg-white dark:bg-slate-800 text-4xl p-2 rounded-full relative border-2 border-yellow-400 flex items-center justify-center w-16 h-16 shadow-lg">
+                                        ${displayEmoji}
+                                        <div class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white dark:bg-slate-800 border-b-2 border-r-2 border-yellow-400 rotate-45"></div>
+                                    </div>
+                                </div>
+                            `;
                         }
-                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[16rem] md:h-[22rem]'; icon = 'fa-medal text-slate-500'; }
-                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[14rem] md:h-[19rem]'; icon = 'fa-award text-orange-700'; }
-                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-[12rem] md:h-[16rem]'; icon = 'fa-thumbs-up text-slate-400'; }
+                        else if(idx === 1) { rankStyle = 'ranking-podium-2 text-slate-800'; heightClass = 'h-[16rem] md:h-[20rem]'; icon = 'fa-medal text-slate-500'; }
+                        else if(idx === 2) { rankStyle = 'ranking-podium-3 text-orange-900'; heightClass = 'h-[14rem] md:h-[17rem]'; icon = 'fa-award text-orange-700'; }
+                        else { rankStyle = 'bg-slate-100 dark:bg-slate-800 text-slate-600 border border-slate-300 dark:border-slate-700 shadow-sm'; heightClass = 'h-[12rem] md:h-[14rem]'; icon = 'fa-thumbs-up text-slate-400'; }
 
                         // Agrupar avatares sobrepostos (Limitando a 5 visíveis)
                         let avatarsHtml = '<div class="flex -space-x-3 overflow-hidden my-3 justify-center px-2 w-full">';
@@ -5103,16 +5087,16 @@
                 },
 
                 saveEquipeQuote(eqId) {
-                    const input = document.getElementById('eq-quote-input');
+                    saveEquipeEmoji(eqId) {
+                    const input = document.getElementById('eq-emoji-input');
                     if(!input) return;
                     const val = input.value.trim();
-                    if(!val) return app.ui.showAlert("Aviso", "Digite uma frase antes de salvar.", "error");
+                    if(!val) return app.ui.showAlert("Aviso", "Escolha ou cole um emoji antes de salvar.", "error");
 
-                    app.campanhaData[eqId].quote = val;
-                    app.campanhaData[eqId].quoteAutor = app.currentUser.matricula; // NOVO: Salva a matrícula de quem digitou para mostrar a foto
+                    app.campanhaData[eqId].emojiSymbol = val;
                     
                     app.storage.saveCampanha().then(() => {
-                        app.ui.showAlert("Pronto!", "A frase da sua equipe foi cravada no topo do pódio para toda a operação ver!", "success");
+                        app.ui.showAlert("Pronto!", "O emoji da sua equipe foi fixado no topo do pódio para toda a operação ver!", "success");
                         app.ui.renderTab('campanha_mes', true);
                     });
                 },
