@@ -813,8 +813,18 @@
                             }
 
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
-                                app.ui.renderTab(app.currentTab, true);
+                                // 1. Atualiza apenas as bolinhas de notificação silenciosamente
                                 app.notifications.updateBadge();
+                                
+                                // 2. Proteção contra o "apagão" de formulários:
+                                // O sistema só vai forçar a atualização da tela em tempo real se o usuário 
+                                // estiver em uma aba estritamente visual (Dashboards). Telas de preenchimento 
+                                // só serão atualizadas quando o próprio usuário clicar em Salvar ou Mudar de Aba.
+                                const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'campanha_mes'];
+                                
+                                if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
+                                    app.ui.renderTab(app.currentTab, true);
+                                }
                             }
                         } else {
                             this.saveConfig();
