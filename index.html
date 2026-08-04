@@ -4574,7 +4574,7 @@
                                 <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                     <div>
                                         <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou some valores manualmente. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e/ou ajuste valores manualmente. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
                                     </div>
                                     <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
                                         <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
@@ -4587,6 +4587,7 @@
                                 const totalMonitorias = state.ranking.reduce((acc, curr) => acc + curr.total, 0);
                                 const totalFaltante = state.ranking.reduce((acc, curr) => acc + curr.falta, 0);
                                 const totalFeedbacks = state.ranking.reduce((acc, curr) => acc + curr.pendenteFeedback, 0);
+                                const metaGlobal = state.ranking.length * 400; // Meta real baseada nos usuários da equipe
                             
                                 html += `
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4596,11 +4597,14 @@
                                         </div>
                                         <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
                                             <div class="text-3xl text-orange-500"><i class="fa-solid fa-bullseye"></i></div>
-                                            <div><div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Faltam para Meta Global</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFaltante}</div></div>
+                                            <div>
+                                                <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Meta Global: ${metaGlobal}</div>
+                                                <div class="text-2xl font-black text-slate-800 dark:text-white">${totalFaltante} <span class="text-sm font-medium text-slate-500">faltam</span></div>
+                                            </div>
                                         </div>
                                         <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
                                             <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                            <div><div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Atrasados</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFeedbacks}</div></div>
+                                            <div><div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Pendentes</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFeedbacks}</div></div>
                                         </div>
                                     </div>
 
@@ -4612,10 +4616,10 @@
                                 
                                 state.ranking.forEach((r, idx) => {
                                     let pendenteBadge = r.pendenteFeedback > 0 
-                                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Atrasados (< 85)</span>` 
+                                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Pendentes (< 85)</span>` 
                                         : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
                                         
-                                    let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Soma Manual Adicionada"><i class="fa-solid fa-plus-minus"></i> Ajustado</span>` : '';
+                                    let manualBadge = r.manual ? `<span class="text-[8px] text-blue-500 font-bold uppercase ml-1" title="Ajustado Manualmente"><i class="fa-solid fa-pen"></i> Editado</span>` : '';
                                     
                                     let pct = Math.min(100, (r.total / 400) * 100).toFixed(1);
                                     let projecao = Math.round((r.total / wd.passed) * wd.total);
@@ -4641,7 +4645,7 @@
                                                     </div>
                                                     <div class="flex items-center gap-2">
                                                         <div class="text-2xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg text-center min-w-[70px]">${r.total}</div>
-                                                        <button onclick="app.admin.addMonitoriasManual('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-plus"></i> Somar</button>
+                                                        <button onclick="app.admin.editMonitoriasManual('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shadow-sm font-bold text-xs"><i class="fa-solid fa-pen"></i> Ajustar</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -4667,7 +4671,8 @@
                             container.innerHTML = html;
                             
                         } catch (err) {
-                            container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
+                            container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200 shadow-sm"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
+                            console.error(err);
                         }
                     },
 
@@ -4678,7 +4683,6 @@
                             let state = app.monitoriasData || { ranking: [] };
                             const wd = app.utils.getWorkingDays(app.currentMonth);
                             
-                            // Busca o usuário logado no meio do cruzamento
                             const r = state.ranking.find(x => x.matricula === app.currentUser.matricula) || { 
                                 total: 0, falta: 400, totalAbaixo85: 0, feedbacksAplicados: 0, pendenteFeedback: 0 
                             };
@@ -4686,19 +4690,16 @@
                             // Cálculos Matemáticos e Projeções
                             const pctAtual = Math.min(100, (r.total / 400) * 100).toFixed(2);
                             const projecao = Math.round((r.total / wd.passed) * wd.total);
-                            
                             const diasRestantes = Math.max(1, wd.total - wd.passed);
-                            // CORREÇÃO AQUI: A variável estava com nome diferente na renderização
                             const ritmoDiario = Math.ceil(Math.max(0, 400 - r.total) / diasRestantes);
                             
                             // Taxa de Feedbacks %
                             const taxaFb = r.totalAbaixo85 > 0 ? ((r.feedbacksAplicados / r.totalAbaixo85) * 100).toFixed(0) : 100;
                             
-                            // Dinheiro (Baseado no Peso da Meta de Monitorias - Ex: g1)
+                            // Dinheiro
                             const g1 = app.config.goals.find(g => g.id === 'g1');
                             const maxVal = g1 ? app.config.baseValue * g1.weight : 0;
                             
-                            // Função interna para classificar o quadrante financeiro
                             const getQuad = (p) => {
                                 if(p >= 100) return { q: 'Q1 (Excelente)', m: 1.0, c: 'text-green-500', bg: 'bg-green-500' };
                                 if(p >= 90) return { q: 'Q2 (Bom)', m: 0.75, c: 'text-blue-500', bg: 'bg-blue-500' };
@@ -4786,7 +4787,7 @@
                                         </div>
                                         <div>
                                             <div class="text-3xl font-black text-green-600 dark:text-green-400 mb-1">R$ ${granaGarantida.toFixed(2).replace('.', ',')}</div>
-                                            <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5"><i class="fa-solid fa-piggy-bank"></i> Estimação Projetada: R$ ${granaProj.toFixed(2).replace('.', ',')}</div>
+                                            <div class="text-[11px] font-bold text-slate-500 flex items-center gap-1.5"><i class="fa-solid fa-piggy-bank"></i> Projeção Estimada: R$ ${granaProj.toFixed(2).replace('.', ',')}</div>
                                         </div>
                                     </div>
 
@@ -4797,9 +4798,18 @@
                                             <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Qualidade<br>(Notas < 85)</div>
                                         </div>
                                         <div>
-                                            <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${taxaFb}% <span class="text-sm font-medium text-slate-500">aplicados</span></div>
+                                            <div class="flex items-end gap-2 mb-2">
+                                                <div class="text-3xl font-black text-slate-800 dark:text-white leading-none">${taxaFb}%</div>
+                                                <div class="text-xs font-medium text-slate-500 pb-1">aplicados</div>
+                                            </div>
+                                            
+                                            <!-- Barra de Progresso Feedback -->
+                                            <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-1.5 mb-3 overflow-hidden">
+                                                <div class="bg-purple-500 h-1.5 rounded-full transition-all duration-1000" style="width: ${taxaFb}%"></div>
+                                            </div>
+
                                             <div class="text-[11px] font-bold ${r.pendenteFeedback > 0 ? 'text-red-500' : 'text-green-500'} flex items-center gap-1.5">
-                                                ${r.pendenteFeedback > 0 ? `<i class="fa-solid fa-triangle-exclamation"></i> ${r.pendenteFeedback} atrasado(s)` : `<i class="fa-solid fa-check-double"></i> Nenhum pendente`}
+                                                ${r.pendenteFeedback > 0 ? `<i class="fa-solid fa-triangle-exclamation"></i> ${r.pendenteFeedback} pendente(s)` : `<i class="fa-solid fa-check-double"></i> Nenhum pendente`}
                                             </div>
                                         </div>
                                     </div>
@@ -4811,7 +4821,7 @@
                             container.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-2xl border border-red-200 shadow-sm"><strong>Erro interno na aba:</strong> ${err.message}</div>`;
                             console.error(err);
                         }
-                    }, // <-- FECHAMENTO FINAL COM VÍRGULA // <-- FECHAMENTO DA FUNÇÃO (Vírgula de separação obrigatória) // <-- FECHAMENTO DA FUNÇÃO
+                    }, // <-- FECHAMENTO FINAL
             
                 }, // <-- Fim do Objeto UI
 
@@ -4890,7 +4900,7 @@
                     app.monitoriasData = { ranking: [] };
                     const mapMonitor = {};
                     
-                    // PREENCHE A LISTA INICIAL COM TODOS OS USUÁRIOS CADASTRADOS (ZERA OS VALORES)
+                    // PREENCHE A LISTA INICIAL
                     app.users.forEach(u => {
                         mapMonitor[u.matricula] = {
                             matricula: u.matricula,
@@ -4904,7 +4914,7 @@
                         };
                     });
 
-                    // PERCORRE A PLANILHA (SE EXISTIR) PARA SOMAR PONTOS
+                    // PERCORRE A PLANILHA
                     json.forEach(row => {
                         const getCol = (name) => {
                             const key = Object.keys(row).find(k => String(k).trim().toUpperCase() === name.toUpperCase());
@@ -4915,21 +4925,23 @@
                         if(!matriculaRaw) return; 
                         
                         const matStr = String(matriculaRaw).trim();
-                        
-                        // REGRA: "os que aparecem não cadastrados não irão aparecer"
                         if(!mapMonitor[matStr]) return;
                         
-                        // Atualiza as contagens
+                        // Conta para a meta (100% dos registros válidos)
                         mapMonitor[matStr].total++;
                         mapMonitor[matStr].falta = Math.max(0, 400 - mapMonitor[matStr].total);
                         
+                        // Extrai a regra de Feedback
+                        const tituloRaw = getCol('TITULO QUESTIONARIO') || getCol('TÍTULO QUESTIONÁRIO') || '';
+                        const isNeutro = String(tituloRaw).toLowerCase().includes('neutro');
+
                         const notaRaw = getCol('NOTA MONITORIA');
                         const statusRaw = getCol('STATUS MONITORIA');
                         const nota = parseFloat(String(notaRaw).replace(',', '.'));
                         const status = String(statusRaw).trim().toLowerCase();
                         
-                        // Verifica Feedbacks Exigidos (Abaixo de 85)
-                        if(!isNaN(nota) && nota < 85) {
+                        // Regra: Conta como alvo de feedback SOMENTE SE a nota < 85 E não for "neutro"
+                        if(!isNaN(nota) && nota < 85 && !isNeutro) {
                             mapMonitor[matStr].totalAbaixo85++;
                             if(status === 'feedback_aplicado') {
                                 mapMonitor[matStr].feedbacksAplicados++;
@@ -4939,36 +4951,45 @@
                         }
                     });
                     
-                    // Converte pra Array e Ordena
                     app.monitoriasData.ranking = Object.values(mapMonitor).sort((a, b) => b.total - a.total);
                     
-                    // Salva no Banco de Dados
                     app.storage.saveMonitorias().then(() => {
                         app.ui.renderTab('import_monitorias', true);
-                        if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada e salva no banco de dados com sucesso.", "success");
+                        if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada com a nova regra de Neutros e salva na base de dados.", "success");
                     });
                 },
 
-                addMonitoriasManual(matricula) {
+                editMonitoriasManual(matricula) {
                     if(!app.monitoriasData || !app.monitoriasData.ranking) return;
                     const r = app.monitoriasData.ranking.find(x => x.matricula === matricula);
                     if(!r) return;
                     
-                    const extra = prompt(`Quantas monitorias você deseja SOMAR para ${r.nome}?\n(Total Atualizado Pelo Sistema: ${r.total})`, "0");
+                    const input = prompt(`Ajuste de monitorias para ${r.nome}\nTotal Atualizado: ${r.total}\n\nDigite o NOVO TOTAL (ex: 450) ou use "+" para SOMAR e "-" para DIMINUIR (ex: +12):`, "");
                     
-                    if(extra !== null && extra.trim() !== '') {
-                        const parsed = parseInt(extra);
-                        if(!isNaN(parsed) && parsed !== 0) {
-                            r.total += parsed; // Aqui está somando com o que já tem!
-                            r.falta = Math.max(0, 400 - r.total);
-                            r.manual = true; 
-                            
-                            app.monitoriasData.ranking.sort((a, b) => b.total - a.total);
-                            // Salva a alteração manual no banco de dados
-                            app.storage.saveMonitorias().then(() => {
-                                app.ui.renderTab('import_monitorias', true);
-                            });
+                    if(input !== null && input.trim() !== '') {
+                        let novoTotal = r.total;
+                        const val = input.trim();
+                        
+                        if(val.startsWith('+')) {
+                            const add = parseInt(val.replace('+',''));
+                            if(!isNaN(add)) novoTotal += add;
+                        } else if(val.startsWith('-')) {
+                            const sub = parseInt(val.replace('-',''));
+                            if(!isNaN(sub)) novoTotal -= sub;
+                        } else {
+                            const parsed = parseInt(val);
+                            if(!isNaN(parsed)) novoTotal = parsed;
                         }
+                        
+                        r.total = Math.max(0, novoTotal);
+                        r.falta = Math.max(0, 400 - r.total);
+                        r.manual = true; 
+                        
+                        app.monitoriasData.ranking.sort((a, b) => b.total - a.total);
+                        
+                        app.storage.saveMonitorias().then(() => {
+                            app.ui.renderTab('import_monitorias', true);
+                        });
                     }
                 },
 
