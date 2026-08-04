@@ -4950,10 +4950,8 @@
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         const data = e.target.result;
-                        // Faz a leitura binária compatível tanto com CSV quanto XLSX
                         const workbook = XLSX.read(data, { type: 'binary' });
                         const firstSheet = workbook.SheetNames[0];
-                        // Mapeia para JSON usando a primeira linha como chave
                         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
 
                         if (rows.length === 0) {
@@ -4962,7 +4960,6 @@
 
                         this.analisarDadosAvancados(rows);
 
-                        // Renderiza a tela atualizada com o dashboard
                         app.ui.renderTab('import_monitorias', true);
                         app.ui.showAlert("Sucesso!", "O processamento inteligente foi concluído.", "success");
                     };
@@ -4982,7 +4979,6 @@
 
                     const chaves = Object.keys(rows[0] || {});
                     
-                    // Identificadores de colunas, buscando variâncias textuais
                     const colObsStr = chaves.find(k => k.toUpperCase().includes('OBSERVAÇÃO') || k.toUpperCase().includes('OBSERVACOES'));
                     const colNome = chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('OPERADOR')) || chaves[0];
                     const colNota = chaves.find(k => k.toUpperCase() === 'NOTA') || 'NOTA';
@@ -4990,7 +4986,6 @@
                     const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') || 'DATA';
                     const colDataGrav = chaves.find(k => k.toUpperCase().includes('DATA GRAVACAO') || k.toUpperCase().includes('GRAVAÇÃO'));
 
-                    // Filtra dinamicamente as colunas avaliadas, independente de como chamam, desde que tenham "PESO"
                     const colunasAvaliadas = chaves.filter(k => k.toUpperCase().includes('PESO'));
                     const colunasComuns = colunasAvaliadas.filter(k => !k.includes('100.00') && !k.includes('100,00'));
                     const colunasCriticas = colunasAvaliadas.filter(k => k.includes('100.00') || k.includes('100,00'));
@@ -5002,7 +4997,6 @@
                         const monitor = row[colMonitor] || 'Desconhecido';
                         const obs = colObsStr ? row[colObsStr] : '';
 
-                        // 1. Desempenho (Média por operador)
                         if (!analytics.operadores[op]) {
                             analytics.operadores[op] = { nome: op, notas: [], min: 100, max: 0 };
                         }
@@ -5010,7 +5004,6 @@
                         if (nota < analytics.operadores[op].min) analytics.operadores[op].min = nota;
                         if (nota > analytics.operadores[op].max) analytics.operadores[op].max = nota;
 
-                        // 2. Mapeamento de Falhas Comuns (Contagem de "Não")
                         colunasComuns.forEach(col => {
                             const resposta = (row[col] || '').toString().trim().toUpperCase();
                             if (resposta === 'NÃO' || resposta === 'NAO') {
@@ -5018,7 +5011,6 @@
                             }
                         });
 
-                        // 3. Mapeamento de Falhas Críticas (Risco)
                         colunasCriticas.forEach(col => {
                             const resposta = (row[col] || '').toString().trim().toUpperCase();
                             if (resposta === 'NÃO' || resposta === 'NAO') {
@@ -5027,10 +5019,8 @@
                             }
                         });
 
-                        // 4. Inteligência Qualitativa (Nuvem de Palavras)
                         if (obs && typeof obs === 'string') {
                             const palavras = obs.toLowerCase().replace(/[.,;:()]/g, '').split(/\s+/);
-                            // Palavras de parada para não poluir o dashboard
                             const ignorar = ['o','a','os','as','e','de','do','da','em','um','uma','para','com','que','na','no','cliente','atendimento','operador','não','sim','foi','por','ao','se','dos'];
                             palavras.forEach(p => {
                                 if (p.length > 3 && !ignorar.includes(p)) {
@@ -5039,17 +5029,15 @@
                             });
                         }
 
-                        // 5. Produtividade Monitores
                         if (!analytics.monitorProdutividade[monitor]) {
                             analytics.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
                         }
                         analytics.monitorProdutividade[monitor].qtd += 1;
                         analytics.monitorProdutividade[monitor].somaNotas += nota;
 
-                        // 6. SLA - Subtração da Data (Gravacao X Auditoria)
                         if (row[colDataAudit] && row[colDataGrav]) {
                             const parseDate = (val) => {
-                                if(typeof val === 'number') return new Date((val - 25569)*86400*1000); // Excel serial 
+                                if(typeof val === 'number') return new Date((val - 25569)*86400*1000); 
                                 const parts = val.toString().split('/');
                                 if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
                                 return new Date(val);
@@ -5065,7 +5053,6 @@
                         }
                     });
 
-                    // Consolidação de Médias
                     Object.values(analytics.operadores).forEach(op => {
                         op.media = op.notas.reduce((a,b) => a+b, 0) / op.notas.length;
                     });
@@ -5073,573 +5060,126 @@
                         m.mediaNota = m.somaNotas / m.qtd;
                     });
 
-                    // Ordena pelo maior ranking
                     analytics.rankOperadores = Object.values(analytics.operadores).sort((a,b) => b.media - a.media);
                     
-                    // Salva na memória do front para ser lido pelo renderView
                     app.analyticsData = analytics;
                 },
 
-                viewUserProfile(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
+                viewUserProfile(mat) {
+                    const u = app.users.find(x => x.matricula === mat);
                     if(!u) return;
 
                     document.getElementById('up-nome').textContent = u.nome;
                     document.getElementById('up-mat').textContent = u.matricula;
-                    document.getElementById('up-foto').src = u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.nome)}&background=cbd5e1&color=ffffff&size=200`;
+                    document.getElementById('up-foto').src = u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.nome)}&background=cbd5e1&color=ffffff&size=150`;
+                    
+                    const opsHTML = (u.operacoes || []).map(op => `<span class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-1 rounded shadow-sm border border-blue-200">${op}</span>`).join('');
+                    document.getElementById('up-ops').innerHTML = opsHTML || '<span class="text-xs text-blue-200">Nenhuma operação</span>';
 
-                    const opsHtml = (u.operacoes || []).map(op => `<span class="bg-white/20 text-white px-2 py-1 rounded-md text-[10px] font-bold backdrop-blur-sm border border-white/20">${op}</span>`).join('');
-                    document.getElementById('up-ops').innerHTML = opsHtml || '<span class="text-white/60 text-xs font-bold">Nenhuma operação</span>';
-
-                    // Coletar Log (Ações, Atas, Agenda)
                     let timeline = [];
+                    if(u.aceiteTermos) timeline.push({ data: u.aceiteTermos, icon: 'fa-file-contract', cor: 'text-blue-500', bg: 'bg-blue-50 border-blue-200', text: 'Assinou os Termos de Uso (LGPD)' });
+                    if(u.aceiteDiretrizes) timeline.push({ data: u.aceiteDiretrizes, icon: 'fa-check-double', cor: 'text-green-500', bg: 'bg-green-50 border-green-200', text: 'Aceitou as Diretrizes de Bonificação' });
+                    
+                    if(u.results) {
+                        Object.keys(u.results).forEach(m => {
+                            const res = u.results[m];
+                            if(res.status === 'validado') {
+                                timeline.push({ data: res.fbDate ? `${res.fbDate}T${res.fbTime||'00:00'}:00` : null, icon: 'fa-handshake', cor: 'text-purple-500', bg: 'bg-purple-50 border-purple-200', text: `Feedback Assinado Ref: ${m}` });
+                            }
+                        });
+                    }
 
-                    Object.values(app.actionsList).filter(a => a.matricula === matricula).forEach(a => {
-                        timeline.push({ type: 'Ação Presencial', icon: 'fa-people-group', color: 'bg-teal-500', title: `Registrou: ${a.objetivo}`, date: a.timestamp });
-                    });
-                    Object.values(app.atasList).filter(a => a.matricula === matricula).forEach(a => {
-                        timeline.push({ type: 'Ata', icon: 'fa-file-signature', color: 'bg-purple-500', title: `Gerou Ata: ${a.tema}`, date: a.timestamp });
-                    });
-                    Object.values(app.eventsList).filter(e => e.matricula === matricula || e.autor === u.nome).forEach(e => {
-                        timeline.push({ type: 'Agenda', icon: 'fa-calendar-check', color: 'bg-blue-500', title: `Evento: ${e.tema || 'Controle Pessoal'}`, date: e.timestamp });
+                    Object.values(app.actionsList).filter(a => a.matricula === mat).forEach(a => {
+                        timeline.push({ data: new Date(a.timestamp).toISOString(), icon: 'fa-camera', cor: 'text-orange-500', bg: 'bg-orange-50 border-orange-200', text: `Ação Registrada: ${a.objetivo} (${a.status})` });
                     });
 
-                    // Ordem Cronológica (Recente primeiro)
-                    timeline.sort((a, b) => b.date - a.date);
+                    timeline = timeline.filter(t => t.data).sort((a,b) => new Date(b.data) - new Date(a.data));
 
-                    let htmlTl = '';
+                    let tlHTML = '';
                     if(timeline.length === 0) {
-                        htmlTl = `<div class="text-sm text-slate-500 italic ml-4">Nenhum registro de atividade encontrado.</div>`;
+                        tlHTML = '<div class="text-sm text-slate-500 italic mt-2">Nenhuma atividade significativa registrada ainda.</div>';
                     } else {
-                        timeline.forEach(item => {
-                            const dataFmt = new Date(item.date).toLocaleString('pt-BR');
-                            htmlTl += `
+                        timeline.forEach(t => {
+                            const dtStr = new Date(t.data).toLocaleString('pt-BR');
+                            tlHTML += `
                                 <div class="relative">
-                                    <div class="absolute -left-[31px] top-1 w-6 h-6 rounded-full ${item.color} text-white flex items-center justify-center text-[10px] shadow-sm ring-4 ring-slate-50 dark:ring-slate-900"><i class="fa-solid ${item.icon}"></i></div>
-                                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${item.type} • ${dataFmt}</div>
-                                        <div class="text-sm font-bold text-slate-700 dark:text-slate-200 mt-0.5">${item.title}</div>
+                                    <div class="absolute -left-8 w-6 h-6 rounded-full ${t.bg} flex items-center justify-center border shadow-sm z-10"><i class="fa-solid ${t.icon} text-[10px] ${t.cor}"></i></div>
+                                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm ml-2">
+                                        <div class="text-sm font-semibold text-slate-700 dark:text-slate-200">${t.text}</div>
+                                        <div class="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">${dtStr}</div>
                                     </div>
                                 </div>
                             `;
                         });
                     }
-
-                    document.getElementById('up-timeline').innerHTML = htmlTl;
+                    
+                    document.getElementById('up-timeline').innerHTML = tlHTML;
                     document.getElementById('user-profile-modal').classList.remove('hidden');
                 },
 
-                processarPlanilhaMonitoria(input) {
-                    const file = input.files[0];
-                    if(!file) return;
-                    
-                    app.ui.showAlert("Processando...", "Aguarde enquanto o sistema lê o arquivo e cruza as matrículas...", "info");
-                    
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, {type: 'array'});
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const json = XLSX.utils.sheet_to_json(firstSheet, {defval: ""}); 
-                        this.calcularPlanilhaMonitoria(json);
-                        document.getElementById('global-modal').classList.add('hidden'); 
-                    };
-                    reader.readAsArrayBuffer(file);
-                    input.value = ''; 
+                resetTermos(mat) {
+                    app.ui.showConfirm("Aviso", "Isso fará o usuário ter que ler e assinar os Termos da LGPD novamente no próximo login. Continuar?", `app.admin.execResetTermos('${mat}')`);
                 },
-                
-                calcularPlanilhaMonitoria(json) {
-                    app.monitoriasData = { ranking: [] };
-                    const mapMonitor = {};
-                    
-                    // PREENCHE A LISTA INICIAL
-                    app.users.forEach(u => {
-                        mapMonitor[u.matricula] = {
-                            matricula: u.matricula,
-                            nome: u.nome,
-                            total: 0,
-                            falta: 400,
-                            totalAbaixo85: 0,
-                            feedbacksAplicados: 0,
-                            pendenteFeedback: 0,
-                            manual: false
-                        };
-                    });
-
-                    // PERCORRE A PLANILHA
-                    json.forEach(row => {
-                        const getCol = (name) => {
-                            const key = Object.keys(row).find(k => String(k).trim().toUpperCase() === name.toUpperCase());
-                            return row[key];
-                        };
-                        
-                        const matriculaRaw = getCol('MATRÍCULA') || getCol('MATRICULA');
-                        if(!matriculaRaw) return; 
-                        
-                        const matStr = String(matriculaRaw).trim();
-                        if(!mapMonitor[matStr]) return;
-                        
-                        // Conta para a meta (100% dos registros válidos somam na quantidade)
-                        mapMonitor[matStr].total++;
-                        mapMonitor[matStr].falta = Math.max(0, 400 - mapMonitor[matStr].total);
-                        
-                        // REGRAS DE ISENÇÃO DE FEEDBACK (Neutros)
-                        const tituloRaw = getCol('TITULO QUESTIONARIO') || getCol('TÍTULO QUESTIONÁRIO') || '';
-                        const operacaoRaw = getCol('OPERAÇÃO') || getCol('OPERACAO') || '';
-                        
-                        // 1. Título contém neutro?
-                        const isTituloNeutro = String(tituloRaw).toLowerCase().includes('neutro');
-                        // 2. Operação contém a frase (dividida para driblar o bug de acentuação do Excel ex: FORMULÃRIOS)
-                        const stringOperacao = String(operacaoRaw).toLowerCase();
-                        const isOperacaoNeutra = stringOperacao.includes('qualidade - formul') && stringOperacao.includes('neutro');
-                        
-                        const isNeutro = isTituloNeutro || isOperacaoNeutra;
-
-                        const notaRaw = getCol('NOTA MONITORIA');
-                        const statusRaw = getCol('STATUS MONITORIA');
-                        const nota = parseFloat(String(notaRaw).replace(',', '.'));
-                        const status = String(statusRaw).trim().toLowerCase();
-                        
-                        // Regra: Conta como alvo de feedback SOMENTE SE a nota < 85 E NÃO for classificado como neutro
-                        if(!isNaN(nota) && nota < 85 && !isNeutro) {
-                            mapMonitor[matStr].totalAbaixo85++;
-                            if(status === 'feedback_aplicado') {
-                                mapMonitor[matStr].feedbacksAplicados++;
-                            } else {
-                                mapMonitor[matStr].pendenteFeedback++;
-                            }
-                        }
-                    });
-                    
-                    app.monitoriasData.ranking = Object.values(mapMonitor).sort((a, b) => b.total - a.total);
-                    
-                    app.storage.saveMonitorias().then(() => {
-                        app.ui.renderTab('import_monitorias', true);
-                        if(json.length > 0) app.ui.showAlert("Sucesso!", "Planilha processada aplicando as regras de isenção de Formulários Neutros.", "success");
-                    });
+                execResetTermos(mat) {
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx > -1) { app.users[idx].aceiteTermos = null; app.storage.saveUsers(); app.ui.showAlert("Feito", "Termos resetados.", "success"); }
                 },
 
-                editMonitoriasManual(matricula) {
-                    if(!app.monitoriasData || !app.monitoriasData.ranking) return;
-                    const r = app.monitoriasData.ranking.find(x => x.matricula === matricula);
-                    if(!r) return;
-                    
-                    const input = prompt(`Ajuste de monitorias para ${r.nome}\nTotal Atualizado: ${r.total}\n\nDigite o NOVO TOTAL (ex: 450) ou use "+" para SOMAR e "-" para DIMINUIR (ex: +12):`, "");
-                    
-                    if(input !== null && input.trim() !== '') {
-                        let novoTotal = r.total;
-                        const val = input.trim();
-                        
-                        if(val.startsWith('+')) {
-                            const add = parseInt(val.replace('+',''));
-                            if(!isNaN(add)) novoTotal += add;
-                        } else if(val.startsWith('-')) {
-                            const sub = parseInt(val.replace('-',''));
-                            if(!isNaN(sub)) novoTotal -= sub;
-                        } else {
-                            const parsed = parseInt(val);
-                            if(!isNaN(parsed)) novoTotal = parsed;
-                        }
-                        
-                        r.total = Math.max(0, novoTotal);
-                        r.falta = Math.max(0, 400 - r.total);
-                        r.manual = true; 
-                        
-                        app.monitoriasData.ranking.sort((a, b) => b.total - a.total);
-                        
-                        app.storage.saveMonitorias().then(() => {
-                            app.ui.renderTab('import_monitorias', true);
-                        });
-                    }
+                forcePasswordReset(mat) {
+                    app.ui.showConfirm("Atenção", "Isso forçará a senha deste colaborador a voltar para '12345' (Padrão). Continuar?", `app.admin.execForcePwd('${mat}')`, true);
+                },
+                execForcePwd(mat) {
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx > -1) { app.users[idx].senha = '12345'; app.storage.saveUsers(); app.ui.showAlert("Feito", "Senha resetada para 12345.", "success"); }
                 },
 
-                overrideMonitoria(matricula) {
-                    if(!app.monitoriasData || !app.monitoriasData.ranking) return;
-                    const r = app.monitoriasData.ranking.find(x => x.matricula === matricula);
-                    if(!r) return;
-                    
-                    const novoTotal = prompt(`Aplicar total manual para ${r.nome} :\n(Atual: ${r.total})`, r.total);
-                    
-                    if(novoTotal !== null && novoTotal.trim() !== '') {
-                        const parsed = parseInt(novoTotal);
-                        if(!isNaN(parsed)) {
-                            r.total = parsed;
-                            r.falta = Math.max(0, 400 - r.total);
-                            r.manual = true; 
-                            
-                            app.monitoriasData.ranking.sort((a, b) => b.total - a.total);
-                            // Salva a alteração manual no banco de dados
-                            app.storage.saveMonitorias().then(() => {
-                                app.ui.renderTab('import_monitorias', true);
-                            });
-                        }
-                    }
-                },
-
-                renderView_ImportMonitorias(container) {
-                    if(!app.isAdmin) return;
-                    
-                    let state = app.admin.monitoriasState || { ranking: [], diario: {}, totalLido: 0 };
-                    
-                    let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Importação de Monitorias</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Faça o upload do relatório diário. O sistema recalcula automaticamente a cada envio (Meta: 400/mês).</p>
-                            </div>
-                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-upload"></i> Subir Planilha
-                                <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
-                            </label>
-                        </div>
-                    `;
-                    
-                    if(state.totalLido > 0) {
-                        html += `
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                <!-- Ranking e Feedbacks -->
-                                <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
-                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ranking-star text-yellow-500"></i> Status por Monitor</h3>
-                                    <div class="overflow-y-auto max-h-[350px] custom-scrollbar pr-2 space-y-3 flex-1">
-                        `;
-                        
-                        state.ranking.forEach((r, idx) => {
-                            let pendenteBadge = r.pendenteFeedback > 0 
-                                ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold border border-red-200 animate-pulse">${r.pendenteFeedback} Feedbacks Atrasados (< 85)</span>` 
-                                : `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-bold border border-green-200"><i class="fa-solid fa-check"></i> Feedbacks OK</span>`;
-                                
-                            html += `
-                                <div class="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center hover:border-blue-300 transition-colors">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'} flex items-center justify-center text-xs font-black shrink-0">${idx+1}º</div>
-                                        <div>
-                                            <div class="font-bold text-sm text-slate-800 dark:text-white leading-tight">${r.nome}</div>
-                                            <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                                                <span>Faltam: <strong class="text-orange-500 text-xs">${r.falta}</strong></span> 
-                                                ${pendenteBadge}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="text-xl font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-lg">${r.total}</div>
-                                </div>
-                            `;
-                        });
-                        
-                        html += `
-                                    </div>
-                                </div>
-                                
-                                <!-- Gráfico Diário -->
-                                <div class="glass-card p-6 rounded-3xl flex flex-col h-full">
-                                    <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-chart-line text-green-500"></i> Volume Diário (Total Equipe)</h3>
-                                    <div class="relative flex-1 min-h-[250px] w-full"><canvas id="chart-monitorias-dia"></canvas></div>
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        html += `
-                            <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center min-h-[300px]">
-                                <i class="fa-solid fa-file-csv text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
-                                <h4 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Nenhum dado carregado</h4>
-                                <p class="text-slate-500 text-sm">Faça o upload do relatório CSV/XLSX para visualizar o progresso da equipe.</p>
-                            </div>
-                        `;
-                    }
-                    
-                    container.innerHTML = html;
-                    
-                    // Renderiza o gráfico se houver dados
-                    if(state.totalLido > 0) {
-                        setTimeout(() => {
-                            const ctx = document.getElementById('chart-monitorias-dia');
-                            if(ctx) {
-                                const labels = Object.keys(state.diario).sort();
-                                const data = labels.map(l => state.diario[l]);
-                                const isDark = document.documentElement.classList.contains('dark');
-                                const textColor = isDark ? '#94a3b8' : '#64748b';
-                                const gridColor = isDark ? '#334155' : '#e2e8f0';
-                                
-                                if(window.myChartMonDia) window.myChartMonDia.destroy();
-                                window.myChartMonDia = new Chart(ctx, {
-                                    type: 'bar',
-                                    data: { 
-                                        labels: labels, 
-                                        datasets: [{ label: 'Monitorias Realizadas', data: data, backgroundColor: '#10b981', borderRadius: 4 }] 
-                                    },
-                                    options: { 
-                                        responsive: true, maintainAspectRatio: false, 
-                                        scales: { y: { beginAtZero: true, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, 
-                                        plugins: { legend: { display: false } } 
-                                    }
-                                });
-                            }
-                        }, 50);
-                    }
-                },
-
-                resetTermos(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
-                    if(u) { 
-                        u.aceiteTermos = null; 
-                        u.aceiteDiretrizes = null; 
-                        app.storage.saveUsers().then(()=>app.ui.showAlert("Pronto", "No próximo login ele precisará aceitar novamente.","success")); 
-                    }
-                },
-
-                forcePasswordReset(matricula) {
-                    app.ui.showConfirm("Resetar Senha", `A senha do colaborador <b>${matricula}</b> será redefinida para <b>12345</b>. O sistema forçará a troca no primeiro login. Continuar?`, `app.admin.executeForcePasswordReset('${matricula}')`, true);
-                },
-                executeForcePasswordReset(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
-                    if(u) {
-                        u.senha = '12345';
-                        app.storage.saveUsers().then(() => app.ui.showAlert("Senha Resetada", "A senha foi alterada para 12345 com sucesso.", "success"));
-                    }
-                },
-
-                clearAllUsersMonth() {
-                    app.ui.showConfirm("Zerar Lançamentos do Mês", `Atenção: Isso excluirá <b>TODOS</b> os lançamentos e notas de <b>TODOS</b> os colaboradores (apenas no mês de <b>${app.ui.formatMonthLabel(app.currentMonth)}</b>). Esta ação não pode ser desfeita. Deseja continuar?`, "app.admin.executeClearAllUsersMonth()", true);
-                },
-                executeClearAllUsersMonth() {
-                    let cleared = false;
-                    app.users.forEach(u => {
-                        if(u.results && u.results[app.currentMonth]) {
-                            delete u.results[app.currentMonth];
-                            cleared = true;
-                        }
-                    });
-                    if(cleared) {
-                        app.storage.saveUsers().then(() => {
-                            app.ui.showAlert("Mês Zerado", `Todos os lançamentos e notas de ${app.ui.formatMonthLabel(app.currentMonth)} foram removidos.`, "success");
-                            app.ui.renderTab('cadastros', true);
-                        });
-                    } else {
-                        app.ui.showAlert("Aviso", "Não há lançamentos registrados neste mês para serem apagados.", "info");
-                    }
-                },
-                
-                addOperacao() {
-                    const nome = document.getElementById('nova-op-nome').value.trim();
-                    const max = document.getElementById('nova-op-max').value;
-                    if(!nome) return app.ui.showAlert("Aviso", "O nome da operação é obrigatório.", "error");
-                    const id = 'op_' + Date.now();
-                    app.operacoesList[id] = { id, nome, max };
-                    app.storage.saveOperacoes().then(() => app.ui.renderTab('operacoes', true));
-                },
-                deleteOperacao(id) {
-                    delete app.operacoesList[id];
-                    app.storage.saveOperacoes().then(() => app.ui.renderTab('operacoes', true));
-                },
-                
                 registerUser() {
-                    const n = document.getElementById('cad-nome').value.trim();
-                    const m = document.getElementById('cad-mat').value.trim();
-                    const p = document.getElementById('cad-pwd').value.trim();
-                    const opChecks = document.querySelectorAll('.cad-op-check:checked');
-                    const operacoesEscolhidas = Array.from(opChecks).map(c => c.value);
+                    const nome = document.getElementById('cad-nome').value.trim();
+                    const mat = document.getElementById('cad-mat').value.trim();
+                    const pwd = document.getElementById('cad-pwd').value.trim();
                     const fileInput = document.getElementById('cad-foto');
-
-                    if(!n || !m || !p) return app.ui.showAlert("Aviso", "Por favor, preencha todos os campos do novo colaborador.", "error");
-                    if(app.users.find(u => u.matricula === m)) return app.ui.showAlert("Conflito", "Esta matrícula já está registrada.", "error");
                     
-                    const finishRegistration = (fotoBase64) => {
-                        app.users.push({ nome: n, matricula: m, senha: p, operacoes: operacoesEscolhidas, foto: fotoBase64, results: {}, loginCount: 0, aceiteTermos: null, aceiteDiretrizes: null });
-                        app.storage.saveUsers();
-                        document.getElementById('cad-nome').value = ''; document.getElementById('cad-mat').value = ''; document.getElementById('cad-pwd').value = '';
-                        app.ui.closeAddUserModal();
-                        app.ui.showAlert("Sucesso", "Novo membro da equipe adicionado!", "success");
-                        // FIX: Agora a tela atualiza na aba correta (Gestão Equipe)
-                        app.ui.renderTab('gestao_equipe', true);
+                    const checkboxes = document.querySelectorAll('.cad-op-check:checked');
+                    const operacoes = Array.from(checkboxes).map(cb => cb.value);
+
+                    if(!nome || !mat || !pwd) return app.ui.showAlert("Aviso", "Preencha Nome, Matrícula e Senha", "error");
+                    if(app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
+
+                    const saveFinal = (fotoBase64) => {
+                        app.users.push({ nome, matricula: mat, senha: pwd, foto: fotoBase64, operacoes, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        app.storage.saveUsers().then(() => {
+                            app.ui.closeAddUserModal();
+                            app.ui.renderTab('gestao_equipe', true);
+                            app.ui.showAlert("Sucesso", "Colaborador cadastrado.", "success");
+                        });
                     };
 
-                    if(fileInput.files.length > 0) {
-                        app.actions.compressImageAsync(fileInput.files[0]).then(b64 => finishRegistration(b64));
+                    if (fileInput.files && fileInput.files[0]) {
+                        app.actions.compressImageAsync(fileInput.files[0]).then(b64 => saveFinal(b64));
                     } else {
-                        finishRegistration(null);
+                        saveFinal(null);
                     }
                 },
 
-                loadUserEditor() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    window.selectedAdminEditUser = mat; 
-                    const area = document.getElementById('adm-editor-area');
-                    if(!mat) { area.classList.add('hidden'); return; }
-                    
-                    const u = app.users.find(x => x.matricula === mat);
-                    if(!u) return;
-                    const res = (u.results && u.results[app.currentMonth]) || {};
-
-                    // Sem o bloco de Credenciais aqui. Direto para as Metas!
-                    let html = `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mt-4">`;
-
-                    app.config.goals.forEach(g => {
-                        const val = res[g.id] || {};
-                        html += `<div class="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent transition-all">
-                            <label class="block text-xs font-extrabold text-slate-700 dark:text-slate-200 mb-4 truncate"><i class="fa-solid ${g.icon} text-green-600 mr-2"></i> ${g.title}</label>
-                        `;
-                        
-                        if(g.type === 'percent') {
-                            if(g.id === 'g1') {
-                                html += `
-                                    <div class="flex gap-3">
-                                        <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta (Fixa)</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-500 dark:text-slate-400 outline-none cursor-not-allowed" value="400" readonly></div>
-                                        <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
-                                    </div>
-                                `;
-                            } else {
-                                html += `
-                                    <div class="flex gap-3">
-                                        <div class="flex-1"><span class="text-[10px] text-slate-400 dark:text-slate-500 block mb-1.5 uppercase font-bold tracking-wider">Meta</span><input type="number" id="ed-${g.id}-meta" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" value="${val.meta || ''}"></div>
-                                        <div class="flex-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Realizado</span><input type="number" id="ed-${g.id}-real" class="w-full p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-bold text-green-700 dark:text-green-400 outline-none" value="${val.real || ''}"></div>
-                                    </div>
-                                `;
-                            }
-                        } else if(g.type === 'calibracao') {
-                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Calibrações (0 a 2)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 2" min="0" max="2" value="${val.val || ''}"></div>`;
-                        } else if(g.type === 'actions') {
-                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Qtd Ações (0 a 5)</span><input type="number" id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" placeholder="0 a 5" min="0" max="5" value="${val.val || ''}"></div>`;
-                        } else if(g.type === 'gestor') {
-                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Métrica de Avaliação</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
-                                <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
-                                <option value="100" ${val.val==='100'?'selected':''}>100%</option>
-                                <option value="75" ${val.val==='75'?'selected':''}>75%</option>
-                                <option value="50" ${val.val==='50'?'selected':''}>50%</option>
-                                <option value="25" ${val.val==='25'?'selected':''}>25%</option>
-                                <option value="0" ${val.val==='0'?'selected':''}>0%</option>
-                            </select></div>`;
-                        } else {
-                            html += `<div class="mt-1"><span class="text-[10px] text-green-600 block mb-1.5 uppercase font-bold tracking-wider">Cumprimento</span><select id="ed-${g.id}-val" class="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none cursor-pointer">
-                                <option value="" ${!val.val ? 'selected':''}>Não Preenchido</option>
-                                <option value="Sim" ${val.val==='Sim'?'selected':''}>Sim</option>
-                                <option value="Não" ${val.val==='Não'?'selected':''}>Não</option>
-                            </select></div>`;
-                        }
-                        html += `</div>`;
-                    });
-
-                    html += `
-                        </div>
-                        <div class="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-                            <button onclick="app.admin.saveUserResults()" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-gray-500/20 hover:shadow-gray-500/40 transition-all transform hover:-translate-y-0.5 text-sm uppercase tracking-wider">
-                                <i class="fa-solid fa-floppy-disk mr-2"></i> Gravar Lançamentos de ${app.ui.formatMonthLabel(app.currentMonth)}
-                            </button>
-                        </div>
-                        
-                        <!-- Agendamento e Validação Presencial -->
-                        <div class="mt-6 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
-                            <h4 class="font-extrabold text-slate-800 dark:text-white text-sm mb-5"><i class="fa-solid fa-calendar-check text-blue-500 mr-2"></i> Agendamento e Validação de Feedback (Obrigatório)</h4>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div class="space-y-4">
-                                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Agendar Data/Hora p/ Feedback</label>
-                                    <div class="flex gap-2">
-                                        <input type="date" id="fb-date" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm dark:text-white" value="${res.fbDate || ''}">
-                                        <input type="time" id="fb-time" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm dark:text-white" value="${res.fbTime || ''}">
-                                    </div>
-                                    <button onclick="app.admin.scheduleFeedback()" class="w-full bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 font-bold py-3 px-4 rounded-xl text-xs transition border border-blue-200 dark:border-blue-800/50 uppercase tracking-widest">Registrar Agendamento</button>
-                                </div>
-                                
-                                <div class="space-y-4 md:border-l md:border-slate-200 dark:md:border-slate-700 md:pl-8 relative">
-                                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Assinatura Presencial do Monitor</label>
-                                    <input type="password" id="fb-pwd" placeholder="Senha do Monitor logado" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm dark:text-white text-center">
-                                    <button onclick="app.admin.validateFeedback()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl text-xs shadow-md transition uppercase tracking-widest">Validar Bonificação</button>
-                                    ${res.status === 'validado' ? '<div class="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-[2px] flex items-center justify-center rounded-xl z-10 border border-green-200 dark:border-green-800/50"><div class="text-sm text-green-600 dark:text-green-400 font-bold bg-green-50 dark:bg-green-900/40 py-2 px-6 rounded-lg shadow-sm"><i class="fa-solid fa-check-circle"></i> Resultados Validados</div></div>' : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    area.innerHTML = html;
-                    area.classList.remove('hidden');
-                },
-                saveUserResults() {
-                    const mat = document.getElementById('adm-user-select').value;
+                openEditUser(mat) {
                     const u = app.users.find(x => x.matricula === mat);
                     if(!u) return;
 
-                    const newRes = {};
-                    app.config.goals.forEach(g => {
-                        if(g.type === 'percent') {
-                            const m = document.getElementById(`ed-${g.id}-meta`).value;
-                            const r = document.getElementById(`ed-${g.id}-real`).value;
-                            if(m !== '' || r !== '') newRes[g.id] = { meta: m, real: r };
-                        } else {
-                            const v = document.getElementById(`ed-${g.id}-val`).value;
-                            if(v !== '') newRes[g.id] = { val: v };
-                        }
-                    });
-                    
-                    // Manter histórico de agendamento/status
-                    newRes.status = u.results[app.currentMonth]?.status || 'pendente';
-                    newRes.fbDate = u.results[app.currentMonth]?.fbDate || '';
-                    newRes.fbTime = u.results[app.currentMonth]?.fbTime || '';
-
-                    if(!u.results) u.results = {};
-                    u.results[app.currentMonth] = newRes;
-                    
-                    app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Lançamento Salvo", `Os resultados para <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong> foram gravados com sucesso.`, "success");
-                    });
-                },
-
-                scheduleFeedback() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    const u = app.users.find(x => x.matricula === mat);
-                    const dt = document.getElementById('fb-date').value;
-                    const tm = document.getElementById('fb-time').value;
-                    if(!u || !u.results || !u.results[app.currentMonth]) return app.ui.showAlert("Aviso", "Grave os lançamentos do mês antes de agendar o feedback.", "info");
-                    if(!dt) return app.ui.showAlert("Aviso", "Insira uma data válida para o agendamento.", "error");
-
-                    u.results[app.currentMonth].fbDate = dt;
-                    u.results[app.currentMonth].fbTime = tm;
-                    if(u.results[app.currentMonth].status !== 'validado') u.results[app.currentMonth].status = 'agendado';
-                    
-                    // GRAVAR O EVENTO NO CALENDÁRIO AUTOMATICAMENTE
-                    const evtId = 'evt_fb_' + u.matricula + '_' + app.currentMonth;
-                    app.eventsList[evtId] = {
-                        id: evtId,
-                        data: dt,
-                        hora: tm,
-                        horaFim: tm,
-                        tipo: 'evento',
-                        tema: 'Reunião',
-                        op: 'Outros',
-                        fila: 'Feedback Mensal',
-                        obs: `Feedback de Resultados referente ao mês de ${app.ui.formatMonthLabel(app.currentMonth)}`,
-                        status: 'Previsto',
-                        autor: 'ADM',
-                        matricula: u.matricula, // Fica vinculado ao calendário do usuário E do ADM
-                        timestamp: Date.now()
-                    };
-                    app.storage.saveEvents(); // Salva os eventos
-
-                    app.notifications.notify(u.matricula, 'Feedback Agendado!', `Seu gestor agendou seu feedback presencial para ${dt.split('-').reverse().join('/')} às ${tm || '--:--'}.`, 'info');
-
-                    app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Feedback Agendado", "A data do feedback foi salva no painel do monitor e também no Calendário da equipe.", "success");
-                        app.admin.loadUserEditor();
-                    });
-                },
-
-                openEditUser(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
-                    if(!u) return;
                     document.getElementById('edit-mat-original').value = u.matricula;
                     document.getElementById('edit-nome').value = u.nome;
                     document.getElementById('edit-mat').value = u.matricula;
                     document.getElementById('edit-pwd').value = '';
                     
-                    const img = document.getElementById('edit-foto-preview');
-                    if(u.foto) { img.src = u.foto; img.classList.remove('hidden'); } 
-                    else { img.classList.add('hidden'); }
+                    const imgPreview = document.getElementById('edit-foto-preview');
+                    if (u.foto) { imgPreview.src = u.foto; imgPreview.classList.remove('hidden'); } 
+                    else { imgPreview.classList.add('hidden'); }
+                    
                     document.getElementById('edit-foto').value = '';
 
                     const container = document.getElementById('edit-ops-container');
                     container.innerHTML = Object.values(app.operacoesList).map(op => {
                         const checked = (u.operacoes || []).includes(op.nome) ? 'checked' : '';
-                        return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer">
-                            <input type="checkbox" value="${op.nome}" class="edit-op-check w-4 h-4 accent-purple-600" ${checked}> 
-                            <span class="text-[11px] font-bold uppercase">${op.nome}</span>
-                        </label>`;
+                        return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors"><input type="checkbox" value="${op.nome}" class="edit-op-check w-4 h-4 accent-purple-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${op.nome}</span></label>`;
                     }).join('');
 
                     document.getElementById('edit-user-modal').classList.remove('hidden');
@@ -5647,359 +5187,496 @@
 
                 saveUserEdit() {
                     const originalMat = document.getElementById('edit-mat-original').value;
-                    const uIndex = app.users.findIndex(x => x.matricula === originalMat);
-                    if(uIndex === -1) return;
-
-                    const n = document.getElementById('edit-nome').value.trim();
-                    const m = document.getElementById('edit-mat').value.trim();
-                    const p = document.getElementById('edit-pwd').value.trim();
-                    if(!n || !m) return app.ui.showAlert("Aviso", "Nome e Matrícula são obrigatórios.", "error");
-
-                    const opChecks = document.querySelectorAll('.edit-op-check:checked');
-                    const ops = Array.from(opChecks).map(c => c.value);
+                    const nome = document.getElementById('edit-nome').value.trim();
+                    const mat = document.getElementById('edit-mat').value.trim();
+                    const pwd = document.getElementById('edit-pwd').value.trim();
                     const fileInput = document.getElementById('edit-foto');
+                    
+                    const checkboxes = document.querySelectorAll('.edit-op-check:checked');
+                    const operacoes = Array.from(checkboxes).map(cb => cb.value);
 
-                    const finishEdit = (fotoBase64) => {
-                        app.users[uIndex].nome = n;
-                        app.users[uIndex].matricula = m;
-                        app.users[uIndex].operacoes = ops;
-                        if(p) app.users[uIndex].senha = p;
-                        if(fotoBase64) app.users[uIndex].foto = fotoBase64;
+                    if(!nome || !mat) return app.ui.showAlert("Aviso", "Nome e Matrícula são obrigatórios", "error");
+
+                    const idx = app.users.findIndex(u => u.matricula === originalMat);
+                    if(idx === -1) return;
+
+                    if(mat !== originalMat && app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "A nova matrícula já está em uso por outro colaborador", "error");
+
+                    const executeSave = (fotoBase64) => {
+                        app.users[idx].nome = nome;
+                        app.users[idx].matricula = mat;
+                        app.users[idx].operacoes = operacoes;
+                        if(pwd) app.users[idx].senha = pwd;
+                        if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
 
                         app.storage.saveUsers().then(() => {
                             document.getElementById('edit-user-modal').classList.add('hidden');
-                            app.ui.showAlert("Sucesso", "Perfil atualizado com sucesso.", "success");
                             app.ui.renderTab('gestao_equipe', true);
+                            app.ui.showAlert("Sucesso", "Dados do colaborador atualizados.", "success");
                         });
                     };
 
-                    if(fileInput.files.length > 0) {
-                        app.actions.compressImageAsync(fileInput.files[0]).then(b64 => finishEdit(b64));
+                    if (fileInput.files && fileInput.files[0]) {
+                        app.actions.compressImageAsync(fileInput.files[0]).then(b64 => executeSave(b64));
                     } else {
-                        finishEdit(null);
+                        executeSave(undefined);
                     }
                 },
 
-                validateFeedback() {
+                deleteUser() {
                     const mat = document.getElementById('adm-user-select').value;
-                    const u = app.users.find(x => x.matricula === mat);
-                    const pwd = document.getElementById('fb-pwd').value;
-                    if(!u || !u.results || !u.results[app.currentMonth]) return;
-                    
-                    if(pwd !== u.senha) {
-                        return app.ui.showAlert("Assinatura Inválida", "A senha digitada não confere com a senha atual do colaborador.", "error");
-                    }
-
-                    u.results[app.currentMonth].status = 'validado';
-                    app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Validação Concluída", "Os resultados foram assinados com sucesso pelo colaborador e a bonificação foi liberada.", "success");
-                        app.admin.loadUserEditor();
-                    });
+                    if(!mat) return app.ui.showAlert("Aviso", "Selecione um usuário na tabela para excluir.", "error");
+                    const user = app.users.find(u => u.matricula === mat);
+                    app.ui.showConfirm("Cuidado!", `Você está prestes a excluir ${user.nome}. Esta ação não pode ser desfeita. Confirmar exclusão?`, `app.admin.execDeleteUser('${mat}')`, true);
                 },
 
-                updateUserPhoto() {
-                    const fileInput = document.getElementById('adm-edit-foto');
-                    if(!fileInput.files.length) return app.ui.showAlert("Aviso", "Selecione uma foto primeiro.", "info");
-                    app.actions.compressImageAsync(fileInput.files[0]).then(b64 => {
-                        const u = app.users.find(x => x.matricula === window.selectedAdminEditUser);
-                        if(u) {
-                            u.foto = b64;
-                            app.storage.saveUsers().then(() => app.ui.showAlert("Sucesso", "Foto do colaborador atualizada!", "success"));
-                        }
-                    });
-                },
-
-                clearUser() { app.ui.showConfirm("Limpar Lançamentos", `Isso irá ZERAR as notas do colaborador apenas no mês de <strong>${app.ui.formatMonthLabel(app.currentMonth)}</strong>. Confirmar?`, "app.admin.executeClearUser()", true); },
-                executeClearUser() {
-                    const u = app.users.find(x => x.matricula === document.getElementById('adm-user-select').value);
-                    if(u && u.results) { delete u.results[app.currentMonth]; app.storage.saveUsers().then(() => this.loadUserEditor()); }
-                },
-
-                deleteUser() { app.ui.showConfirm("Remover Colaborador", "Isso excluirá o acesso do colaborador e todo o seu histórico permanentemente. Prosseguir?", "app.admin.executeDeleteUser()", true); },
-                executeDeleteUser() {
-                    app.users = app.users.filter(u => u.matricula !== document.getElementById('adm-user-select').value);
-                    window.selectedAdminEditUser = null;
-                    // Alterado aqui no final para 'gestao_equipe'
-                    app.storage.saveUsers().then(() => app.ui.renderTab('gestao_equipe', true));
+                execDeleteUser(mat) {
+                    app.users = app.users.filter(u => u.matricula !== mat);
+                    app.storage.saveUsers().then(() => { app.ui.renderTab('gestao_equipe', true); app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); });
                 },
 
                 updateConfigPreview() {
                     let wTotal = 0;
                     app.config.goals.forEach((g, i) => {
-                        const val = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
-                        wTotal += val;
-                        document.getElementById(`cfg-p-${i}`).textContent = `${(val*100).toFixed(0)}%`;
+                        const tEl = document.getElementById(`cfg-t-${i}`);
+                        const wEl = document.getElementById(`cfg-w-${i}`);
+                        if(tEl) g.title = tEl.value;
+                        if(wEl) {
+                            g.weight = parseFloat(wEl.value) || 0;
+                            document.getElementById(`cfg-p-${i}`).textContent = (g.weight * 100).toFixed(0) + '%';
+                            wTotal += g.weight;
+                        }
                     });
-                    document.getElementById('cfg-total-w').textContent = wTotal.toFixed(2);
-                    document.getElementById('cfg-total-p').textContent = `${(wTotal*100).toFixed(0)}%`;
-                    if(Math.abs(wTotal - 1.0) > 0.001) document.getElementById('cfg-total-p').classList.replace('text-green-600', 'text-red-500');
-                    else document.getElementById('cfg-total-p').classList.replace('text-red-500', 'text-green-600');
+                    const tW = document.getElementById('cfg-total-w');
+                    const tP = document.getElementById('cfg-total-p');
+                    if(tW) tW.textContent = wTotal.toFixed(2);
+                    if(tP) tP.textContent = (wTotal * 100).toFixed(0) + '%';
+                    if(tP) {
+                        tP.classList.remove('text-green-600','text-red-500');
+                        if (wTotal > 1.01 || wTotal < 0.99) tP.classList.add('text-red-500'); else tP.classList.add('text-green-600');
+                    }
                 },
 
                 saveConfig() {
-                    app.config.baseValue = parseFloat(document.getElementById('cfg-base').value) || 400;
+                    const baseEl = document.getElementById('cfg-base');
+                    if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
+                    
+                    let wTotal = 0;
                     app.config.goals.forEach((g, i) => {
-                        g.title = document.getElementById(`cfg-t-${i}`).value;
-                        g.weight = parseFloat(document.getElementById(`cfg-w-${i}`).value) || 0;
+                        const tEl = document.getElementById(`cfg-t-${i}`);
+                        const wEl = document.getElementById(`cfg-w-${i}`);
+                        if(tEl) g.title = tEl.value;
+                        if(wEl) g.weight = parseFloat(wEl.value) || 0;
+                        wTotal += g.weight;
                     });
-                    app.storage.saveConfig().then(() => {
-                        app.ui.showAlert("Parâmetros Atualizados", "As configurações corporativas foram aplicadas para toda a base.", "success");
-                    });
+
+                    if (wTotal > 1.01 || wTotal < 0.99) return app.ui.showAlert("Erro Matemático", "A soma das frações deve resultar exatamente em 1.00 (100%). Ajuste os pesos e tente novamente.", "error");
+
+                    app.storage.saveConfig().then(() => app.ui.showAlert("Metas Salvas", "Nova arquitetura aplicada ao sistema com sucesso.", "success"));
                 },
 
-                exportBonusReport() {
-                    if (!window.jspdf || !window.jspdf.jsPDF) {
-                        return app.ui.showAlert("Aviso", "O sistema está carregando o módulo de PDF, aguarde um instante e clique novamente.", "error");
+                loadUserEditor() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    if(!mat) {
+                        document.getElementById('adm-editor-area').classList.add('hidden');
+                        window.selectedAdminEditUser = null;
+                        return;
                     }
+                    window.selectedAdminEditUser = mat;
+
+                    const u = app.users.find(x => x.matricula === mat);
+                    const r = (u.results && u.results[app.currentMonth]) || {};
+                    const isLocked = r.status === 'validado';
+
+                    let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative">`;
                     
-                    const doc = new window.jspdf.jsPDF('landscape'); 
+                    if(isLocked) {
+                        html += `<div class="absolute inset-0 bg-slate-900/5 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl cursor-not-allowed group">
+                                    <div class="bg-white px-6 py-3 rounded-full font-bold text-red-600 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity border border-red-200"><i class="fa-solid fa-lock"></i> Resultados já validados e travados. Desbloqueie abaixo se precisar alterar.</div>
+                                 </div>`;
+                    }
+
+                    app.config.goals.forEach(g => {
+                        const v = r[g.id] || {};
+                        html += `<div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+                                    <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2"><i class="fa-solid ${g.icon} text-slate-400"></i> ${g.title}</h4>`;
+                        
+                        if (g.type === 'percent') {
+                            if(g.id === 'g1') {
+                                html += `<div class="flex gap-3">
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="text" value="400" disabled class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
+                                         </div>`;
+                            } else {
+                                html += `<div class="flex gap-3">
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="number" id="input-${g.id}-meta" value="${v.meta||'100'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
+                                         </div>`;
+                            }
+                        } else if (g.type === 'calibracao') {
+                            html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Qtd. Sessões</label>
+                                     <input type="number" id="input-${g.id}-val" min="0" max="2" value="${v.val||'0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">`;
+                        } else if (g.type === 'actions') {
+                            html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Ações Validadas</label>
+                                     <input type="number" id="input-${g.id}-val" min="0" max="5" value="${v.val||'0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">`;
+                        } else if (g.type === 'gestor') {
+                            html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Impacto Final (%)</label>
+                                     <select id="input-${g.id}-val" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
+                                        <option value="100" ${v.val==='100'?'selected':''}>100%</option>
+                                        <option value="75" ${v.val==='75'?'selected':''}>75%</option>
+                                        <option value="50" ${v.val==='50'?'selected':''}>50%</option>
+                                        <option value="25" ${v.val==='25'?'selected':''}>25%</option>
+                                        <option value="0" ${v.val==='0'?'selected':''}>0%</option>
+                                     </select>`;
+                        } else {
+                            html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Cumprimento da Regra</label>
+                                     <select id="input-${g.id}-val" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
+                                        <option value="Não" ${v.val==='Não'?'selected':''}>Não</option>
+                                        <option value="Sim" ${v.val==='Sim'?'selected':''}>Sim</option>
+                                     </select>`;
+                        }
+                        html += `</div>`;
+                    });
+
+                    // Workflow de Aprovação
+                    html += `
+                        </div>
+                        <div class="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-100 dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative z-0">
+                    `;
+
+                    if(isLocked) {
+                        html += `
+                            <div>
+                                <h4 class="font-bold text-green-600 flex items-center gap-2"><i class="fa-solid fa-lock"></i> Entregas Validadas</h4>
+                                <p class="text-xs text-slate-500">As métricas deste mês já foram assinadas pelo colaborador e não podem mais ser alteradas no fluxo normal.</p>
+                            </div>
+                            <button onclick="app.admin.unlockResults()" class="bg-red-50 text-red-600 hover:bg-red-100 font-bold py-2.5 px-6 rounded-xl border border-red-200 transition text-sm">
+                                <i class="fa-solid fa-unlock"></i> Desbloquear Edição
+                            </button>
+                        `;
+                    } else if (r.status === 'agendado') {
+                        html += `
+                            <div>
+                                <h4 class="font-bold text-blue-600 flex items-center gap-2"><i class="fa-solid fa-calendar-check"></i> Aguardando Assinatura do Monitor</h4>
+                                <p class="text-xs text-slate-500">Agendado para: <strong>${r.fbDate.split('-').reverse().join('/')} às ${r.fbTime}</strong></p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="app.admin.confirmFeedbackPresence()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition text-sm"><i class="fa-solid fa-signature"></i> Assinar Digitalmente e Travar Notas</button>
+                                <button onclick="app.admin.cancelSchedule()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-4 rounded-xl transition text-sm">Desfazer Agenda</button>
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="flex-1">
+                                <h4 class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-3"><i class="fa-solid fa-calendar-plus text-blue-500"></i> Agendar Feedback do Monitor</h4>
+                                <div class="flex gap-3">
+                                    <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data</label><input type="date" id="schedule-date" class="w-full p-2.5 rounded-lg border outline-none text-sm dark:bg-slate-900 dark:text-white" min="${new Date().toISOString().split('T')[0]}"></div>
+                                    <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Horário</label><input type="time" id="schedule-time" class="w-full p-2.5 rounded-lg border outline-none text-sm dark:bg-slate-900 dark:text-white"></div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-2 mt-4 md:mt-0">
+                                <button onclick="app.admin.saveResultsOnly()" class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-floppy-disk"></i> Salvar Lançamentos Apenas</button>
+                                <button onclick="app.admin.saveAndSchedule()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-paper-plane"></i> Salvar Lançamentos e Agendar Feedback</button>
+                            </div>
+                        `;
+                    }
+                    html += `</div>`;
                     
-                    doc.setFontSize(16);
-                    doc.setTextColor(22, 163, 74); 
-                    doc.text("SOFTMARKETING - Relatorio Oficial de Bonificacao", 14, 15);
-                    
-                    doc.setFontSize(12);
-                    doc.setTextColor(30, 41, 59); 
-                    doc.text(`Competencia: ${app.ui.formatMonthLabel(app.currentMonth)}`, 14, 23);
-                    doc.setFontSize(9);
-                    doc.setTextColor(100, 116, 139); 
-                    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 29);
-                    
-                    const columns = ["Matricula", "Nome", "Operacao", "Monitorias (G1)", "Feedbacks (G2)", "Calibragens (G3)", "Acoes (G4)", "Gestor (G6)", "Impacto (G7)", "Total Pago (R$)"];
-                    const rows = [];
-                    
-                    app.users.forEach(u => {
-                        const res = u.results ? u.results[app.currentMonth] : null;
-                        if(res && Object.keys(res).length > 0) {
-                            const stats = app.calc.getTotal(res);
-                            
-                            const g1 = app.calc.getGoalResult('g1', res).display;
-                            const g2 = app.calc.getGoalResult('g2', res).display;
-                            const g3 = app.calc.getGoalResult('g3', res).display;
-                            const g4 = app.calc.getGoalResult('g4', res).display;
-                            const g6 = app.calc.getGoalResult('g6', res).display;
-                            const g7 = app.calc.getGoalResult('g7', res).display;
-                            
-                            const valTotal = `R$ ${stats.received.toFixed(2)}`;
-                            
-                            rows.push([u.matricula, u.nome, "MONITORIA", g1, g2, g3, g4, g6, g7, valTotal]);
+                    document.getElementById('adm-editor-area').innerHTML = html;
+                    document.getElementById('adm-editor-area').classList.remove('hidden');
+                },
+
+                collectResultsFromDOM() {
+                    const res = {};
+                    app.config.goals.forEach(g => {
+                        if (g.type === 'percent') {
+                            const meta = g.id === 'g1' ? 400 : (document.getElementById(`input-${g.id}-meta`).value || 0);
+                            const real = document.getElementById(`input-${g.id}-real`).value || 0;
+                            res[g.id] = { meta, real };
+                        } else {
+                            const val = document.getElementById(`input-${g.id}-val`).value || '';
+                            res[g.id] = { val };
                         }
                     });
+                    return res;
+                },
 
-                    if(rows.length === 0) {
-                        return app.ui.showAlert("Sem Dados", `Não há pagamentos registrados para o mês de ${app.ui.formatMonthLabel(app.currentMonth)} para gerar no relatório.`, "info");
+                saveResultsOnly() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx === -1) return;
+
+                    const user = app.users[idx];
+                    if(!user.results) user.results = {};
+                    
+                    const oldStatus = user.results[app.currentMonth] ? user.results[app.currentMonth].status : 'pendente';
+                    
+                    user.results[app.currentMonth] = {
+                        ...this.collectResultsFromDOM(),
+                        status: oldStatus === 'agendado' ? 'agendado' : 'pendente'
+                    };
+                    
+                    if(oldStatus === 'agendado') {
+                        user.results[app.currentMonth].fbDate = user.results[app.currentMonth].fbDate;
+                        user.results[app.currentMonth].fbTime = user.results[app.currentMonth].fbTime;
                     }
 
-                    doc.autoTable({
-                        head: [columns],
-                        body: rows,
-                        startY: 35,
-                        theme: 'grid',
-                        headStyles: { fillColor: [22, 163, 74], fontSize: 7, halign: 'center' }, 
-                        styles: { fontSize: 7, cellPadding: 2, valign: 'middle', halign: 'center' },
-                        columnStyles: { 
-                            1: { halign: 'left', cellWidth: 50 }, 
-                            9: { fontStyle: 'bold', textColor: [22, 163, 74] } 
-                        },
-                        alternateRowStyles: { fillColor: [248, 250, 252] }
-                    });
-                    
-                    const pageCount = doc.internal.getNumberOfPages();
-                    for(let i = 1; i <= pageCount; i++) {
-                        doc.setPage(i);
-                        doc.setFontSize(7);
-                        doc.setTextColor(150, 150, 150);
-                        doc.text(`Pagina ${i} de ${pageCount} - Softmarketing`, 14, doc.internal.pageSize.height - 10);
-                    }
-                    
-                    doc.save(`Relatorio_Bonificacao_${app.currentMonth}.pdf`);
-                },
-
-                exportCalendarXLSX() {
-                    const evts = Object.values(app.eventsList);
-                    if(evts.length === 0) return app.ui.showAlert("Erro", "Não há registros no calendário para exportar.", "error");
-
-                    const rows = evts.map(e => ({
-                        ID: e.id, Data: e.data, Tipo: e.tipo, Status: e.status||"-", 
-                        Tema: e.tema||"-", Operacao: e.op||"-", 
-                        "Hora Inicio": e.hora||"-", "Hora Fim": e.horaFim||"-", 
-                        Nome: app.users.find(x => x.matricula === e.matricula)?.nome || e.autor || "-", 
-                        Matricula: e.matricula||"-", 
-                        "Monitorias (Dia)": e.qtdMon||"0", "Feedbacks (Dia)": e.qtdFb||"0", 
-                        Observacao: e.obs || ""
-                    }));
-
-                    const worksheet = XLSX.utils.json_to_sheet(rows);
-                    const workbook = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(workbook, worksheet, "Calendario");
-                    XLSX.writeFile(workbook, `Calendario_Softmarketing_${app.currentMonth}.xlsx`);
-                },
-
-                // --- LÓGICA DA CAMPANHA DESTE TRIMESTRE ---
-                addPontosCampanha(eqId) {
-                    const ptsInput = document.getElementById(`pts-add-${eqId}`);
-                    const comInput = document.getElementById(`pts-comment-${eqId}`);
-                    
-                    const val = parseInt(ptsInput.value);
-                    const comment = comInput.value.trim();
-
-                    if(isNaN(val) || val <= 0) return app.ui.showAlert("Aviso", "Digite um valor de pontos válido (maior que 0).", "error");
-                    if(!comment) return app.ui.showAlert("Aviso", "Você precisa inserir um motivo ou comentário justificando os pontos ganhos.", "error");
-                    
-                    app.campanhaData[eqId].pontos += val;
-                    
-                    if(!app.campanhaData[eqId].history) app.campanhaData[eqId].history = [];
-                    app.campanhaData[eqId].history.push({
-                        id: 'hist_' + Date.now(),
-                        pontos: val,
-                        comentario: comment,
-                        data: Date.now(),
-                        autor: app.isAdmin ? 'ADM' : app.currentUser.nome
-                    });
-
-                    app.storage.saveCampanha().then(() => {
-                        app.ui.showPointsAnimation(app.campanhaData[eqId].nome, val);
-                        app.ui.renderTab('gestao_campanha', true);
+                    app.storage.saveUsers().then(() => {
+                        app.ui.showAlert("Rascunho Salvo", "As notas foram salvas no sistema, mas ainda estão pendentes de agendamento de feedback.", "success");
                     });
                 },
-                
-                removePontosCampanha(eqId, histId) {
-                    app.ui.showConfirm("Aviso", "Deseja excluir este lançamento de pontos e subtrair o valor do total da equipe?", `app.admin.executeRemovePontos('${eqId}', '${histId}')`, true);
+
+                saveAndSchedule() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx === -1) return;
+
+                    const date = document.getElementById('schedule-date').value;
+                    const time = document.getElementById('schedule-time').value;
+
+                    if(!date || !time) return app.ui.showAlert("Aviso", "Preencha a data e o horário para agendar o feedback.", "error");
+
+                    const user = app.users[idx];
+                    if(!user.results) user.results = {};
+                    
+                    user.results[app.currentMonth] = {
+                        ...this.collectResultsFromDOM(),
+                        status: 'agendado',
+                        fbDate: date,
+                        fbTime: time
+                    };
+
+                    app.storage.saveUsers().then(() => {
+                        app.ui.showAlert("Processo Completo", "Notas salvas e feedback agendado no sistema do colaborador.", "success");
+                        this.loadUserEditor();
+                    });
                 },
 
-                executeRemovePontos(eqId, histId) {
-                    const eq = app.campanhaData[eqId];
-                    if(!eq || !eq.history) return;
-                    
-                    const histIndex = eq.history.findIndex(h => h.id === histId);
-                    if(histIndex > -1) {
-                        const histItem = eq.history[histIndex];
-                        eq.pontos -= histItem.pontos; // Subtrai os pontos da equipe
-                        if(eq.pontos < 0) eq.pontos = 0; // Proteção para não ficar negativo
-                        
-                        eq.history.splice(histIndex, 1); // Remove o lançamento do array
-                        
-                        app.storage.saveCampanha().then(() => {
-                            app.ui.renderTab('gestao_campanha', true);
+                confirmFeedbackPresence() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx === -1) return;
+
+                    app.ui.showConfirm("Atenção", "Confirmar assinatura? O ciclo de avaliação deste mês será fechado e as notas travadas.", `app.admin.execConfirmFeedback('${mat}')`, true);
+                },
+
+                execConfirmFeedback(mat) {
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx > -1 && app.users[idx].results[app.currentMonth]) {
+                        app.users[idx].results[app.currentMonth].status = 'validado';
+                        app.storage.saveUsers().then(() => {
+                            app.ui.showAlert("Sucesso", "Feedback assinado digitalmente e indicadores travados.", "success");
+                            this.loadUserEditor();
                         });
                     }
                 },
 
-                resetPontosCampanha(eqId) {
-                    app.ui.showConfirm("Zerar Equipe", "Tem certeza que deseja ZERAR os pontos e apagar todo o histórico desta equipe? Esta ação não tem volta.", `app.admin.executeResetPontos('${eqId}')`, true);
+                unlockResults() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    app.ui.showConfirm("Aviso", "Desbloquear vai exigir que o colaborador assine a bonificação novamente. Continuar?", `app.admin.execUnlock('${mat}')`, true);
                 },
 
-                executeResetPontos(eqId) {
-                    app.campanhaData[eqId].pontos = 0;
-                    app.campanhaData[eqId].history = [];
-                    app.storage.saveCampanha().then(() => {
-                        app.ui.renderTab('gestao_campanha', true);
-                        app.ui.showAlert("Zerado", "Pontuação e histórico da equipe foram limpos com sucesso.", "success");
+                execUnlock(mat) {
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx > -1 && app.users[idx].results[app.currentMonth]) {
+                        app.users[idx].results[app.currentMonth].status = 'pendente';
+                        delete app.users[idx].results[app.currentMonth].fbDate;
+                        delete app.users[idx].results[app.currentMonth].fbTime;
+                        app.storage.saveUsers().then(() => {
+                            app.ui.showAlert("Feito", "Resultados desbloqueados. Edite e agende um novo feedback.", "info");
+                            this.loadUserEditor();
+                        });
+                    }
+                },
+
+                cancelSchedule() {
+                    const mat = document.getElementById('adm-user-select').value;
+                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    if(idx > -1 && app.users[idx].results[app.currentMonth]) {
+                        app.users[idx].results[app.currentMonth].status = 'pendente';
+                        delete app.users[idx].results[app.currentMonth].fbDate;
+                        delete app.users[idx].results[app.currentMonth].fbTime;
+                        app.storage.saveUsers().then(() => { this.loadUserEditor(); });
+                    }
+                },
+
+                clearAllUsersMonth() {
+                    app.ui.showConfirm("Zerar Todo o Mês?", `Tem certeza que deseja apagar os lançamentos de TODOS os usuários do mês ${app.ui.formatMonthLabel(app.currentMonth)}?`, `app.admin.execClearAllUsersMonth()`, true);
+                },
+                execClearAllUsersMonth() {
+                    app.users.forEach(u => {
+                        if (u.results && u.results[app.currentMonth]) { delete u.results[app.currentMonth]; }
                     });
+                    app.storage.saveUsers().then(() => { app.ui.showAlert("Feito", "Lançamentos apagados.", "success"); this.loadUserEditor(); });
+                },
+
+                exportBonusReport() {
+                    const month = app.currentMonth;
+                    if (!month) return app.ui.showAlert("Erro", "Mês não definido.", "error");
+
+                    const usersWithResults = app.users.filter(u => u.results && u.results[month] && Object.keys(u.results[month]).length > 0);
+                    if (usersWithResults.length === 0) return app.ui.showAlert("Aviso", "Nenhum resultado processado para exportar neste mês.", "error");
+
+                    const rows = usersWithResults.map(u => {
+                        const total = app.calc.getTotal(u.results[month]);
+                        const rowData = { "Matrícula": u.matricula, "Nome": u.nome, "Status Feedback": (u.results[month].status || 'pendente').toUpperCase() };
+                        app.config.goals.forEach(g => {
+                            const res = app.calc.getGoalResult(g.id, u.results[month]);
+                            rowData[g.title] = res.display;
+                            rowData[`R$ ${g.title}`] = res.received.toFixed(2);
+                        });
+                        rowData["Custo Financeiro"] = total.received.toFixed(2);
+                        rowData["Aproveitamento"] = (total.pct * 100).toFixed(1) + "%";
+                        return rowData;
+                    });
+
+                    const worksheet = XLSX.utils.json_to_sheet(rows);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, `Bonus_${month}`);
+                    XLSX.writeFile(workbook, `Soft_Bonificacao_${month}.xlsx`);
+                },
+
+                exportCalendarXLSX() {
+                    const rows = Object.values(app.eventsList).map(e => ({
+                        ID: e.id,
+                        Data: e.data,
+                        Tipo: e.tipo === 'pessoal' ? 'Controle Pessoal' : 'Evento de Operação',
+                        Hora_Inicio: e.hora || '-',
+                        Hora_Fim: e.horaFim || '-',
+                        Tema: e.tema || '-',
+                        Operacao: e.op || '-',
+                        Autor: e.autor,
+                        Matricula_Alvo: e.matricula,
+                        Status: e.status || '-',
+                        Observacao: e.obs || '',
+                        Anexo_Link: e.anexo ? 'Possui Imagem' : 'Não'
+                    }));
+                    if(rows.length === 0) return app.ui.showAlert("Aviso", "Nenhum evento no calendário para exportar.", "info");
+
+                    const worksheet = XLSX.utils.json_to_sheet(rows);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, `Calendario_${app.currentMonth}`);
+                    XLSX.writeFile(workbook, `Soft_Calendario_${app.currentMonth}.xlsx`);
+                },
+
+                // NOVA ABA ADMIN - GESTÃO DA CAMPANHA TRIMESTRAL
+                addPontosCampanha(eqId) {
+                    const pts = parseInt(document.getElementById(`pts-add-${eqId}`).value);
+                    const comment = document.getElementById(`pts-comment-${eqId}`).value.trim();
+                    if(!pts || !comment) return app.ui.showAlert("Aviso", "Informe a pontuação e o motivo para lançar.", "error");
+
+                    const eq = app.campanhaData[eqId];
+                    if(!eq) return;
+
+                    eq.pontos += pts;
+                    if(!eq.history) eq.history = [];
+                    eq.history.push({ id: 'h_'+Date.now(), pontos: pts, comentario: comment, data: Date.now(), autor: app.currentUser ? app.currentUser.nome : 'ADM' });
+
+                    app.storage.saveCampanha().then(() => {
+                        app.ui.showAlert("Sucesso", `+${pts} pontos lançados para ${eq.nome}`, "success");
+                        app.ui.renderTab('gestao_campanha', true);
+                    });
+                },
+
+                removePontosCampanha(eqId, histId) {
+                    const eq = app.campanhaData[eqId];
+                    if(!eq || !eq.history) return;
+                    
+                    const idx = eq.history.findIndex(h => h.id === histId);
+                    if(idx > -1) {
+                        eq.pontos -= eq.history[idx].pontos;
+                        eq.history.splice(idx, 1);
+                        app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
+                    }
+                },
+
+                resetPontosCampanha(eqId) {
+                    app.ui.showConfirm("Cuidado", "Zerar totalmente a pontuação e histórico desta equipe?", `app.admin.execResetCampanha('${eqId}')`, true);
+                },
+
+                execResetCampanha(eqId) {
+                    const eq = app.campanhaData[eqId];
+                    if(eq) {
+                        eq.pontos = 0; eq.history = []; eq.emojiStock = 50; eq.emojisSent = 0; eq.emojiSymbol = '🏆';
+                        app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
+                    }
+                },
+
+                addMembroCampanha(eqId) {
+                    const matr = document.getElementById(`user-sel-${eqId}`).value;
+                    if(!matr) return;
+
+                    // Remove de outras equipes se já existir
+                    Object.values(app.campanhaData).forEach(eq => {
+                        if(eq.membros && eq.membros.includes(matr)) {
+                            eq.membros = eq.membros.filter(m => m !== matr);
+                        }
+                    });
+
+                    if(!app.campanhaData[eqId].membros) app.campanhaData[eqId].membros = [];
+                    app.campanhaData[eqId].membros.push(matr);
+
+                    app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
+                },
+
+                removeMembroCampanha(eqId, matr) {
+                    if(app.campanhaData[eqId].membros) {
+                        app.campanhaData[eqId].membros = app.campanhaData[eqId].membros.filter(m => m !== matr);
+                        app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
+                    }
+                },
+
+                addOperacao() {
+                    const nome = document.getElementById('nova-op-nome').value.trim();
+                    const max = document.getElementById('nova-op-max').value;
+                    if(!nome) return app.ui.showAlert("Aviso", "O nome da operação é obrigatório.", "error");
+
+                    const id = 'op_' + Date.now();
+                    app.operacoesList[id] = { id, nome, max };
+                    app.storage.saveOperacoes().then(() => {
+                        app.ui.showAlert("Sucesso", "Operação adicionada.", "success");
+                        app.ui.renderTab('operacoes', true);
+                    });
+                },
+
+                deleteOperacao(id) {
+                    app.ui.showConfirm("Cuidado", "Excluir esta operação das opções de formulário? Não afetará atas e dados já salvos com esse nome.", `app.admin.execDeleteOperacao('${id}')`, true);
+                },
+
+                execDeleteOperacao(id) {
+                    delete app.operacoesList[id];
+                    app.storage.saveOperacoes().then(() => app.ui.renderTab('operacoes', true));
                 },
 
                 saveEquipeEmoji(eqId) {
-                    const emojiInput = document.getElementById('eq-emoji-input');
-                    if(!emojiInput) return;
-                    
-                    const val = emojiInput.value.trim();
-                    if(!val) return app.ui.showAlert("Aviso", "Selecione um emoji válido antes de salvar.", "error");
-
-                    // Salva apenas a propriedade do Emoji
-                    app.campanhaData[eqId].emojiSymbol = val;
-                    
-                    // Remove propriedades de frases residuais para manter o banco limpo
-                    app.campanhaData[eqId].quote = '';
-                    app.campanhaData[eqId].quoteAutor = '';
-                    
-                    app.storage.saveCampanha().then(() => {
-                        app.ui.showAlert("Pronto!", "O emoji da sua equipe foi atualizado no topo do pódio!", "success");
-                        app.ui.renderTab('campanha_mes', true);
-                    });
-                },
-                
-                addMembroCampanha(eqId) {
-                    const select = document.getElementById(`user-sel-${eqId}`);
-                    const matricula = select.value;
-                    if(!matricula) return;
-                    
-                    let alreadyIn = null;
-                    Object.keys(app.campanhaData).forEach(k => {
-                        if(app.campanhaData[k].membros && app.campanhaData[k].membros.includes(matricula)) {
-                            alreadyIn = app.campanhaData[k].nome;
-                        }
-                    });
-                    if(alreadyIn) return app.ui.showAlert("Conflito", `Este colaborador já está na ${alreadyIn}. Remova-o de lá primeiro.`, "error");
-
-                    if(!app.campanhaData[eqId].membros) app.campanhaData[eqId].membros = [];
-                    app.campanhaData[eqId].membros.push(matricula);
-                    
-                    app.storage.saveCampanha().then(() => {
-                        app.ui.renderTab('gestao_campanha', true);
-                    });
-                },
-                
-                removeMembroCampanha(eqId, matricula) {
-                    app.campanhaData[eqId].membros = app.campanhaData[eqId].membros.filter(m => m !== matricula);
-                    app.storage.saveCampanha().then(() => {
-                        app.ui.renderTab('gestao_campanha', true);
-                    });
+                    const newEmoji = document.getElementById('eq-emoji-input').value;
+                    if(app.campanhaData[eqId]) {
+                        app.campanhaData[eqId].emojiSymbol = newEmoji;
+                        app.storage.saveCampanha().then(() => {
+                            app.ui.showAlert("Sucesso", "Símbolo da equipe atualizado para " + newEmoji, "success");
+                        });
+                    }
                 },
 
                 generateLegalPDF() {
-                    if (!window.jspdf || !window.jspdf.jsPDF) {
-                        return app.ui.showAlert("Aviso", "A biblioteca de geração de PDF está carregando, tente novamente em 3 segundos.", "error");
-                    }
+                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Erro", "Gerador PDF não carregado.", "error");
                     
-                    const doc = new window.jspdf.jsPDF('landscape'); 
-                    
+                    const doc = new window.jspdf.jsPDF();
                     doc.setFontSize(16);
-                    doc.setTextColor(22, 163, 74); 
-                    doc.text("SOFTMARKETING - Solucoes em Comunicacao", 14, 15);
-                    doc.setFontSize(12);
-                    doc.setTextColor(30, 41, 59); 
-                    doc.text("Relatorio Oficial de Conformidade Legal e Aceites LGPD", 14, 23);
-                    doc.setFontSize(9);
-                    doc.setTextColor(100, 116, 139); 
-                    doc.text(`Data de Emissao: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-                    doc.text("Documento com validade auditorial sobre os Termos de Sigilo e Diretrizes de Metas no Portal de Resultados.", 14, 35);
+                    doc.text("Declaração de Conformidade LGPD", 105, 20, { align: "center" });
                     
-                    const columns = ["Colaborador", "Matricula", "Status LGPD (Termos)", "Status Diretrizes (Metas)"];
-                    const rows = [];
+                    doc.setFontSize(10);
+                    const txt = `Pelo presente documento, a Softmarketing atesta que a plataforma "Portal de Resultados", \nutilizada para gestão de bonificação de qualidade operada através da matrícula do colaborador,\nfoi desenvolvida e está em conformidade com as diretrizes da Lei Geral de Proteção de Dados (Lei nº 13.709/2018).\n\n1. Inexistência de coleta de dados sensíveis (Art. 5º, II).\n2. Processamento estritamente necessário para cumprimento de contrato de bonificação e metas (Art. 7º, V).\n3. O uso das credenciais de acesso caracteriza aceite tácito e ciência do controle exclusivo de monitoria.\n\nEste relatório é gerado internamente e não serve como documento de auditoria externa, mas atesta as políticas de software.\n\nData de Emissão: ${new Date().toLocaleDateString('pt-BR')}`;
                     
-                    app.users.forEach(u => {
-                        const termos = u.aceiteTermos ? `ACEITO EM:\n${new Date(u.aceiteTermos).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                        const diretrizes = u.aceiteDiretrizes ? `ACEITO EM:\n${new Date(u.aceiteDiretrizes).toLocaleString('pt-BR')}` : "Pendente / Nao Aceito";
-                        rows.push([u.nome, u.matricula, termos, diretrizes]);
-                    });
-
-                    doc.autoTable({
-                        head: [columns],
-                        body: rows,
-                        startY: 42,
-                        theme: 'grid',
-                        headStyles: { fillColor: [22, 163, 74] }, 
-                        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
-                        alternateRowStyles: { fillColor: [248, 250, 252] }, 
-                        columnStyles: {
-                            0: { cellWidth: 70 }, 1: { cellWidth: 40 }, 2: { cellWidth: 80 }, 3: { cellWidth: 80 }
-                        }
-                    });
-                    
-                    const pageCount = doc.internal.getNumberOfPages();
-                    for(let i = 1; i <= pageCount; i++) {
-                        doc.setPage(i);
-                        doc.setFontSize(7);
-                        doc.setTextColor(150, 150, 150);
-                        doc.text(`Pagina ${i} de ${pageCount} - Uso restrito e confidencial Softmarketing`, 14, doc.internal.pageSize.height - 10);
-                    }
-                    
-                    doc.save("Softmarketing_Relatorio_Aceites_LGPD.pdf");
+                    doc.text(txt, 15, 40);
+                    doc.save("Compliance_LGPD_Softmarketing.pdf");
                 }
             }
         };
 
-        window.onload = () => { app.ui.init(); };
+        // Boot
+        document.addEventListener('DOMContentLoaded', () => { app.ui.init(); });
+        
     </script>
 </body>
 </html>
