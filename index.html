@@ -3124,15 +3124,12 @@
                         html += `
                             <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/50">
                                 <td class="py-3 font-bold text-slate-700 dark:text-slate-200 flex items-center gap-3">
-                                    <!-- Foto com hover e clique -->
                                     <img src="${avatar}" onclick="app.admin.viewUserProfile('${u.matricula}')" class="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:scale-105 transition-transform" title="Ver Perfil Completo">
                                     <div>${u.nome}<br><span class="text-xs text-slate-400 font-normal">${u.matricula}</span></div>
                                 </td>
                                 <td class="py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[150px] truncate">${u.operacoes ? u.operacoes.join(', ') : '-'}</td>
                                 <td class="py-3 text-right space-x-1">
-                                    <!-- NOVO BOTÃO DE LOG -->
                                     <button type="button" onclick="app.admin.viewUserProfile('${u.matricula}')" class="text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Ver Perfil e Log de Atividade"><i class="fa-solid fa-address-card"></i></button>
-                                    
                                     <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar Reset de Senha (12345)"><i class="fa-solid fa-key"></i></button>
                                     <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Editar Perfil"><i class="fa-solid fa-pen"></i></button>
                                     <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar re-assinatura LGPD">LGPD</button>
@@ -3141,6 +3138,11 @@
                             </tr>
                         `;
                     });
+                    
+                    // ESSAS LINHAS ABAIXO FORAM AS QUE SE PERDERAM NA COLAGEM E QUEBRARAM O SISTEMA
+                    html += `</tbody></table></div>`;
+                    container.innerHTML = html;
+                },
 
                 renderView_Config(container) {
                     if(!app.isAdmin) return;
@@ -4031,8 +4033,6 @@
             }, // <-- Fim do Objeto UI
 
             admin: {
-
-                admin: {
                 
                 // NOVO BLOCO: Função que abre o modal e monta a linha do tempo (Log)
                 viewUserProfile(matricula) {
