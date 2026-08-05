@@ -4599,7 +4599,7 @@
                                 </div>
                                 <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
-                                    <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)">
+                                    <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
                                 </label>
                             </div>
                         `;
@@ -5048,28 +5048,66 @@
                 },
                 
                 processarPlanilhaMonitoria(input) {
-                    const file = input.files[0];
-                    if (!file) return;
-
-                    app.ui.showAlert("Processando", "Analisando algoritmos e cruzando dados...", "info");
-
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        const data = e.target.result;
-                        const workbook = XLSX.read(data, { type: 'binary' });
-                        const firstSheet = workbook.SheetNames[0];
-                        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
-
-                        if (rows.length === 0) {
-                            return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
-                        }
-
-                        this.analisarDadosAvancados(rows);
-
-                        app.ui.renderTab('import_monitorias', true);
-                        app.ui.showAlert("Sucesso!", "O processamento inteligente foi concluído.", "success");
-                    };
-                    reader.readAsBinaryString(file);
+                        const file = input.files[0];
+                        if (!file) return;
+                
+                        // Feedback visual imediato para o usuário
+                        app.ui.showAlert("Processando...", "Lendo a planilha e atualizando o banco de dados. Aguarde...", "info");
+                
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const firstSheetName = workbook.SheetNames[0];
+                                const worksheet = workbook.Sheets[firstSheetName];
+                                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                
+                                if (jsonData.length === 0) {
+                                    return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
+                                }
+                
+                                // Exemplo de mapeamento (ajuste os nomes das colunas de acordo com sua planilha padrão)
+                                let novoRanking = [];
+                                
+                                jsonData.forEach(row => {
+                                    // Mapeie as colunas da sua planilha (Exemplo: "Nome", "Matrícula", "Total Monitorias", etc.)
+                                    // Aqui garantimos que a estrutura alimenta exatamente as variáveis que a tela de Importação lê
+                                    novoRanking.push({
+                                        nome: row['Nome'] || row['NOME'] || 'Desconhecido',
+                                        matricula: String(row['Matrícula'] || row['MATRICULA'] || ''),
+                                        total: parseInt(row['Total'] || row['Total Monitorias'] || 0),
+                                        falta: parseInt(row['Faltam'] || row['Faltantes'] || 0),
+                                        pendenteFeedback: parseInt(row['Pendentes'] || row['Feedbacks Pendentes'] || 0),
+                                        totalAbaixo85: parseInt(row['Abaixo 85'] || 0),
+                                        feedbacksAplicados: parseInt(row['Aplicados'] || 0),
+                                        manual: false
+                                    });
+                                });
+                
+                                // Alimenta a variável global do sistema
+                                app.monitoriasData = {
+                                    ranking: novoRanking,
+                                    ultimaAtualizacao: Date.now()
+                                };
+                
+                                // Salva no Firebase e força a atualização da tela
+                                app.storage.saveMonitorias().then(() => {
+                                    document.getElementById('global-modal').classList.add('hidden'); // Fecha o modal de carregando
+                                    app.ui.showAlert("Sucesso!", "O relatório foi importado e os painéis foram alimentados.", "success");
+                                    app.ui.renderTab('import_monitorias', true); // Recarrega a aba para exibir os novos dados
+                                }).catch(err => {
+                                    console.error("Erro ao salvar no Firebase:", err);
+                                    app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar no servidor.", "error");
+                                });
+                
+                            } catch (err) {
+                                console.error("Erro ao processar planilha:", err);
+                                app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido. Verifique se é um arquivo Excel ou CSV válido.", "error");
+                            }
+                        };
+                        
+                        reader.readAsArrayBuffer(file);
                 },
 
                 analisarDadosAvancados(rows) {
