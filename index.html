@@ -3367,7 +3367,8 @@
 
                         html += `
                         <div class="${cardClass}">
-                            ${isMaxedOut ? `<div class="absolute top-0 right-0 text-[9px] font-black px-3 py-1.5 rounded-bl-xl z-20 flex items-center gap-1 ${badgeColor}"><i class="fa-solid fa-bolt"></i> MÁXIMA</div>` : ''}
+                    
+        ${isMaxedOut ? `<div class="absolute top-0 right-0 text-[9px] font-black px-3 py-1.5 rounded-bl-xl z-20 flex items-center gap-1 ${badgeColor}"><i class="fa-solid fa-bolt"></i> MÁXIMA</div>` : ''}
                             
                             <div class="flex justify-between items-start mb-5">
                                 <div class="flex items-center gap-3">
@@ -4930,7 +4931,7 @@
                             </label>
                         </div>
                     `;
-                
+
                     if (!app.analiseCSVData) {
                         html += `
                             <div class="p-16 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
@@ -4942,76 +4943,56 @@
                         container.innerHTML = html;
                         return;
                     }
-                
+
                     const data = app.analiseCSVData;
                     
                     const topOps = data.rankOperadores.slice(0, 5);
                     const bottomOps = [...data.rankOperadores].reverse().slice(0, 5);
                     const falhasComuns = Object.entries(data.falhasComuns).sort((a,b) => b[1] - a[1]).slice(0, 5);
-                    const falhasCriticasOrdenadas = Object.entries(data.falhasCriticas).sort((a,b) => b[1].count - a.count).slice(0, 5);
-                
+                    const topPalavras = Object.entries(data.palavrasObs).sort((a,b) => b[1] - a[1]).slice(0, 15);
+
                     html += `
                         <div class="animate-fade-in space-y-6">
-                            <!-- Cards Resumo com Período -->
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <!-- Cards Resumo -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div class="glass-card p-6 rounded-3xl border-l-4 border-l-blue-500 shadow-sm flex items-center gap-4">
                                     <div class="text-3xl text-blue-500"><i class="fa-solid fa-file-csv"></i></div>
                                     <div><div class="text-[10px] uppercase font-bold text-slate-400">Total Analisado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${data.totalLinhas} <span class="text-sm font-medium text-slate-500">ligações</span></div></div>
                                 </div>
-                                <div class="glass-card p-6 rounded-3xl border-l-4 border-l-indigo-500 shadow-sm flex items-center gap-4">
-                                    <div class="text-3xl text-indigo-500"><i class="fa-solid fa-calendar-days"></i></div>
-                                    <div><div class="text-[10px] uppercase font-bold text-slate-400">Período de Referência</div><div class="text-lg font-black text-slate-800 dark:text-white">${data.primeiroPeriodo}</div></div>
-                                </div>
                                 <div class="glass-card p-6 rounded-3xl border-l-4 border-l-red-500 shadow-sm flex items-center gap-4">
                                     <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                    <div><div class="text-[10px] uppercase font-bold text-slate-400">Quesitos Críticos Violados</div><div class="text-2xl font-black text-slate-800 dark:text-white">${Object.keys(data.falhasCriticas).length} <span class="text-sm font-medium text-slate-500">tipos</span></div></div>
+                                    <div><div class="text-[10px] uppercase font-bold text-slate-400">Falhas Críticas (Zeras)</div><div class="text-2xl font-black text-slate-800 dark:text-white">${Object.keys(data.falhasCriticas).length} <span class="text-sm font-medium text-slate-500">quesitos violados</span></div></div>
                                 </div>
                             </div>
-                
+
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <!-- 1. Desempenho e Ranqueamento (Mostrando Nome e Operação) -->
+                                <!-- 1. Desempenho e Ranqueamento -->
                                 <div class="glass-card p-6 rounded-3xl">
                                     <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-trophy text-yellow-500"></i> Termômetro de Operadores</h3>
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <div class="text-xs font-black text-green-600 mb-2 uppercase">Top Performers</div>
                                             <div class="space-y-2">
-                                                ${topOps.map((op, i) => `
-                                                    <div class="flex flex-col text-xs p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/50 rounded-lg">
-                                                        <div class="flex justify-between items-center font-bold text-slate-700 dark:text-slate-300">
-                                                            <span class="truncate pr-2">${i+1}. ${op.nome}</span>
-                                                            <span class="font-black text-green-700 dark:text-green-400">${op.media.toFixed(1)}</span>
-                                                        </div>
-                                                        <div class="text-[10px] text-slate-400 mt-0.5"><i class="fa-solid fa-network-wired"></i> ${op.operacao}</div>
-                                                    </div>
-                                                `).join('') || '<div class="text-xs text-slate-400">Dados insuficientes</div>'}
+                                                ${topOps.map((op, i) => `<div class="flex justify-between items-center text-xs p-2 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/50 rounded-lg"><span class="truncate pr-2 font-bold text-slate-700 dark:text-slate-300">${i+1}. ${op.nome}</span><span class="font-black text-green-700 dark:text-green-400">${op.media.toFixed(1)}</span></div>`).join('') || '<div class="text-xs text-slate-400">Dados insuficientes</div>'}
                                             </div>
                                         </div>
                                         <div>
                                             <div class="text-xs font-black text-red-600 mb-2 uppercase">Foco em Reciclagem</div>
                                             <div class="space-y-2">
-                                                ${bottomOps.map((op, i) => `
-                                                    <div class="flex flex-col text-xs p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded-lg">
-                                                        <div class="flex justify-between items-center font-bold text-slate-700 dark:text-slate-300">
-                                                            <span class="truncate pr-2">${i+1}. ${op.nome}</span>
-                                                            <span class="font-black text-red-700 dark:text-red-400">${op.media.toFixed(1)}</span>
-                                                        </div>
-                                                        <div class="text-[10px] text-slate-400 mt-0.5"><i class="fa-solid fa-network-wired"></i> ${op.operacao}</div>
-                                                    </div>
-                                                `).join('') || '<div class="text-xs text-slate-400">Dados insuficientes</div>'}
+                                                ${bottomOps.map((op, i) => `<div class="flex justify-between items-center text-xs p-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded-lg"><span class="truncate pr-2 font-bold text-slate-700 dark:text-slate-300">${i+1}. ${op.nome}</span><span class="font-black text-red-700 dark:text-red-400">${op.media.toFixed(1)}</span></div>`).join('') || '<div class="text-xs text-slate-400">Dados insuficientes</div>'}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                
-                                <!-- 2. Gaps de Treinamento (Comuns) -->
+
+                                <!-- 2. Gaps de Treinamento -->
                                 <div class="glass-card p-6 rounded-3xl">
                                     <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-bullseye text-blue-500"></i> Top 5 Gaps Operacionais</h3>
                                     <div class="space-y-4">
                                         ${falhasComuns.map(f => `
                                             <div class="mb-3">
                                                 <div class="flex justify-between items-center text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-2">
-                                                    <span class="pr-3 flex-1 text-[11px] leading-tight">${f[0]}</span>
+                                                    <span class="pr-3 flex-1 text-[11px] leading-tight">${f[0].split('=')[0].trim()}</span>
                                                     <span class="text-orange-600 font-black whitespace-nowrap bg-orange-50 dark:bg-orange-900/30 px-2 py-1 rounded-md border border-orange-200 dark:border-orange-800">${f[1]} Erros</span>
                                                 </div>
                                                 <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2"><div class="bg-gradient-to-r from-orange-400 to-red-500 h-2 rounded-full" style="width: ${Math.min(100, (f[1]/data.totalLinhas*100) * 3)}%"></div></div>
@@ -5020,14 +5001,14 @@
                                     </div>
                                 </div>
                             </div>
-                
+
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <!-- 3. Produtividade dos Monitores -->
+                                <!-- 5. Produtividade dos Monitores -->
                                 <div class="glass-card p-6 rounded-3xl flex flex-col h-[400px]">
                                     <h3 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-headphones-simple text-purple-500"></i> Produtividade da Qualidade</h3>
                                     <div class="overflow-auto custom-scrollbar flex-1 pr-2">
                                         <table class="w-full text-left text-sm">
-                                            <thead class="sticky top-0 bg-white dark:bg-dark-surface z-10 shadow-sm"><tr class="text-[10px] text-slate-400 uppercase border-b border-slate-200 dark:border-slate-700"><th class="pb-2">Avaliador (Monitor)</th><th class="pb-2 text-center">Volume</th><th class="pb-2 text-center">Média Aplicada</th></tr></thead>
+                                            <thead class="sticky top-0 bg-white dark:bg-dark-surface z-10 shadow-sm"><tr class="text-[10px] text-slate-400 uppercase border-b border-slate-200 dark:border-slate-700"><th class="pb-2">Avaliador</th><th class="pb-2 text-center">Volume</th><th class="pb-2 text-center">Média Aplicada</th></tr></thead>
                                             <tbody>
                                                 ${Object.values(data.monitorProdutividade).sort((a,b)=>b.qtd - a.qtd).map(m => `
                                                     <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -5040,21 +5021,31 @@
                                         </table>
                                     </div>
                                 </div>
-                
-                                <!-- 4. Top Gaps Críticos (Mesmo formato dos Gaps Comuns, com nomes dos colaboradores envolvidos) -->
-                                <div class="glass-card p-6 rounded-3xl flex flex-col h-[400px]">
-                                    <h3 class="font-bold text-sm text-red-600 dark:text-red-400 uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-700 pb-2"><i class="fa-solid fa-ban"></i> Top Gaps Críticos (Zeramentos)</h3>
-                                    <div class="space-y-4 overflow-y-auto custom-scrollbar flex-1 pr-2">
-                                        ${falhasCriticasOrdenadas.map(crit => `
-                                            <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-100 dark:border-red-800/30">
-                                                <div class="flex justify-between items-center text-[11px] font-black text-red-600 dark:text-red-400 mb-1">
-                                                    <span class="pr-3 flex-1 leading-tight">${crit[0]}</span>
-                                                    <span class="bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">${crit[1].count} Ocorrências</span>
+
+                                <div class="flex flex-col gap-6 h-[400px]">
+                                    <!-- 4. Nuvem Qualitativa -->
+                                    <div class="glass-card p-6 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 text-white shadow-lg h-1/2 flex flex-col">
+                                        <h3 class="font-bold text-[11px] uppercase tracking-widest mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-cloud text-blue-400"></i> Contexto (Observações)</h3>
+                                        <div class="flex flex-wrap gap-2 overflow-y-auto custom-scrollbar flex-1 content-start">
+                                            ${topPalavras.map(p => {
+                                                const size = p[1] > 10 ? 'text-sm font-black' : 'text-[10px]';
+                                                const bg = p[1] > 10 ? 'bg-blue-500/40 text-white border-blue-400' : 'bg-slate-700/50 text-slate-300 border-slate-600';
+                                                return `<span class="${bg} border px-3 py-1 rounded-full ${size}">${p[0]} (${p[1]})</span>`;
+                                            }).join('') || '<span class="text-xs text-slate-400 italic">Coluna OBSERVAÇÃO não identificada ou vazia.</span>'}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 3. Falhas Críticas -->
+                                    <div class="glass-card p-5 rounded-3xl border border-red-200 dark:border-red-900/50 h-1/2 flex flex-col">
+                                        <h3 class="font-bold text-[11px] text-red-600 dark:text-red-400 uppercase tracking-widest mb-2"><i class="fa-solid fa-ban"></i> Falhas Críticas (Zeramentos)</h3>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${Object.entries(data.falhasCriticas).map(crit => `
+                                                <div class="bg-red-50 dark:bg-red-900/20 p-2.5 rounded-lg border border-red-100 dark:border-red-800/30">
+                                                    <div class="text-[10px] font-black text-red-600 dark:text-red-400 mb-1 uppercase leading-tight">${crit[0].split('=')[0].trim()}</div>
+                                                    <div class="text-[10px] text-slate-700 dark:text-slate-300 mt-1"><span class="font-bold opacity-70">Envolvidos:</span> ${crit[1].join(', ')}</div>
                                                 </div>
-                                                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mb-2"><div class="bg-red-500 h-1.5 rounded-full" style="width: ${Math.min(100, (crit[1].count/data.totalLinhas*100) * 3)}%"></div></div>
-                                                <div class="text-[10px] text-slate-700 dark:text-slate-300"><span class="font-bold opacity-70">Colaboradores Envolvidos:</span> ${crit[1].envolvidos.join(', ')}</div>
-                                            </div>
-                                        `).join('') || '<div class="text-xs text-slate-400 italic flex items-center justify-center h-full">Nenhum zeramento crítico encontrado! 🎉</div>'}
+                                            `).join('') || '<div class="text-xs text-slate-400 italic flex items-center justify-center h-full">Nenhum zeramento crítico encontrado! 🎉</div>'}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -5160,104 +5151,108 @@
                         falhasCriticas: {},
                         monitorProdutividade: {},
                         slaList: [],
-                        periodos: new Set()
+                        palavrasObs: {}
                     };
-                
-                    if (rows.length === 0) return;
-                
-                    // Detecta as chaves reais da planilha com segurança (removendo espaços ou problemas de maiúsculas)
+
                     const chaves = Object.keys(rows[0]);
-                    const getCol = (termos) => chaves.find(k => termos.some(t => k.toUpperCase().includes(t)));
-                
-                    const colNome = getCol(['NOME', 'ATENDENTE', 'CRACHA']) || chaves[0];
-                    const colNota = getCol(['NOTA MONITORIA', 'NOTA', 'RESULTADO']) || 'NOTA';
-                    const colMonitor = getCol(['MONITOR', 'AVALIADOR']) || 'MONITOR';
-                    const colOperacao = getCol(['OPERACAO', 'OPERAÇÃO']) || 'OPERACAO';
-                    const colData = getCol(['DATA MONITORIA', 'DATA']) || 'DATA';
-                    const colObs = getCol(['OBSERVA']);
-                
+                    
+                    const colObs = chaves.find(k => k.toUpperCase().includes('OBSERVA'));
+                    const colNome = chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('CRACHA') || k.toUpperCase().includes('ATENDENTE')) || chaves[0];
+                    const colNota = chaves.find(k => k.toUpperCase().includes('NOTA')) || 'NOTA';
+                    const colMonitor = chaves.find(k => k.toUpperCase().includes('MONITOR') || k.toUpperCase().includes('AVALIADOR')) || 'MONITOR';
+                    const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA' || k.toUpperCase().includes('DATA DA AUDITORIA'));
+                    const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
+
                     const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
                     const colunasCriticas = colunasAvaliacao.filter(k => k.includes('100.00') || k.includes('100,00'));
                     const colunasComuns = colunasAvaliacao.filter(k => !k.includes('100.00') && !k.includes('100,00'));
-                
+
                     rows.forEach(row => {
-                        // Aplica o fixEncoding para resolver problemas de acentuação (ª, ã, ó, etc.)
-                        const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
-                        const monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
-                        const operacao = app.utils.fixEncoding((row[colOperacao] || 'Geral').toString().trim());
+                        const op = (row[colNome] || 'Não Identificado').toString().trim();
+                        const monitor = (row[colMonitor] || 'Desconhecido').toString().trim();
+                        const obs = colObs ? (row[colObs] || '').toString() : '';
                         
-                        let dataStr = (row[colData] || '').toString().trim();
-                        if (dataStr) {
-                            data.periodos.add(dataStr);
-                        }
-                
                         let nota = 0;
-                        const notaVal = row[colNota];
-                        if (notaVal !== undefined && notaVal !== '') {
-                            nota = parseFloat(notaVal.toString().replace('%', '').replace(',', '.'));
+                        if (row[colNota] !== undefined && row[colNota] !== '') {
+                            nota = parseFloat(row[colNota].toString().replace(',', '.'));
                         }
-                
-                        // 1. Operadores (Termômetro)
-                        if (!data.operadores[op]) {
-                            data.operadores[op] = { nome: op, operacao: operacao, notas: [], min: 100, max: 0 };
-                        }
+
+                        // 1. Operadores
+                        if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0 };
                         data.operadores[op].notas.push(nota);
                         if (nota < data.operadores[op].min) data.operadores[op].min = nota;
                         if (nota > data.operadores[op].max) data.operadores[op].max = nota;
-                
+
                         // 2. Gaps Comuns
                         colunasComuns.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
-                                const nomeColLimpo = app.utils.fixEncoding(col.split('=')[0].trim());
-                                data.falhasComuns[nomeColLimpo] = (data.falhasComuns[nomeColLimpo] || 0) + 1;
+                                data.falhasComuns[col] = (data.falhasComuns[col] || 0) + 1;
                             }
                         });
-                
-                        // 3. Gaps Críticos (Mesma lógica do Top 5, mas focado nos críticos)
+
+                        // 3. Gaps Críticos
                         colunasCriticas.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
-                                const nomeColLimpo = app.utils.fixEncoding(col.split('=')[0].trim());
-                                if (!data.falhasCriticas[nomeColLimpo]) {
-                                    data.falhasCriticas[nomeColLimpo] = { count: 0, envolvidos: new Set() };
-                                }
-                                data.falhasCriticas[nomeColLimpo].count += 1;
-                                data.falhasCriticas[nomeColLimpo].envolvidos.add(op);
+                                if (!data.falhasCriticas[col]) data.falhasCriticas[col] = new Set();
+                                data.falhasCriticas[col].add(op);
                             }
                         });
-                
-                        // 5. Produtividade Monitores (Lendo corretamente a coluna MONITOR)
+
+                        // 4. Nuvem de Palavras
+                        if (obs) {
+                            const words = obs.toLowerCase().replace(/[.,;!?"()]/g, '').split(/\s+/);
+                            const stopwords = ['o','a','os','as','e','de','do','da','em','um','uma','para','com','que','na','no','cliente','atendimento','operador','não','sim','foi','por','ao','se','dos','das','como','mais','mas','ao','aos','ou','seu','sua'];
+                            words.forEach(w => {
+                                if (w.length > 3 && !stopwords.includes(w)) {
+                                    data.palavrasObs[w] = (data.palavrasObs[w] || 0) + 1;
+                                }
+                            });
+                        }
+
+                        // 5. Produtividade Monitores
                         if (!data.monitorProdutividade[monitor]) {
                             data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
                         }
                         data.monitorProdutividade[monitor].qtd += 1;
                         data.monitorProdutividade[monitor].somaNotas += nota;
+
+                        // 6. SLA
+                        if (colDataAudit && colDataGrav && row[colDataAudit] && row[colDataGrav]) {
+                            const parseDate = (val) => {
+                                if(typeof val === 'number') return new Date((val - 25569)*86400*1000); 
+                                const parts = val.toString().split(' ')[0].split('/'); 
+                                if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
+                                return new Date(val);
+                            };
+                            
+                            const dA = parseDate(row[colDataAudit]);
+                            const dG = parseDate(row[colDataGrav]);
+                            
+                            if (!isNaN(dA) && !isNaN(dG)) {
+                                const diffTime = Math.abs(dA - dG);
+                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                data.slaList.push(diffDays);
+                            }
+                        }
                     });
-                
-                    Object.values(data.operadores).forEach(o => {
-                        o.media = o.notas.reduce((a, b) => a + b, 0) / o.notas.length;
+
+                    Object.values(data.operadores).forEach(op => {
+                        op.media = op.notas.reduce((a,b) => a+b, 0) / op.notas.length;
                     });
-                    
                     Object.values(data.monitorProdutividade).forEach(m => {
                         m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd) : 0;
                     });
-                
-                    // Formata os críticos para ordenação igual aos comuns
-                    const criticosFormatados = {};
-                    Object.entries(data.falhasCriticas).forEach(([key, val]) => {
-                        criticosFormatados[key] = {
-                            count: val.count,
-                            envolvidos: Array.from(val.envolvidos)
-                        };
+
+                    Object.keys(data.falhasCriticas).forEach(k => {
+                        data.falhasCriticas[k] = Array.from(data.falhasCriticas[k]);
                     });
-                    data.falhasCriticas = criticosFormatados;
-                
-                    data.rankOperadores = Object.values(data.operadores).sort((a, b) => b.media - a.media);
-                    data.primeiroPeriodo = Array.from(data.periodos)[0] || 'Período Atual';
-                
+
+                    data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
+                    
                     app.analiseCSVData = data;
-                }
+                },
                 
                 processarPlanilhaMonitoria(input) {
                         const file = input.files[0];
@@ -5339,7 +5334,7 @@
                 
                                     // Regra de Exceção: Contém "neutro" no título OU operação é "QUALIDADE - FORMULÁRIOS NEUTROS"
                                     const isNeutro = titulo.includes('neutro') || 
-                                                     operacao.includes('QUALIDADE - FORMULÃRIOS NEUTROS') || 
+                                                     operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
                                                      operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS');
                 
                                     // Contabiliza SEMPRE na META (Total de Monitorias) independente de ser neutro ou não
