@@ -806,14 +806,17 @@
                                 const rawUsers = Array.isArray(data.users) ? data.users : Object.values(data.users);
                                 
                                 app.users = rawUsers.filter(u => u !== null && u !== undefined).map(u => {
-                                    if(u.results && (u.results.g1 || u.results.g2)) {
+                                    // Fallback rigoroso para estrutura de results corrompida
+                                    if(u.results && typeof u.results !== 'object') {
+                                        u.results = {};
+                                    } else if(u.results && (u.results.g1 || u.results.g2)) {
+                                        // Conversão antiga (legado)
                                         const oldData = {...u.results};
                                         u.results = { "2026-06": oldData };
                                     }
                                     if(!u.results) u.results = {};
                                     
                                     // PROTEÇÃO CONTRA CRASH: Força as operações a serem sempre listas. 
-                                    // O erro invisível estava aqui! Sem isso a tela Gestão travava.
                                     if (u.operacoes) {
                                         u.operacoes = Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes);
                                     } else {
@@ -1214,17 +1217,24 @@
                     
                     app.storage.saveActions().then(() => {
                         try {
-                            const u = app.users.find(x => x.matricula === act.matricula);
-                            if(u) {
-                                if(!u.results) u.results = {};
-                                if(!u.results[act.month]) u.results[act.month] = {};
-                                if(!u.results[act.month]['g4']) u.results[act.month]['g4'] = { val: 0 };
+                            const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                            if(userIdx > -1) {
+                                // Cria as estruturas se não existirem
+                                if(!app.users[userIdx].results) app.users[userIdx].results = {};
+                                if(!app.users[userIdx].results[act.month]) app.users[userIdx].results[act.month] = { status: 'pendente' }; // Preserva status
+                                if(!app.users[userIdx].results[act.month]['g4']) app.users[userIdx].results[act.month]['g4'] = { val: 0 };
                                 
-                                let currentVal = parseInt(u.results[act.month]['g4'].val) || 0;
-                                u.results[act.month]['g4'].val = (currentVal + 1).toString();
+                                // Garante que é um número e soma com segurança
+                                let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
+                                app.users[userIdx].results[act.month]['g4'].val = (currentVal + 1).toString();
+                                
+                                // Atualiza a variável global do usuário caso seja ele o logado
+                                if(app.currentUser && app.currentUser.matricula === act.matricula) {
+                                    app.currentUser = app.users[userIdx];
+                                }
                                 
                                 app.storage.saveUsers();
-                                app.notifications.notify(u.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
+                                app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
                             }
                         } catch (err) {
                             console.error("Erro ao creditar ação:", err);
