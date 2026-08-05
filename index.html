@@ -859,6 +859,7 @@
                                 app.operacoesList = data.operacoes;
                             } else {
                                 // Cria as operações iniciais pedidas caso não existam no banco
+                                app.operacoesList = {}; // <-- ADICIONE ESTA LINHA PARA NÃO TRAVAR
                                 const opsIniciais = ["COPEL", "unimed hospitais", "sanepar", "pesquisa kanta", "pesquisa copel", "atrium", "Cocamar", "metrocard", "cnhi", "db", "hidrolabor", "amil", "parana clinicas", "dental", "we pink", "doctoralia", "pesquisa blend", "anatel", "Hospital Pequeno Principe", "Captação"];
                                 opsIniciais.forEach((op, idx) => {
                                     app.operacoesList['op_'+idx] = { id: 'op_'+idx, nome: op, max: 50 };
