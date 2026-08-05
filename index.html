@@ -4916,7 +4916,7 @@
                     container.innerHTML = html;
                 },
                 
-                renderView_AnaliseCSV(container) {
+               renderView_AnaliseCSV(container) {
                     if (!app.isAdmin) return;
 
                     const data = app.analiseCSVData;
@@ -4925,7 +4925,13 @@
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Analítico (Inteligência)</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Diagnóstico profundo de qualidade, ofensores e produtividade.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1 mb-2">Diagnóstico profundo de qualidade, ofensores e produtividade.</p>
+                                ${data ? `
+                                <div class="flex items-center gap-3">
+                                    <span class="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-3 py-1 rounded-lg text-xs font-bold shadow-sm"><i class="fa-solid fa-network-wired"></i> ${data.infoOperacao || 'N/A'}</span>
+                                    <span class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 px-3 py-1 rounded-lg text-xs font-bold shadow-sm"><i class="fa-regular fa-calendar"></i> ${data.infoData || 'N/A'}</span>
+                                </div>
+                                ` : ''}
                             </div>
                             <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-csv"></i> Importar Novo CSV
@@ -4952,23 +4958,9 @@
                         avgSla = (data.slaList.reduce((a,b)=>a+b,0) / data.slaList.length).toFixed(1);
                     }
 
-                    // Nuvem de Palavras
-                    let wordsHtml = '';
-                    if(data.palavrasObs && Object.keys(data.palavrasObs).length > 0) {
-                        const sortedWords = Object.entries(data.palavrasObs).sort((a,b) => b[1] - a[1]).slice(0, 30);
-                        const maxFreq = sortedWords[0][1];
-                        wordsHtml = sortedWords.map(w => {
-                            const size = 10 + (w[1] / maxFreq) * 20;
-                            const opacity = 0.4 + (w[1] / maxFreq) * 0.6;
-                            return `<span style="font-size: ${size}px; opacity: ${opacity}; margin: 0 6px; display: inline-block; line-height: 1.2;" class="font-black text-indigo-600 dark:text-indigo-400">${w[0].toUpperCase()}</span>`;
-                        }).join('');
-                    } else {
-                        wordsHtml = `<span class="text-sm text-slate-400 italic">Nenhum texto descritivo identificado.</span>`;
-                    }
-
                     // Organização de Gaps
                     const topGaps = Object.entries(data.falhasComuns).sort((a,b) => b[1] - a[1]).slice(0, 8);
-                    const criticalGaps = Object.entries(data.falhasCriticas).filter(entry => entry[1].length > 0);
+                    const criticalGaps = data.falhasCriticasArray || [];
 
                     html += `
                         <!-- KPIs Iniciais -->
@@ -5003,7 +4995,7 @@
                                                     <div class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center font-black text-xs text-slate-500">${idx+1}º</div>
                                                     <div>
                                                         <div class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center">${op.nome} ${badge}</div>
-                                                        <div class="text-[10px] text-slate-500 font-medium">${op.notas.length} análises | Min: ${op.min} | Max: ${op.max}</div>
+                                                        <div class="text-[10px] text-slate-500 font-medium">${op.notas.length} avaliações | Min: ${op.min} | Max: ${op.max}</div>
                                                     </div>
                                                 </div>
                                                 <div class="font-black text-lg ${colorClass} bg-white dark:bg-slate-900 px-3 py-1 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">${op.media.toFixed(1)}</div>
@@ -5056,26 +5048,26 @@
                             <!-- 3. Falhas Críticas -->
                             <div class="glass-card p-6 rounded-3xl border-t-4 border-t-red-600">
                                 <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-skull-crossbones text-red-600"></i> Radar de Risco (Zeramentos)</h3>
-                                <div class="overflow-y-auto custom-scrollbar pr-2 max-h-[300px] space-y-3">
+                                <div class="overflow-y-auto custom-scrollbar pr-2 max-h-[350px] space-y-4 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
                                     ${criticalGaps.length === 0 ? `<div class="text-sm text-green-600 font-bold p-6 text-center bg-green-50 dark:bg-green-900/10 rounded-xl border border-green-200 dark:border-green-800/50"><i class="fa-solid fa-shield-check text-3xl mb-2 block"></i> Excelente! Nenhuma infração grave registrada.</div>` : 
-                                    criticalGaps.map(cg => `
-                                        <div class="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30">
-                                            <div class="font-bold text-xs text-red-800 dark:text-red-400 mb-3 leading-tight border-b border-red-200 dark:border-red-800/50 pb-2">${cg[0]}</div>
-                                            <div class="flex flex-wrap gap-1.5">
-                                                ${cg[1].map(op => `<span class="bg-white dark:bg-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded shadow-sm border border-red-100 dark:border-slate-600"><i class="fa-solid fa-user-xmark mr-1 text-red-400"></i>${op}</span>`).join('')}
+                                    criticalGaps.map((cg, i) => {
+                                        const pct = Math.min(100, (cg.count / data.totalLinhas) * 100).toFixed(1);
+                                        return `
+                                            <div class="mb-4">
+                                                <div class="flex justify-between items-end text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                                    <span class="truncate pr-2 text-red-800 dark:text-red-400">${i+1}. ${cg.nome}</span>
+                                                    <span class="text-red-600 dark:text-red-400 shrink-0 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded border border-red-100 dark:border-red-800/50">${cg.count}x (${pct}%)</span>
+                                                </div>
+                                                <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner mb-3">
+                                                    <div class="h-full bg-red-500 rounded-full" style="width: ${pct}%"></div>
+                                                </div>
+                                                <div class="flex flex-wrap gap-1.5">
+                                                    ${cg.operadores.map(op => `<span class="bg-white dark:bg-slate-800 text-[9px] font-bold text-slate-500 dark:text-slate-400 px-2.5 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700"><i class="fa-solid fa-user text-red-400 mr-1"></i>${op}</span>`).join('')}
+                                                </div>
                                             </div>
-                                        </div>
-                                    `).join('')}
+                                        `;
+                                    }).join('')}
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- 4. Inteligência Qualitativa -->
-                        <div class="glass-card p-8 rounded-3xl border-t-4 border-t-indigo-500 text-center">
-                            <h3 class="font-extrabold text-slate-800 dark:text-white mb-2 flex items-center justify-center gap-2"><i class="fa-solid fa-cloud text-indigo-500"></i> Inteligência Qualitativa de Feedback</h3>
-                            <p class="text-xs text-slate-500 mb-6">Nuvem de palavras extraída automaticamente das observações dos monitores na base de dados.</p>
-                            <div class="bg-slate-50 dark:bg-slate-900 rounded-2xl p-8 border border-slate-100 dark:border-slate-800 shadow-inner flex flex-wrap justify-center items-center gap-y-2 min-h-[150px]">
-                                ${wordsHtml}
                             </div>
                         </div>
                     `;
@@ -5254,26 +5246,55 @@
                         falhasCriticas: {},
                         monitorProdutividade: {},
                         slaList: [],
-                        palavrasObs: {}
+                        infoData: 'N/A',
+                        infoOperacao: 'N/A'
                     };
 
                     const chaves = Object.keys(rows[0]);
                     
-                    const colObs = chaves.find(k => k.toUpperCase().includes('OBSERVA'));
-                    const colNome = chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('CRACHA') || k.toUpperCase().includes('ATENDENTE')) || chaves[0];
+                    // Mapeamento Estrito e Protegido das Colunas
+                    const colMonitor = chaves.find(k => k.toUpperCase() === 'MONITOR' || k.toUpperCase() === 'AVALIADOR') 
+                        || chaves.find(k => k.toUpperCase().includes('MONITOR') && !k.toUpperCase().includes('NOTA') && !k.toUpperCase().includes('STATUS'));
+                        
+                    const colNome = chaves.find(k => k.toUpperCase() === 'NOME' || k.toUpperCase() === 'COLABORADOR') 
+                        || chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('CRACHA') || k.toUpperCase().includes('ATENDENTE')) || chaves[0];
+                        
+                    const colOperacao = chaves.find(k => k.toUpperCase() === 'OPERACAO' || k.toUpperCase() === 'OPERAÇÃO') 
+                        || chaves.find(k => k.toUpperCase().includes('OPERA'));
+                        
+                    const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') 
+                        || chaves.find(k => k.toUpperCase().includes('DATA DA AUDI') || k.toUpperCase().includes('DATA DA AVA'));
+                        
                     const colNota = chaves.find(k => k.toUpperCase().includes('NOTA')) || 'NOTA';
-                    const colMonitor = chaves.find(k => k.toUpperCase().includes('MONITOR') || k.toUpperCase().includes('AVALIADOR')) || 'MONITOR';
-                    const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA' || k.toUpperCase().includes('DATA DA AUDITORIA'));
                     const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
 
                     const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
                     const colunasCriticas = colunasAvaliacao.filter(k => k.includes('100.00') || k.includes('100,00'));
                     const colunasComuns = colunasAvaliacao.filter(k => !k.includes('100.00') && !k.includes('100,00'));
 
+                    // Extrair Data e Operação da Primeira Linha Válida
+                    if (rows.length > 0) {
+                        let rawDate = rows[0][colDataAudit];
+                        if (typeof rawDate === 'number') {
+                            const dt = new Date((rawDate - 25569) * 86400 * 1000);
+                            const dia = String(dt.getDate()).padStart(2, '0');
+                            const mes = String(dt.getMonth() + 1).padStart(2, '0');
+                            const ano = dt.getFullYear();
+                            const hr = String(dt.getHours()).padStart(2, '0');
+                            const min = String(dt.getMinutes()).padStart(2, '0');
+                            data.infoData = `${dia}/${mes}/${ano} ${hr}:${min}`;
+                        } else if (rawDate) {
+                            data.infoData = String(rawDate);
+                        }
+                        
+                        let rawOp = rows[0][colOperacao];
+                        if (rawOp) data.infoOperacao = app.utils.fixEncoding(String(rawOp).toUpperCase());
+                    }
+
                     rows.forEach(row => {
-                        const op = (row[colNome] || 'Não Identificado').toString().trim();
-                        const monitor = (row[colMonitor] || 'Desconhecido').toString().trim();
-                        const obs = colObs ? (row[colObs] || '').toString() : '';
+                        // Aplica Correção de Encoding Imediatamente na Leitura!
+                        const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
+                        const monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
                         
                         let nota = 0;
                         if (row[colNota] !== undefined && row[colNota] !== '') {
@@ -5290,7 +5311,8 @@
                         colunasComuns.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
-                                data.falhasComuns[col] = (data.falhasComuns[col] || 0) + 1;
+                                const cleanGap = app.utils.fixEncoding(col);
+                                data.falhasComuns[cleanGap] = (data.falhasComuns[cleanGap] || 0) + 1;
                             }
                         });
 
@@ -5298,21 +5320,12 @@
                         colunasCriticas.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
-                                if (!data.falhasCriticas[col]) data.falhasCriticas[col] = new Set();
-                                data.falhasCriticas[col].add(op);
+                                const cleanGap = app.utils.fixEncoding(col);
+                                if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
+                                data.falhasCriticas[cleanGap].count += 1;
+                                data.falhasCriticas[cleanGap].operadores.add(op);
                             }
                         });
-
-                        // 4. Nuvem de Palavras
-                        if (obs) {
-                            const words = obs.toLowerCase().replace(/[.,;!?"()]/g, '').split(/\s+/);
-                            const stopwords = ['o','a','os','as','e','de','do','da','em','um','uma','para','com','que','na','no','cliente','atendimento','operador','não','sim','foi','por','ao','se','dos','das','como','mais','mas','ao','aos','ou','seu','sua'];
-                            words.forEach(w => {
-                                if (w.length > 3 && !stopwords.includes(w)) {
-                                    data.palavrasObs[w] = (data.palavrasObs[w] || 0) + 1;
-                                }
-                            });
-                        }
 
                         // 5. Produtividade Monitores
                         if (!data.monitorProdutividade[monitor]) {
@@ -5348,9 +5361,11 @@
                         m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd) : 0;
                     });
 
-                    Object.keys(data.falhasCriticas).forEach(k => {
-                        data.falhasCriticas[k] = Array.from(data.falhasCriticas[k]);
-                    });
+                    // Transforma os Gaps Críticos num Top 5 estruturado com os Nomes
+                    data.falhasCriticasArray = Object.entries(data.falhasCriticas)
+                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
+                        .sort((a,b) => b.count - a.count)
+                        .slice(0, 5);
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
                     
