@@ -4836,98 +4836,82 @@
                 },
 
                 renderView_RankingMonitorias(container) {
-                    const u = app.currentUser;
-                    if(!u) return;
-                
-                    // Busca dados do usuário (se não existir, inicia zerado)
-                    const ranking = app.monitoriasData?.ranking || [];
-                    const myData = ranking.find(r => r.matricula === u.matricula) || { total: 0, falta: 400, feedbacksAplicados: 0, totalAbaixo85: 0, pendenteFeedback: 0 };
-                    
-                    const meta = 400; // Meta cravada estipulada
-                    const total = myData.total || 0;
-                    const falta = meta - total > 0 ? meta - total : 0;
-                    const pct = Math.min(100, (total / meta) * 100).toFixed(1);
-                    
-                    // Cor personalizada salva no localStorage
-                    const savedColor = localStorage.getItem('minhas_mon_color') || '#22c55e'; 
-                
-                    // Mensagem de estímulo (Gatilho de Dopamina)
-                    let msgDopamina = "Você começou! A consistência é a chave do sucesso.";
-                    if(pct >= 100) msgDopamina = "🔥 ABSOLUTO! Meta batida com maestria!";
-                    else if(pct >= 75) msgDopamina = "🚀 Reta final! Continue acelerando, a vitória está logo ali!";
-                    else if(pct >= 50) msgDopamina = "💪 Metade do caminho concluído! O topo te espera!";
-                
+                    const state = app.monitoriasData || { ranking: [] };
+                    const userMatricula = app.currentUser ? app.currentUser.matricula : '';
+                    const myData = state.ranking.find(r => r.matricula === userMatricula);
+
                     let html = `
-                        <div class="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div>
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Minhas Monitorias</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe seu ritmo de avaliações. Foque na constância.</p>
-                            </div>
-                            <div class="flex items-center gap-3 bg-white dark:bg-slate-800 px-4 py-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Personalizar Cor:</span>
-                                <input type="color" id="mon-color-picker" value="${savedColor}" 
-                                       onchange="localStorage.setItem('minhas_mon_color', this.value); document.getElementById('my-progress-bar').style.backgroundColor = this.value; document.getElementById('my-progress-glow').style.color = this.value; document.getElementById('hero-card-mon').style.borderColor = this.value;" 
-                                       class="w-7 h-7 rounded cursor-pointer border-0 bg-transparent p-0">
-                            </div>
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Performance Operacional (Individual)</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe seus resultados, qualidade de monitorias e projeções para o mês atual.</p>
                         </div>
-                
-                        <!-- HERO SECTION - Progressão de Monitorias -->
-                        <div id="hero-card-mon" class="glass-card rounded-3xl p-8 md:p-12 mb-8 relative overflow-hidden shadow-lg border-t-4 transition-colors duration-300" style="border-color: ${savedColor};">
-                            <div class="absolute right-[-5%] top-[-10%] text-9xl opacity-5"><i class="fa-solid fa-bullseye"></i></div>
-                            
-                            <div class="text-center mb-10 relative z-10">
-                                <h3 class="text-xs md:text-sm font-black uppercase tracking-widest mb-4 transition-colors duration-300" id="my-progress-glow" style="color: ${savedColor};">${msgDopamina}</h3>
-                                <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-12">
-                                    <div class="text-center">
-                                        <div class="text-7xl md:text-9xl font-black text-slate-800 dark:text-white drop-shadow-sm leading-none">${total}</div>
-                                        <div class="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-widest mt-3">Já Alcançadas</div>
-                                    </div>
-                                    <div class="hidden md:block text-5xl text-slate-300 dark:text-slate-700 font-light">/</div>
-                                    <div class="text-center opacity-70">
-                                        <div class="text-5xl md:text-7xl font-black text-slate-400 dark:text-slate-500 leading-none">${meta}</div>
-                                        <div class="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mt-3">Alvo Final</div>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <!-- BARRA DE PROGRESSO FULL-WIDTH -->
-                            <div class="relative z-10 w-full mb-4">
-                                <div class="flex justify-between text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase mb-2 px-1">
-                                    <span>Progresso Real</span>
-                                    <span>${pct}%</span>
-                                </div>
-                                <div class="w-full bg-slate-200 dark:bg-slate-700/80 rounded-full h-8 md:h-10 relative shadow-inner overflow-hidden border border-slate-300 dark:border-slate-600">
-                                    <div id="my-progress-bar" class="h-full rounded-full transition-all duration-1000 relative shadow-[0_0_15px_rgba(0,0,0,0.1)]" style="width: ${pct}%; background-color: ${savedColor};">
-                                        <div class="absolute inset-0 bg-gradient-to-r from-transparent to-white/40"></div>
-                                    </div>
+                    `;
+
+                    // Se não encontrar dados do usuário na planilha importada
+                    if (!myData) {
+                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Você ainda não possui dados de monitoria registrados no sistema para este mês.</div>`;
+                        container.innerHTML = html;
+                        return;
+                    }
+
+                    // Cálculos de Projeção
+                    const wd = app.utils.getWorkingDays(app.currentMonth);
+                    const meta = 400; // Meta padrão estabelecida pela qualidade
+                    const projecao = Math.round((myData.total / wd.passed) * wd.total);
+                    const projColor = projecao >= meta ? 'text-green-500' : 'text-orange-500';
+
+                    html += `
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <!-- Card Realizado -->
+                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
+                                <div>
+                                    <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.total}</div>
                                 </div>
                             </div>
                             
-                            <div class="text-center text-xs font-bold text-slate-500 uppercase tracking-widest mt-8">
-                                Faltam <span class="text-slate-800 dark:text-white text-xl mx-1">${falta}</span> monitorias para liquidar a meta
+                            <!-- Card Meta e Faltantes -->
+                            <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                <div class="text-3xl text-orange-500"><i class="fa-solid fa-bullseye"></i></div>
+                                <div>
+                                    <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Meta Mensal: ${meta}</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.falta > 0 ? myData.falta : 0} <span class="text-sm font-medium text-slate-500">faltam</span></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Card Feedbacks -->
+                            <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div>
+                                    <div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Pendentes</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.pendenteFeedback}</div>
+                                </div>
                             </div>
                         </div>
-                
-                        <!-- Sub-Indicadores -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="glass-card p-6 md:p-8 rounded-3xl flex items-center justify-between border-l-4 border-l-purple-500 hover:shadow-md transition-shadow">
+
+                        <!-- Projeção Mensal -->
+                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-blue-500 shadow-sm">
+                            <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <i class="fa-solid fa-chart-line text-blue-500"></i> Ritmo e Projeção Mês
+                            </h3>
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div>
-                                    <div class="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Aguardando Feedback (Sub 85)</div>
-                                    <div class="text-4xl font-black text-slate-800 dark:text-white">${myData.pendenteFeedback || 0}</div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Volume Atual Validado</div>
+                                    <div class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white">${myData.total} <span class="text-sm md:text-lg font-medium text-slate-500">/ ${meta}</span></div>
                                 </div>
-                                <div class="text-5xl text-purple-200 dark:text-purple-900/50"><i class="fa-solid fa-comments"></i></div>
+                                <div class="text-left md:text-right">
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Projeção Estimada Final</div>
+                                    <div class="text-3xl md:text-4xl font-black ${projColor}">${projecao} <span class="text-sm md:text-lg font-medium text-slate-500">/ ${meta}</span></div>
+                                </div>
                             </div>
-                            <div class="glass-card p-6 md:p-8 rounded-3xl flex items-center justify-between border-l-4 border-l-orange-500 hover:shadow-md transition-shadow">
-                                <div>
-                                    <div class="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Taxa de Conclusão / Entregues</div>
-                                    <div class="text-4xl font-black text-slate-800 dark:text-white flex items-baseline gap-2">
-                                        ${myData.feedbacksAplicados || 0} <span class="text-xl text-slate-400 font-medium">/ ${myData.totalAbaixo85 || 0}</span>
-                                    </div>
-                                </div>
-                                <div class="text-5xl text-orange-200 dark:text-orange-900/50"><i class="fa-solid fa-bullhorn"></i></div>
+                            <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 flex justify-between">
+                                <span>Dias Úteis do Mês: <strong>${wd.total}</strong></span>
+                                <span>Dias Corridos: <strong>${wd.passed}</strong></span>
                             </div>
                         </div>
                     `;
+                    
                     container.innerHTML = html;
                 },
                 
