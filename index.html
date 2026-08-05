@@ -5281,10 +5281,13 @@
                                 return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
                             }
 
+                            // Conecta os dados lidos com a interface do novo Dashboard Analítico
+                            window.currentCSVAnaliseData = rows;
                             app.admin.gerarInteligenciaCSV(rows);
                             
                             app.ui.renderTab('analise_csv', true);
                             app.ui.showAlert("Pronto!", "Dashboard de Inteligência gerado com sucesso.", "success");
+                            
                         } catch (error) {
                             console.error(error);
                             app.ui.showAlert("Erro", "Falha ao processar o arquivo. Verifique se é um CSV/XLSX válido.", "error");
