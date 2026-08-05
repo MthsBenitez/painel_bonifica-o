@@ -4918,218 +4918,168 @@
                 
                 renderView_AnaliseCSV(container) {
                     if (!app.isAdmin) return;
-                
-                    // Função interna para sanitização ultra rígida de encoding corrompido
-                    const sanitizeText = (txt) => {
-                        if (!txt || typeof txt !== 'string') return txt || '';
-                        return txt
-                            .replace(/Ã©/g, 'é').replace(/Ã£/g, 'ã').replace(/Ã§/g, 'ç')
-                            .replace(/Ã¡/g, 'á').replace(/Ã³/g, 'ó').replace(/Ãº/g, 'ú')
-                            .replace(/Ãª/g, 'ê').replace(/Ãµ/g, 'õ').replace(/Ã¢/g, 'â')
-                            .replace(/Ã­/g, 'í').replace(/Ã‰/g, 'É').replace(/Ã‡/g, 'Ç')
-                            .replace(/Ãƒ/g, 'Ã').replace(/Ã /g, 'À').replace(/ã£/g, 'ã')
-                            .replace(/Ã³/g, 'ó').replace(/Âª/g, 'ª').replace(/Âº/g, 'º');
-                    };
-                
-                    const processCSVData = (rawData) => {
-                        if (!rawData || !rawData.length) return null;
-                
-                        let totalAvaliadas = rawData.length;
-                        let operacaoNome = sanitizeText(rawData[0]['OPERACAO'] || rawData[0]['OPERAÇÃO'] || 'Operação Não Informada');
-                        
-                        let operadoresMap = {};
-                        let monitoresMap = {};
-                        let falhasCriticasList = [];
-                        let gapsCount = {};
-                        let datasList = [];
-                
-                        rawData.forEach(row => {
-                            // Nome do Colaborador (Coluna NOME)
-                            let nomeOperador = sanitizeText(row['NOME'] || row['OPERADOR'] || row['MATRICULA'] || 'Não Informado');
-                            let monitorNome = sanitizeText(row['MONITOR'] || row['AVALIADOR'] || 'Não Informado');
-                            let dataRaw = row['DATA'] || row['DATA_MONITORIA'] || '';
-                
-                            if (dataRaw) {
-                                let d = new Date(dataRaw);
-                                if (!isNaN(d.getTime())) datasList.push(d);
-                            }
-                
-                            // Mapeamento do Termômetro de Operadores
-                            if (!operadoresMap[nomeOperador]) {
-                                operadoresMap[nomeOperador] = { nome: nomeOperador, total: 0, notaSoma: 0, criticas: 0 };
-                            }
-                            operadoresMap[nomeOperador].total += 1;
-                            
-                            let nota = parseFloat(row['NOTA'] || row['PONTUACAO'] || 100);
-                            if (!isNaN(nota)) operadoresMap[nomeOperador].notaSoma += nota;
-                
-                            // Produtividade da Qualidade (Coluna MONITOR)
-                            if (!monitoresMap[monitorNome]) {
-                                monitoresMap[monitorNome] = { nome: monitorNome, qtd: 0 };
-                            }
-                            monitoresMap[monitorNome].qtd += 1;
-                
-                            // Falhas Críticas e Gaps
-                            let statusCritico = (row['CRITICA'] || row['FALHA_CRITICA'] || row['STATUS'] || '').toString().toUpperCase();
-                            let itemGap = sanitizeText(row['GAP'] || row['ITEM_OFENSOR'] || row['SUBGRUPO'] || '');
-                
-                            if (statusCritico.includes('SIM') || statusCritico.includes('CRITIC') || nota === 0) {
-                                operadoresMap[nomeOperador].criticas += 1;
-                                falhasCriticasList.push({
-                                    nome: nomeOperador,
-                                    monitor: monitorNome,
-                                    gap: itemGap || 'Falha de Processo Gravíssima',
-                                    data: dataRaw
-                                });
-                
-                                if (itemGap) {
-                                    gapsCount[itemGap] = (gapsCount[itemGap] || 0) + 1;
-                                }
-                            }
-                        });
-                
-                        // Formatação do Período (02/07/2026 11:44)
-                        datasList.sort((a, b) => a - b);
-                        const formatDateTime = (d) => {
-                            if (!d) return '--/--/---- --:--';
-                            const pad = (n) => String(n).padStart(2, '0');
-                            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                        };
-                        
-                        let periodoStr = datasList.length > 0 
-                            ? `${formatDateTime(datasList[0])} até ${formatDateTime(datasList[datasList.length - 1])}`
-                            : 'Período não identificado';
-                
-                        // Top Gaps Apenas Críticos
-                        let topGapsCríticos = Object.keys(gapsCount)
-                            .map(k => ({ gap: k, qtd: gapsCount[k] }))
-                            .sort((a, b) => b.qtd - a.qtd)
-                            .slice(0, 5);
-                
-                        return {
-                            totalAvaliadas,
-                            operacaoNome,
-                            periodoStr,
-                            operadores: Object.values(operadoresMap),
-                            monitores: Object.values(monitoresMap),
-                            falhasCriticas: falhasCriticasList,
-                            topGaps: topGapsCríticos
-                        };
-                    };
-                
-                    let csvData = window.currentCSVAnaliseData ? processCSVData(window.currentCSVAnaliseData) : null;
-                
+
+                    const data = app.analiseCSVData;
+
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${csvData ? csvData.operacaoNome : 'Inteligência de Qualidade (CSV)'}</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">${csvData ? `Período: <strong class="text-blue-600 dark:text-blue-400">${csvData.periodoStr}</strong>` : 'Carregue a planilha para gerar o painel gerencial.'}</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Analítico (Inteligência)</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Diagnóstico profundo de qualidade, ofensores e produtividade.</p>
                             </div>
                             <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-file-csv"></i> Upload de Arquivo CSV
-                                <input type="file" accept=".csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
+                                <i class="fa-solid fa-file-csv"></i> Importar Novo CSV
+                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                             </label>
                         </div>
                     `;
-                
-                    if (!csvData) {
+
+                    if (!data) {
                         html += `
                             <div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
-                                <i class="fa-solid fa-chart-line text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
+                                <i class="fa-solid fa-chart-pie text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
                                 <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Nenhum dado analítico carregado</h3>
-                                <p class="text-slate-400 text-sm max-w-md mx-auto">Clique no botão acima para importar a base de monitorias e visualizar os dados em tempo real.</p>
+                                <p class="text-slate-400 text-sm max-w-md mx-auto">Faça o upload do relatório bruto da plataforma de qualidade para gerar a inteligência visual.</p>
                             </div>
                         `;
-                    } else {
-                        html += `
-                            <!-- Grid da Visão Analítica -->
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                                
-                                <!-- Termômetro de Operadores (Usa coluna NOME) -->
-                                <div class="glass-card p-6 rounded-3xl border-t-4 border-t-blue-500 shadow-sm flex flex-col">
-                                    <h3 class="font-extrabold text-slate-800 dark:text-white text-base mb-4 flex items-center gap-2">
-                                        <i class="fa-solid fa-user-check text-blue-500"></i> Termômetro de Colaboradores
-                                    </h3>
-                                    <div class="space-y-3 overflow-y-auto max-h-80 pr-2 custom-scrollbar flex-1">
-                                        ${csvData.operadores.map(op => {
-                                            let media = op.total > 0 ? (op.notaSoma / op.total).toFixed(1) : '0.0';
-                                            return `
-                                                <div class="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                                                    <div>
-                                                        <div class="font-bold text-sm text-slate-800 dark:text-slate-200">${op.nome}</div>
-                                                        <div class="text-[11px] text-slate-500">${op.total} monitoria(s) realizada(s)</div>
-                                                    </div>
-                                                    <div class="text-right">
-                                                        <div class="font-black text-sm text-blue-600 dark:text-blue-400">${media}% média</div>
-                                                        ${op.criticas > 0 ? `<span class="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">${op.criticas} falha(s) crítica(s)</span>` : `<span class="bg-green-100 text-green-600 text-[10px] font-bold px-2 py-0.5 rounded-full">100% Conforme</span>`}
-                                                    </div>
-                                                </div>
-                                            `;
-                                        }).join('')}
-                                    </div>
-                                </div>
-                
-                                <!-- Produtividade da Qualidade (Coluna MONITOR) -->
-                                <div class="glass-card p-6 rounded-3xl border-t-4 border-t-purple-500 shadow-sm flex flex-col">
-                                    <h3 class="font-extrabold text-slate-800 dark:text-white text-base mb-4 flex items-center gap-2">
-                                        <i class="fa-solid fa-clipboard-user text-purple-500"></i> Produtividade da Qualidade (Avaliadores)
-                                    </h3>
-                                    <div class="space-y-3 overflow-y-auto max-h-80 pr-2 custom-scrollbar flex-1">
-                                        ${csvData.monitores.map(m => `
-                                            <div class="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                                                <div class="font-bold text-sm text-slate-800 dark:text-slate-200"><i class="fa-solid fa-user-tie text-purple-500 mr-2"></i>${m.nome}</div>
-                                                <div class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-black px-3 py-1 rounded-lg text-xs">${m.qtd} avaliações</div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <!-- Falhas Críticas e Top Gaps Críticos -->
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                
-                                <!-- Falhas Críticas com Nome do Colaborador -->
-                                <div class="glass-card p-6 rounded-3xl border-t-4 border-t-red-500 shadow-sm">
-                                    <h3 class="font-extrabold text-slate-800 dark:text-white text-base mb-4 flex items-center gap-2">
-                                        <i class="fa-solid fa-triangle-exclamation text-red-500"></i> Ocorrências de Falhas Críticas
-                                    </h3>
-                                    <div class="space-y-3 overflow-y-auto max-h-72 pr-2 custom-scrollbar">
-                                        ${csvData.falhasCriticas.length === 0 ? `<div class="text-sm text-slate-400 italic p-4 text-center">Nenhuma falha crítica registrada no período.</div>` : 
-                                            csvData.falhasCriticas.map(f => `
-                                            <div class="bg-red-50 dark:bg-red-900/20 p-3.5 rounded-xl border border-red-200 dark:border-red-800/50">
-                                                <div class="flex justify-between items-start mb-1">
-                                                    <div class="font-black text-sm text-red-700 dark:text-red-400">${f.nome}</div>
-                                                    <div class="text-[10px] text-red-500 font-bold">${f.data ? f.data.split(' ')[0] : ''}</div>
-                                                </div>
-                                                <div class="text-xs text-slate-700 dark:text-slate-300 font-medium mb-1">${f.gap}</div>
-                                                <div class="text-[10px] text-slate-400">Avaliador: ${f.monitor}</div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                
-                                <!-- Top 5 Gaps Operacionais (Apenas Críticos) -->
-                                <div class="glass-card p-6 rounded-3xl border-t-4 border-t-orange-500 shadow-sm">
-                                    <h3 class="font-extrabold text-slate-800 dark:text-white text-base mb-4 flex items-center gap-2">
-                                        <i class="fa-solid fa-fire text-orange-500"></i> Top 5 Gaps Operacionais (Críticos)
-                                    </h3>
-                                    <div class="space-y-3">
-                                        ${csvData.topGaps.length === 0 ? `<div class="text-sm text-slate-400 italic p-4 text-center">Nenhum gap crítico apurado.</div>` : 
-                                            csvData.topGaps.map((g, idx) => `
-                                            <div class="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                                                <div class="flex items-center gap-3">
-                                                    <div class="w-7 h-7 rounded-full bg-orange-500 text-white font-black text-xs flex items-center justify-center">${idx + 1}</div>
-                                                    <div class="font-bold text-xs text-slate-800 dark:text-slate-200">${g.gap}</div>
-                                                </div>
-                                                <div class="font-black text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-2.5 py-1 rounded-lg">${g.qtd} ocorrência(s)</div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        container.innerHTML = html;
+                        return;
                     }
-                
+
+                    // SLA de Feedback
+                    let avgSla = 0;
+                    if (data.slaList && data.slaList.length > 0) {
+                        avgSla = (data.slaList.reduce((a,b)=>a+b,0) / data.slaList.length).toFixed(1);
+                    }
+
+                    // Nuvem de Palavras
+                    let wordsHtml = '';
+                    if(data.palavrasObs && Object.keys(data.palavrasObs).length > 0) {
+                        const sortedWords = Object.entries(data.palavrasObs).sort((a,b) => b[1] - a[1]).slice(0, 30);
+                        const maxFreq = sortedWords[0][1];
+                        wordsHtml = sortedWords.map(w => {
+                            const size = 10 + (w[1] / maxFreq) * 20;
+                            const opacity = 0.4 + (w[1] / maxFreq) * 0.6;
+                            return `<span style="font-size: ${size}px; opacity: ${opacity}; margin: 0 6px; display: inline-block; line-height: 1.2;" class="font-black text-indigo-600 dark:text-indigo-400">${w[0].toUpperCase()}</span>`;
+                        }).join('');
+                    } else {
+                        wordsHtml = `<span class="text-sm text-slate-400 italic">Nenhum texto descritivo identificado.</span>`;
+                    }
+
+                    // Organização de Gaps
+                    const topGaps = Object.entries(data.falhasComuns).sort((a,b) => b[1] - a[1]).slice(0, 8);
+                    const criticalGaps = Object.entries(data.falhasCriticas).filter(entry => entry[1].length > 0);
+
+                    html += `
+                        <!-- KPIs Iniciais -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-blue-500">
+                                <div class="text-3xl text-blue-500"><i class="fa-solid fa-headset"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase">Total Avaliado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${data.totalLinhas}</div></div>
+                            </div>
+                            <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-orange-500">
+                                <div class="text-3xl text-orange-500"><i class="fa-solid fa-stopwatch"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase">SLA Médio Feedback</div><div class="text-2xl font-black text-slate-800 dark:text-white">${avgSla} <span class="text-sm text-slate-500 font-medium">dias</span></div></div>
+                            </div>
+                            <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-red-500">
+                                <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase">Alertas Críticos</div><div class="text-2xl font-black text-slate-800 dark:text-white">${criticalGaps.length}</div></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+                            <!-- 1. Desempenho Operadores -->
+                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-green-500 flex flex-col h-[400px]">
+                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-ranking-star text-green-500"></i> Desempenho de Operadores</h3>
+                                <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
+                                    ${data.rankOperadores.map((op, idx) => {
+                                        const isTop = idx < 3;
+                                        const isBottom = idx >= data.rankOperadores.length - 3 && data.rankOperadores.length > 5;
+                                        const badge = isTop ? '<i class="fa-solid fa-crown text-yellow-500 ml-1"></i>' : (isBottom ? '<i class="fa-solid fa-arrow-trend-down text-red-500 ml-1"></i>' : '');
+                                        const colorClass = op.media >= 90 ? 'text-green-600' : (op.media >= 70 ? 'text-orange-500' : 'text-red-500');
+                                        return `
+                                            <div class="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center font-black text-xs text-slate-500">${idx+1}º</div>
+                                                    <div>
+                                                        <div class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center">${op.nome} ${badge}</div>
+                                                        <div class="text-[10px] text-slate-500 font-medium">${op.notas.length} análises | Min: ${op.min} | Max: ${op.max}</div>
+                                                    </div>
+                                                </div>
+                                                <div class="font-black text-lg ${colorClass} bg-white dark:bg-slate-900 px-3 py-1 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">${op.media.toFixed(1)}</div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 5. Produtividade Monitores -->
+                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-purple-500 flex flex-col h-[400px]">
+                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-clipboard-user text-purple-500"></i> Produtividade (Avaliadores)</h3>
+                                <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
+                                    ${Object.values(data.monitorProdutividade).sort((a,b)=>b.qtd - a.qtd).map(m => `
+                                        <div class="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                                            <div>
+                                                <div class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2"><div class="w-6 h-6 rounded bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-600 text-xs"><i class="fa-solid fa-user-tie"></i></div> ${m.nome}</div>
+                                                <div class="text-[10px] text-slate-500 mt-1.5 pl-8">Rigor Médio Aplicado: <strong class="text-slate-700 dark:text-slate-300">${m.mediaNota.toFixed(1)} pts</strong></div>
+                                            </div>
+                                            <div class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-black px-4 py-2 rounded-lg text-sm shadow-sm">${m.qtd} vol</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+                            <!-- 2. Gaps Comuns -->
+                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-orange-500">
+                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-bar text-orange-500"></i> Oportunidades Frequentes (Treinamento)</h3>
+                                <div class="space-y-4 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                                    ${topGaps.length === 0 ? `<div class="text-sm text-slate-400 italic">Sem falhas operacionais registradas.</div>` : 
+                                    topGaps.map((g, i) => {
+                                        const pct = Math.min(100, (g[1] / data.totalLinhas) * 100).toFixed(1);
+                                        return `
+                                            <div>
+                                                <div class="flex justify-between items-end text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                                    <span class="truncate pr-2">${i+1}. ${g[0]}</span>
+                                                    <span class="text-orange-600 dark:text-orange-400 shrink-0 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-800/50">${g[1]}x (${pct}%)</span>
+                                                </div>
+                                                <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+                                                    <div class="h-full bg-orange-500 rounded-full" style="width: ${pct}%"></div>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 3. Falhas Críticas -->
+                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-red-600">
+                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-skull-crossbones text-red-600"></i> Radar de Risco (Zeramentos)</h3>
+                                <div class="overflow-y-auto custom-scrollbar pr-2 max-h-[300px] space-y-3">
+                                    ${criticalGaps.length === 0 ? `<div class="text-sm text-green-600 font-bold p-6 text-center bg-green-50 dark:bg-green-900/10 rounded-xl border border-green-200 dark:border-green-800/50"><i class="fa-solid fa-shield-check text-3xl mb-2 block"></i> Excelente! Nenhuma infração grave registrada.</div>` : 
+                                    criticalGaps.map(cg => `
+                                        <div class="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30">
+                                            <div class="font-bold text-xs text-red-800 dark:text-red-400 mb-3 leading-tight border-b border-red-200 dark:border-red-800/50 pb-2">${cg[0]}</div>
+                                            <div class="flex flex-wrap gap-1.5">
+                                                ${cg[1].map(op => `<span class="bg-white dark:bg-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded shadow-sm border border-red-100 dark:border-slate-600"><i class="fa-solid fa-user-xmark mr-1 text-red-400"></i>${op}</span>`).join('')}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4. Inteligência Qualitativa -->
+                        <div class="glass-card p-8 rounded-3xl border-t-4 border-t-indigo-500 text-center">
+                            <h3 class="font-extrabold text-slate-800 dark:text-white mb-2 flex items-center justify-center gap-2"><i class="fa-solid fa-cloud text-indigo-500"></i> Inteligência Qualitativa de Feedback</h3>
+                            <p class="text-xs text-slate-500 mb-6">Nuvem de palavras extraída automaticamente das observações dos monitores na base de dados.</p>
+                            <div class="bg-slate-50 dark:bg-slate-900 rounded-2xl p-8 border border-slate-100 dark:border-slate-800 shadow-inner flex flex-wrap justify-center items-center gap-y-2 min-h-[150px]">
+                                ${wordsHtml}
+                            </div>
+                        </div>
+                    `;
+                    
                     container.innerHTML = html;
                 },// <--- AQUI FECHA A ABA DE IMPORTAÇÃO
             }, // <--- AQUI FECHA A CLASSE 'ui' COM A VÍRGULA VITAL
