@@ -5047,106 +5047,134 @@
                     app.analiseCSVData = data;
                 },
                 
-                processarPlanilhaMonitoria(input)
-
-                analisarDadosAvancados(rows) {
-                    const analytics = {
-                        totalLinhas: rows.length,
-                        operadores: {},
-                        falhasComuns: {},
-                        falhasCriticas: {},
-                        monitorProdutividade: {},
-                        slaList: [],
-                        palavrasObs: {}
-                    };
-
-                    const chaves = Object.keys(rows[0] || {});
-                    
-                    const colObsStr = chaves.find(k => k.toUpperCase().includes('OBSERVAÇÃO') || k.toUpperCase().includes('OBSERVACOES'));
-                    const colNome = chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('OPERADOR')) || chaves[0];
-                    const colNota = chaves.find(k => k.toUpperCase() === 'NOTA') || 'NOTA';
-                    const colMonitor = chaves.find(k => k.toUpperCase().includes('MONITOR') || k.toUpperCase().includes('AVALIADOR')) || 'MONITOR';
-                    const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') || 'DATA';
-                    const colDataGrav = chaves.find(k => k.toUpperCase().includes('DATA GRAVACAO') || k.toUpperCase().includes('GRAVAÇÃO'));
-
-                    const colunasAvaliadas = chaves.filter(k => k.toUpperCase().includes('PESO'));
-                    const colunasComuns = colunasAvaliadas.filter(k => !k.includes('100.00') && !k.includes('100,00'));
-                    const colunasCriticas = colunasAvaliadas.filter(k => k.includes('100.00') || k.includes('100,00'));
-
-                    rows.forEach(row => {
-                        const op = row[colNome] || 'Desconhecido';
-                        const notaStr = String(row[colNota] || '0').replace(',', '.');
-                        const nota = parseFloat(notaStr) || 0;
-                        const monitor = row[colMonitor] || 'Desconhecido';
-                        const obs = colObsStr ? row[colObsStr] : '';
-
-                        if (!analytics.operadores[op]) {
-                            analytics.operadores[op] = { nome: op, notas: [], min: 100, max: 0 };
-                        }
-                        analytics.operadores[op].notas.push(nota);
-                        if (nota < analytics.operadores[op].min) analytics.operadores[op].min = nota;
-                        if (nota > analytics.operadores[op].max) analytics.operadores[op].max = nota;
-
-                        colunasComuns.forEach(col => {
-                            const resposta = (row[col] || '').toString().trim().toUpperCase();
-                            if (resposta === 'NÃO' || resposta === 'NAO') {
-                                analytics.falhasComuns[col] = (analytics.falhasComuns[col] || 0) + 1;
-                            }
-                        });
-
-                        colunasCriticas.forEach(col => {
-                            const resposta = (row[col] || '').toString().trim().toUpperCase();
-                            if (resposta === 'NÃO' || resposta === 'NAO') {
-                                if (!analytics.falhasCriticas[col]) analytics.falhasCriticas[col] = [];
-                                analytics.falhasCriticas[col].push(op);
-                            }
-                        });
-
-                        if (obs && typeof obs === 'string') {
-                            const palavras = obs.toLowerCase().replace(/[.,;:()]/g, '').split(/\s+/);
-                            const ignorar = ['o','a','os','as','e','de','do','da','em','um','uma','para','com','que','na','no','cliente','atendimento','operador','não','sim','foi','por','ao','se','dos'];
-                            palavras.forEach(p => {
-                                if (p.length > 3 && !ignorar.includes(p)) {
-                                    analytics.palavrasObs[p] = (analytics.palavrasObs[p] || 0) + 1;
+                processarPlanilhaMonitoria(input) {
+                        const file = input.files[0];
+                        if (!file) return;
+                
+                        app.ui.showAlert("Processando...", "Lendo a planilha e aplicando as regras de negócio. Aguarde...", "info");
+                
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const firstSheetName = workbook.SheetNames[0];
+                                const worksheet = workbook.Sheets[firstSheetName];
+                                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                
+                                if (jsonData.length === 0) {
+                                    return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
                                 }
-                            });
-                        }
-
-                        if (!analytics.monitorProdutividade[monitor]) {
-                            analytics.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
-                        }
-                        analytics.monitorProdutividade[monitor].qtd += 1;
-                        analytics.monitorProdutividade[monitor].somaNotas += nota;
-
-                        if (row[colDataAudit] && row[colDataGrav]) {
-                            const parseDate = (val) => {
-                                if(typeof val === 'number') return new Date((val - 25569)*86400*1000); 
-                                const parts = val.toString().split('/');
-                                if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
-                                return new Date(val);
-                            };
-                            const dA = parseDate(row[colDataAudit]);
-                            const dG = parseDate(row[colDataGrav]);
-                            
-                            if (!isNaN(dA) && !isNaN(dG)) {
-                                const diffTime = Math.abs(dA - dG);
-                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                analytics.slaList.push(diffDays);
+                
+                                // 1. Identificar o período através da coluna DATA MONITORIA (pega a primeira linha válida)
+                                let periodoAnalisado = "Período Indefinido";
+                                for (let i = 0; i < jsonData.length; i++) {
+                                    if (jsonData[i]['DATA MONITORIA']) {
+                                        periodoAnalisado = jsonData[i]['DATA MONITORIA'];
+                                        break;
+                                    }
+                                }
+                
+                                // 2. Criar um mapa inicial apenas com os usuários CADASTRADOS no sistema
+                                let mapUsuarios = {};
+                                app.users.forEach(u => {
+                                    mapUsuarios[u.matricula] = {
+                                        nome: u.nome,
+                                        matricula: u.matricula,
+                                        total: 0,
+                                        falta: 400,
+                                        pendenteFeedback: 0,
+                                        totalAbaixo85: 0,
+                                        feedbacksAplicados: 0,
+                                        manual: false
+                                    };
+                                });
+                
+                                // 3. Processar cada linha da planilha
+                                jsonData.forEach(row => {
+                                    const monitorSup = row['MONITOR|SUPERVISOR'];
+                                    if (!monitorSup) return;
+                
+                                    // Separar a matrícula do nome pelo traço "-" e remover espaços em volta
+                                    const parts = String(monitorSup).split('-');
+                                    const matricula = parts[0].trim();
+                
+                                    // Regra: Se a matrícula não estiver no mapUsuarios (não cadastrada no sistema), IGNORA e pula a linha.
+                                    if (!mapUsuarios[matricula]) return;
+                
+                                    const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
+                                    const operacao = String(row['OPERACAO'] || '').toUpperCase();
+                
+                                    // Regra de Exceção: Contém "neutro" no título OU operação é "QUALIDADE - FORMULÁRIOS NEUTROS"
+                                    const isNeutro = titulo.includes('neutro') || 
+                                                     operacao.includes('QUALIDADE - FORMULÃRIOS NEUTROS') || 
+                                                     operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS');
+                
+                                    // Contabiliza SEMPRE na META (Total de Monitorias) independente de ser neutro ou não
+                                    mapUsuarios[matricula].total += 1;
+                                    mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
+                
+                                    // Se NÃO for formulário neutro, entra nas regras rigorosas de Feedback
+                                    if (!isNeutro) {
+                                        // Extrai a nota da coluna EXATA da sua planilha: NOTA MONITORIA
+                                        let notaRaw = row['NOTA MONITORIA'];
+                                        if (notaRaw === undefined || notaRaw === null) {
+                                            // Fallback de segurança
+                                            notaRaw = row['RESULTADO'] || row['RESULTADO FINAL'] || 100;
+                                        }
+                                        
+                                        if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
+                                        let nota = parseFloat(notaRaw);
+                
+                                        // Extrai o status da coluna EXATA da sua planilha: STATUS MONITORIA
+                                        let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
+                
+                                        // Se a nota for MENOR que 85, a regra de feedback se aplica obrigatoriamente
+                                        if (!isNaN(nota) && nota < 85) {
+                                            mapUsuarios[matricula].totalAbaixo85 += 1;
+                                            
+                                            // Verifica se o feedback foi aplicado lendo "feedback_aplicado"
+                                            if (statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado')) {
+                                                mapUsuarios[matricula].feedbacksAplicados += 1;
+                                            } else {
+                                                mapUsuarios[matricula].pendenteFeedback += 1;
+                                            }
+                                        }
+                                    }
+                                });
+                
+                                // Converter o mapa de volta para um array, enviando para o painel apenas quem teve alguma atividade
+                                // NOVO: Adicionado .sort para ordenar DO MAIOR PARA O MENOR no quadro de Performance Operacional
+                                const novoRanking = Object.values(mapUsuarios)
+                                    .filter(u => u.total > 0)
+                                    .sort((a, b) => b.total - a.total);
+                
+                                // Alimenta a variável global do sistema com os dados processados
+                                app.monitoriasData = {
+                                    periodo: periodoAnalisado,
+                                    ranking: novoRanking,
+                                    ultimaAtualizacao: Date.now()
+                                };
+                
+                                // Salva no Firebase e força a atualização da tela
+                                app.storage.saveMonitorias().then(() => {
+                                    document.getElementById('global-modal').classList.add('hidden');
+                                    app.ui.showAlert("Importação Concluída", `Planilha lida com sucesso!<br><br><strong>Período Identificado:</strong> ${periodoAnalisado}<br><strong>Monitores Validados:</strong> ${novoRanking.length}`, "success");
+                                    app.ui.renderTab('import_monitorias', true); 
+                                }).catch(err => {
+                                    console.error("Erro ao salvar no Firebase:", err);
+                                    app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar no servidor.", "error");
+                                });
+                
+                            } catch (err) {
+                                console.error("Erro ao processar planilha:", err);
+                                app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente. Verifique o formato das colunas do CSV.", "error");
                             }
-                        }
-                    });
-
-                    Object.values(analytics.operadores).forEach(op => {
-                        op.media = op.notas.reduce((a,b) => a+b, 0) / op.notas.length;
-                    });
-                    Object.values(analytics.monitorProdutividade).forEach(m => {
-                        m.mediaNota = m.somaNotas / m.qtd;
-                    });
-
-                    analytics.rankOperadores = Object.values(analytics.operadores).sort((a,b) => b.media - a.media);
-                    
-                    app.analyticsData = analytics;
-                },
+                        };
+                        
+                        // Dispara a leitura do arquivo
+                        reader.readAsArrayBuffer(file);
+                    },
 
                 // ==========================================
                 // TODAS AS SUAS FUNÇÕES ANTIGAS DO ADMIN RESTAURADAS AQUI PARA BAIXO
