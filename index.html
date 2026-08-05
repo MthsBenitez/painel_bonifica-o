@@ -5136,6 +5136,77 @@
 
             admin: {
 
+                processarPlanilhaMonitoria(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            app.ui.showAlert("Processando...", "Iniciando a leitura inteligente do arquivo da Qualidade. Aguarde...", "info");
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    // O SheetJS (XLSX) interpreta automaticamente CSV e Excel
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    let contagem = {};
+                    
+                    json.forEach(row => {
+                        // Padroniza as colunas para evitar erros de digitação na planilha
+                        const normRow = {};
+                        for(let k in row) normRow[k.trim().toLowerCase()] = row[k];
+
+                        // Procura quem é o dono da monitoria (tenta várias nomenclaturas comuns)
+                        let nomeOriginal = normRow['avaliador'] || normRow['monitor'] || normRow['nome'] || normRow['operador'] || normRow['criado por'];
+                        if(!nomeOriginal) return; // Pula a linha se não achar o responsável
+
+                        // Ajusta acentuação e padroniza
+                        let nome = app.utils.fixEncoding(nomeOriginal.trim().toUpperCase());
+                        let status = (normRow['status'] || '').toString().toLowerCase();
+                        let pendenteFb = status.includes('pendente') || status.includes('aguardando') || status.includes('não lido');
+
+                        if(!contagem[nome]) {
+                            contagem[nome] = { nome: nomeOriginal.trim().toUpperCase(), total: 0, falta: 0, pendenteFeedback: 0 };
+                        }
+                        
+                        contagem[nome].total += 1;
+                        if(pendenteFb) contagem[nome].pendenteFeedback += 1;
+                    });
+
+                    let ranking = [];
+                    const metaFixa = 400; // Meta padrão obrigatória de monitorias
+
+                    Object.values(contagem).forEach(c => {
+                        // Tenta vincular o nome da planilha com o nome bonito do usuário no sistema
+                        let userReal = app.users.find(u => u.nome.toUpperCase() === c.nome || (u.aliases && u.aliases.includes(c.nome)));
+                        if(userReal) c.nome = userReal.nome;
+
+                        c.falta = metaFixa - c.total;
+                        if(c.falta < 0) c.falta = 0; // Teto zerado se bateu a meta
+                        ranking.push(c);
+                    });
+
+                    // Ordena do maior para o menor (Ranking)
+                    ranking.sort((a,b) => b.total - a.total);
+
+                    // Salva as métricas processadas no banco de dados
+                    app.monitoriasData = { ranking: ranking, lastUpdate: Date.now() };
+                    app.storage.saveMonitorias().then(() => {
+                        app.ui.showAlert("Sucesso!", "Planilha CSV processada e indicadores da equipe atualizados com sucesso.", "success");
+                        app.ui.renderTab('import_monitorias', true);
+                    });
+
+                } catch (err) {
+                    console.error("Erro na leitura estrutural do CSV:", err);
+                    app.ui.showAlert("Erro de Leitura", "O arquivo enviado não possui o formato esperado ou está corrompido. Verifique o arquivo e tente novamente.", "error");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        },
+
                 openAliasModal() {
                         const sel = document.getElementById('alias-correct-user');
                         sel.innerHTML = '<option value="">Selecione o colaborador correto...</option>' + 
