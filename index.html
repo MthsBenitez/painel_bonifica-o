@@ -5027,7 +5027,7 @@
                             </div>
                             <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-csv"></i> Upload de Arquivo CSV
-                                <input type="file" accept=".csv" class="hidden" onchange="app.admin.importarCSVAnalise(this)">
+                                <input type="file" accept=".csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                             </label>
                         </div>
                     `;
