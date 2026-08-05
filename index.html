@@ -5051,8 +5051,7 @@
                         const file = input.files[0];
                         if (!file) return;
                 
-                        // Feedback visual imediato para o usuário
-                        app.ui.showAlert("Processando...", "Lendo a planilha e atualizando o banco de dados. Aguarde...", "info");
+                        app.ui.showAlert("Processando...", "Lendo a planilha e aplicando as regras de negócio. Aguarde...", "info");
                 
                         const reader = new FileReader();
                         reader.onload = (e) => {
@@ -5067,35 +5066,95 @@
                                     return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
                                 }
                 
-                                // Exemplo de mapeamento (ajuste os nomes das colunas de acordo com sua planilha padrão)
-                                let novoRanking = [];
-                                
-                                jsonData.forEach(row => {
-                                    // Mapeie as colunas da sua planilha (Exemplo: "Nome", "Matrícula", "Total Monitorias", etc.)
-                                    // Aqui garantimos que a estrutura alimenta exatamente as variáveis que a tela de Importação lê
-                                    novoRanking.push({
-                                        nome: row['Nome'] || row['NOME'] || 'Desconhecido',
-                                        matricula: String(row['Matrícula'] || row['MATRICULA'] || ''),
-                                        total: parseInt(row['Total'] || row['Total Monitorias'] || 0),
-                                        falta: parseInt(row['Faltam'] || row['Faltantes'] || 0),
-                                        pendenteFeedback: parseInt(row['Pendentes'] || row['Feedbacks Pendentes'] || 0),
-                                        totalAbaixo85: parseInt(row['Abaixo 85'] || 0),
-                                        feedbacksAplicados: parseInt(row['Aplicados'] || 0),
+                                // 1. Identificar o período através da coluna DATA MONITORIA (pega a primeira linha válida)
+                                let periodoAnalisado = "Período Indefinido";
+                                for (let i = 0; i < jsonData.length; i++) {
+                                    if (jsonData[i]['DATA MONITORIA']) {
+                                        periodoAnalisado = jsonData[i]['DATA MONITORIA'];
+                                        break;
+                                    }
+                                }
+                                console.log("Período analisado da planilha:", periodoAnalisado);
+                
+                                // 2. Criar um mapa inicial apenas com os usuários CADASTRADOS no sistema
+                                let mapUsuarios = {};
+                                app.users.forEach(u => {
+                                    mapUsuarios[u.matricula] = {
+                                        nome: u.nome,
+                                        matricula: u.matricula,
+                                        total: 0,
+                                        falta: 400,
+                                        pendenteFeedback: 0,
+                                        totalAbaixo85: 0,
+                                        feedbacksAplicados: 0,
                                         manual: false
-                                    });
+                                    };
                                 });
                 
-                                // Alimenta a variável global do sistema
+                                // 3. Processar cada linha da planilha
+                                jsonData.forEach(row => {
+                                    const monitorSup = row['MONITOR|SUPERVISOR'];
+                                    if (!monitorSup) return;
+                
+                                    // Separar a matrícula do nome pelo traço "-"
+                                    const parts = String(monitorSup).split('-');
+                                    const matricula = parts[0].trim();
+                
+                                    // Regra: Se a matrícula não estiver no mapUsuarios (não cadastrada no sistema), IGNORA e pula a linha.
+                                    if (!mapUsuarios[matricula]) return;
+                
+                                    const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
+                                    const operacao = String(row['OPERACAO'] || '').toUpperCase();
+                
+                                    // Regra: Contém "neutro" no título OU operação é "QUALIDADE - FORMULÃRIOS NEUTROS"
+                                    // Nota: Inserido o texto bugado (com Ã) e o texto correto para evitar falhas de encoding do CSV
+                                    const isNeutro = titulo.includes('neutro') || 
+                                                     operacao.includes('QUALIDADE - FORMULÃRIOS NEUTROS') || 
+                                                     operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS');
+                
+                                    // Contabiliza SEMPRE na META (Total de Monitorias) independente de ser neutro
+                                    mapUsuarios[matricula].total += 1;
+                                    mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
+                
+                                    // Se NÃO for formulário neutro, entra nas regras de Feedback
+                                    if (!isNeutro) {
+                                        // Extrai a nota (Trata caso a coluna venha com outros nomes comuns ou com % e vírgula)
+                                        let notaRaw = row['RESULTADO'] || row['NOTA'] || row['RESULTADO FINAL'] || 100;
+                                        if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
+                                        let nota = parseFloat(notaRaw);
+                
+                                        // Extrai o status do feedback
+                                        let statusFb = String(row['STATUS FEEDBACK'] || row['FEEDBACK'] || '').toLowerCase();
+                
+                                        // Se a nota for menor que 85, contabiliza como ofensor/necessidade de feedback
+                                        if (!isNaN(nota) && nota < 85) {
+                                            mapUsuarios[matricula].totalAbaixo85 += 1;
+                                            
+                                            // Verifica se o feedback já foi aplicado
+                                            if (statusFb.includes('aplicado') || statusFb.includes('concluído') || statusFb === 'sim') {
+                                                mapUsuarios[matricula].feedbacksAplicados += 1;
+                                            } else {
+                                                mapUsuarios[matricula].pendenteFeedback += 1;
+                                            }
+                                        }
+                                    }
+                                });
+                
+                                // Converter o mapa de volta para um array, enviando para o painel apenas quem teve alguma atividade
+                                const novoRanking = Object.values(mapUsuarios).filter(u => u.total > 0);
+                
+                                // Alimenta a variável global do sistema com os dados processados
                                 app.monitoriasData = {
+                                    periodo: periodoAnalisado,
                                     ranking: novoRanking,
                                     ultimaAtualizacao: Date.now()
                                 };
                 
                                 // Salva no Firebase e força a atualização da tela
                                 app.storage.saveMonitorias().then(() => {
-                                    document.getElementById('global-modal').classList.add('hidden'); // Fecha o modal de carregando
-                                    app.ui.showAlert("Sucesso!", "O relatório foi importado e os painéis foram alimentados.", "success");
-                                    app.ui.renderTab('import_monitorias', true); // Recarrega a aba para exibir os novos dados
+                                    document.getElementById('global-modal').classList.add('hidden');
+                                    app.ui.showAlert("Importação Concluída", `Planilha lida com sucesso!<br><br><strong>Período Identificado:</strong> ${periodoAnalisado}<br><strong>Monitores Validados:</strong> ${novoRanking.length}`, "success");
+                                    app.ui.renderTab('import_monitorias', true); 
                                 }).catch(err => {
                                     console.error("Erro ao salvar no Firebase:", err);
                                     app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar no servidor.", "error");
@@ -5103,10 +5162,11 @@
                 
                             } catch (err) {
                                 console.error("Erro ao processar planilha:", err);
-                                app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido. Verifique se é um arquivo Excel ou CSV válido.", "error");
+                                app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente. Verifique o formato das colunas do CSV.", "error");
                             }
                         };
                         
+                        // Dispara a leitura do arquivo
                         reader.readAsArrayBuffer(file);
                 },
 
