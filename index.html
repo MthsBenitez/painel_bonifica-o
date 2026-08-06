@@ -219,6 +219,23 @@
             0% { transform: translateX(-100%); } 
             100% { transform: translateX(100%); } 
         }
+
+        /* ========================================================
+           CORREÇÃO GLOBAL: FORMULÁRIOS NO MODO NOTURNO
+           ======================================================== */
+        .dark input:not([type="checkbox"]):not([type="radio"]), 
+        .dark select, 
+        .dark textarea {
+            background-color: #1e293b !important; /* bg-slate-800 */
+            color: #f8fafc !important; /* text-slate-50 */
+            border-color: #334155 !important; /* border-slate-700 */
+            color-scheme: dark !important; /* Força ícones de calendário/relógio a ficarem claros */
+        }
+        
+        .dark input::placeholder, 
+        .dark textarea::placeholder {
+            color: #94a3b8 !important; /* text-slate-400 */
+        }
         
     </style>
 </head>
@@ -2461,27 +2478,32 @@
 
                     // 2. Se houver um grupo ativo, renderiza as sub-abas embaixo dele em uma linha menor
                     if (activeGroup && activeGroup.items.length > 1) {
-                        html += '<div class="flex gap-2 pb-3 overflow-x-auto no-scrollbar w-full border-b border-slate-200 dark:border-slate-800 px-4">';
+                        html += `
+                        <div class="px-4 pb-3 w-full border-b border-slate-200 dark:border-slate-800">
+                            <div class="inline-flex gap-1 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/50 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar max-w-full">
+                        `;
+                        
                         activeGroup.items.forEach(sub => {
                             const isSubActive = app.currentTab === sub.id;
+                            
+                            // Novo Design Moderno (Segmented Control)
                             const subClass = isSubActive 
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shadow-sm border border-green-200 dark:border-green-800' 
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700';
+                                ? 'bg-white dark:bg-slate-700 text-green-600 dark:text-green-400 shadow-sm border border-slate-200/50 dark:border-slate-600 scale-100' 
+                                : 'text-slate-500 dark:text-slate-400 border border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-700/50 hover:text-slate-700 dark:hover:text-slate-200 scale-95 hover:scale-100';
                                 
                             html += `
-                                <button type="button" onclick="app.ui.renderTab('${sub.id}', true)" class="px-4 py-1.5 font-bold text-xs rounded-lg transition-all whitespace-nowrap ${subClass}">
-                                    ${sub.label}
+                                <button type="button" onclick="app.ui.renderTab('${sub.id}', true)" class="px-5 py-2 font-bold text-xs rounded-lg transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${subClass}">
+                                    ${isSubActive ? '<i class="fa-solid fa-circle text-[6px]"></i>' : ''} ${sub.label}
                                 </button>
                             `;
                         });
-                        html += '</div>';
+                        
+                        html += `
+                            </div>
+                        </div>`;
                     } else {
                         html += '<div class="w-full border-b border-slate-200 dark:border-slate-800 pb-3"></div>';
                     }
-
-                    html += '</div>';
-                    nav.innerHTML = html;
-                },
 
                 refreshCurrentView() {
                     if(!document.getElementById('view-app').classList.contains('hidden')) {
