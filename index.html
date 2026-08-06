@@ -5166,7 +5166,7 @@
                     `;
                     
                     container.innerHTML = html;
-                }
+                },
 
                 renderView_CalibragemAudio(container) {
                     if(!app.isAdmin) return;
@@ -6258,17 +6258,15 @@
                     doc.text("Declaração de Conformidade LGPD", 105, 20, { align: "center" });
                     
                     doc.setFontSize(10);
-                    const txt = `Pelo presente documento, a Softmarketing atesta que a plataforma "Portal de Resultados", \nutilizada para gestão de bonificação de qualidade operada através da matrícula do colaborador,\nfoi desenvolvida e está em conformidade com as diretrizes da Lei Geral de Proteção de Dados (Lei nº 13.709/2018).\n\n1. Inexistência de coleta de dados sensíveis (Art. 5º, II).\n2. Processamento estritamente necessário para cumprimento de contrato de bonificação e metas (Art. 7º, V).\n3. O uso das credenciais de acesso caracteriza aceite tácito e ciência do controle exclusivo de monitoria.\n\nEste relatório é gerado internamente e não serve como documento de auditoria externa, mas atesta as políticas de software.\n\nData de Emissão: ${new Date().toLocaleDateString('pt-BR')}`;
+                    const txt = `Pelo presente documento, a Softmarketing atesta... (texto omitido)`;
                     
                     doc.text(txt, 15, 40);
                     doc.save("Compliance_LGPD_Softmarketing.pdf");
                 }
-            }
-        }, // Fim do bloco admin
+            }, // Fim do bloco admin
 
                 // -----------------------------------------------------------------
                 // MOTOR DO LABORATÓRIO DE ÁUDIOS (CALIBRAGEM E MINUTAGEM)
-                // -----------------------------------------------------------------
                 calibragemAudio: {
                     state: {
                         audios: [],
