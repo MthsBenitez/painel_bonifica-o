@@ -246,10 +246,11 @@
             <h3 class="font-bold text-lg text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-user-plus text-green-600"></i> Novo Colaborador</h3>
             <div class="space-y-4">
                 <div class="flex gap-4">
-                    <div class="flex-1">
-                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Foto de Perfil (Opcional)</label>
-                        <input type="file" id="cad-foto" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800">
-                    </div>
+                    <div class="flex justify-between items-end mb-1.5">
+                            <label class="block text-[11px] font-bold text-slate-500 uppercase">Foto de Perfil (Opcional)</label>
+                            <button type="button" onclick="document.getElementById('cad-foto').value='';" class="text-[10px] font-bold text-red-500 hover:text-red-700"><i class="fa-solid fa-trash mr-1"></i>Limpar</button>
+                        </div>
+                        <input type="file" id="cad-foto" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800">
                 </div>
                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome Completo</label><input type="text" id="cad-nome" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none"></div>
                 <div class="grid grid-cols-2 gap-4">
@@ -278,10 +279,11 @@
                 <input type="hidden" id="edit-mat-original">
                 <div class="flex gap-4 items-center">
                     <img id="edit-foto-preview" src="" class="w-16 h-16 rounded-full object-cover border border-slate-300 hidden">
-                    <div class="flex-1">
-                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nova Foto (Deixe vazio para manter)</label>
-                        <input type="file" id="edit-foto" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800">
-                    </div>
+                    <div class="flex justify-between items-end mb-1.5">
+                            <label class="block text-[11px] font-bold text-slate-500 uppercase">Nova Foto (Vazio p/ manter)</label>
+                            <button type="button" onclick="document.getElementById('edit-foto').value='';" class="text-[10px] font-bold text-red-500 hover:text-red-700"><i class="fa-solid fa-trash mr-1"></i>Limpar</button>
+                        </div>
+                        <input type="file" id="edit-foto" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800">
                 </div>
                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome Completo</label><input type="text" id="edit-nome" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-purple-500 dark:text-white outline-none"></div>
                 <div class="grid grid-cols-2 gap-4">
@@ -376,8 +378,12 @@
                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Observação (Obrigatório) *</label>
                     <textarea id="cal-obs" rows="2" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white resize-none"></textarea>
                 </div>
-                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Anexo (Opcional)</label>
-                    <input type="file" id="cal-anexo" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Anexo (Opcional)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="file" id="cal-anexo" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" onchange="this.dataset.removed = 'false'">
+                        <button type="button" onclick="document.getElementById('cal-anexo').value=''; document.getElementById('cal-anexo').dataset.removed='true'; document.getElementById('cal-anexo-link').classList.add('hidden');" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-xl text-xs font-bold transition-colors" title="Remover Anexo"><i class="fa-solid fa-trash"></i></button>
+                    </div>
                     <p id="cal-anexo-link" class="text-[10px] mt-1 text-blue-500 hidden"></p>
                 </div>
             </div>
@@ -1146,6 +1152,11 @@
                         const reader = new FileReader();
                         reader.readAsDataURL(file);
                         reader.onload = event => {
+                            // Se não for imagem (ex: PDF ou DOC), salva direto sem tentar comprimir
+                            if (!file.type.startsWith('image/')) {
+                                resolve(event.target.result);
+                                return;
+                            }
                             const img = new Image();
                             img.src = event.target.result;
                             img.onload = () => {
@@ -1159,6 +1170,7 @@
                                 ctx.drawImage(img, 0, 0, width, height);
                                 resolve(canvas.toDataURL('image/jpeg', 0.6));
                             };
+                            img.onerror = () => resolve(event.target.result);
                         };
                     });
                 },
@@ -1884,7 +1896,11 @@
                                 payload.anexo = b64; app.eventsList[id] = payload; this.finalizarSave();
                             });
                         } else {
-                            if(evtId && app.eventsList[evtId].anexo) payload.anexo = app.eventsList[evtId].anexo;
+                            if(fileInput.dataset.removed === 'true') {
+                                payload.anexo = null; // Usuário clicou na lixeira
+                            } else if(evtId && app.eventsList[evtId].anexo) {
+                                payload.anexo = app.eventsList[evtId].anexo; // Mantém o que já existia
+                            }
                             app.eventsList[id] = payload; this.finalizarSave();
                         }
                     }
@@ -1930,6 +1946,7 @@
                     document.getElementById('cal-edit-id').value = evtId || '';
                     document.getElementById('cal-anexo-link').classList.add('hidden');
                     document.getElementById('cal-anexo').value = '';
+                    document.getElementById('cal-anexo').dataset.removed = 'false';
 
                     // CORREÇÃO: Injetar sempre a lista de operações assim que o Modal abrir!
                     const opSelect = document.getElementById('cal-op');
@@ -3024,10 +3041,13 @@
                                     <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label><input type="text" id="act-ofensor" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
                                     <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Brindes *</label><input type="number" id="act-brindes" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
                                     <div class="md:col-span-2">
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Anexar Evidências *</label>
+                                        <div class="flex justify-between items-end mb-1.5">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase">Anexar Evidências *</label>
+                                            <button type="button" onclick="document.getElementById('act-foto').value=''; document.getElementById('file-name-display').innerText='Clique para anexar FOTOS e DOCS';" class="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-trash mr-1"></i>Remover Tudo</button>
+                                        </div>
                                         <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:bg-slate-100">
-                                            <p class="text-sm text-green-600 font-bold" id="file-name-display">Clique para anexar FOTOS</p>
-                                            <input type="file" id="act-foto" accept="image/*" multiple class="hidden" onchange="document.getElementById('file-name-display').innerText = this.files.length + ' arquivo(s) selecionado(s)'" />
+                                            <p class="text-sm text-green-600 font-bold" id="file-name-display">Clique para anexar FOTOS e DOCS (Sem Vídeos)</p>
+                                            <input type="file" id="act-foto" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" multiple class="hidden" onchange="document.getElementById('file-name-display').innerText = this.files.length + ' arquivo(s) selecionado(s)'" />
                                         </label>
                                     </div>
                                 </div>
