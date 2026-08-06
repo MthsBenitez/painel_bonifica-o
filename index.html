@@ -4758,7 +4758,8 @@
                         });
                         
                         let pctGlobal = metaGlobal > 0 ? Math.min(100, (totalMonitorias / metaGlobal) * 100).toFixed(1) : 0;
-                        let projecaoGlobal = Math.round((totalMonitorias / wd.passed) * wd.total);
+                        let diasPassadosGlobais = Math.max(1, wd.passed - 1); // Remove o dia de "Hoje" da conta
+                        let projecaoGlobal = Math.round((totalMonitorias / diasPassadosGlobais) * wd.total);
                         let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-green-500' : 'text-orange-500';
                     
                         html += `
@@ -4825,7 +4826,9 @@
                                             <tr>
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700">Monitor</th>
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Realizado</th>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Média/Dia</th>
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Faltam</th>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Meta/Dia</th>
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-32">Projeção Mês</th>
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Progresso</th>
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Pend. FB</th>
@@ -4839,9 +4842,15 @@
                             const userObj = app.users.find(u => u.matricula === r.matricula) || { nome: r.nome, foto: null };
                             const avatar = userObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(userObj.nome)}&background=cbd5e1&color=ffffff`;
                             
+                            let diasPassadosEfetivos = Math.max(1, wd.passed - 1);
+                            let diasRestantes = Math.max(1, wd.total - diasPassadosEfetivos);
+                            
                             let pct = metaIndividual > 0 ? Math.min(100, (r.total / metaIndividual) * 100).toFixed(1) : 0;
-                            let proj = Math.round((r.total / wd.passed) * wd.total);
+                            let proj = Math.round((r.total / diasPassadosEfetivos) * wd.total);
                             let colorProj = proj >= metaIndividual ? 'text-green-500' : 'text-orange-500';
+                            
+                            let mediaDiaria = (r.total / diasPassadosEfetivos).toFixed(1);
+                            let metaDiariaRes = r.falta > 0 ? Math.ceil(r.falta / diasRestantes) : 0;
                             
                             html += `
                                 <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
@@ -4853,7 +4862,9 @@
                                         </div>
                                     </td>
                                     <td class="py-3 px-4 text-center font-black text-slate-700 dark:text-slate-200">${r.total}</td>
+                                    <td class="py-3 px-4 text-center font-bold text-blue-500 bg-blue-50/30 dark:bg-blue-900/10">${mediaDiaria}</td>
                                     <td class="py-3 px-4 text-center font-bold text-orange-500">${r.falta > 0 ? r.falta : 0}</td>
+                                    <td class="py-3 px-4 text-center font-bold text-red-500 bg-red-50/30 dark:bg-red-900/10">${metaDiariaRes}</td>
                                     <td class="py-3 px-4 text-center font-black ${colorProj}">${proj}</td>
                                     <td class="py-3 px-4 text-center">
                                         <div class="flex flex-col items-center gap-1 w-full">
@@ -4907,8 +4918,15 @@
 
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     const meta = 400; // Meta padrão estabelecida pela qualidade
-                    const projecao = Math.round((myData.total / wd.passed) * wd.total);
+                    
+                    const diasPassadosEfetivos = Math.max(1, wd.passed - 1);
+                    const diasRestantes = Math.max(1, wd.total - diasPassadosEfetivos);
+                    
+                    const projecao = Math.round((myData.total / diasPassadosEfetivos) * wd.total);
                     const projColor = projecao >= meta ? 'text-green-500' : 'text-orange-500';
+                    
+                    const mediaDia = (myData.total / diasPassadosEfetivos).toFixed(1);
+                    const metaDiaRestante = myData.falta > 0 ? Math.ceil(myData.falta / diasRestantes) : 0;
 
                     html += `
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4963,9 +4981,22 @@
                                     <div class="text-4xl font-black ${projColor} drop-shadow-sm">${projecao} <span class="text-lg font-medium text-slate-500">/ ${meta}</span></div>
                                 </div>
                             </div>
+
+                            <!-- CONTROLE DIÁRIO -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                                    <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-gauge-high"></i> Ritmo Atual (Média/Dia)</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${mediaDia} <span class="text-xs text-slate-500 font-medium lowercase">monitorias / dia efetivo</span></div>
+                                </div>
+                                <div class="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-xl border border-orange-100 dark:border-orange-800/50">
+                                    <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-crosshairs"></i> Meta Diária Necessária</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${metaDiaRestante} <span class="text-xs text-slate-500 font-medium lowercase">p/ dia (restam ${diasRestantes} dias)</span></div>
+                                </div>
+                            </div>
+
                             <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 flex justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
                                 <span>Dias Úteis no Mês: <strong class="text-slate-700 dark:text-slate-300">${wd.total}</strong></span>
-                                <span>Dias Corridos: <strong class="text-slate-700 dark:text-slate-300">${wd.passed}</strong></span>
+                                <span>Dias Analisados (Efetivos): <strong class="text-slate-700 dark:text-slate-300">${diasPassadosEfetivos}</strong></span>
                             </div>
                         </div>
                     `;
