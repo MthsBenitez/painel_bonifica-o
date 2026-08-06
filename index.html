@@ -2439,7 +2439,7 @@
                             { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}, {id:'analise_csv', label:'Dash Analítico CSV'}] },
                             { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
                             { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, 
-                            { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                            { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'calibragem_audio', label:'Calibragem Áudio'}] },
                             { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ] : [
                             { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, 
@@ -2564,7 +2564,8 @@
                         else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
                         else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);
                         else if(tabId === 'analise_csv') this.renderView_AnaliseCSV(viewDiv);
-                        else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);
+                        else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -5166,6 +5167,140 @@
                     
                     container.innerHTML = html;
                 }
+
+                renderView_CalibragemAudio(container) {
+                    if(!app.isAdmin) return;
+                    app.calibragemAudio.initPlayer(); // Prepara o motor de áudio
+                    
+                    const state = app.calibragemAudio.state;
+                    
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laboratório de Calibragem <span class="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full ml-2 align-middle border border-blue-200">BETA</span></h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Importe até 4 áudios e realize a marcação de comentários exatos por minutagem na linha do tempo.</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-8">
+                            <!-- Painel Esquerdo: Repositório -->
+                            <div class="lg:col-span-4 space-y-4">
+                                <div class="glass-card p-5 rounded-3xl">
+                                    <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-folder-open text-blue-500"></i> Repositório (${state.audios.length}/4)</h3>
+                                    
+                                    <label class="w-full flex flex-col items-center justify-center p-5 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-4 ${state.audios.length >= 4 ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}">
+                                        <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 mb-2"></i>
+                                        <span class="text-xs font-bold text-slate-600 dark:text-slate-400 text-center">Importar Áudio Local<br><span class="font-normal text-[10px]">(MP3 ou WAV)</span></span>
+                                        <input type="file" accept="audio/*" class="hidden" onchange="app.calibragemAudio.importAudios(this)" multiple>
+                                    </label>
+                                    
+                                    <div class="space-y-2">
+                    `;
+                    
+                    if(state.audios.length === 0) {
+                        html += `<div class="text-xs text-slate-400 italic text-center py-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum áudio em memória.</div>`;
+                    } else {
+                        state.audios.forEach((a, idx) => {
+                            const isActive = state.activeAudio && state.activeAudio.id === a.id;
+                            const borderClass = isActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-blue-300';
+                            const iconColor = isActive ? 'text-blue-600' : 'text-slate-400';
+                            
+                            html += `
+                                <div class="p-3 rounded-xl border ${borderClass} flex justify-between items-center cursor-pointer transition-colors shadow-sm" onclick="app.calibragemAudio.selectAudio('${a.id}')">
+                                    <div class="flex items-center gap-3 overflow-hidden">
+                                        <div class="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm shrink-0 ${iconColor}"><i class="fa-solid ${isActive ? 'fa-headphones' : 'fa-music'}"></i></div>
+                                        <div class="truncate">
+                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate pr-2" title="${a.name}">${a.name}</div>
+                                            <div class="text-[9px] text-slate-500 uppercase font-bold tracking-widest mt-0.5">Fila ${idx + 1}</div>
+                                        </div>
+                                    </div>
+                                    <button onclick="event.stopPropagation(); app.calibragemAudio.removeAudio('${a.id}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors shrink-0" title="Apagar Áudio"><i class="fa-solid fa-trash-can"></i></button>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    html += `
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Painel Direito: Player e Feedback -->
+                            <div class="lg:col-span-8 flex flex-col gap-4">
+                    `;
+                    
+                    if(!state.activeAudio) {
+                        html += `
+                            <div class="glass-card p-12 rounded-3xl flex-1 flex flex-col items-center justify-center text-center border-dashed border-2">
+                                <div class="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-3xl text-slate-300 dark:text-slate-600 mb-4 shadow-inner"><i class="fa-solid fa-play"></i></div>
+                                <h3 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Aguardando Seleção</h3>
+                                <p class="text-sm text-slate-500 max-w-sm">Importe um arquivo de áudio no painel lateral ou selecione um existente para iniciar a calibragem com minutagem.</p>
+                            </div>
+                        `;
+                    } else {
+                        const totalComentarios = state.comments[state.activeAudio.id] ? state.comments[state.activeAudio.id].length : 0;
+                        
+                        html += `
+                                <!-- Player Moderno -->
+                                <div class="glass-card p-6 md:p-8 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 dark:from-slate-900 dark:to-black text-white shadow-xl relative overflow-hidden border-t-4 border-t-blue-500">
+                                    <div class="absolute -right-8 -top-8 text-9xl text-white/5 pointer-events-none"><i class="fa-solid fa-compact-disc fa-spin" style="animation-duration: 10s;"></i></div>
+                                    
+                                    <div class="flex items-center gap-4 mb-6 relative z-10">
+                                        <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.4)] shrink-0"><i class="fa-solid fa-headphones text-white text-xl"></i></div>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="text-[10px] text-blue-300 uppercase tracking-widest font-black mb-1 drop-shadow-md">Em Análise Simultânea</div>
+                                            <h3 class="font-bold text-lg truncate pr-4 text-white drop-shadow-sm">${state.activeAudio.name}</h3>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-center gap-5 relative z-10">
+                                        <button id="calib-play-btn" onclick="app.calibragemAudio.togglePlay()" class="w-14 h-14 rounded-full bg-white text-slate-900 hover:scale-105 transition-transform flex items-center justify-center text-xl shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0">
+                                            ${app.calibragemAudio.audioElement && !app.calibragemAudio.audioElement.paused ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play ml-1"></i>'}
+                                        </button>
+                                        
+                                        <div class="flex-1 flex flex-col justify-center">
+                                            <input type="range" id="calib-progress" min="0" max="100" value="0" step="0.1" oninput="app.calibragemAudio.seekAudio(this)" class="w-full h-2.5 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-blue-500 mb-2 backdrop-blur-sm border border-slate-600/50">
+                                            <div class="flex justify-between text-[11px] font-bold text-slate-400 font-mono tracking-wider">
+                                                <span id="calib-time-curr" class="text-blue-300">00:00</span>
+                                                <span id="calib-time-dur">00:00</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Input Inteligente de Feedback -->
+                                <div class="glass-card p-5 rounded-3xl shadow-sm border-l-4 border-l-green-500 bg-white dark:bg-dark-surface">
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><i class="fa-solid fa-quote-left text-green-500"></i> Fazer Apontamento na Minutagem Exata</label>
+                                    <div class="flex flex-col sm:flex-row gap-3">
+                                        <input type="text" id="calib-comment-input" placeholder="O que o operador falou neste exato instante do áudio?..." class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 outline-none text-sm dark:text-white transition-all shadow-inner" onkeydown="if(event.key === 'Enter') app.calibragemAudio.addComment()">
+                                        <button onclick="app.calibragemAudio.addComment()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 whitespace-nowrap"><i class="fa-solid fa-plus"></i> Gravar Momento</button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Minutagem e Exportação -->
+                                <div class="glass-card p-6 md:p-8 rounded-3xl flex-1 flex flex-col min-h-[350px]">
+                                    <div class="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                                        <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-list-check text-purple-500"></i> Cronologia (${totalComentarios})</h3>
+                                        <button onclick="app.calibragemAudio.exportSummary()" class="text-[11px] uppercase tracking-widest bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl shadow-sm transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Exportar Resumo (.txt)</button>
+                                    </div>
+                                    
+                                    <div id="calib-comments-list" class="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                                        <!-- Renderizado dinamicamente -->
+                                    </div>
+                                </div>
+                        `;
+                    }
+                    
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                    
+                    if(state.activeAudio) {
+                        app.calibragemAudio.renderComments();
+                        app.calibragemAudio.updatePlayerUI();
+                    }
+                }
+                
             }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
 
             admin: {
@@ -6129,7 +6264,232 @@
                     doc.save("Compliance_LGPD_Softmarketing.pdf");
                 }
             }
-        };
+        }, // Fim do bloco admin
+
+                // -----------------------------------------------------------------
+                // MOTOR DO LABORATÓRIO DE ÁUDIOS (CALIBRAGEM E MINUTAGEM)
+                // -----------------------------------------------------------------
+                calibragemAudio: {
+                    state: {
+                        audios: [],
+                        activeAudio: null,
+                        comments: {}
+                    },
+                    audioElement: null,
+                    
+                    initPlayer() {
+                        if(!this.audioElement) {
+                            this.audioElement = new Audio();
+                            this.audioElement.addEventListener('timeupdate', () => this.updatePlayerUI());
+                            this.audioElement.addEventListener('ended', () => {
+                                const playBtn = document.getElementById('calib-play-btn');
+                                if(playBtn) playBtn.innerHTML = '<i class="fa-solid fa-play ml-1"></i>';
+                            });
+                            this.audioElement.addEventListener('loadedmetadata', () => this.updatePlayerUI());
+                        }
+                    },
+                    
+                    importAudios(input) {
+                        const files = Array.from(input.files);
+                        if(files.length === 0) return;
+                        
+                        const remaining = 4 - this.state.audios.length;
+                        if(remaining <= 0) return app.ui.showAlert("Limite Atingido", "Você já importou o máximo de 4 áudios simultâneos para essa sessão. Remova algum para continuar.", "error");
+                        
+                        const toAdd = files.slice(0, remaining);
+                        toAdd.forEach(file => {
+                            const id = 'aud_' + Date.now() + Math.floor(Math.random() * 1000);
+                            this.state.audios.push({
+                                id: id,
+                                file: file,
+                                url: URL.createObjectURL(file), // Fica em memória rápido
+                                name: file.name
+                            });
+                            this.state.comments[id] = [];
+                        });
+                        
+                        if(!this.state.activeAudio && this.state.audios.length > 0) {
+                            this.selectAudio(this.state.audios[0].id);
+                        } else {
+                            app.ui.renderTab('calibragem_audio', true);
+                        }
+                    },
+                    
+                    removeAudio(id) {
+                        this.state.audios = this.state.audios.filter(a => a.id !== id);
+                        delete this.state.comments[id];
+                        if(this.state.activeAudio && this.state.activeAudio.id === id) {
+                            this.audioElement.pause();
+                            this.state.activeAudio = this.state.audios.length > 0 ? this.state.audios[0] : null;
+                            if(this.state.activeAudio) this.selectAudio(this.state.activeAudio.id);
+                        }
+                        app.ui.renderTab('calibragem_audio', true);
+                    },
+                    
+                    selectAudio(id) {
+                        this.initPlayer();
+                        const audio = this.state.audios.find(a => a.id === id);
+                        if(!audio) return;
+                        
+                        this.state.activeAudio = audio;
+                        this.audioElement.src = audio.url;
+                        this.audioElement.load();
+                        
+                        app.ui.renderTab('calibragem_audio', true);
+                    },
+                    
+                    togglePlay() {
+                        if(!this.state.activeAudio || !this.audioElement.src) return;
+                        const playBtn = document.getElementById('calib-play-btn');
+                        
+                        if(this.audioElement.paused) {
+                            this.audioElement.play();
+                            if(playBtn) playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                        } else {
+                            this.audioElement.pause();
+                            if(playBtn) playBtn.innerHTML = '<i class="fa-solid fa-play ml-1"></i>';
+                        }
+                    },
+                    
+                    seekAudio(slider) {
+                        if(!this.audioElement || !this.audioElement.src) return;
+                        const time = (slider.value / 100) * this.audioElement.duration;
+                        this.audioElement.currentTime = time;
+                    },
+                    
+                    updatePlayerUI() {
+                        if(!this.audioElement || isNaN(this.audioElement.duration)) return;
+                        
+                        const curr = this.audioElement.currentTime;
+                        const dur = this.audioElement.duration;
+                        
+                        const format = (t) => {
+                            const m = Math.floor(t / 60).toString().padStart(2, '0');
+                            const s = Math.floor(t % 60).toString().padStart(2, '0');
+                            return `${m}:${s}`;
+                        };
+                        
+                        const currEl = document.getElementById('calib-time-curr');
+                        const durEl = document.getElementById('calib-time-dur');
+                        const slider = document.getElementById('calib-progress');
+                        
+                        if(currEl) currEl.innerText = format(curr);
+                        if(durEl) durEl.innerText = format(dur);
+                        if(slider) slider.value = (curr / dur) * 100;
+                    },
+                    
+                    addComment() {
+                        if(!this.state.activeAudio) return;
+                        const input = document.getElementById('calib-comment-input');
+                        const text = input.value.trim();
+                        if(!text) return app.ui.showAlert("Aviso", "Anotação em branco! Digite a percepção ou erro que você ouviu antes de adicionar.", "info");
+                        
+                        const time = this.audioElement ? this.audioElement.currentTime : 0;
+                        const id = this.state.activeAudio.id;
+                        
+                        this.state.comments[id].push({
+                            id: 'c_' + Date.now(),
+                            time: time,
+                            text: text,
+                            author: app.currentUser ? app.currentUser.nome : 'Administração'
+                        });
+                        
+                        // Garante ordem cronológica
+                        this.state.comments[id].sort((a,b) => a.time - b.time);
+                        input.value = '';
+                        
+                        this.renderComments();
+                    },
+                    
+                    deleteComment(audioId, commentId) {
+                        if(this.state.comments[audioId]) {
+                            this.state.comments[audioId] = this.state.comments[audioId].filter(c => c.id !== commentId);
+                            this.renderComments();
+                        }
+                    },
+                    
+                    jumpToTime(time) {
+                        if(this.audioElement) {
+                            this.audioElement.currentTime = time;
+                            if(this.audioElement.paused) this.togglePlay();
+                        }
+                    },
+                    
+                    renderComments() {
+                        const container = document.getElementById('calib-comments-list');
+                        if(!container) return;
+                        
+                        if(!this.state.activeAudio) return;
+                        
+                        const comments = this.state.comments[this.state.activeAudio.id] || [];
+                        if(comments.length === 0) {
+                            container.innerHTML = '<div class="text-xs text-slate-400 text-center italic py-10 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">Você ainda não realizou marcações neste áudio.<br>Ouça com atenção e faça seus apontamentos acima.</div>';
+                            return;
+                        }
+                        
+                        const format = (t) => {
+                            const m = Math.floor(t / 60).toString().padStart(2, '0');
+                            const s = Math.floor(t % 60).toString().padStart(2, '0');
+                            return `${m}:${s}`;
+                        };
+                        
+                        let html = '';
+                        comments.forEach(c => {
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex gap-4 group relative hover:border-blue-300 transition-colors">
+                                    <button onclick="app.calibragemAudio.deleteComment('${this.state.activeAudio.id}', '${c.id}')" class="absolute top-3 right-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 rounded p-1" title="Apagar Comentário"><i class="fa-solid fa-trash text-xs"></i></button>
+                                    
+                                    <div onclick="app.calibragemAudio.jumpToTime(${c.time})" class="cursor-pointer bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800 font-bold px-3 py-1.5 rounded-lg text-xs h-fit hover:bg-blue-600 hover:text-white transition-colors shadow-sm flex flex-col items-center justify-center shrink-0 min-w-[60px]" title="Pular para este momento no áudio">
+                                        <i class="fa-solid fa-play text-[10px] mb-1 opacity-70"></i>
+                                        <span>${format(c.time)}</span>
+                                    </div>
+                                    
+                                    <div class="flex-1 pr-6 border-l border-slate-100 dark:border-slate-700 pl-4">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-user text-[9px] text-blue-400"></i> ${c.author}</div>
+                                        <div class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed">${c.text}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        container.innerHTML = html;
+                    },
+                    
+                    exportSummary() {
+                        if(!this.state.activeAudio) return app.ui.showAlert("Erro", "Você precisa de um áudio selecionado para gerar a pauta.", "error");
+                        const comments = this.state.comments[this.state.activeAudio.id] || [];
+                        if(comments.length === 0) return app.ui.showAlert("Aviso", "Não há marcações de tempo para serem exportadas neste áudio.", "error");
+                        
+                        let txt = `=======================================================\n`;
+                        txt += `         RESUMO DE CALIBRAGEM (MINUTAGEM)              \n`;
+                        txt += `=======================================================\n\n`;
+                        txt += `Áudio Analisado: ${this.state.activeAudio.name}\n`;
+                        txt += `Data da Extração: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}\n`;
+                        txt += `Total de Oportunidades: ${comments.length}\n\n`;
+                        txt += `-------------------------------------------------------\n\n`;
+                        
+                        const format = (t) => {
+                            const m = Math.floor(t / 60).toString().padStart(2, '0');
+                            const s = Math.floor(t % 60).toString().padStart(2, '0');
+                            return `${m}:${s}`;
+                        };
+                        
+                        comments.forEach(c => {
+                            txt += `[${format(c.time)}] | Auditor: ${c.author}\n`;
+                            txt += `Apontamento: "${c.text}"\n\n`;
+                        });
+                        
+                        txt += `-------------------------------------------------------\nGerado automaticamente via Portal de Resultados`;
+                        
+                        const blob = new Blob(['\ufeff', txt], { type: 'text/plain;charset=utf-8' });
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.download = `Calibragem_Minutagem_${this.state.activeAudio.name.replace(/\.[^/.]+$/, "")}.txt`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }
+                }
+            };
 
         // Boot
         document.addEventListener('DOMContentLoaded', () => { app.ui.init(); });
