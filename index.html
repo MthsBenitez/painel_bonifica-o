@@ -4901,29 +4901,49 @@
                             </div>
                         </div>
 
-                        <!-- Projeção Mensal -->
+                        <!-- Projeção Mensal com Barra Animada -->
                         <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-blue-500 shadow-sm">
                             <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
                                 <i class="fa-solid fa-chart-line text-blue-500"></i> Ritmo e Projeção Mês
                             </h3>
-                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                <div>
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Volume Atual Validado</div>
-                                    <div class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white">${myData.total} <span class="text-sm md:text-lg font-medium text-slate-500">/ ${meta}</span></div>
+                            <div class="flex flex-col md:flex-row justify-between items-start gap-8">
+                                <div class="w-full md:w-3/5">
+                                    <div class="flex justify-between items-end mb-2">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Volume Validado</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white leading-none">${myData.total} <span class="text-sm font-medium text-slate-500">/ ${meta}</span></div>
+                                    </div>
+                                    
+                                    <!-- A BARRA MÁGICA -->
+                                    <div class="w-full h-4 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner relative mt-2">
+                                        <div id="anim-prog-bar-${userMatricula}" class="h-full bg-gradient-to-r from-blue-400 via-blue-500 to-green-500 rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_15px_rgba(59,130,246,0.6)] spark-bar-fill" style="width: 0%;"></div>
+                                    </div>
+                                    <div class="text-right mt-1.5 text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest" id="anim-prog-text-${userMatricula}">0% Concluído</div>
                                 </div>
-                                <div class="text-left md:text-right">
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Projeção Estimada Final</div>
-                                    <div class="text-3xl md:text-4xl font-black ${projColor}">${projecao} <span class="text-sm md:text-lg font-medium text-slate-500">/ ${meta}</span></div>
+                                
+                                <div class="w-full md:w-2/5 md:text-right border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-700 pt-4 md:pt-0 md:pl-8">
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Projeção Final Estimada</div>
+                                    <div class="text-4xl font-black ${projColor} drop-shadow-sm">${projecao} <span class="text-lg font-medium text-slate-500">/ ${meta}</span></div>
                                 </div>
                             </div>
-                            <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 flex justify-between">
-                                <span>Dias Úteis do Mês: <strong>${wd.total}</strong></span>
-                                <span>Dias Corridos: <strong>${wd.passed}</strong></span>
+                            <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 flex justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                                <span>Dias Úteis no Mês: <strong class="text-slate-700 dark:text-slate-300">${wd.total}</strong></span>
+                                <span>Dias Corridos: <strong class="text-slate-700 dark:text-slate-300">${wd.passed}</strong></span>
                             </div>
                         </div>
                     `;
                     
                     container.innerHTML = html;
+                    
+                    // Injeção da Animação após renderizar na tela
+                    setTimeout(() => {
+                        const bar = document.getElementById(`anim-prog-bar-${userMatricula}`);
+                        const text = document.getElementById(`anim-prog-text-${userMatricula}`);
+                        if(bar) {
+                            const perc = Math.min(100, (myData.total / meta) * 100).toFixed(1);
+                            bar.style.width = perc + '%';
+                            if(text) text.innerText = perc + '% Concluído';
+                        }
+                    }, 150);
                 },
                 
                renderView_AnaliseCSV(container) {
@@ -5089,75 +5109,148 @@
             admin: {
 
                 processarPlanilhaMonitoria(input) {
-            const file = input.files[0];
-            if (!file) return;
-
-            app.ui.showAlert("Processando...", "Iniciando a leitura inteligente do arquivo da Qualidade. Aguarde...", "info");
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    // O SheetJS (XLSX) interpreta automaticamente CSV e Excel
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[firstSheetName];
-                    const json = XLSX.utils.sheet_to_json(worksheet);
-
-                    let contagem = {};
-                    
-                    json.forEach(row => {
-                        // Padroniza as colunas para evitar erros de digitação na planilha
-                        const normRow = {};
-                        for(let k in row) normRow[k.trim().toLowerCase()] = row[k];
-
-                        // Procura quem é o dono da monitoria (tenta várias nomenclaturas comuns)
-                        let nomeOriginal = normRow['avaliador'] || normRow['monitor'] || normRow['nome'] || normRow['operador'] || normRow['criado por'];
-                        if(!nomeOriginal) return; // Pula a linha se não achar o responsável
-
-                        // Ajusta acentuação e padroniza
-                        let nome = app.utils.fixEncoding(nomeOriginal.trim().toUpperCase());
-                        let status = (normRow['status'] || '').toString().toLowerCase();
-                        let pendenteFb = status.includes('pendente') || status.includes('aguardando') || status.includes('não lido');
-
-                        if(!contagem[nome]) {
-                            contagem[nome] = { nome: nomeOriginal.trim().toUpperCase(), total: 0, falta: 0, pendenteFeedback: 0 };
+                    const file = input.files[0];
+                    if (!file) return;
+            
+                    app.ui.showAlert("Processando...", "Lendo a planilha e aplicando as regras de negócio. Aguarde...", "info");
+            
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            
+                            if (jsonData.length === 0) {
+                                return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
+                            }
+            
+                            // 1. Identificar o período através da coluna DATA MONITORIA
+                            let periodoAnalisado = "Período Indefinido";
+                            for (let i = 0; i < jsonData.length; i++) {
+                                if (jsonData[i]['DATA MONITORIA']) {
+                                    periodoAnalisado = jsonData[i]['DATA MONITORIA'];
+                                    break;
+                                }
+                            }
+            
+                            // 2. Criar um mapa inicial apenas com os usuários CADASTRADOS no sistema
+                            let mapUsuarios = {};
+                            app.users.forEach(u => {
+                                mapUsuarios[u.matricula] = {
+                                    nome: u.nome,
+                                    matricula: u.matricula,
+                                    total: 0,
+                                    falta: 400,
+                                    pendenteFeedback: 0,
+                                    totalAbaixo85: 0,
+                                    feedbacksAplicados: 0,
+                                    operacao: 'N/A' // <-- CORREÇÃO: Garante que o campo exista desde o começo
+                                };
+                            });
+            
+                            // 3. Processar cada linha da planilha
+                            jsonData.forEach(row => {
+                                const monitorSup = row['MONITOR|SUPERVISOR'] || row['NOME'] || row['AVALIADOR'];
+                                if (!monitorSup) return;
+            
+                                const monitorSupStr = String(monitorSup).trim();
+                                const parts = monitorSupStr.split('-');
+                                let matricula = parts[0].trim();
+                                
+                                // INÍCIO DO FILTRO DE VÍNCULO (DE/PARA)
+                                const keyAliasCompleta = monitorSupStr.toUpperCase();
+                                const keyAliasParte = matricula.toUpperCase();
+                                
+                                if (app.config && app.config.aliases) {
+                                    if (app.config.aliases[keyAliasCompleta]) {
+                                        matricula = app.config.aliases[keyAliasCompleta];
+                                    } else if (app.config.aliases[keyAliasParte]) {
+                                        matricula = app.config.aliases[keyAliasParte];
+                                    }
+                                }
+                                
+                                // Correção extra: Se a matrícula não bater, tenta achar a pessoa pelo NOME EXATO
+                                if (!mapUsuarios[matricula]) {
+                                    let userPorNome = app.users.find(u => u.nome.toUpperCase() === monitorSupStr.toUpperCase());
+                                    if (userPorNome) matricula = userPorNome.matricula;
+                                }
+            
+                                // Se ainda assim não estiver no sistema, pula a linha
+                                if (!mapUsuarios[matricula]) return;
+            
+                                const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
+                                const operacao = String(row['OPERACAO'] || '').toUpperCase();
+            
+                                // CORREÇÃO: Salva o nome da operação para não aparecer "N/A" na tela
+                                if(operacao && mapUsuarios[matricula].operacao === 'N/A') {
+                                    mapUsuarios[matricula].operacao = operacao;
+                                }
+            
+                                // Regra de Exceção: Formulários Neutros
+                                const isNeutro = titulo.includes('neutro') || 
+                                                 operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
+                                                 operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS') ||
+                                                 operacao.includes('FORMULÁRIOS NEUTROS');
+            
+                                // Contabiliza SEMPRE na META (Total de Monitorias)
+                                mapUsuarios[matricula].total += 1;
+                                mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
+            
+                                // Se NÃO for formulário neutro, aplica regras de Feedback pendente
+                                if (!isNeutro) {
+                                    let notaRaw = row['NOTA MONITORIA'];
+                                    if (notaRaw === undefined || notaRaw === null) {
+                                        notaRaw = row['RESULTADO'] || row['RESULTADO FINAL'] || 100;
+                                    }
+                                    
+                                    if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
+                                    let nota = parseFloat(notaRaw);
+            
+                                    let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
+            
+                                    if (!isNaN(nota) && nota < 85) {
+                                        mapUsuarios[matricula].totalAbaixo85 += 1;
+                                        
+                                        if (statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado')) {
+                                            mapUsuarios[matricula].feedbacksAplicados += 1;
+                                        } else {
+                                            mapUsuarios[matricula].pendenteFeedback += 1;
+                                        }
+                                    }
+                                }
+                            });
+            
+                            // Converte o mapa para array e ordena do MAIOR para o MENOR
+                            const novoRanking = Object.values(mapUsuarios)
+                                .filter(u => u.total > 0)
+                                .sort((a, b) => b.total - a.total);
+            
+                            app.monitoriasData = {
+                                periodo: periodoAnalisado,
+                                ranking: novoRanking,
+                                ultimaAtualizacao: Date.now()
+                            };
+            
+                            app.storage.saveMonitorias().then(() => {
+                                document.getElementById('global-modal').classList.add('hidden');
+                                app.ui.showAlert("Importação Concluída", `Planilha lida com sucesso!<br><br><strong>Período Identificado:</strong> ${periodoAnalisado}<br><strong>Monitores Validados:</strong> ${novoRanking.length}`, "success");
+                                app.ui.renderTab('import_monitorias', true); 
+                            }).catch(err => {
+                                console.error("Erro ao salvar no Firebase:", err);
+                                app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar no servidor.", "error");
+                            });
+            
+                        } catch (err) {
+                            console.error("Erro ao processar planilha:", err);
+                            app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente. Verifique o formato.", "error");
                         }
-                        
-                        contagem[nome].total += 1;
-                        if(pendenteFb) contagem[nome].pendenteFeedback += 1;
-                    });
-
-                    let ranking = [];
-                    const metaFixa = 400; // Meta padrão obrigatória de monitorias
-
-                    Object.values(contagem).forEach(c => {
-                        // Tenta vincular o nome da planilha com o nome bonito do usuário no sistema
-                        let userReal = app.users.find(u => u.nome.toUpperCase() === c.nome || (u.aliases && u.aliases.includes(c.nome)));
-                        if(userReal) c.nome = userReal.nome;
-
-                        c.falta = metaFixa - c.total;
-                        if(c.falta < 0) c.falta = 0; // Teto zerado se bateu a meta
-                        ranking.push(c);
-                    });
-
-                    // Ordena do maior para o menor (Ranking)
-                    ranking.sort((a,b) => b.total - a.total);
-
-                    // Salva as métricas processadas no banco de dados
-                    app.monitoriasData = { ranking: ranking, lastUpdate: Date.now() };
-                    app.storage.saveMonitorias().then(() => {
-                        app.ui.showAlert("Sucesso!", "Planilha CSV processada e indicadores da equipe atualizados com sucesso.", "success");
-                        app.ui.renderTab('import_monitorias', true);
-                    });
-
-                } catch (err) {
-                    console.error("Erro na leitura estrutural do CSV:", err);
-                    app.ui.showAlert("Erro de Leitura", "O arquivo enviado não possui o formato esperado ou está corrompido. Verifique o arquivo e tente novamente.", "error");
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        },
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                },
 
                 openAliasModal() {
                         const sel = document.getElementById('alias-correct-user');
