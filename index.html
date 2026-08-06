@@ -2239,21 +2239,36 @@
             ui: {
                 currentActionFilter: 'pendente',
                 
-                // --- LISTA MESTRE DE ABAS DO USUÁRIO E LÓGICA DE SELEÇÃO ---
-                availableUserTabs: [
-                    { id: 'campanha_mes', label: 'Campanha Trimestre' },
-                    { id: 'meu_painel', label: 'Meus Resultados' },
-                    { id: 'ranking_monitorias', label: 'Minhas Monitorias' },
-                    { id: 'perfil', label: 'Meu Perfil' },
-                    { id: 'calendario', label: 'Meu Calendário' },
-                    { id: 'registrar_acao', label: 'Registrar Ação' },
-                    { id: 'ata_reuniao', label: 'Nova Ata' },
-                    { id: 'minhas_atas', label: 'Minhas Atas' },
-                    { id: 'regras', label: 'Regras' },
-                    { id: 'calculadora', label: 'Simulador' },
-                    { id: 'calc_monitorias', label: 'Calc. OP' },
-                    { id: 'legal', label: 'LGPD' }
+                // Estrutura centralizada dos menus para automatização de abas
+                menusUser: [
+                    { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, 
+                    { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
+                    { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
+                    { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                 ],
+                menusAdmin: [
+                    { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}, {id:'analise_csv', label:'Dash Analítico CSV'}] },
+                    { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
+                    { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, 
+                    { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'calibragem_audio', label:'Calibragem Áudio'}] },
+                    { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                ],
+
+                // Função que extrai automaticamente todas as abas do sistema
+                getAllSystemTabs() {
+                    const tabsMap = new Map();
+                    // 1. As abas do usuário normal entram ativadas por padrão
+                    this.menusUser.forEach(m => m.items.forEach(i => {
+                        tabsMap.set(i.id, { id: i.id, label: i.label, isDefault: true });
+                    }));
+                    // 2. Abas de ADM (ou qualquer aba nova adicionada no código futuro) entram desativadas por padrão
+                    this.menusAdmin.forEach(m => m.items.forEach(i => {
+                        if(!tabsMap.has(i.id)) {
+                            tabsMap.set(i.id, { id: i.id, label: i.label + ' (ADM)', isDefault: false });
+                        }
+                    }));
+                    return Array.from(tabsMap.values());
+                },
 
                 toggleAllTabs(className) {
                     const checkboxes = document.querySelectorAll('.' + className);
@@ -2288,10 +2303,10 @@
                     
                     const containerAbas = document.getElementById('cad-abas-container');
                     if(containerAbas) {
-                        containerAbas.innerHTML = this.availableUserTabs.map(tab => `
+                        containerAbas.innerHTML = this.getAllSystemTabs().map(tab => `
                             <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors">
-                                <input type="checkbox" value="${tab.id}" class="cad-aba-check w-4 h-4 accent-blue-600" checked> 
-                                <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span>
+                                <input type="checkbox" value="${tab.id}" class="cad-aba-check w-4 h-4 accent-blue-600" ${tab.isDefault ? 'checked' : ''}> 
+                                <span class="text-[11px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-300' : 'text-purple-600 dark:text-purple-400'} uppercase">${tab.label}</span>
                             </label>
                         `).join('');
                     }
@@ -2488,35 +2503,40 @@
 
                 renderNav() {
                     const nav = document.getElementById('main-nav');
-                    const menus = app.isAdmin 
-                        ? [
-                            { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}, {id:'analise_csv', label:'Dash Analítico CSV'}] },
-                            { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
-                            { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, 
-                            { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'calibragem_audio', label:'Calibragem Áudio'}] },
-                            { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
-                        ] : [
-                            { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, 
-                            { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
-                            { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
-                            { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
-                        ];
-
-                    // --- FILTRO DE PERMISSÕES DE ABAS ---
-                    if (!app.isAdmin && app.currentUser) {
-                        const userAbas = app.currentUser.abasLiberadas;
-                        // Se for undefined (usuário antigo), libera tudo por padrão. Se for array, filtra.
-                        if (Array.isArray(userAbas)) {
+                    
+                    let menus = [];
+                    if (app.isAdmin) {
+                        menus = JSON.parse(JSON.stringify(this.menusAdmin));
+                    } else {
+                        // Copia a base de menus do usuário
+                        menus = JSON.parse(JSON.stringify(this.menusUser));
+                        
+                        if (app.currentUser && Array.isArray(app.currentUser.abasLiberadas)) {
+                            const userAbas = app.currentUser.abasLiberadas;
+                            
+                            // 1. Filtra as abas normais do usuário
                             menus.forEach(m => {
                                 m.items = m.items.filter(item => userAbas.includes(item.id));
                             });
-                            // Remove grupos que ficaram vazios após o filtro
-                            for (let i = menus.length - 1; i >= 0; i--) {
-                                if (menus[i].items.length === 0) menus.splice(i, 1);
+                            
+                            // 2. Verifica se o usuário recebeu permissão para abas de ADMIN (Ferramentas Extras)
+                            let adminExtras = [];
+                            this.menusAdmin.forEach(m => m.items.forEach(i => {
+                                const existsInUser = this.menusUser.some(mu => mu.items.some(iu => iu.id === i.id));
+                                if (!existsInUser && userAbas.includes(i.id)) {
+                                    adminExtras.push(i);
+                                }
+                            }));
+                            
+                            // 3. Se houver abas de adm liberadas, adiciona em um menu especial e destacado
+                            if (adminExtras.length > 0) {
+                                menus.push({ group: '🔑 Ferramentas Extras', icon: 'fa-unlock-keyhole', items: adminExtras });
                             }
+                            
+                            // Limpa grupos vazios do menu
+                            menus = menus.filter(m => m.items.length > 0);
                         }
                     }
-                    // ------------------------------------
 
                     let html = '<div class="flex flex-col w-full gap-2">';
                     
@@ -5870,8 +5890,14 @@
                     }).join('');
 
                     const containerAbas = document.getElementById('edit-abas-container');
-                    // Compatibilidade: Se não existir abasLiberadas, marca tudo (usuário legado)
-                    const userAbas = u.abasLiberadas || app.ui.availableUserTabs.map(t => t.id);
+                    const allTabs = app.ui.getAllSystemTabs();
+                    // Compatibilidade: Usuário legado recebe apenas as abas padrão (isDefault = true) ativadas
+                    const userAbas = u.abasLiberadas || allTabs.filter(t => t.isDefault).map(t => t.id);
+                    
+                    containerAbas.innerHTML = allTabs.map(tab => {
+                        const checked = userAbas.includes(tab.id) ? 'checked' : '';
+                        return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors"><input type="checkbox" value="${tab.id}" class="edit-aba-check w-4 h-4 accent-blue-600" ${checked}> <span class="text-[11px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-300' : 'text-purple-600 dark:text-purple-400'} uppercase">${tab.label}</span></label>`;
+                    }).join('');
                     
                     containerAbas.innerHTML = app.ui.availableUserTabs.map(tab => {
                         const checked = userAbas.includes(tab.id) ? 'checked' : '';
