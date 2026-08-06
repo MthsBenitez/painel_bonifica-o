@@ -279,6 +279,16 @@
                     <div id="cad-ops-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
                         <!-- Injetado dinamicamente -->
                     </div>
+                    <!-- NOVA ÁREA: Permissão de Abas -->
+                <div>
+                    <div class="flex justify-between items-center mb-1.5">
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase">Acesso às Abas</label>
+                        <button type="button" onclick="app.ui.toggleAllTabs('cad-aba-check')" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Tudo</button>
+                    </div>
+                    <div id="cad-abas-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                        <!-- Injetado dinamicamente -->
+                    </div>
+                </div>
                 </div>
             </div>
             <div class="flex justify-end gap-3 mt-6">
@@ -312,6 +322,16 @@
                     <div id="edit-ops-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
                         <!-- Injetado dinamicamente -->
                     </div>
+                    <!-- NOVA ÁREA: Permissão de Abas -->
+                <div>
+                    <div class="flex justify-between items-center mb-1.5">
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase">Acesso às Abas</label>
+                        <button type="button" onclick="app.ui.toggleAllTabs('edit-aba-check')" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Tudo</button>
+                    </div>
+                    <div id="edit-abas-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                        <!-- Injetado dinamicamente -->
+                    </div>
+                </div>
                 </div>
             </div>
             <div class="flex justify-end gap-3 mt-6">
@@ -2218,6 +2238,29 @@
 
             ui: {
                 currentActionFilter: 'pendente',
+                
+                // --- LISTA MESTRE DE ABAS DO USUÁRIO E LÓGICA DE SELEÇÃO ---
+                availableUserTabs: [
+                    { id: 'campanha_mes', label: 'Campanha Trimestre' },
+                    { id: 'meu_painel', label: 'Meus Resultados' },
+                    { id: 'ranking_monitorias', label: 'Minhas Monitorias' },
+                    { id: 'perfil', label: 'Meu Perfil' },
+                    { id: 'calendario', label: 'Meu Calendário' },
+                    { id: 'registrar_acao', label: 'Registrar Ação' },
+                    { id: 'ata_reuniao', label: 'Nova Ata' },
+                    { id: 'minhas_atas', label: 'Minhas Atas' },
+                    { id: 'regras', label: 'Regras' },
+                    { id: 'calculadora', label: 'Simulador' },
+                    { id: 'calc_monitorias', label: 'Calc. OP' },
+                    { id: 'legal', label: 'LGPD' }
+                ],
+
+                toggleAllTabs(className) {
+                    const checkboxes = document.querySelectorAll('.' + className);
+                    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                    checkboxes.forEach(cb => cb.checked = !allChecked);
+                },
+                // ------------------------------------------------------------
                 valuesHidden: false,
                 timerInterval: null,
                 toggleFinanceVisibility() {
@@ -2233,15 +2276,26 @@
                 },
 
                 openAddUserModal() { 
-                    const container = document.getElementById('cad-ops-container');
-                    if(container) {
-                        container.innerHTML = Object.values(app.operacoesList).map(op => `
+                    const containerOps = document.getElementById('cad-ops-container');
+                    if(containerOps) {
+                        containerOps.innerHTML = Object.values(app.operacoesList).map(op => `
                             <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors">
                                 <input type="checkbox" value="${op.nome}" class="cad-op-check w-4 h-4 accent-green-600"> 
                                 <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${op.nome}</span>
                             </label>
                         `).join('');
                     }
+                    
+                    const containerAbas = document.getElementById('cad-abas-container');
+                    if(containerAbas) {
+                        containerAbas.innerHTML = this.availableUserTabs.map(tab => `
+                            <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors">
+                                <input type="checkbox" value="${tab.id}" class="cad-aba-check w-4 h-4 accent-blue-600" checked> 
+                                <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span>
+                            </label>
+                        `).join('');
+                    }
+
                     document.getElementById('cad-foto').value = '';
                     document.getElementById('add-user-modal').classList.remove('hidden'); 
                 },
@@ -2447,6 +2501,22 @@
                             { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
                             { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ];
+
+                    // --- FILTRO DE PERMISSÕES DE ABAS ---
+                    if (!app.isAdmin && app.currentUser) {
+                        const userAbas = app.currentUser.abasLiberadas;
+                        // Se for undefined (usuário antigo), libera tudo por padrão. Se for array, filtra.
+                        if (Array.isArray(userAbas)) {
+                            menus.forEach(m => {
+                                m.items = m.items.filter(item => userAbas.includes(item.id));
+                            });
+                            // Remove grupos que ficaram vazios após o filtro
+                            for (let i = menus.length - 1; i >= 0; i--) {
+                                if (menus[i].items.length === 0) menus.splice(i, 1);
+                            }
+                        }
+                    }
+                    // ------------------------------------
 
                     let html = '<div class="flex flex-col w-full gap-2">';
                     
@@ -5756,12 +5826,14 @@
                     
                     const checkboxes = document.querySelectorAll('.cad-op-check:checked');
                     const operacoes = Array.from(checkboxes).map(cb => cb.value);
+                    const abasCheckboxes = document.querySelectorAll('.cad-aba-check:checked');
+                    const abasLiberadas = Array.from(abasCheckboxes).map(cb => cb.value);
 
                     if(!nome || !mat || !pwd) return app.ui.showAlert("Aviso", "Preencha Nome, Matrícula e Senha", "error");
                     if(app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
 
                     const saveFinal = (fotoBase64) => {
-                        app.users.push({ nome, matricula: mat, senha: pwd, foto: fotoBase64, operacoes, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        app.users.push({ nome, matricula: mat, senha: pwd, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
                         app.storage.saveUsers().then(() => {
                             app.ui.closeAddUserModal();
                             app.ui.renderTab('gestao_equipe', true);
@@ -5791,10 +5863,19 @@
                     
                     document.getElementById('edit-foto').value = '';
 
-                    const container = document.getElementById('edit-ops-container');
-                    container.innerHTML = Object.values(app.operacoesList).map(op => {
+                    const containerOps = document.getElementById('edit-ops-container');
+                    containerOps.innerHTML = Object.values(app.operacoesList).map(op => {
                         const checked = (u.operacoes || []).includes(op.nome) ? 'checked' : '';
                         return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors"><input type="checkbox" value="${op.nome}" class="edit-op-check w-4 h-4 accent-purple-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${op.nome}</span></label>`;
+                    }).join('');
+
+                    const containerAbas = document.getElementById('edit-abas-container');
+                    // Compatibilidade: Se não existir abasLiberadas, marca tudo (usuário legado)
+                    const userAbas = u.abasLiberadas || app.ui.availableUserTabs.map(t => t.id);
+                    
+                    containerAbas.innerHTML = app.ui.availableUserTabs.map(tab => {
+                        const checked = userAbas.includes(tab.id) ? 'checked' : '';
+                        return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors"><input type="checkbox" value="${tab.id}" class="edit-aba-check w-4 h-4 accent-blue-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span></label>`;
                     }).join('');
 
                     document.getElementById('edit-user-modal').classList.remove('hidden');
@@ -5809,6 +5890,8 @@
                     
                     const checkboxes = document.querySelectorAll('.edit-op-check:checked');
                     const operacoes = Array.from(checkboxes).map(cb => cb.value);
+                    const abasCheckboxes = document.querySelectorAll('.edit-aba-check:checked');
+                    const abasLiberadas = Array.from(abasCheckboxes).map(cb => cb.value);
 
                     if(!nome || !mat) return app.ui.showAlert("Aviso", "Nome e Matrícula são obrigatórios", "error");
 
@@ -5821,6 +5904,7 @@
                         app.users[idx].nome = nome;
                         app.users[idx].matricula = mat;
                         app.users[idx].operacoes = operacoes;
+                        app.users[idx].abasLiberadas = abasLiberadas; // <-- Nova linha
                         if(pwd) app.users[idx].senha = pwd;
                         if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
 
