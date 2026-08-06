@@ -2438,11 +2438,11 @@
                         ? [
                             { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}, {id:'analise_csv', label:'Dash Analítico CSV'}] },
                             { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
-                            { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, // NOVA ABA ADM
+                            { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, 
                             { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                             { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                         ] : [
-                            { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, // NOVA ABA USUÁRIO
+                            { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, 
                             { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
                             { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
                             { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
@@ -2450,7 +2450,6 @@
 
                     let html = '<div class="flex flex-col w-full gap-2">';
                     
-                    // 1. Renderiza a barra principal de grupos
                     html += '<div class="flex gap-2 pb-1 overflow-x-auto no-scrollbar w-full">';
                     let activeGroup = null;
                     
@@ -2462,12 +2461,10 @@
                             ? 'bg-white dark:bg-dark-surface text-green-600 dark:text-green-400 border-t-2 border-green-600 shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)] rounded-t-xl' 
                             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-t-2 border-transparent rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800';
                         
-                        // Injeção da Dopamina visual no Menu
                         if(m.group.includes('Destaque')) {
                             btnClass = isActiveGroup ? 'tab-campanha-glow rounded-t-xl' : 'text-orange-500 hover:text-orange-600 font-black border-t-2 border-transparent rounded-xl hover:bg-orange-50 dark:hover:bg-orange-900/20';
                         }
                             
-                        // Ao clicar no grupo, renderiza a primeira aba desse grupo por padrão
                         html += `
                             <button type="button" onclick="app.ui.renderTab('${m.items[0].id}', true)" class="px-5 py-3 font-semibold text-sm transition-all flex items-center gap-2 whitespace-nowrap ${btnClass}">
                                 <i class="fa-solid ${m.icon}"></i> ${m.group}
@@ -2476,7 +2473,6 @@
                     });
                     html += '</div>';
 
-                    // 2. Se houver um grupo ativo, renderiza as sub-abas embaixo dele em uma linha menor
                     if (activeGroup && activeGroup.items.length > 1) {
                         html += `
                         <div class="px-4 pb-3 w-full border-b border-slate-200 dark:border-slate-800">
@@ -2486,7 +2482,6 @@
                         activeGroup.items.forEach(sub => {
                             const isSubActive = app.currentTab === sub.id;
                             
-                            // Novo Design Moderno (Segmented Control)
                             const subClass = isSubActive 
                                 ? 'bg-white dark:bg-slate-700 text-green-600 dark:text-green-400 shadow-sm border border-slate-200/50 dark:border-slate-600 scale-100' 
                                 : 'text-slate-500 dark:text-slate-400 border border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-700/50 hover:text-slate-700 dark:hover:text-slate-200 scale-95 hover:scale-100';
@@ -2504,6 +2499,9 @@
                     } else {
                         html += '<div class="w-full border-b border-slate-200 dark:border-slate-800 pb-3"></div>';
                     }
+
+                    // CORREÇÃO: O HTML agora é injetado na tela e a função fechada corretamente com a chave e vírgula!
+                    nav.innerHTML = html;
                 },
 
                 refreshCurrentView() {
