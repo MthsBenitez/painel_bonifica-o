@@ -5176,7 +5176,7 @@
                     
                     let html = `
                         <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laboratório de Calibragem <span class="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full ml-2 align-middle border border-blue-200">BETA</span></h2>
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laboratório de Calibração <span class="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full ml-2 align-middle border border-blue-200">BETA</span></h2>
                             <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Importe até 4 áudios e realize a marcação de comentários exatos por minutagem na linha do tempo.</p>
                         </div>
                         
@@ -5186,10 +5186,10 @@
                                 <div class="glass-card p-5 rounded-3xl">
                                     <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-folder-open text-blue-500"></i> Repositório (${state.audios.length}/4)</h3>
                                     
-                                    <label class="w-full flex flex-col items-center justify-center p-5 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors mb-4 ${state.audios.length >= 4 ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}">
-                                        <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 mb-2"></i>
-                                        <span class="text-xs font-bold text-slate-600 dark:text-slate-400 text-center">Importar Áudio Local<br><span class="font-normal text-[10px]">(MP3 ou WAV)</span></span>
-                                        <input type="file" accept="audio/*" class="hidden" onchange="app.calibragemAudio.importAudios(this)" multiple>
+                                    <label id="drop-zone" class="w-full flex flex-col items-center justify-center p-5 border-2 border-dashed border-blue-300 dark:border-blue-600 bg-blue-50/30 dark:bg-blue-900/10 rounded-2xl cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all mb-4 ${state.audios.length >= 4 ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}">
+                                        <i class="fa-solid fa-cloud-arrow-up text-4xl text-blue-400 mb-2 drop-shadow-sm"></i>
+                                        <span class="text-xs font-bold text-slate-600 dark:text-slate-400 text-center">Arraste os áudios aqui ou clique<br><span class="font-normal text-[10px]">(MP3, WAV ou OGG)</span></span>
+                                        <input type="file" id="file-input-calib" accept="audio/*" class="hidden" onchange="app.calibragemAudio.importAudios(this)" multiple>
                                     </label>
                                     
                                     <div class="space-y-2">
@@ -5204,15 +5204,18 @@
                             const iconColor = isActive ? 'text-blue-600' : 'text-slate-400';
                             
                             html += `
-                                <div class="p-3 rounded-xl border ${borderClass} flex justify-between items-center cursor-pointer transition-colors shadow-sm" onclick="app.calibragemAudio.selectAudio('${a.id}')">
-                                    <div class="flex items-center gap-3 overflow-hidden">
+                                <div class="p-3 rounded-xl border ${borderClass} flex justify-between items-center cursor-pointer transition-colors shadow-sm group">
+                                    <div class="flex items-center gap-3 overflow-hidden flex-1" onclick="app.calibragemAudio.selectAudio('${a.id}')">
                                         <div class="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm shrink-0 ${iconColor}"><i class="fa-solid ${isActive ? 'fa-headphones' : 'fa-music'}"></i></div>
-                                        <div class="truncate">
+                                        <div class="truncate flex-1">
                                             <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate pr-2" title="${a.name}">${a.name}</div>
                                             <div class="text-[9px] text-slate-500 uppercase font-bold tracking-widest mt-0.5">Fila ${idx + 1}</div>
                                         </div>
                                     </div>
-                                    <button onclick="event.stopPropagation(); app.calibragemAudio.removeAudio('${a.id}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors shrink-0" title="Apagar Áudio"><i class="fa-solid fa-trash-can"></i></button>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <button onclick="event.stopPropagation(); app.calibragemAudio.renameAudioPrompt('${a.id}')" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-0 group-hover:opacity-100" title="Renomear Áudio"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                                        <button onclick="event.stopPropagation(); app.calibragemAudio.removeAudio('${a.id}')" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Apagar Áudio"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
+                                    </div>
                                 </div>
                             `;
                         });
@@ -5232,47 +5235,62 @@
                             <div class="glass-card p-12 rounded-3xl flex-1 flex flex-col items-center justify-center text-center border-dashed border-2">
                                 <div class="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-3xl text-slate-300 dark:text-slate-600 mb-4 shadow-inner"><i class="fa-solid fa-play"></i></div>
                                 <h3 class="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Aguardando Seleção</h3>
-                                <p class="text-sm text-slate-500 max-w-sm">Importe um arquivo de áudio no painel lateral ou selecione um existente para iniciar a calibragem com minutagem.</p>
+                                <p class="text-sm text-slate-500 max-w-sm">Importe um arquivo de áudio no painel lateral ou selecione um existente para iniciar a calibração com minutagem.</p>
                             </div>
                         `;
                     } else {
                         const totalComentarios = state.comments[state.activeAudio.id] ? state.comments[state.activeAudio.id].length : 0;
                         
                         html += `
-                                <!-- Player Moderno -->
-                                <div class="glass-card p-6 md:p-8 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 dark:from-slate-900 dark:to-black text-white shadow-xl relative overflow-hidden border-t-4 border-t-blue-500">
-                                    <div class="absolute -right-8 -top-8 text-9xl text-white/5 pointer-events-none"><i class="fa-solid fa-compact-disc fa-spin" style="animation-duration: 10s;"></i></div>
+                                <!-- Player Moderno Glassmorphism Dark com Glow Interativo -->
+                                <div id="glass-player" class="p-6 md:p-8 rounded-3xl shadow-[0_15px_30px_-5px_rgba(0,0,0,0.4)] relative overflow-hidden border border-white/10 group" style="background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);">
+                                    
+                                    <!-- Efeito de brilho que segue o mouse (Injetado via JS) -->
+                                    <div id="player-glow" class="absolute w-[400px] h-[400px] bg-blue-500/20 rounded-full blur-[80px] pointer-events-none transition-opacity duration-300 opacity-0 transform -translate-x-1/2 -translate-y-1/2 z-0"></div>
+
+                                    <div class="absolute -right-8 -top-8 text-9xl text-white/5 pointer-events-none z-0"><i class="fa-solid fa-compact-disc fa-spin" style="animation-duration: 10s;"></i></div>
                                     
                                     <div class="flex items-center gap-4 mb-6 relative z-10">
-                                        <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.4)] shrink-0"><i class="fa-solid fa-headphones text-white text-xl"></i></div>
+                                        <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-[0_0_25px_rgba(59,130,246,0.6)] shrink-0 border border-white/10"><i class="fa-solid fa-headphones text-white text-xl"></i></div>
                                         <div class="flex-1 min-w-0">
-                                            <div class="text-[10px] text-blue-300 uppercase tracking-widest font-black mb-1 drop-shadow-md">Em Análise Simultânea</div>
+                                            <div class="text-[10px] text-blue-400 uppercase tracking-widest font-black mb-1 drop-shadow-md">Em Análise Simultânea</div>
                                             <h3 class="font-bold text-lg truncate pr-4 text-white drop-shadow-sm">${state.activeAudio.name}</h3>
                                         </div>
                                     </div>
                                     
                                     <div class="flex items-center gap-5 relative z-10">
-                                        <button id="calib-play-btn" onclick="app.calibragemAudio.togglePlay()" class="w-14 h-14 rounded-full bg-white text-slate-900 hover:scale-105 transition-transform flex items-center justify-center text-xl shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0">
+                                        <button id="calib-play-btn" onclick="app.calibragemAudio.togglePlay()" class="w-14 h-14 rounded-full bg-white text-slate-900 hover:scale-105 transition-transform flex items-center justify-center text-xl shadow-[0_0_20px_rgba(255,255,255,0.3)] shrink-0 border border-transparent hover:border-blue-400">
                                             ${app.calibragemAudio.audioElement && !app.calibragemAudio.audioElement.paused ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play ml-1"></i>'}
                                         </button>
                                         
                                         <div class="flex-1 flex flex-col justify-center">
-                                            <input type="range" id="calib-progress" min="0" max="100" value="0" step="0.1" oninput="app.calibragemAudio.seekAudio(this)" class="w-full h-2.5 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-blue-500 mb-2 backdrop-blur-sm border border-slate-600/50">
-                                            <div class="flex justify-between text-[11px] font-bold text-slate-400 font-mono tracking-wider">
-                                                <span id="calib-time-curr" class="text-blue-300">00:00</span>
-                                                <span id="calib-time-dur">00:00</span>
+                                            <input type="range" id="calib-progress" min="0" max="100" value="0" step="0.1" oninput="app.calibragemAudio.seekAudio(this)" class="w-full h-2 bg-slate-700/60 rounded-lg appearance-none cursor-pointer accent-blue-500 mb-2 backdrop-blur-sm border border-slate-600/50 shadow-inner">
+                                            <div class="flex justify-between text-[11px] font-bold text-slate-300 font-mono tracking-wider">
+                                                <span id="calib-time-curr" class="text-blue-400">00:00</span>
+                                                <span id="calib-time-dur" class="opacity-70">00:00</span>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <!-- Input Inteligente de Feedback -->
-                                <div class="glass-card p-5 rounded-3xl shadow-sm border-l-4 border-l-green-500 bg-white dark:bg-dark-surface">
-                                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><i class="fa-solid fa-quote-left text-green-500"></i> Fazer Apontamento na Minutagem Exata</label>
-                                    <div class="flex flex-col sm:flex-row gap-3">
-                                        <input type="text" id="calib-comment-input" placeholder="O que o operador falou neste exato instante do áudio?..." class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 outline-none text-sm dark:text-white transition-all shadow-inner" onkeydown="if(event.key === 'Enter') app.calibragemAudio.addComment()">
-                                        <button onclick="app.calibragemAudio.addComment()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 whitespace-nowrap"><i class="fa-solid fa-plus"></i> Gravar Momento</button>
+                                <!-- Input Inteligente de Feedback c/ Minutagem Manual -->
+                                <div class="glass-card p-5 rounded-3xl shadow-sm border-l-4 border-l-green-500 bg-white dark:bg-dark-surface relative overflow-visible">
+                                    <div class="absolute -top-3 left-4 bg-green-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] shadow-md z-10"><i class="fa-solid fa-pen-clip"></i></div>
+                                    
+                                    <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                                        <div class="w-full sm:w-28 shrink-0">
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1 px-1">Minutagem Exata</label>
+                                            <input type="text" id="calib-manual-time" placeholder="00:00" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 outline-none text-sm dark:text-white font-mono text-center shadow-inner" maxlength="5" oninput="this.value = this.value.replace(/[^0-9:]/g, '').replace(/^([0-9]{2})([0-9]+)/, '$1:$2').slice(0,5)" title="Formato MM:SS. Deixe em branco para usar o tempo atual do player.">
+                                        </div>
+                                        <div class="flex-1">
+                                            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1 px-1">Apontamento / Observação</label>
+                                            <input type="text" id="calib-comment-input" placeholder="O que o operador falou ou deixou de fazer neste momento?..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 outline-none text-sm dark:text-white transition-all shadow-inner" onkeydown="if(event.key === 'Enter') app.calibragemAudio.addComment()">
+                                        </div>
+                                        <div class="flex items-end">
+                                            <button onclick="app.calibragemAudio.addComment()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto h-[46px]"><i class="fa-solid fa-plus"></i> Gravar Momento</button>
+                                        </div>
                                     </div>
+                                    <p class="text-[9px] text-slate-400 mt-2 italic px-1">* Se o tempo ficar vazio, usaremos o cronômetro do player tocando.</p>
                                 </div>
                                 
                                 <!-- Minutagem e Exportação -->
@@ -5298,6 +5316,11 @@
                     if(state.activeAudio) {
                         app.calibragemAudio.renderComments();
                         app.calibragemAudio.updatePlayerUI();
+                        
+                        // Configura Drag and Drop após a renderização
+                        setTimeout(() => app.calibragemAudio.setupDragAndDrop(), 100);
+                    } else {
+                        setTimeout(() => app.calibragemAudio.setupDragAndDrop(), 100);
                     }
                 },
                 
@@ -6266,7 +6289,7 @@
             }, // Fim do bloco admin
 
                 // -----------------------------------------------------------------
-                // MOTOR DO LABORATÓRIO DE ÁUDIOS (CALIBRAGEM E MINUTAGEM)
+                // MOTOR DO LABORATÓRIO DE ÁUDIOS (CALIBRAÇÃO E MINUTAGEM)
                 calibragemAudio: {
                     state: {
                         audios: [],
@@ -6285,6 +6308,52 @@
                             });
                             this.audioElement.addEventListener('loadedmetadata', () => this.updatePlayerUI());
                         }
+                    },
+                    
+                    setupDragAndDrop() {
+                        const dropZone = document.getElementById('drop-zone');
+                        const fileInput = document.getElementById('file-input-calib');
+                        const player = document.getElementById('glass-player');
+                        const glow = document.getElementById('player-glow');
+                        
+                        // Glow Magnético no Player Glass
+                        if(player && glow) {
+                            player.addEventListener('mousemove', (e) => {
+                                const rect = player.getBoundingClientRect();
+                                const x = e.clientX - rect.left;
+                                const y = e.clientY - rect.top;
+                                glow.style.left = `${x}px`;
+                                glow.style.top = `${y}px`;
+                            });
+                            player.addEventListener('mouseenter', () => { glow.style.opacity = '1'; });
+                            player.addEventListener('mouseleave', () => { glow.style.opacity = '0'; });
+                        }
+
+                        if(!dropZone) return;
+                        
+                        // Eventos Drag n Drop da Nuvem
+                        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                            dropZone.addEventListener(eventName, preventDefaults, false);
+                        });
+
+                        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+                        ['dragenter', 'dragover'].forEach(eventName => {
+                            dropZone.addEventListener(eventName, () => dropZone.classList.add('bg-blue-100', 'border-blue-500', 'scale-105', 'dark:bg-blue-900/30'), false);
+                        });
+
+                        ['dragleave', 'drop'].forEach(eventName => {
+                            dropZone.addEventListener(eventName, () => dropZone.classList.remove('bg-blue-100', 'border-blue-500', 'scale-105', 'dark:bg-blue-900/30'), false);
+                        });
+
+                        dropZone.addEventListener('drop', (e) => {
+                            const dt = e.dataTransfer;
+                            const files = dt.files;
+                            
+                            // Cria um input falso para reaproveitar a função existente
+                            const fakeInput = { files: files };
+                            this.importAudios(fakeInput);
+                        }, false);
                     },
                     
                     importAudios(input) {
@@ -6309,6 +6378,34 @@
                         if(!this.state.activeAudio && this.state.audios.length > 0) {
                             this.selectAudio(this.state.audios[0].id);
                         } else {
+                            app.ui.renderTab('calibragem_audio', true);
+                        }
+                    },
+
+                    renameAudioPrompt(id) {
+                        const audio = this.state.audios.find(a => a.id === id);
+                        if(!audio) return;
+                        
+                        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-pen text-blue-500"></i> Renomear Áudio`;
+                        document.getElementById('modal-content').innerHTML = `
+                            <p class="mb-3 text-slate-600 dark:text-slate-300">Digite o novo nome (ex: Atendimento_Joao.mp3):</p>
+                            <input type="text" id="rename-audio-input" value="${audio.name}" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500">
+                        `;
+                        document.getElementById('modal-actions').innerHTML = `
+                            <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
+                            <button onclick="app.calibragemAudio.executeRename('${id}')" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow-md">Salvar Nome</button>
+                        `;
+                        document.getElementById('global-modal').classList.remove('hidden');
+                    },
+
+                    executeRename(id) {
+                        const newName = document.getElementById('rename-audio-input').value.trim();
+                        if(!newName) return;
+                        
+                        const idx = this.state.audios.findIndex(a => a.id === id);
+                        if(idx > -1) {
+                            this.state.audios[idx].name = newName;
+                            document.getElementById('global-modal').classList.add('hidden');
                             app.ui.renderTab('calibragem_audio', true);
                         }
                     },
@@ -6379,10 +6476,25 @@
                     addComment() {
                         if(!this.state.activeAudio) return;
                         const input = document.getElementById('calib-comment-input');
+                        const manualTimeInput = document.getElementById('calib-manual-time');
+                        
                         const text = input.value.trim();
                         if(!text) return app.ui.showAlert("Aviso", "Anotação em branco! Digite a percepção ou erro que você ouviu antes de adicionar.", "info");
                         
-                        const time = this.audioElement ? this.audioElement.currentTime : 0;
+                        let time = 0;
+                        const manualStr = manualTimeInput ? manualTimeInput.value.trim() : '';
+                        
+                        if (manualStr && manualStr.includes(':')) {
+                            // Converte a string MM:SS para segundos totais
+                            const parts = manualStr.split(':');
+                            const m = parseInt(parts[0]) || 0;
+                            const s = parseInt(parts[1]) || 0;
+                            time = (m * 60) + s;
+                        } else {
+                            // Se estiver vazio, pega o tempo atual rodando no player
+                            time = this.audioElement ? this.audioElement.currentTime : 0;
+                        }
+                        
                         const id = this.state.activeAudio.id;
                         
                         this.state.comments[id].push({
@@ -6395,6 +6507,7 @@
                         // Garante ordem cronológica
                         this.state.comments[id].sort((a,b) => a.time - b.time);
                         input.value = '';
+                        if(manualTimeInput) manualTimeInput.value = ''; // Limpa o campo manual tbm
                         
                         this.renderComments();
                     },
@@ -6458,7 +6571,7 @@
                         if(comments.length === 0) return app.ui.showAlert("Aviso", "Não há marcações de tempo para serem exportadas neste áudio.", "error");
                         
                         let txt = `=======================================================\n`;
-                        txt += `         RESUMO DE CALIBRAGEM (MINUTAGEM)              \n`;
+                        txt += `         RESUMO DE CALIBRAÇÃO (MINUTAGEM)              \n`;
                         txt += `=======================================================\n\n`;
                         txt += `Áudio Analisado: ${this.state.activeAudio.name}\n`;
                         txt += `Data da Extração: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}\n`;
@@ -6481,7 +6594,7 @@
                         const blob = new Blob(['\ufeff', txt], { type: 'text/plain;charset=utf-8' });
                         const link = document.createElement('a');
                         link.href = URL.createObjectURL(blob);
-                        link.download = `Calibragem_Minutagem_${this.state.activeAudio.name.replace(/\.[^/.]+$/, "")}.txt`;
+                        link.download = `Calibracao_Minutagem_${this.state.activeAudio.name.replace(/\.[^/.]+$/, "")}.txt`;
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
