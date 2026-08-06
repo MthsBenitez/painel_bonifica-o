@@ -4900,14 +4900,12 @@
                         </div>
                     `;
 
-                    // Se não encontrar dados do usuário na planilha importada
                     if (!myData) {
                         html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Você ainda não possui dados de monitoria registrados no sistema para este mês.</div>`;
                         container.innerHTML = html;
                         return;
                     }
 
-                    // Cálculos de Projeção
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     const meta = 400; // Meta padrão estabelecida pela qualidade
                     const projecao = Math.round((myData.total / wd.passed) * wd.total);
@@ -4955,7 +4953,6 @@
                                         <div class="text-2xl font-black text-slate-800 dark:text-white leading-none">${myData.total} <span class="text-sm font-medium text-slate-500">/ ${meta}</span></div>
                                     </div>
                                     
-                                    <!-- A BARRA MÁGICA -->
                                     <div class="w-full h-4 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner relative mt-2">
                                         <div id="anim-prog-bar-${userMatricula}" class="h-full bg-gradient-to-r from-blue-400 via-blue-500 to-green-500 rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_15px_rgba(59,130,246,0.6)] spark-bar-fill" style="width: 0%;"></div>
                                     </div>
@@ -4976,7 +4973,7 @@
                     
                     container.innerHTML = html;
                     
-                    // Injeção da Animação após renderizar na tela
+                    // Injeção da Animação
                     setTimeout(() => {
                         const bar = document.getElementById(`anim-prog-bar-${userMatricula}`);
                         const text = document.getElementById(`anim-prog-text-${userMatricula}`);
@@ -5024,18 +5021,15 @@
                         return;
                     }
 
-                    // SLA de Feedback
                     let avgSla = 0;
                     if (data.slaList && data.slaList.length > 0) {
                         avgSla = (data.slaList.reduce((a,b)=>a+b,0) / data.slaList.length).toFixed(1);
                     }
 
-                    // Organização de Gaps
                     const topGaps = Object.entries(data.falhasComuns).sort((a,b) => b[1] - a[1]).slice(0, 8);
                     const criticalGaps = data.falhasCriticasArray || [];
 
                     html += `
-                        <!-- KPIs Iniciais -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                             <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-blue-500">
                                 <div class="text-3xl text-blue-500"><i class="fa-solid fa-headset"></i></div>
@@ -5052,7 +5046,6 @@
                         </div>
 
                         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-                            <!-- 1. Desempenho Operadores -->
                             <div class="glass-card p-6 rounded-3xl border-t-4 border-t-green-500 flex flex-col h-[400px]">
                                 <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-ranking-star text-green-500"></i> Desempenho de Operadores</h3>
                                 <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
@@ -5077,7 +5070,6 @@
                                 </div>
                             </div>
 
-                            <!-- 5. Produtividade Monitores -->
                             <div class="glass-card p-6 rounded-3xl border-t-4 border-t-purple-500 flex flex-col h-[400px]">
                                 <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-clipboard-user text-purple-500"></i> Produtividade (Avaliadores)</h3>
                                 <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
@@ -5095,7 +5087,6 @@
                         </div>
 
                         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-                            <!-- 2. Gaps Comuns -->
                             <div class="glass-card p-6 rounded-3xl border-t-4 border-t-orange-500">
                                 <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-bar text-orange-500"></i> Oportunidades Frequentes (Treinamento)</h3>
                                 <div class="space-y-4 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
@@ -5117,7 +5108,6 @@
                                 </div>
                             </div>
 
-                            <!-- 3. Falhas Críticas -->
                             <div class="glass-card p-6 rounded-3xl border-t-4 border-t-red-600">
                                 <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-skull-crossbones text-red-600"></i> Radar de Risco (Zeramentos)</h3>
                                 <div class="overflow-y-auto custom-scrollbar pr-2 max-h-[350px] space-y-4 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
@@ -5145,11 +5135,12 @@
                     `;
                     
                     container.innerHTML = html;
-                },// <--- AQUI FECHA A ABA DE IMPORTAÇÃO
-            }, // <--- AQUI FECHA A CLASSE 'ui' COM A VÍRGULA VITAL
+                }
+            }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
 
             admin: {
-
+                
+                // --- ARQUIVETURA DE PROCESSAMENTO DE PLANILHAS (MESCLADA E CORRIGIDA) ---
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -5169,7 +5160,6 @@
                                 return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
                             }
             
-                            // 1. Identificar o período através da coluna DATA MONITORIA
                             let periodoAnalisado = "Período Indefinido";
                             for (let i = 0; i < jsonData.length; i++) {
                                 if (jsonData[i]['DATA MONITORIA']) {
@@ -5178,7 +5168,6 @@
                                 }
                             }
             
-                            // 2. Criar um mapa inicial apenas com os usuários CADASTRADOS no sistema
                             let mapUsuarios = {};
                             app.users.forEach(u => {
                                 mapUsuarios[u.matricula] = {
@@ -5189,11 +5178,11 @@
                                     pendenteFeedback: 0,
                                     totalAbaixo85: 0,
                                     feedbacksAplicados: 0,
-                                    operacao: 'N/A' // <-- CORREÇÃO: Garante que o campo exista desde o começo
+                                    operacao: 'N/A', // Garantindo o padrão N/A para exibição limpa
+                                    manual: false
                                 };
                             });
             
-                            // 3. Processar cada linha da planilha
                             jsonData.forEach(row => {
                                 const monitorSup = row['MONITOR|SUPERVISOR'] || row['NOME'] || row['AVALIADOR'];
                                 if (!monitorSup) return;
@@ -5202,7 +5191,6 @@
                                 const parts = monitorSupStr.split('-');
                                 let matricula = parts[0].trim();
                                 
-                                // INÍCIO DO FILTRO DE VÍNCULO (DE/PARA)
                                 const keyAliasCompleta = monitorSupStr.toUpperCase();
                                 const keyAliasParte = matricula.toUpperCase();
                                 
@@ -5214,34 +5202,29 @@
                                     }
                                 }
                                 
-                                // Correção extra: Se a matrícula não bater, tenta achar a pessoa pelo NOME EXATO
                                 if (!mapUsuarios[matricula]) {
                                     let userPorNome = app.users.find(u => u.nome.toUpperCase() === monitorSupStr.toUpperCase());
                                     if (userPorNome) matricula = userPorNome.matricula;
                                 }
             
-                                // Se ainda assim não estiver no sistema, pula a linha
                                 if (!mapUsuarios[matricula]) return;
             
                                 const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
                                 const operacao = String(row['OPERACAO'] || '').toUpperCase();
             
-                                // CORREÇÃO: Salva o nome da operação para não aparecer "N/A" na tela
+                                // Resgate dinâmico do nome da Operação (Fix N/A)
                                 if(operacao && mapUsuarios[matricula].operacao === 'N/A') {
                                     mapUsuarios[matricula].operacao = operacao;
                                 }
             
-                                // Regra de Exceção: Formulários Neutros
                                 const isNeutro = titulo.includes('neutro') || 
                                                  operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
                                                  operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS') ||
                                                  operacao.includes('FORMULÁRIOS NEUTROS');
             
-                                // Contabiliza SEMPRE na META (Total de Monitorias)
                                 mapUsuarios[matricula].total += 1;
                                 mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
             
-                                // Se NÃO for formulário neutro, aplica regras de Feedback pendente
                                 if (!isNeutro) {
                                     let notaRaw = row['NOTA MONITORIA'];
                                     if (notaRaw === undefined || notaRaw === null) {
@@ -5265,7 +5248,6 @@
                                 }
                             });
             
-                            // Converte o mapa para array e ordena do MAIOR para o MENOR
                             const novoRanking = Object.values(mapUsuarios)
                                 .filter(u => u.total > 0)
                                 .sort((a, b) => b.total - a.total);
@@ -5295,60 +5277,60 @@
                 },
 
                 openAliasModal() {
-                        const sel = document.getElementById('alias-correct-user');
-                        sel.innerHTML = '<option value="">Selecione o colaborador correto...</option>' + 
-                            app.users.map(u => `<option value="${u.matricula}">${u.nome}</option>`).join('');
+                    const sel = document.getElementById('alias-correct-user');
+                    sel.innerHTML = '<option value="">Selecione o colaborador correto...</option>' + 
+                        app.users.map(u => `<option value="${u.matricula}">${u.nome}</option>`).join('');
+                    this.renderAliasList();
+                    document.getElementById('alias-modal').classList.remove('hidden');
+                },
+                
+                saveAlias() {
+                    const wrongName = document.getElementById('alias-wrong-name').value.trim().toUpperCase();
+                    const correctMat = document.getElementById('alias-correct-user').value;
+                    
+                    if(!wrongName || !correctMat) return app.ui.showAlert("Erro", "Preencha o nome incorreto e selecione o colaborador correto.", "error");
+                    
+                    if(!app.config.aliases) app.config.aliases = {};
+                    app.config.aliases[wrongName] = correctMat; // Vincula o nome errado à matrícula real
+                    
+                    app.storage.saveConfig().then(() => {
+                        document.getElementById('alias-wrong-name').value = '';
                         this.renderAliasList();
-                        document.getElementById('alias-modal').classList.remove('hidden');
-                    },
+                        app.ui.showAlert("Salvo", "Vínculo criado! Quando importar planilhas, este nome será convertido automaticamente.", "success");
+                    });
+                },
+                
+                renderAliasList() {
+                    const list = document.getElementById('alias-list');
+                    if(!app.config.aliases || Object.keys(app.config.aliases).length === 0) {
+                        list.innerHTML = '<div class="text-xs text-slate-400 italic text-center py-4">Nenhum vínculo criado ainda.</div>';
+                        return;
+                    }
                     
-                    saveAlias() {
-                        const wrongName = document.getElementById('alias-wrong-name').value.trim().toUpperCase();
-                        const correctMat = document.getElementById('alias-correct-user').value;
+                    let html = '';
+                    for(let wrongName in app.config.aliases) {
+                        const mat = app.config.aliases[wrongName];
+                        const u = app.users.find(x => x.matricula === mat);
+                        const correctName = u ? u.nome : mat;
                         
-                        if(!wrongName || !correctMat) return app.ui.showAlert("Erro", "Preencha o nome incorreto e selecione o colaborador correto.", "error");
-                        
-                        if(!app.config.aliases) app.config.aliases = {};
-                        app.config.aliases[wrongName] = correctMat; // Vincula o nome errado à matrícula real
-                        
-                        app.storage.saveConfig().then(() => {
-                            document.getElementById('alias-wrong-name').value = '';
-                            this.renderAliasList();
-                            app.ui.showAlert("Salvo", "Vínculo criado! Quando importar planilhas, este nome será convertido automaticamente.", "success");
-                        });
-                    },
-                    
-                    renderAliasList() {
-                        const list = document.getElementById('alias-list');
-                        if(!app.config.aliases || Object.keys(app.config.aliases).length === 0) {
-                            list.innerHTML = '<div class="text-xs text-slate-400 italic text-center py-4">Nenhum vínculo criado ainda.</div>';
-                            return;
-                        }
-                        
-                        let html = '';
-                        for(let wrongName in app.config.aliases) {
-                            const mat = app.config.aliases[wrongName];
-                            const u = app.users.find(x => x.matricula === mat);
-                            const correctName = u ? u.nome : mat;
-                            
-                            html += `
-                                <div class="flex justify-between items-center text-xs bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div>
-                                        <span class="text-red-500 line-through font-bold">${wrongName}</span> 
-                                        <i class="fa-solid fa-arrow-right mx-2 text-slate-400"></i> 
-                                        <span class="text-green-600 font-bold">${correctName}</span>
-                                    </div>
-                                    <button onclick="app.admin.removeAlias('${wrongName}')" class="text-slate-400 hover:text-red-600 transition-colors p-1"><i class="fa-solid fa-trash"></i></button>
+                        html += `
+                            <div class="flex justify-between items-center text-xs bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div>
+                                    <span class="text-red-500 line-through font-bold">${wrongName}</span> 
+                                    <i class="fa-solid fa-arrow-right mx-2 text-slate-400"></i> 
+                                    <span class="text-green-600 font-bold">${correctName}</span>
                                 </div>
-                            `;
-                        }
-                        list.innerHTML = html;
-                    },
-                    
-                    removeAlias(wrongName) {
-                        delete app.config.aliases[wrongName];
-                        app.storage.saveConfig().then(() => this.renderAliasList());
-                    },
+                                <button onclick="app.admin.removeAlias('${wrongName}')" class="text-slate-400 hover:text-red-600 transition-colors p-1"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        `;
+                    }
+                    list.innerHTML = html;
+                },
+                
+                removeAlias(wrongName) {
+                    delete app.config.aliases[wrongName];
+                    app.storage.saveConfig().then(() => this.renderAliasList());
+                },
 
                 processarCSVAvancado(input) {
                     const file = input.files[0];
@@ -5368,7 +5350,6 @@
                                 return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
                             }
 
-                            // Conecta os dados lidos com a interface do novo Dashboard Analítico
                             window.currentCSVAnaliseData = rows;
                             app.admin.gerarInteligenciaCSV(rows);
                             
@@ -5397,7 +5378,6 @@
 
                     const chaves = Object.keys(rows[0]);
                     
-                    // Mapeamento Estrito e Protegido das Colunas
                     const colMonitor = chaves.find(k => k.toUpperCase() === 'MONITOR' || k.toUpperCase() === 'AVALIADOR') 
                         || chaves.find(k => k.toUpperCase().includes('MONITOR') && !k.toUpperCase().includes('NOTA') && !k.toUpperCase().includes('STATUS'));
                         
@@ -5417,7 +5397,6 @@
                     const colunasCriticas = colunasAvaliacao.filter(k => k.includes('100.00') || k.includes('100,00'));
                     const colunasComuns = colunasAvaliacao.filter(k => !k.includes('100.00') && !k.includes('100,00'));
 
-                    // Extrair Data e Operação da Primeira Linha Válida
                     if (rows.length > 0) {
                         let rawDate = rows[0][colDataAudit];
                         if (typeof rawDate === 'number') {
@@ -5437,7 +5416,6 @@
                     }
 
                     rows.forEach(row => {
-                        // Aplica Correção de Encoding Imediatamente na Leitura!
                         const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
                         const monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
                         
@@ -5446,13 +5424,11 @@
                             nota = parseFloat(row[colNota].toString().replace(',', '.'));
                         }
 
-                        // 1. Operadores
                         if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0 };
                         data.operadores[op].notas.push(nota);
                         if (nota < data.operadores[op].min) data.operadores[op].min = nota;
                         if (nota > data.operadores[op].max) data.operadores[op].max = nota;
 
-                        // 2. Gaps Comuns
                         colunasComuns.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
@@ -5461,7 +5437,6 @@
                             }
                         });
 
-                        // 3. Gaps Críticos
                         colunasCriticas.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
@@ -5472,14 +5447,12 @@
                             }
                         });
 
-                        // 5. Produtividade Monitores
                         if (!data.monitorProdutividade[monitor]) {
                             data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
                         }
                         data.monitorProdutividade[monitor].qtd += 1;
                         data.monitorProdutividade[monitor].somaNotas += nota;
 
-                        // 6. SLA
                         if (colDataAudit && colDataGrav && row[colDataAudit] && row[colDataGrav]) {
                             const parseDate = (val) => {
                                 if(typeof val === 'number') return new Date((val - 25569)*86400*1000); 
@@ -5506,7 +5479,6 @@
                         m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd) : 0;
                     });
 
-                    // Transforma os Gaps Críticos num Top 5 estruturado com os Nomes
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
                         .sort((a,b) => b.count - a.count)
@@ -5516,155 +5488,6 @@
                     
                     app.analiseCSVData = data;
                 },
-                
-                processarPlanilhaMonitoria(input) {
-                        const file = input.files[0];
-                        if (!file) return;
-                
-                        app.ui.showAlert("Processando...", "Lendo a planilha e aplicando as regras de negócio. Aguarde...", "info");
-                
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            try {
-                                const data = new Uint8Array(e.target.result);
-                                const workbook = XLSX.read(data, { type: 'array' });
-                                const firstSheetName = workbook.SheetNames[0];
-                                const worksheet = workbook.Sheets[firstSheetName];
-                                const jsonData = XLSX.utils.sheet_to_json(worksheet);
-                
-                                if (jsonData.length === 0) {
-                                    return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
-                                }
-                
-                                // 1. Identificar o período através da coluna DATA MONITORIA (pega a primeira linha válida)
-                                let periodoAnalisado = "Período Indefinido";
-                                for (let i = 0; i < jsonData.length; i++) {
-                                    if (jsonData[i]['DATA MONITORIA']) {
-                                        periodoAnalisado = jsonData[i]['DATA MONITORIA'];
-                                        break;
-                                    }
-                                }
-                
-                                // 2. Criar um mapa inicial apenas com os usuários CADASTRADOS no sistema
-                                let mapUsuarios = {};
-                                app.users.forEach(u => {
-                                    mapUsuarios[u.matricula] = {
-                                        nome: u.nome,
-                                        matricula: u.matricula,
-                                        total: 0,
-                                        falta: 400,
-                                        pendenteFeedback: 0,
-                                        totalAbaixo85: 0,
-                                        feedbacksAplicados: 0,
-                                        manual: false
-                                    };
-                                });
-                
-                                // 3. Processar cada linha da planilha
-                                jsonData.forEach(row => {
-                                    const monitorSup = row['MONITOR|SUPERVISOR'];
-                                    if (!monitorSup) return;
-                
-                                    // Separar a matrícula do nome pelo traço "-" e remover espaços em volta
-                                    const monitorSupStr = String(monitorSup).trim();
-                                    const parts = monitorSupStr.split('-');
-                                    let matricula = parts[0].trim(); // Mudamos de 'const' para 'let' para podermos alterar o valor
-                                    
-                                    // ------------------------------------------------------------------------
-                                    // INÍCIO DO FILTRO DE VÍNCULO (DE/PARA)
-                                    // ------------------------------------------------------------------------
-                                    const keyAliasCompleta = monitorSupStr.toUpperCase();
-                                    const keyAliasParte = matricula.toUpperCase();
-                                    
-                                    if (app.config && app.config.aliases) {
-                                        // Tenta achar pelo texto exato da célula inteira (Ex: "MARIA SILVA") 
-                                        // Ou pela primeira parte antes do traço (Ex: "12345")
-                                        if (app.config.aliases[keyAliasCompleta]) {
-                                            matricula = app.config.aliases[keyAliasCompleta];
-                                        } else if (app.config.aliases[keyAliasParte]) {
-                                            matricula = app.config.aliases[keyAliasParte];
-                                        }
-                                    }
-                                    // ------------------------------------------------------------------------
-                                    // FIM DO FILTRO
-                                    // ------------------------------------------------------------------------
-                                    
-                                    // Regra: Se a matrícula não estiver no mapUsuarios (não cadastrada no sistema), IGNORA e pula a linha.
-                                    if (!mapUsuarios[matricula]) return;
-                
-                                    const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
-                                    const operacao = String(row['OPERACAO'] || '').toUpperCase();
-                
-                                    // Regra de Exceção: Contém "neutro" no título OU operação é "QUALIDADE - FORMULÁRIOS NEUTROS"
-                                    const isNeutro = titulo.includes('neutro') || 
-                                                     operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
-                                                     operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS');
-                
-                                    // Contabiliza SEMPRE na META (Total de Monitorias) independente de ser neutro ou não
-                                    mapUsuarios[matricula].total += 1;
-                                    mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
-                
-                                    // Se NÃO for formulário neutro, entra nas regras rigorosas de Feedback
-                                    if (!isNeutro) {
-                                        // Extrai a nota da coluna EXATA da sua planilha: NOTA MONITORIA
-                                        let notaRaw = row['NOTA MONITORIA'];
-                                        if (notaRaw === undefined || notaRaw === null) {
-                                            // Fallback de segurança
-                                            notaRaw = row['RESULTADO'] || row['RESULTADO FINAL'] || 100;
-                                        }
-                                        
-                                        if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
-                                        let nota = parseFloat(notaRaw);
-                
-                                        // Extrai o status da coluna EXATA da sua planilha: STATUS MONITORIA
-                                        let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
-                
-                                        // Se a nota for MENOR que 85, a regra de feedback se aplica obrigatoriamente
-                                        if (!isNaN(nota) && nota < 85) {
-                                            mapUsuarios[matricula].totalAbaixo85 += 1;
-                                            
-                                            // Verifica se o feedback foi aplicado lendo "feedback_aplicado"
-                                            if (statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado')) {
-                                                mapUsuarios[matricula].feedbacksAplicados += 1;
-                                            } else {
-                                                mapUsuarios[matricula].pendenteFeedback += 1;
-                                            }
-                                        }
-                                    }
-                                });
-                
-                                // Converter o mapa de volta para um array, enviando para o painel apenas quem teve alguma atividade
-                                // NOVO: Adicionado .sort para ordenar DO MAIOR PARA O MENOR no quadro de Performance Operacional
-                                const novoRanking = Object.values(mapUsuarios)
-                                    .filter(u => u.total > 0)
-                                    .sort((a, b) => b.total - a.total);
-                
-                                // Alimenta a variável global do sistema com os dados processados
-                                app.monitoriasData = {
-                                    periodo: periodoAnalisado,
-                                    ranking: novoRanking,
-                                    ultimaAtualizacao: Date.now()
-                                };
-                
-                                // Salva no Firebase e força a atualização da tela
-                                app.storage.saveMonitorias().then(() => {
-                                    document.getElementById('global-modal').classList.add('hidden');
-                                    app.ui.showAlert("Importação Concluída", `Planilha lida com sucesso!<br><br><strong>Período Identificado:</strong> ${periodoAnalisado}<br><strong>Monitores Validados:</strong> ${novoRanking.length}`, "success");
-                                    app.ui.renderTab('import_monitorias', true); 
-                                }).catch(err => {
-                                    console.error("Erro ao salvar no Firebase:", err);
-                                    app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar no servidor.", "error");
-                                });
-                
-                            } catch (err) {
-                                console.error("Erro ao processar planilha:", err);
-                                app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente. Verifique o formato das colunas do CSV.", "error");
-                            }
-                        };
-                        
-                        // Dispara a leitura do arquivo
-                        reader.readAsArrayBuffer(file);
-                    },
 
                 // ==========================================
                 // TODAS AS SUAS FUNÇÕES ANTIGAS DO ADMIN RESTAURADAS AQUI PARA BAIXO
