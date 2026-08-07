@@ -5876,7 +5876,7 @@
                 openEditUser(mat) {
                     const u = app.users.find(x => x.matricula === mat);
                     if(!u) return;
-
+                
                     document.getElementById('edit-mat-original').value = u.matricula;
                     document.getElementById('edit-nome').value = u.nome;
                     document.getElementById('edit-mat').value = u.matricula;
@@ -5887,22 +5887,24 @@
                     else { imgPreview.classList.add('hidden'); }
                     
                     document.getElementById('edit-foto').value = '';
-
+                
                     const containerOps = document.getElementById('edit-ops-container');
                     containerOps.innerHTML = Object.values(app.operacoesList).map(op => {
                         const checked = (u.operacoes || []).includes(op.nome) ? 'checked' : '';
                         return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors"><input type="checkbox" value="${op.nome}" class="edit-op-check w-4 h-4 accent-purple-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${op.nome}</span></label>`;
                     }).join('');
-
+                
                     const containerAbas = document.getElementById('edit-abas-container');
-                    // Correção: Usa a base de abas correta para não quebrar a tela
-                    const userAbas = u.abasLiberadas || app.ui.availableUserTabs.map(t => t.id);
                     
-                    containerAbas.innerHTML = app.ui.availableUserTabs.map(tab => {
+                    // CORREÇÃO: Usando o método getAllSystemTabs() ao invés da propriedade inexistente
+                    const todasAbas = app.ui.getAllSystemTabs();
+                    const userAbas = u.abasLiberadas || todasAbas.map(t => t.id);
+                    
+                    containerAbas.innerHTML = todasAbas.map(tab => {
                         const checked = userAbas.includes(tab.id) ? 'checked' : '';
                         return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors"><input type="checkbox" value="${tab.id}" class="edit-aba-check w-4 h-4 accent-blue-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span></label>`;
                     }).join('');
-
+                
                     // Trava de Segurança: Esconde Abas e Operações se o usuário não for Admin
                     const adminBlocks = document.getElementById('edit-ops-container').parentElement;
                     if (!app.isAdmin) {
@@ -5910,7 +5912,7 @@
                     } else {
                         adminBlocks.classList.remove('hidden');
                     }
-
+                
                     document.getElementById('edit-user-modal').classList.remove('hidden');
                 },
 
