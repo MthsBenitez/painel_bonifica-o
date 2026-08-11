@@ -547,10 +547,12 @@
                     <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 rounded-xl font-bold text-sm transition-colors border border-green-200 dark:border-green-800"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
                 </div>
             </div>
-            <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+            <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3 items-center">
+                <button id="ve-btn-realizado" class="hidden mr-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-colors transform hover:scale-105"><i class="fa-solid fa-check-circle mr-1"></i> Marcar como Realizado</button>
+                
                 <button id="ve-btn-delete" class="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400 rounded-xl font-bold text-sm shadow-sm transition-colors"><i class="fa-solid fa-trash mr-1"></i> Excluir</button>
                 <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-5 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Fechar</button>
-                <button id="ve-btn-edit" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white dark:bg-green-600 dark:hover:bg-green-700 rounded-xl font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar</button>
+                <button id="ve-btn-edit" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar</button>
             </div>
         </div>
     </div>
@@ -1035,7 +1037,7 @@
                     // Lembretes de Calendário (1 dia antes e 1 hora antes)
                     Object.values(app.eventsList).forEach(evt => {
                         if(evt.tipo === 'evento' && evt.status === 'Previsto') {
-                            const targetId = evt.matricula === 'TODOS' ? 'ADM' : evt.matricula; // Simplificado para notificar ADM ou Usuário específico
+                            const targetId = evt.matricula === 'TODOS' ? 'ADM' : evt.matricula;
                             
                             // 1 dia antes
                             if(evt.data === tomorrowStr) {
@@ -1045,14 +1047,28 @@
                                     needsSave = true;
                                 }
                             }
-                            // 1 hora antes (simplificado comparando apenas a hora cheia)
+                            // 1 hora antes (Alarme Imediato + Notificação Push)
                             if(evt.data === todayStr && evt.hora) {
-                                const evtHour = parseInt(evt.hora.split(':')[0]);
-                                if(evtHour - currentHour === 1) {
-                                    const nid2 = 'n_cal_hr_' + evt.id;
+                                const [evtH, evtM] = evt.hora.split(':').map(Number);
+                                const eventTime = new Date();
+                                eventTime.setHours(evtH, evtM, 0, 0);
+                                
+                                const timeDiffMs = eventTime.getTime() - now.getTime();
+                                const isOneHourBefore = timeDiffMs > 0 && timeDiffMs <= (60 * 60 * 1000); // Faltam 60 minutos ou menos
+
+                                if(isOneHourBefore) {
+                                    const nid2 = 'n_cal_hr_alert_' + evt.id;
                                     if(!app.notificationsList[nid2]) {
-                                        app.notificationsList[nid2] = { id: nid2, userId: targetId, title: 'Evento em 1 Hora!', message: `${evt.tema} inicia às ${evt.hora}.`, type: 'info', read: false, timestamp: Date.now() };
+                                        app.notificationsList[nid2] = { id: nid2, userId: targetId, title: 'Evento em Breve!', message: `${evt.tema} inicia às ${evt.hora}.`, type: 'info', read: false, timestamp: Date.now() };
                                         needsSave = true;
+                                        
+                                        // Apenas alerta na tela do alvo
+                                        if (app.isAdmin || app.currentUser.matricula === evt.matricula || evt.matricula === 'TODOS') {
+                                            app.ui.showAlert("🔔 Alerta de Agenda!", `O evento <strong>${evt.tema}</strong> (${evt.op}) está programado para começar em menos de 1 hora (às ${evt.hora}).`, "info");
+                                            if (Notification.permission === "granted") {
+                                                new Notification("Portal de Resultados: Evento em 1 Hora!", { body: `${evt.tema} às ${evt.hora}` });
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1126,6 +1142,47 @@
             },
 
             actions: {
+                tempFiles: [], // Memória temporária das fotos selecionadas
+                
+                handleFilePreview(input) {
+                    const gallery = document.getElementById('act-preview-gallery');
+                    Array.from(input.files).forEach(file => {
+                        this.tempFiles.push(file);
+                        const fileId = Date.now() + Math.random().toString(36).substring(7);
+                        file.uid = fileId; // ID único para remoção
+                        
+                        const div = document.createElement('div');
+                        div.className = 'relative w-20 h-20 rounded-xl overflow-hidden shadow-sm border border-slate-200 group';
+                        div.id = `thumb-${fileId}`;
+                        
+                        if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                                div.innerHTML = `
+                                    <img src="${e.target.result}" class="w-full h-full object-cover">
+                                    <button type="button" onclick="app.actions.removeFile('${fileId}')" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg hover:scale-110 transition-transform"><i class="fa-solid fa-xmark"></i></button>
+                                `;
+                            };
+                            reader.readAsDataURL(file);
+                        } else {
+                            div.innerHTML = `
+                                <div class="w-full h-full bg-blue-50 flex flex-col items-center justify-center text-blue-500">
+                                    <i class="fa-solid fa-file-lines text-2xl"></i>
+                                    <span class="text-[8px] font-bold mt-1 truncate w-16 text-center px-1">${file.name}</span>
+                                </div>
+                                <button type="button" onclick="app.actions.removeFile('${fileId}')" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg hover:scale-110 transition-transform"><i class="fa-solid fa-xmark"></i></button>
+                            `;
+                        }
+                        gallery.appendChild(div);
+                    });
+                    input.value = ''; // Reseta o input nativo
+                },
+
+                removeFile(fileId) {
+                    this.tempFiles = this.tempFiles.filter(f => f.uid !== fileId);
+                    const el = document.getElementById(`thumb-${fileId}`);
+                    if(el) el.remove();
+                },
                 deleteAction(id) {
                     app.ui.showConfirm("Aviso", "Excluir esta ação enviada?", `app.actions.executeDelete('${id}')`, true);
                 },
@@ -1240,12 +1297,16 @@
                     for (let key in payload) {
                         if (payload[key] === '' || payload[key] === null) return app.ui.showAlert("Aviso", "Preencha todos os campos corretamente antes de enviar.", "error");
                     }
-                    if(!fileInput.files || fileInput.files.length === 0) return app.ui.showAlert("Aviso", "Você precisa anexar pelo menos uma foto de comprovação.", "error");
+                    if(this.tempFiles.length === 0) return app.ui.showAlert("Aviso", "Você precisa anexar pelo menos uma evidência visual.", "error");
 
                     btn.disabled = true;
                     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Processando...`;
 
-                    const uploadPromises = Array.from(fileInput.files).map(file => this.compressImageAsync(file));
+                    const uploadPromises = this.tempFiles.map(file => this.compressImageAsync(file));
+                    
+                    // Limpa galeria após envio bem sucedido (Coloque isso visualmente)
+                    this.tempFiles = [];
+                    document.getElementById('act-preview-gallery').innerHTML = '';
                     
                     Promise.all(uploadPromises).then(base64Images => {
                         payload.photos = base64Images;
@@ -1254,6 +1315,7 @@
                         app.storage.saveActions().then(() => {
                             app.notifications.notify('ADM', 'Nova Ação Registrada', `${app.currentUser.nome} registrou uma ação para o mês de ${app.ui.formatMonthLabel(app.currentMonth)}.`, 'info');
                             app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação da gestão.", "success");
+                            this.tempFiles = []; document.getElementById('act-preview-gallery').innerHTML = '';
                             app.ui.renderTab('registrar_acao', true);
                         });
                     });
@@ -1805,6 +1867,29 @@
                     document.getElementById('val-acoes').innerHTML = htmlAcoes;
                     document.getElementById('view-ata-legal-modal').classList.remove('hidden');
                 },
+
+                validarComoCalibragem(id) {
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+                    
+                    // Procura o usuário que fez a ata (pelo nome preenchido em Qualidade 1 ou 2)
+                    let userEncontrado = app.users.find(u => u.nome.toUpperCase() === (ata.qualidade || '').toUpperCase() || u.nome.toUpperCase() === (ata.qualidade2 || '').toUpperCase() || u.matricula === ata.matricula);
+                    
+                    if (!userEncontrado) return app.ui.showAlert("Erro", "Colaborador da qualidade não encontrado para creditar a calibragem. Verifique o nome escrito na ata.", "error");
+
+                    const mesRef = app.currentMonth; // Contabiliza no mês atual que a pessoa está visualizando
+                    
+                    if(!userEncontrado.results) userEncontrado.results = {};
+                    if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                    if(!userEncontrado.results[mesRef]['g3']) userEncontrado.results[mesRef]['g3'] = { val: 0 };
+                    
+                    let atual = parseInt(userEncontrado.results[mesRef]['g3'].val) || 0;
+                    userEncontrado.results[mesRef]['g3'].val = (atual + 1).toString();
+                    
+                    app.storage.saveUsers().then(() => {
+                        app.ui.showAlert("Integração Realizada", `A ata foi contabilizada com sucesso!<br><strong>${userEncontrado.nome}</strong> recebeu +1 Calibração nos indicadores deste mês.`, "success");
+                    });
+                },
             
                 exportAtasXLSX() {
                     const atas = Object.values(app.atasList);
@@ -1882,7 +1967,23 @@
                         btnDelete.onclick = () => {
                             document.getElementById('view-event-modal').classList.add('hidden');
                             this.deleteEvent(id);
-                        };
+                    // Ativa a marcação Rápida de Realizado (Eventos passados ou de hoje)
+                    const btnRealizado = document.getElementById('ve-btn-realizado');
+                    const todayDateStr = new Date().toISOString().split('T')[0];
+                    if (btnRealizado) {
+                        if (evt.status === 'Previsto' && evt.data <= todayDateStr && evt.tipo !== 'pessoal') {
+                            btnRealizado.classList.remove('hidden');
+                            btnRealizado.onclick = () => {
+                                app.eventsList[id].status = 'Finalizado';
+                                app.storage.saveEvents().then(() => {
+                                    document.getElementById('view-event-modal').classList.add('hidden');
+                                    app.ui.renderTab('calendario', true);
+                                    app.ui.showAlert("Fantástico!", "Evento marcado como finalizado com sucesso.", "success");
+                                });
+                            };
+                        } else {
+                            btnRealizado.classList.add('hidden');
+                        }
                     }
 
                     document.getElementById('view-event-modal').classList.remove('hidden');
@@ -2317,6 +2418,10 @@
                 closeAddUserModal() { document.getElementById('add-user-modal').classList.add('hidden'); },
                 
                 init() {
+                    // Solicita permissão para alertas do Windows/Mac
+                    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+                        Notification.requestPermission();
+                    }
                     this.checkTheme();
                     this.initThemeColors(); 
                     
@@ -2744,11 +2849,11 @@
                                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white leading-tight">${act.objetivo}</h3>
                                                 <div class="text-sm font-bold text-slate-600 dark:text-slate-400 mt-1.5 border-b border-slate-100 dark:border-slate-700 pb-3 mb-3"><i class="fa-solid fa-user-circle"></i> ${act.nome} | Op: ${act.codigoOpe}</div>
                                                 
-                                                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 text-center"><div class="text-[9px] uppercase font-bold text-slate-400">Gestor Alinhado</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title="${act.gestor}">${act.gestor}</div></div>
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 text-center"><div class="text-[9px] uppercase font-bold text-slate-400">Ofensor Alvo</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title="${act.ofensor}">${act.ofensor}</div></div>
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 text-center"><div class="text-[9px] uppercase font-bold text-slate-400">Operadores</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.operadores}</div></div>
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 text-center"><div class="text-[9px] uppercase font-bold text-slate-400">Brindes</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.brindes}</div></div>
+                                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Gestor Alinhado</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 break-words whitespace-normal">${act.gestor}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Ofensor Alvo</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 break-words whitespace-normal">${act.ofensor}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Operadores</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.operadores}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Brindes</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.brindes}</div></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -3157,10 +3262,11 @@
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase">Anexar Evidências *</label>
                                             <button type="button" onclick="document.getElementById('act-foto').value=''; document.getElementById('file-name-display').innerText='Clique para anexar FOTOS e DOCS';" class="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-trash mr-1"></i>Remover Tudo</button>
                                         </div>
-                                        <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:bg-slate-100">
-                                            <p class="text-sm text-green-600 font-bold" id="file-name-display">Clique para anexar FOTOS e DOCS (Sem Vídeos)</p>
-                                            <input type="file" id="act-foto" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" multiple class="hidden" onchange="document.getElementById('file-name-display').innerText = this.files.length + ' arquivo(s) selecionado(s)'" />
+                                        <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                            <p class="text-sm text-green-600 font-bold"><i class="fa-solid fa-cloud-arrow-up text-xl mb-1 block text-center"></i> Clique para anexar Evidências</p>
+                                            <input type="file" id="act-foto-input" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" multiple class="hidden" onchange="app.actions.handleFilePreview(this)" />
                                         </label>
+                                        <div id="act-preview-gallery" class="flex flex-wrap gap-3 mt-4 empty:hidden"></div>
                                     </div>
                                 </div>
                                 <div class="pt-6 flex justify-end">
@@ -4713,6 +4819,7 @@
                                         <div class="col-span-2 flex gap-2">
                                             <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualização</button>
                                             ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
+                                            <button type="button" onclick="app.ata.validarComoCalibragem('${ata.id}')" class="flex-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Contabilizar Calibração nos Resultados"><i class="fa-solid fa-check-double"></i> Somar Calibragem</button>
                                         </div>
                                         <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
                                         <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="col-span-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
@@ -4831,10 +4938,15 @@
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e acompanhe as projeções da equipe. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
                             </div>
-                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-upload"></i> Subir Relatório CSV/XLSX
-                                <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
-                            </label>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-plus"></i> Adicionar Manual
+                                </button>
+                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-upload"></i> Subir Relatório
+                                    <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                                </label>
+                            </div>
                         </div>
                     `;
                     
@@ -4953,7 +5065,7 @@
                                     <td class="py-3 px-4 flex items-center gap-3">
                                         <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
                                         <div>
-                                            <div class="font-bold text-slate-800 dark:text-white text-sm">${userObj.nome}</div>
+                                            <div onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="font-bold text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline" title="Editar este lançamento">${userObj.nome} <i class="fa-solid fa-pen text-[10px] ml-1"></i></div>
                                             <div class="text-[10px] text-slate-400 truncate max-w-[150px]">${r.operacao || 'N/A'}</div>
                                         </div>
                                     </td>
@@ -5422,6 +5534,86 @@
             }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
 
             admin: {
+                abrirModalMonitoriaManual(matriculaEdit = null) {
+                    const ranking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
+                    let nome = '', matr = '', total = 0, fbsPendentes = 0;
+                    
+                    if (matriculaEdit) {
+                        const m = ranking.find(r => r.matricula === matriculaEdit);
+                        if(m) { nome = m.nome; matr = m.matricula; total = m.total; fbsPendentes = m.pendenteFeedback || 0; }
+                    }
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-headphones text-emerald-500"></i> ${matriculaEdit ? 'Editar' : 'Inserir'} Monitoria Manual`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Colaborador</label>
+                                <select id="man-matr" ${matriculaEdit ? 'disabled' : ''} class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white cursor-pointer">
+                                    <option value="">Selecione...</option>
+                                    ${app.users.map(u => `<option value="${u.matricula}" ${u.matricula === matr ? 'selected' : ''}>${u.nome}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Total Realizado</label><input type="number" id="man-total" value="${total}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">FBs Pendentes</label><input type="number" id="man-fbs" value="${fbsPendentes}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white"></div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        ${matriculaEdit ? `<button onclick="app.admin.removerMonitoriaManual('${matriculaEdit}')" class="mr-auto px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-sm transition-colors"><i class="fa-solid fa-trash"></i> Remover</button>` : ''}
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
+                        <button onclick="app.admin.salvarMonitoriaManual()" class="px-5 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm shadow-md">Salvar Lançamento</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                salvarMonitoriaManual() {
+                    const matr = document.getElementById('man-matr').value;
+                    const total = parseInt(document.getElementById('man-total').value) || 0;
+                    const fbs = parseInt(document.getElementById('man-fbs').value) || 0;
+                    
+                    if(!matr) return app.ui.showAlert("Aviso", "Selecione um colaborador.", "error");
+
+                    if(!app.monitoriasData) app.monitoriasData = { ranking: [], ultimaAtualizacao: Date.now() };
+                    const usr = app.users.find(u => u.matricula === matr);
+                    let ranking = app.monitoriasData.ranking;
+                    let idx = ranking.findIndex(r => r.matricula === matr);
+
+                    if (idx > -1) {
+                        ranking[idx].total = total;
+                        ranking[idx].falta = Math.max(0, 400 - total);
+                        ranking[idx].pendenteFeedback = fbs;
+                    } else {
+                        ranking.push({ nome: usr.nome, matricula: matr, total: total, falta: Math.max(0, 400 - total), pendenteFeedback: fbs, operacao: (usr.operacoes && usr.operacoes[0]) || 'Manual' });
+                    }
+
+                    // Automatiza para "Meus Resultados" (G1)
+                    if(!usr.results) usr.results = {};
+                    if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
+                    if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
+                    usr.results[app.currentMonth]['g1'].real = total;
+                    app.storage.saveUsers();
+
+                    app.monitoriasData.ranking = ranking;
+                    app.storage.saveMonitorias().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.showAlert("Sucesso", "Lançamento de monitoria salvo e contabilizado nos resultados do colaborador.", "success");
+                        app.ui.renderTab('import_monitorias', true);
+                    });
+                },
+
+                removerMonitoriaManual(matr) {
+                    app.monitoriasData.ranking = app.monitoriasData.ranking.filter(r => r.matricula !== matr);
+                    // Zera nos Meus Resultados também
+                    const usr = app.users.find(u => u.matricula === matr);
+                    if(usr && usr.results && usr.results[app.currentMonth] && usr.results[app.currentMonth]['g1']) {
+                        usr.results[app.currentMonth]['g1'].real = 0;
+                        app.storage.saveUsers();
+                    }
+                    app.storage.saveMonitorias().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.renderTab('import_monitorias', true);
+                    });
+                },
                 
                 // --- ARQUIVETURA DE PROCESSAMENTO DE PLANILHAS (MESCLADA E CORRIGIDA) ---
                 processarPlanilhaMonitoria(input) {
@@ -5535,6 +5727,24 @@
                                 .filter(u => u.total > 0)
                                 .sort((a, b) => b.total - a.total);
             
+                            app.monitoriasData = {
+                                periodo: periodoAnalisado,
+                                ranking: novoRanking,
+                                ultimaAtualizacao: Date.now()
+                            };
+            
+                            // Automação: Aplica aos Resultados Individuais (G1)
+                            novoRanking.forEach(r => {
+                                const usr = app.users.find(u => u.matricula === r.matricula);
+                                if(usr) {
+                                    if(!usr.results) usr.results = {};
+                                    if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
+                                    if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
+                                    usr.results[app.currentMonth]['g1'].real = r.total;
+                                }
+                            });
+                            app.storage.saveUsers(); // Salva as métricas integradas
+
                             app.monitoriasData = {
                                 periodo: periodoAnalisado,
                                 ranking: novoRanking,
