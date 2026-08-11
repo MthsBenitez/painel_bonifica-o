@@ -2940,7 +2940,7 @@
                     const equipes = Object.values(app.campanhaData).sort((a,b) => b.pontos - a.pontos);
                     const firstPlace = equipes[0];
                     
-                    // NOVA REGRA: Verifica se há empate no primeiro lugar (se o 1º e o 2º tem a mesma pontuação e é > 0)
+                    // Verifica se há empate no primeiro lugar (se o 1º e o 2º tem a mesma pontuação e é > 0)
                     const isTied = equipes.length > 1 && equipes[0].pontos === equipes[1].pontos && equipes[0].pontos > 0;
                     
                     // Constante global de Glassmorphism elegante
@@ -3028,7 +3028,7 @@
                         if(!eq) return;
                         
                         const isMyTeam = app.currentUser && eq.membros && eq.membros.includes(app.currentUser.matricula);
-                        const myTeamBadge = isMyTeam ? `<div class="absolute -top-3 sm:-top-4 bg-green-500 text-white px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black shadow-lg animate-pulse border-2 border-white dark:border-slate-800 z-50">SUA EQUIPE</div>` : '';
+                        const myTeamBadge = isMyTeam ? `<div class="absolute -top-3 sm:-top-4 bg-green-500 text-white px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black shadow-lg border-2 border-white dark:border-slate-800 z-50">SUA EQUIPE</div>` : '';
                         const myTeamRing = isMyTeam ? 'ring-4 ring-green-400 dark:ring-green-500' : '';
                         
                         let rankStyle, heightClass, icon, stackHtml = '';
@@ -3037,13 +3037,13 @@
                         const isThisTiedForFirst = isTied && eq.pontos === equipes[0].pontos;
 
                         if (isThisTiedForFirst) {
-                            // Renderização das duas equipes como empatadas no topo
-                            rankStyle = 'ranking-podium-1 border-2 border-red-500/80 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.3)]';
+                            // Renderização das duas equipes como empatadas no topo SEM piscar
+                            rankStyle = 'ranking-podium-1 border-2 border-red-500/80 shadow-[0_0_20px_rgba(239,68,68,0.3)]';
                             heightClass = 'h-[20rem] md:h-[24rem]'; // Mesma altura para os empatados
                             stackHtml = `
                                 <div class="absolute bottom-[100%] left-1/2 transform -translate-x-1/2 flex flex-col items-center w-max z-40 mb-3">
                                     <div class="bg-red-600/95 backdrop-blur-xl text-white text-[11px] font-black px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.7)] border border-red-400 whitespace-nowrap flex items-center gap-2">
-                                        <i class="fa-solid fa-triangle-exclamation text-base animate-bounce"></i> EMPATE!
+                                        <i class="fa-solid fa-triangle-exclamation text-base"></i> EMPATE!
                                     </div>
                                 </div>
                             `;
@@ -3173,7 +3173,7 @@
                                             
                                             <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800 mt-4 shadow-sm">
                                                 <h4 class="font-bold text-blue-800 dark:text-blue-300 text-xs uppercase tracking-widest mb-1.5"><i class="fa-solid fa-trophy"></i> Condição de Vitória</h4>
-                                                <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-medium">A equipe mais engajada com as ações direcionadas em suas respectivas contas vencerá levando a pontuação máxima com as ações.</p>
+                                                <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-medium">A equipe mais engajada com as ações direcionadas em suas respectivas contas vencerá levando a pontuação maxima com as ações.</p>
                                             </div>
                                         </div>
                                     </div>
@@ -3196,7 +3196,6 @@
                         if(allHistory.length === 0) {
                             html += `<div class="col-span-1 md:col-span-3 text-center text-slate-400 italic p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl">Nenhum ponto registrado ainda. As equipes aguardam o apito inicial!</div>`;
                         } else {
-                            // NOVA REGRA: Roda o forEach em TODOS, sem o slice limitador.
                             allHistory.forEach(item => {
                                 const data = new Date(item.data).toLocaleString('pt-BR');
                                 html += `
@@ -3227,7 +3226,6 @@
                         if(emojisToSend > 0) app.ui.playFloatingEmojis(emojisToSend);
                     }, 50);
                 },
-
                 renderView_GestaoCampanha(container) {
                     if(!app.isAdmin) return;
                     
