@@ -547,12 +547,12 @@
                     <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 rounded-xl font-bold text-sm transition-colors border border-green-200 dark:border-green-800"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
                 </div>
             </div>
-            <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3 items-center">
-                <button id="ve-btn-realizado" class="hidden mr-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-colors transform hover:scale-105"><i class="fa-solid fa-check-circle mr-1"></i> Marcar como Realizado</button>
+            <div class="p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3 items-center rounded-b-3xl">
+                <button id="ve-btn-realizado" class="hidden mr-auto px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-extrabold text-sm shadow-lg shadow-emerald-500/30 transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-check-circle mr-1.5"></i> Marcar Realizado</button>
                 
-                <button id="ve-btn-delete" class="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400 rounded-xl font-bold text-sm shadow-sm transition-colors"><i class="fa-solid fa-trash mr-1"></i> Excluir</button>
-                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-5 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Fechar</button>
-                <button id="ve-btn-edit" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar</button>
+                <button id="ve-btn-delete" class="px-5 py-2.5 bg-red-100 hover:bg-red-500 text-red-600 hover:text-white dark:bg-red-900/30 dark:hover:bg-red-600 dark:text-red-400 rounded-xl font-bold text-sm shadow-sm transition-all"><i class="fa-solid fa-trash"></i></button>
+                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-200 dark:bg-slate-700 border border-transparent hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm shadow-sm transition-all">Fechar</button>
+                <button id="ve-btn-edit" class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-extrabold text-sm shadow-lg shadow-blue-500/30 transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-pen-to-square mr-1.5"></i> Editar Evento</button>
             </div>
         </div>
     </div>
@@ -3420,17 +3420,18 @@
                         
                         dayEvents.forEach(evt => {
                             if(evt.tipo === 'pessoal') {
-                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="bg-green-100 text-green-800 border border-green-300 rounded p-1 text-[9px] cursor-pointer shadow-sm"><div class="font-bold"><i class="fa-solid fa-clipboard-check"></i> Controle Dia</div><div>Mon: ${evt.qtdMon || 0} | FB: ${evt.qtdFb || 0}</div></div>`;
+                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="bg-green-100/60 dark:bg-green-900/30 backdrop-blur-md border border-green-300 dark:border-green-700 rounded-xl p-2.5 text-[10px] cursor-pointer shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 text-green-800 dark:text-green-300"><div class="font-black mb-1.5 flex items-center gap-1"><i class="fa-solid fa-clipboard-check text-green-600"></i> Controle Dia</div><div class="font-medium">Mon: ${evt.qtdMon || 0} | FB: ${evt.qtdFb || 0}</div></div>`;
                             } else {
                                 const baseColor = evt.status === 'Cancelado' ? cores['Cancelado'] : cores[evt.tema] || cores['Outros'];
                                 const iconeStatus = (evt.status && evt.status.includes('Finalizado')) ? '<i class="fa-solid fa-check-double text-green-600"></i> ' : '';
                                 const duracao = calcDuracao(evt.hora, evt.horaFim);
                                 const txtNome = getNome(evt.matricula).split(' ')[0]; 
                                 
-                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="${baseColor} border rounded p-1.5 text-[9px] cursor-pointer shadow-sm relative">
-                                    <div class="font-extrabold mb-0.5 flex justify-between"><span>${iconeStatus}${evt.hora || '--'}</span> <span class="opacity-70">${duracao}</span></div>
-                                    <div class="font-bold truncate">${evt.tema || 'Indefinido'}</div>
-                                    <div class="text-[8px] opacity-90 mt-0.5 border-t border-black/10 pt-0.5 truncate">${evt.op || 'N/A'} | ${txtNome}</div>
+                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="${baseColor} bg-opacity-60 dark:bg-opacity-20 backdrop-blur-md border border-white/60 dark:border-white/10 rounded-xl p-2.5 text-[10px] cursor-pointer shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative group overflow-hidden">
+                                    <div class="absolute inset-0 bg-gradient-to-tr from-white/0 to-white/60 dark:from-black/0 dark:to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                    <div class="font-black mb-1.5 flex justify-between relative z-10 text-xs"><span>${iconeStatus}${evt.hora || '--'}</span> <span class="opacity-60 text-[9px] font-bold">${duracao}</span></div>
+                                    <div class="font-extrabold truncate relative z-10 tracking-tight">${evt.tema || 'Indefinido'}</div>
+                                    <div class="text-[9px] opacity-80 mt-1.5 border-t border-black/10 dark:border-white/10 pt-1.5 truncate relative z-10 font-medium">${evt.op || 'N/A'} <span class="mx-1">•</span> ${txtNome}</div>
                                 </div>`;
                             }
                         });
@@ -3588,6 +3589,26 @@
                         }
                         html += bannerHtml;
                     }
+
+                    // --- NOVO: AVISO E TUTORIAL DE NOTIFICAÇÃO ---
+                    if ("Notification" in window && Notification.permission !== "granted") {
+                        html += `
+                            <div class="mb-6 p-5 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-700 shadow-xl shadow-blue-500/20 text-white flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden group">
+                                <div class="absolute -right-4 -top-4 text-white/10 text-8xl transition-transform duration-700 group-hover:scale-110 group-hover:rotate-12 pointer-events-none"><i class="fa-solid fa-bell"></i></div>
+                                <div class="relative z-10 flex items-center gap-4 w-full md:w-auto">
+                                    <div class="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl shrink-0 shadow-inner border border-white/20"><i class="fa-solid fa-bell-slash animate-pulse"></i></div>
+                                    <div>
+                                        <h4 class="font-extrabold text-lg tracking-tight mb-1">Permita as Notificações</h4>
+                                        <p class="text-blue-100 text-xs leading-relaxed max-w-xl">O seu navegador está bloqueando os alertas do sistema. Ative agora para não perder os agendamentos de calibração, feedbacks do gestor e compromissos do seu calendário.</p>
+                                    </div>
+                                </div>
+                                <button onclick="Notification.requestPermission().then(() => app.ui.renderTab(app.currentTab, true))" class="relative z-10 bg-white text-blue-700 hover:bg-blue-50 font-black py-3 px-8 rounded-xl shadow-md transition-all transform hover:-translate-y-1 hover:shadow-xl whitespace-nowrap text-sm w-full md:w-auto">
+                                    Ativar Alertas
+                                </button>
+                            </div>
+                        `;
+                    }
+                    // ---------------------------------------------
 
                     html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">`;
                     
