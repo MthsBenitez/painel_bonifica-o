@@ -507,52 +507,61 @@
         </div>
     </div>
 
-    <!-- Modal Visualizar Evento Lindo -->
-    <div id="view-event-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-md w-full mx-4 border border-slate-200 dark:border-dark-border overflow-hidden transform transition-all">
-            <!-- MODIFICADO AQUI: bg-gradient para tons de verde -->
-            <div class="bg-gradient-to-br from-green-600 to-emerald-700 p-6 text-white relative">
-                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="absolute top-4 right-4 text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
-                <div class="text-[10px] font-black uppercase tracking-widest text-green-200 mb-1" id="ve-tipo">Registro de Calendário</div>
-                <h3 class="font-extrabold text-2xl leading-tight" id="ve-tema">Tema</h3>
-                <div class="flex items-center gap-4 mt-4 text-sm text-green-100 font-semibold bg-white/10 px-4 py-2 rounded-xl border border-white/20 w-fit">
+    <!-- Modal Visualizar Evento Lindo (Modern Glassmorphism) -->
+    <div id="view-event-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md transition-opacity">
+        
+        <!-- Container Principal com Efeito Vidro e Mouse Tracking Inline -->
+        <div class="relative bg-white/70 dark:bg-[#0f172a]/70 backdrop-blur-2xl rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.3)] max-w-md w-full mx-4 border border-white/50 dark:border-white/10 overflow-hidden transform transition-all group" onmousemove="const g = this.querySelector('.glass-glow'); const r = this.getBoundingClientRect(); g.style.left = (event.clientX - r.left) + 'px'; g.style.top = (event.clientY - r.top) + 'px';" onmouseenter="this.querySelector('.glass-glow').style.opacity='0.15'" onmouseleave="this.querySelector('.glass-glow').style.opacity='0'">
+            
+            <!-- Brilho Dinâmico que segue o mouse (Captura a cor do tema do site automaticamente) -->
+            <div class="glass-glow absolute w-[300px] h-[300px] rounded-full blur-[80px] pointer-events-none transition-opacity duration-500 -translate-x-1/2 -translate-y-1/2 z-0" style="background-color: var(--theme-color);"></div>
+
+            <!-- Header com Cor Dinâmica do Tema -->
+            <div class="p-6 text-white relative z-10 border-b border-white/20" style="background: linear-gradient(135deg, color-mix(in srgb, var(--theme-color) 80%, black), color-mix(in srgb, var(--theme-color) 30%, transparent));">
+                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition-colors backdrop-blur-sm"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <div class="text-[10px] font-black uppercase tracking-widest text-white/80 mb-1 drop-shadow-sm" id="ve-tipo">Registro de Calendário</div>
+                <h3 class="font-extrabold text-2xl leading-tight drop-shadow-md" id="ve-tema">Tema</h3>
+                <div class="flex items-center gap-4 mt-4 text-sm font-semibold bg-white/10 px-4 py-2 rounded-xl border border-white/20 w-fit backdrop-blur-md shadow-inner">
                     <span><i class="fa-regular fa-calendar mr-1"></i> <span id="ve-data">00/00/0000</span></span>
                     <span><i class="fa-regular fa-clock mr-1"></i> <span id="ve-hora">00:00 - 00:00</span></span>
                 </div>
             </div>
-            <div class="p-6 space-y-5">
-                <div class="flex items-center gap-4 border-b border-slate-100 dark:border-slate-700 pb-4">
-                    <div class="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 text-lg"><i class="fa-solid fa-user-tie"></i></div>
+
+            <!-- Corpo -->
+            <div class="p-6 space-y-5 relative z-10 bg-white/40 dark:bg-slate-900/40">
+                <div class="flex items-center gap-4 border-b border-slate-200/50 dark:border-slate-700/50 pb-4">
+                    <div class="w-12 h-12 rounded-full bg-white/60 dark:bg-slate-800/60 border border-white/50 dark:border-slate-700 flex items-center justify-center text-slate-500 text-lg shadow-sm"><i class="fa-solid fa-user-tie"></i></div>
                     <div>
                         <div class="text-[10px] uppercase font-bold text-slate-400">Responsável / Atribuído</div>
                         <div class="text-sm font-bold text-slate-700 dark:text-slate-300" id="ve-autor">Nome</div>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <div class="bg-white/60 dark:bg-slate-800/60 p-3 rounded-xl border border-white/50 dark:border-slate-700 shadow-sm backdrop-blur-sm">
                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Operação</div>
                         <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate" id="ve-op">SAC</div>
                     </div>
-                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <div class="bg-white/60 dark:bg-slate-800/60 p-3 rounded-xl border border-white/50 dark:border-slate-700 shadow-sm backdrop-blur-sm">
                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Status</div>
                         <div class="text-sm font-black text-slate-800 dark:text-white" id="ve-status">Previsto</div>
                     </div>
                 </div>
                 <div>
                     <div class="text-[10px] uppercase font-bold text-slate-400 mb-1.5">Observações Fixadas</div>
-                    <div class="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[80px]" id="ve-obs">Nenhuma observação.</div>
+                    <div class="text-sm text-slate-600 dark:text-slate-400 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-white/50 dark:border-slate-700 min-h-[80px] shadow-inner backdrop-blur-sm" id="ve-obs">Nenhuma observação.</div>
                 </div>
                 <div id="ve-anexo-box" class="hidden mt-2">
-                    <!-- MODIFICADO AQUI: botão de anexo adaptado para as cores esmeralda/verde -->
-                    <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 rounded-xl font-bold text-sm transition-colors border border-green-200 dark:border-green-800"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
+                    <a id="ve-anexo-btn" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 py-3 bg-white/60 text-slate-700 hover:bg-white dark:bg-slate-800/60 dark:text-slate-300 dark:hover:bg-slate-800 rounded-xl font-bold text-sm transition-all border border-white/50 dark:border-slate-700 shadow-sm"><i class="fa-solid fa-download"></i> Baixar Evidência Anexada</a>
                 </div>
             </div>
-            <div class="p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-3 items-center rounded-b-3xl">
-                <button id="ve-btn-realizado" class="hidden mr-auto px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-extrabold text-sm shadow-lg shadow-emerald-500/30 transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-check-circle mr-1.5"></i> Marcar Realizado</button>
+
+            <!-- Footer (Botões) -->
+            <div class="p-5 bg-white/60 dark:bg-slate-800/60 border-t border-white/50 dark:border-slate-700/50 flex flex-wrap justify-end gap-3 items-center relative z-10">
+                <button id="ve-btn-realizado" class="hidden mr-auto px-6 py-2.5 text-white rounded-xl font-extrabold text-sm shadow-lg transition-all transform hover:-translate-y-0.5" style="background-color: var(--theme-color);"><i class="fa-solid fa-check-circle mr-1.5"></i> Marcar Realizado</button>
                 
                 <button id="ve-btn-delete" class="px-5 py-2.5 bg-red-100 hover:bg-red-500 text-red-600 hover:text-white dark:bg-red-900/30 dark:hover:bg-red-600 dark:text-red-400 rounded-xl font-bold text-sm shadow-sm transition-all"><i class="fa-solid fa-trash"></i></button>
-                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-200 dark:bg-slate-700 border border-transparent hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm shadow-sm transition-all">Fechar</button>
-                <button id="ve-btn-edit" class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-extrabold text-sm shadow-lg shadow-blue-500/30 transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-pen-to-square mr-1.5"></i> Editar Evento</button>
+                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-200/50 dark:bg-slate-700/50 border border-transparent hover:bg-slate-300/50 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm shadow-sm transition-all backdrop-blur-sm">Fechar</button>
+                <button id="ve-btn-edit" class="px-6 py-2.5 bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl font-extrabold text-sm shadow-lg transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-pen-to-square mr-1.5"></i> Editar Evento</button>
             </div>
         </div>
     </div>
@@ -1144,40 +1153,43 @@
             actions: {
                 tempFiles: [], // Memória temporária das fotos selecionadas
                 
+                removeAllFiles() {
+                    this.tempFiles = [];
+                    document.getElementById('act-preview-gallery').innerHTML = '';
+                    document.getElementById('act-foto-input').value = '';
+                },
+
                 handleFilePreview(input) {
                     const gallery = document.getElementById('act-preview-gallery');
-                    Array.from(input.files).forEach(file => {
+                    Array.from(input.files).forEach((file, index) => {
                         this.tempFiles.push(file);
-                        const fileId = Date.now() + Math.random().toString(36).substring(7);
-                        file.uid = fileId; // ID único para remoção
+                        const fileId = Date.now() + index + Math.random().toString(36).substring(7);
+                        file.uid = fileId;
                         
                         const div = document.createElement('div');
-                        div.className = 'relative w-20 h-20 rounded-xl overflow-hidden shadow-sm border border-slate-200 group';
+                        div.className = 'relative w-20 h-20 rounded-xl overflow-hidden shadow-sm border border-slate-200 group animate-fade-in';
                         div.id = `thumb-${fileId}`;
                         
                         if (file.type.startsWith('image/')) {
-                            const reader = new FileReader();
-                            reader.onload = (e) => {
-                                div.innerHTML = `
-                                    <img src="${e.target.result}" class="w-full h-full object-cover">
-                                    <button type="button" onclick="app.actions.removeFile('${fileId}')" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg hover:scale-110 transition-transform"><i class="fa-solid fa-xmark"></i></button>
-                                `;
-                            };
-                            reader.readAsDataURL(file);
+                            // Correção Premium: O createObjectURL é instantâneo e não trava o navegador!
+                            const objectUrl = URL.createObjectURL(file); 
+                            div.innerHTML = `
+                                <img src="${objectUrl}" class="w-full h-full object-cover" onload="URL.revokeObjectURL(this.src)">
+                                <button type="button" onclick="app.actions.removeFile('${fileId}')" class="absolute top-1 right-1 bg-red-600/90 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg hover:scale-110 transition-transform"><i class="fa-solid fa-xmark"></i></button>
+                            `;
                         } else {
                             div.innerHTML = `
                                 <div class="w-full h-full bg-blue-50 flex flex-col items-center justify-center text-blue-500">
                                     <i class="fa-solid fa-file-lines text-2xl"></i>
                                     <span class="text-[8px] font-bold mt-1 truncate w-16 text-center px-1">${file.name}</span>
                                 </div>
-                                <button type="button" onclick="app.actions.removeFile('${fileId}')" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg hover:scale-110 transition-transform"><i class="fa-solid fa-xmark"></i></button>
+                                <button type="button" onclick="app.actions.removeFile('${fileId}')" class="absolute top-1 right-1 bg-red-600/90 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-lg hover:scale-110 transition-transform"><i class="fa-solid fa-xmark"></i></button>
                             `;
                         }
                         gallery.appendChild(div);
                     });
-                    input.value = ''; // Reseta o input nativo
+                    input.value = ''; // Reseta para permitir anexar a mesma foto se o usuário apagou sem querer
                 },
-
                 removeFile(fileId) {
                     this.tempFiles = this.tempFiles.filter(f => f.uid !== fileId);
                     const el = document.getElementById(`thumb-${fileId}`);
@@ -1868,16 +1880,16 @@
                     document.getElementById('view-ata-legal-modal').classList.remove('hidden');
                 },
 
-                validarComoCalibragem(id) {
+                validarComoCalibragem(id, btnElement) {
                     const ata = app.atasList[id];
                     if(!ata) return;
                     
-                    // Procura o usuário que fez a ata (pelo nome preenchido em Qualidade 1 ou 2)
+                    // Procura o usuário que fez a ata
                     let userEncontrado = app.users.find(u => u.nome.toUpperCase() === (ata.qualidade || '').toUpperCase() || u.nome.toUpperCase() === (ata.qualidade2 || '').toUpperCase() || u.matricula === ata.matricula);
                     
                     if (!userEncontrado) return app.ui.showAlert("Erro", "Colaborador da qualidade não encontrado para creditar a calibragem. Verifique o nome escrito na ata.", "error");
 
-                    const mesRef = app.currentMonth; // Contabiliza no mês atual que a pessoa está visualizando
+                    const mesRef = app.currentMonth; 
                     
                     if(!userEncontrado.results) userEncontrado.results = {};
                     if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
@@ -1888,6 +1900,18 @@
                     
                     app.storage.saveUsers().then(() => {
                         app.ui.showAlert("Integração Realizada", `A ata foi contabilizada com sucesso!<br><strong>${userEncontrado.nome}</strong> recebeu +1 Calibração nos indicadores deste mês.`, "success");
+                        
+                        // Feedback Visual Imediato no Botão
+                        if(btnElement) {
+                            btnElement.innerHTML = '<i class="fa-solid fa-check"></i> Somado';
+                            btnElement.classList.replace('bg-emerald-50', 'bg-slate-100');
+                            btnElement.classList.replace('text-emerald-600', 'text-slate-400');
+                            btnElement.classList.replace('dark:bg-emerald-900/20', 'dark:bg-slate-800');
+                            btnElement.classList.replace('dark:text-emerald-400', 'dark:text-slate-500');
+                            btnElement.classList.remove('hover:bg-emerald-100');
+                            btnElement.classList.add('opacity-70', 'cursor-not-allowed');
+                            btnElement.disabled = true;
+                        }
                     });
                 },
             
@@ -3298,7 +3322,7 @@
                                     <div class="md:col-span-2">
                                         <div class="flex justify-between items-end mb-1.5">
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase">Anexar Evidências *</label>
-                                            <button type="button" onclick="document.getElementById('act-foto').value=''; document.getElementById('file-name-display').innerText='Clique para anexar FOTOS e DOCS';" class="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-trash mr-1"></i>Remover Tudo</button>
+                                            <button type="button" onclick="app.actions.removeAllFiles()" class="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-trash mr-1"></i>Remover Tudo</button>
                                         </div>
                                         <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                             <p class="text-sm text-green-600 font-bold"><i class="fa-solid fa-cloud-arrow-up text-xl mb-1 block text-center"></i> Clique para anexar Evidências</p>
@@ -4878,7 +4902,7 @@
                                         <div class="col-span-2 flex gap-2">
                                             <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualização</button>
                                             ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
-                                            <button type="button" onclick="app.ata.validarComoCalibragem('${ata.id}')" class="flex-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Contabilizar Calibração nos Resultados"><i class="fa-solid fa-check-double"></i> Somar Calibragem</button>
+                                            <button type="button" onclick="app.ata.validarComoCalibragem('${ata.id}', this)" class="flex-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Contabilizar Calibração nos Resultados"><i class="fa-solid fa-check-double"></i> Somar Calibragem</button>
                                         </div>
                                         <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
                                         <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="col-span-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
