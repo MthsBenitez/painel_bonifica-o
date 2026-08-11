@@ -1967,6 +1967,8 @@
                         btnDelete.onclick = () => {
                             document.getElementById('view-event-modal').classList.add('hidden');
                             this.deleteEvent(id);
+                        };
+                    }
                     // Ativa a marcação Rápida de Realizado (Eventos passados ou de hoje)
                     const btnRealizado = document.getElementById('ve-btn-realizado');
                     const todayDateStr = new Date().toISOString().split('T')[0];
