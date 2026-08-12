@@ -5088,8 +5088,15 @@
                                 <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-plus"></i> Adicionar Manual
                                 </button>
+                                
+                                <!-- NOVO BOTÃO: CSV AMIL -->
+                                <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Soma resultados ao painel atual sem apagar os anteriores">
+                                    <i class="fa-solid fa-file-csv"></i> Subir Relatório Amil
+                                    <input type="file" accept=".csv" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
+                                </label>
+
                                 <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-upload"></i> Subir Relatório
+                                    <i class="fa-solid fa-upload"></i> Subir Relatório (Padrão)
                                     <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
                                 </label>
                             </div>
@@ -6107,6 +6114,139 @@
                         } catch (err) {
                             console.error("Erro ao processar planilha:", err);
                             app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente.", "error");
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                },
+
+                // --- NOVA FUNÇÃO: PROCESSAR PLANILHA AMIL (SOMA COM OS DADOS EXISTENTES) ---
+                processarPlanilhaAmil(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    app.ui.showAlert("Processando Amil...", "Lendo o CSV e integrando aos dados já lançados. Aguarde...", "info");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                            if (jsonData.length === 0) {
+                                return app.ui.showAlert("Aviso", "O arquivo Amil está vazio ou é inválido.", "error");
+                            }
+
+                            // Prepara o estado atual para SOMAR (sem apagar a memória atual)
+                            if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { mediaTotal: 0, colaboradores: [], linhas: [] }, ultimaAtualizacao: Date.now() };
+                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = { mediaTotal: 0, colaboradores: [], linhas: [] };
+                            if (!app.monitoriasData.detalhes.linhas) app.monitoriasData.detalhes.linhas = [];
+                            
+                            let rankingAtual = app.monitoriasData.ranking || [];
+                            let linhasDetalhadas = app.monitoriasData.detalhes.linhas;
+                            let countAdicionados = 0;
+
+                            jsonData.forEach(row => {
+                                // 1. Trata nome do Avaliador (Inverte "SOBRENOME, NOME" para "NOME SOBRENOME")
+                                let avaliadorRaw = row['Avaliador'];
+                                if (!avaliadorRaw) return;
+                                
+                                let monitorNomeFmt = String(avaliadorRaw).trim();
+                                if (monitorNomeFmt.includes(',')) {
+                                    let parts = monitorNomeFmt.split(',');
+                                    monitorNomeFmt = parts[1].trim() + ' ' + parts[0].trim();
+                                }
+                                
+                                // Busca o usuário no sistema (por Vínculo Alias ou pelo Nome Invertido)
+                                let matriculaMonitor = null;
+                                let monitorObj = null;
+                                const keyAlias = monitorNomeFmt.toUpperCase();
+                                
+                                if (app.config && app.config.aliases && app.config.aliases[keyAlias]) {
+                                    matriculaMonitor = app.config.aliases[keyAlias];
+                                    monitorObj = app.users.find(u => u.matricula === matriculaMonitor);
+                                } else {
+                                    monitorObj = app.users.find(u => u.nome.toUpperCase() === keyAlias || u.nome.toUpperCase().includes(monitorNomeFmt.split(' ')[0].toUpperCase()));
+                                    if (monitorObj) matriculaMonitor = monitorObj.matricula;
+                                }
+
+                                // 2. Trata nome do Funcionário Avaliado (Operador)
+                                let funcRaw = row['Funcionário'] || 'Desconhecido';
+                                let operadorNomeFmt = String(funcRaw).trim();
+                                if (operadorNomeFmt.includes(',')) {
+                                    let parts = operadorNomeFmt.split(',');
+                                    operadorNomeFmt = parts[1].trim() + ' ' + parts[0].trim();
+                                }
+
+                                // 3. Extração da Nota
+                                let notaRaw = row['Pontuação de Formulário'];
+                                let nota = 0;
+                                if (notaRaw !== undefined && notaRaw !== null) {
+                                    if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
+                                    nota = parseFloat(notaRaw);
+                                }
+
+                                // 4. Integração Financeira e Somatório no Ranking (Apenas para Monitores Cadastrados)
+                                if (monitorObj && !isNaN(nota)) {
+                                    let idxRanking = rankingAtual.findIndex(r => r.matricula === matriculaMonitor);
+                                    
+                                    if (idxRanking > -1) {
+                                        rankingAtual[idxRanking].total += 1;
+                                        rankingAtual[idxRanking].falta = Math.max(0, 400 - rankingAtual[idxRanking].total);
+                                        if (nota < 85) rankingAtual[idxRanking].pendenteFeedback += 1; 
+                                    } else {
+                                        rankingAtual.push({
+                                            nome: monitorObj.nome,
+                                            matricula: matriculaMonitor,
+                                            total: 1,
+                                            falta: 399,
+                                            pendenteFeedback: nota < 85 ? 1 : 0,
+                                            operacao: (monitorObj.operacoes && monitorObj.operacoes[0]) || 'Amil'
+                                        });
+                                    }
+                                    
+                                    // Sincroniza com o Painel Financeiro do Usuário (Meta G1)
+                                    if(!monitorObj.results) monitorObj.results = {};
+                                    if(!monitorObj.results[app.currentMonth]) monitorObj.results[app.currentMonth] = {status: 'pendente'};
+                                    if(!monitorObj.results[app.currentMonth]['g1']) monitorObj.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
+                                    
+                                    const userAtualizado = rankingAtual.find(r => r.matricula === matriculaMonitor);
+                                    monitorObj.results[app.currentMonth]['g1'].real = userAtualizado.total;
+                                    
+                                    countAdicionados++;
+                                }
+
+                                // 5. Registra para o log visual e dashboard de "Visão Linha por Linha"
+                                linhasDetalhadas.push({
+                                    monitor: monitorObj ? monitorObj.nome : monitorNomeFmt,
+                                    matriculaMonitor: matriculaMonitor,
+                                    isRegisteredMonitor: !!monitorObj,
+                                    operador: app.utils.fixEncoding(operadorNomeFmt),
+                                    nota: isNaN(nota) ? 'N/A' : nota,
+                                    status: 'Integrado via CSV Amil',
+                                    operacao: 'AMIL',
+                                    data: new Date().toLocaleDateString('pt-BR')
+                                });
+                            });
+
+                            // Reordena o Placard
+                            rankingAtual.sort((a, b) => b.total - a.total);
+                            app.monitoriasData.ranking = rankingAtual;
+                            app.monitoriasData.detalhes.linhas = linhasDetalhadas;
+                            app.monitoriasData.ultimaAtualizacao = Date.now();
+
+                            // Dispara Salavamento e Atualiza Interface
+                            app.storage.saveUsers();
+                            app.storage.saveMonitorias().then(() => {
+                                app.ui.showAlert("Integração Amil Concluída", `Arquivo processado com sucesso!<br><br><strong>Monitorias Somadas aos Resultados:</strong> +${countAdicionados}`, "success");
+                                app.ui.renderTab('import_monitorias', true);
+                            });
+
+                        } catch (err) {
+                            console.error("Erro processar Amil:", err);
+                            app.ui.showAlert("Erro de Leitura", "O formato do CSV da Amil é inválido ou as colunas solicitadas não foram encontradas.", "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
