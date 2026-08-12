@@ -5079,27 +5079,25 @@
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Monitorias</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Carregue o relatório e acompanhe as projeções da equipe. <strong class="text-blue-500">Dias Úteis Mês: ${wd.total} (Já passados: ${wd.passed})</strong></p>
-                            </div>
-                            <div class="flex flex-col sm:flex-row gap-3">
-                                <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-plus"></i> Adicionar Manual
-                                </button>
-                                
-                                <!-- NOVO BOTÃO: CSV AMIL -->
-                                <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Soma resultados ao painel atual sem apagar os anteriores">
-                                    <i class="fa-solid fa-file-csv"></i> Subir Relatório Amil
-                                    <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
-                                </label>
-
-                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-upload"></i> Subir Relatório Padrão
-                                    <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
-                                </label>
-                            </div>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                            <!-- NOVO BOTÃO: RESETAR -->
+                            <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
+                                <i class="fa-solid fa-trash-can"></i> Resetar Mês
+                            </button>
+                    
+                            <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-plus"></i> Adicionar Manual
+                            </button>
+                            
+                            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados da Amil">
+                                <i class="fa-solid fa-file-csv"></i> Relatório Amil
+                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
+                            </label>
+                    
+                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
+                                <i class="fa-solid fa-upload"></i> Relatório Padrão
+                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                            </label>
                         </div>
                     `;
                     
@@ -5917,98 +5915,185 @@
 
                 // --- NOVA INTEGRAÇÃO: RELATÓRIO AMIL (SOMA INCREMENTAL FLEXÍVEL) ---
                 // --- INTEGRAÇÃO: RELATÓRIO AMIL (SOMA INCREMENTAL FLEXÍVEL) ---
+                // --- BOTÃO RESETAR MÊS ---
+                resetarMonitorias() {
+                    app.ui.showConfirm("Cuidado!", "Isso apagará TODOS os dados de monitoria importados (Amil e Padrão) deste mês. Deseja continuar?", "app.admin.execResetarMonitorias()", true);
+                },
+            
+                execResetarMonitorias() {
+                    app.monitoriasData = { periodo: app.currentMonth, ranking: [], detalhes: { mediaTotal: 0, colaboradores: [], linhas: [] } };
+                    // Zera o painel individual (G1) de todas as meninas
+                    app.users.forEach(u => {
+                        if(u.results && u.results[app.currentMonth] && u.results[app.currentMonth]['g1']) {
+                            u.results[app.currentMonth]['g1'].real = 0;
+                        }
+                    });
+                    app.storage.saveUsers();
+                    app.storage.saveMonitorias().then(() => {
+                        app.ui.showAlert("Reset Concluído", "Todos os dados de monitoria do mês atual foram zerados.", "success");
+                        app.ui.renderTab('import_monitorias', true);
+                    });
+                },
+            
+                // --- FUNÇÃO CENTRALIZADORA DE CÁLCULO ---
+                recalcularPainelMonitorias() {
+                    let linhasGlobais = app.monitoriasData.detalhes.linhas || [];
+                    let rankingMap = {};
+                    let opsMap = {};
+                    let somaNotas = 0;
+                    let countNotas = 0;
+            
+                    // Pré-popula o mapa com os monitores existentes no sistema
+                    app.users.forEach(u => {
+                        rankingMap[u.matricula] = {
+                            nome: u.nome,
+                            matricula: u.matricula,
+                            total: 0,
+                            falta: 400,
+                            pendenteFeedback: 0,
+                            operacao: (u.operacoes && u.operacoes[0]) || 'N/A'
+                        };
+                    });
+            
+                    // Varre TODAS as linhas juntas (Padrão + Amil)
+                    linhasGlobais.forEach(linha => {
+                        // Conta Produtividade e Feedback (Apenas se vinculou ao usuário do sistema)
+                        if (linha.isRegisteredMonitor && linha.matriculaMonitor) {
+                            if (!rankingMap[linha.matriculaMonitor]) {
+                                rankingMap[linha.matriculaMonitor] = {
+                                    nome: linha.monitor, matricula: linha.matriculaMonitor,
+                                    total: 0, falta: 400, pendenteFeedback: 0, operacao: linha.operacao || 'N/A'
+                                };
+                            }
+                            
+                            rankingMap[linha.matriculaMonitor].total += 1;
+                            rankingMap[linha.matriculaMonitor].falta = Math.max(0, 400 - rankingMap[linha.matriculaMonitor].total);
+            
+                            // Lógica de pendente de feedback (notas abaixo de 85 que não foram aplicadas)
+                            if (linha.nota !== 'N/A' && linha.nota < 85) {
+                                let isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado') || linha.source === 'AMIL'; // Amil não tem regra de pendente no momento, assumimos ok ou ajuste conforme regra
+                                if (!isAplicado && linha.source !== 'AMIL') {
+                                     rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
+                                } else if (linha.source === 'AMIL' && linha.nota < 85) {
+                                     // Se quiser que Amil < 85 conte como pendente automático, deixe descomentado. Se não, comente esta linha.
+                                     rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
+                                }
+                            }
+                        }
+            
+                        // Conta Desempenho Operacional (Média da Operação)
+                        if (typeof linha.nota === 'number' && !isNaN(linha.nota)) {
+                            somaNotas += linha.nota;
+                            countNotas++;
+                            let opNomeFormatado = linha.operador;
+                            if(!opsMap[opNomeFormatado]) opsMap[opNomeFormatado] = { nome: opNomeFormatado, qtd: 0, soma: 0 };
+                            opsMap[opNomeFormatado].qtd += 1;
+                            opsMap[opNomeFormatado].soma += linha.nota;
+                        }
+                    });
+            
+                    // Converte os mapas em arrays ordenados
+                    let novoRanking = Object.values(rankingMap).filter(r => r.total > 0).sort((a,b) => b.total - a.total);
+                    let novaMediaTotal = countNotas > 0 ? (somaNotas / countNotas).toFixed(2) : 0;
+                    let novosColaboradores = Object.values(opsMap).map(o => ({
+                        nome: o.nome,
+                        qtd: o.qtd,
+                        media: (o.soma / o.qtd).toFixed(2)
+                    })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
+            
+                    // Salva os totais consolidados no Painel Financeiro de cada Usuário (G1)
+                    novoRanking.forEach(r => {
+                        const usr = app.users.find(u => u.matricula === r.matricula);
+                        if(usr) {
+                            if(!usr.results) usr.results = {};
+                            if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
+                            if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
+                            usr.results[app.currentMonth]['g1'].real = r.total;
+                        }
+                    });
+            
+                    // Atualiza a fonte da verdade
+                    app.monitoriasData.ranking = novoRanking;
+                    app.monitoriasData.detalhes.mediaTotal = novaMediaTotal;
+                    app.monitoriasData.detalhes.colaboradores = novosColaboradores;
+                    app.monitoriasData.ultimaAtualizacao = Date.now();
+            
+                    app.storage.saveUsers();
+                    app.storage.saveMonitorias().then(() => {
+                        app.ui.renderTab('import_monitorias', true);
+                        app.ui.showAlert("Processamento Concluído", "Dados consolidados com sucesso! As duas origens (Padrão e Amil) estão somadas no painel.", "success");
+                    });
+                },
+            
+                // --- IMPORTAÇÃO AMIL (INVERTE NOMES E SUBSTITUI SÓ AMIL) ---
                 processarPlanilhaAmil(input) {
                     const file = input.files[0];
                     if (!file) return;
-
-                    app.ui.showAlert("Processando Amil...", "Lendo as colunas flexíveis e invertendo nomes. Aguarde...", "info");
-
+            
+                    app.ui.showAlert("Processando Amil...", "Lendo as colunas e invertendo nomes...", "info");
+            
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array' });
-                            const firstSheetName = workbook.SheetNames[0];
-                            const worksheet = workbook.Sheets[firstSheetName];
+                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "O arquivo da Amil está vazio.", "error");
-
-                            // Inicializa as bases se não existirem, garantindo a SOMA sem sobrescrever
-                            if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { mediaTotal: 0, colaboradores: [], linhas: [] } };
-                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = { mediaTotal: 0, colaboradores: [], linhas: [] };
+            
+                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "Arquivo Amil vazio.", "error");
+            
+                            // Inicializa segurança
+                            if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { linhas: [] } };
+                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = { linhas: [] };
                             if (!app.monitoriasData.detalhes.linhas) app.monitoriasData.detalhes.linhas = [];
-                            
-                            let rankingAtual = app.monitoriasData.ranking || [];
-                            let linhasAtuais = app.monitoriasData.detalhes.linhas || [];
-                            let countSoma = 0;
-
-                            // Busca flexível de colunas (ignora maiúsculas, minúsculas e espaços extras)
+            
+                            // LIMPA AS LINHAS ANTIGAS DA AMIL (Mantém as Padrão)
+                            let linhasMantidas = app.monitoriasData.detalhes.linhas.filter(l => l.source !== 'AMIL');
+            
                             const getValByKeyword = (row, keyword) => {
                                 const key = Object.keys(row).find(k => k.toUpperCase().includes(keyword));
                                 return key ? row[key] : undefined;
                             };
-
+            
+                            let linhasNovas = [];
+                            let matchCount = 0;
+            
                             jsonData.forEach(row => {
-                                // 1. Encontrar e Inverter Avaliador
                                 let avaliadorRaw = getValByKeyword(row, 'AVALIADOR') || getValByKeyword(row, 'MONITOR');
                                 if (!avaliadorRaw) return;
-                                
+            
+                                // Inversão do nome do Avaliador
                                 let nomeFormatado = String(avaliadorRaw).trim();
                                 if (nomeFormatado.includes(',')) {
                                     let partes = nomeFormatado.split(',');
                                     nomeFormatado = partes[1].trim() + ' ' + partes[0].trim();
                                 }
-
-                                // 2. Encontrar e Inverter Operador
+            
+                                // Inversão do nome do Operador
                                 let funcRaw = getValByKeyword(row, 'FUNCIONÁRIO') || getValByKeyword(row, 'FUNCIONARIO') || getValByKeyword(row, 'OPERADOR') || 'Não Identificado';
                                 let operadorFmt = String(funcRaw).trim();
                                 if (operadorFmt.includes(',')) {
                                     let p = operadorFmt.split(',');
                                     operadorFmt = p[1].trim() + ' ' + p[0].trim();
                                 }
-
-                                // 3. Capturar a Nota
+            
+                                // Capturar Nota
                                 let notaRaw = getValByKeyword(row, 'PONTUAÇÃO') || getValByKeyword(row, 'PONTUACAO') || getValByKeyword(row, 'NOTA');
-                                let notaFormatada = 0;
+                                let notaFormatada = 'N/A';
                                 if (notaRaw !== undefined && notaRaw !== null && notaRaw !== "") {
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
                                     notaFormatada = parseFloat(notaRaw);
                                 }
-
-                                // 4. Encontrar o Avaliador no sistema
+            
+                                // Linkar com usuário do sistema
                                 const keyNormal = nomeFormatado.toUpperCase();
                                 let matriculaEncontrada = app.config?.aliases?.[keyNormal] || null;
                                 let monitorObj = app.users.find(u => u.matricula === matriculaEncontrada || u.nome.toUpperCase() === keyNormal || u.nome.toUpperCase().includes(nomeFormatado.split(' ')[0].toUpperCase()));
-                                
-                                if (monitorObj && !isNaN(notaFormatada)) {
-                                    let idx = rankingAtual.findIndex(r => r.matricula === monitorObj.matricula);
-                                    if (idx > -1) {
-                                        rankingAtual[idx].total += 1;
-                                        rankingAtual[idx].falta = Math.max(0, 400 - rankingAtual[idx].total);
-                                        if (notaFormatada < 85) rankingAtual[idx].pendenteFeedback += 1;
-                                    } else {
-                                        rankingAtual.push({
-                                            nome: monitorObj.nome,
-                                            matricula: monitorObj.matricula,
-                                            total: 1,
-                                            falta: 399,
-                                            pendenteFeedback: notaFormatada < 85 ? 1 : 0,
-                                            operacao: (monitorObj.operacoes && monitorObj.operacoes[0]) || 'Amil'
-                                        });
-                                    }
-
-                                    if(!monitorObj.results) monitorObj.results = {};
-                                    if(!monitorObj.results[app.currentMonth]) monitorObj.results[app.currentMonth] = {status: 'pendente'};
-                                    if(!monitorObj.results[app.currentMonth]['g1']) monitorObj.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
-                                    
-                                    const atualizado = rankingAtual.find(r => r.matricula === monitorObj.matricula);
-                                    monitorObj.results[app.currentMonth]['g1'].real = atualizado.total;
-                                    countSoma++;
-                                }
-
-                                // 5. Adiciona a linha no detalhamento analítico
-                                linhasAtuais.push({
+            
+                                if(monitorObj) matchCount++;
+            
+                                linhasNovas.push({
+                                    source: 'AMIL', // ETIQUETA MÁGICA
                                     monitor: monitorObj ? monitorObj.nome : nomeFormatado,
                                     matriculaMonitor: monitorObj ? monitorObj.matricula : null,
                                     isRegisteredMonitor: !!monitorObj,
@@ -6019,103 +6104,55 @@
                                     data: new Date().toLocaleDateString('pt-BR')
                                 });
                             });
-
-                            if (countSoma === 0) {
-                                return app.ui.showAlert("Leitura Concluída", "O CSV foi lido, mas nenhum nome de Avaliador bateu com a equipe cadastrada, ou as notas estavam vazias. Se os nomes estiverem muito diferentes, use a aba 'Vincular Nomes'.", "error");
+            
+                            if (matchCount === 0) {
+                                return app.ui.showAlert("Aviso", "O arquivo foi lido, mas nenhum Avaliador bateu com os cadastros do sistema. Use a aba 'Vincular Nomes'.", "error");
                             }
-
-                            // --- CORREÇÃO: RECALCULA PRODUTIVIDADE DAS OPERADORAS E MÉDIA TOTAL ---
-                            let somaNotas = 0;
-                            let countNotas = 0;
-                            let opsAvaliados = {};
-
-                            linhasAtuais.forEach(linha => {
-                                if (typeof linha.nota === 'number' && !isNaN(linha.nota)) {
-                                    somaNotas += linha.nota;
-                                    countNotas++;
-                                    
-                                    let opNome = linha.operador;
-                                    if (!opsAvaliados[opNome]) opsAvaliados[opNome] = { nome: opNome, qtd: 0, soma: 0 };
-                                    opsAvaliados[opNome].qtd += 1;
-                                    opsAvaliados[opNome].soma += linha.nota;
-                                }
-                            });
-
-                            let novaMediaTotal = countNotas > 0 ? (somaNotas / countNotas).toFixed(2) : 0;
-                            let novosColaboradores = Object.values(opsAvaliados).map(o => ({
-                                nome: o.nome,
-                                qtd: o.qtd,
-                                media: (o.soma / o.qtd).toFixed(2)
-                            })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
-
-                            // Salva dados
-                            rankingAtual.sort((a,b) => b.total - a.total);
-                            app.monitoriasData.ranking = rankingAtual;
-                            app.monitoriasData.detalhes.linhas = linhasAtuais;
-                            app.monitoriasData.detalhes.mediaTotal = novaMediaTotal;
-                            app.monitoriasData.detalhes.colaboradores = novosColaboradores;
-                            app.monitoriasData.ultimaAtualizacao = Date.now();
-
-                            app.storage.saveUsers();
-                            app.storage.saveMonitorias().then(() => {
-                                app.ui.showAlert("Integração Amil Concluída", `Arquivo mesclado com sucesso!<br><br><strong>+${countSoma} avaliações</strong> somadas aos indicadores atuais da equipe.`, "success");
-                                app.ui.renderTab('import_monitorias', true);
-                            });
-
+            
+                            // Salva a união das linhas e chama o recalculador mestre
+                            app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
+                            this.recalcularPainelMonitorias();
+            
                         } catch (err) {
                             console.error(err);
-                            app.ui.showAlert("Erro de Estrutura", "O arquivo da Amil está fora do padrão esperado ou não é um CSV válido.", "error");
+                            app.ui.showAlert("Erro", "Falha ao processar CSV da Amil.", "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
                 },
-                
-                // --- ARQUITETURA DE PROCESSAMENTO DE PLANILHAS (Padrão) ---
+            
+                // --- IMPORTAÇÃO PADRÃO (SUBSTITUI SÓ PADRÃO E MANTÉM AMIL) ---
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
             
-                    app.ui.showAlert("Processando...", "Lendo a planilha e aplicando as regras de negócio. Aguarde...", "info");
+                    app.ui.showAlert("Processando Padrão...", "Lendo a planilha principal...", "info");
             
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array' });
-                            const firstSheetName = workbook.SheetNames[0];
-                            const worksheet = workbook.Sheets[firstSheetName];
+                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet);
             
-                            if (jsonData.length === 0) {
-                                return app.ui.showAlert("Aviso", "A planilha está vazia ou o formato é inválido.", "error");
-                            }
+                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
+            
+                            // Inicializa segurança
+                            if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { linhas: [] } };
+                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = { linhas: [] };
+                            if (!app.monitoriasData.detalhes.linhas) app.monitoriasData.detalhes.linhas = [];
+            
+                            // LIMPA AS LINHAS PADRÃO ANTIGAS (Mantém a Amil intacta!)
+                            let linhasMantidas = app.monitoriasData.detalhes.linhas.filter(l => l.source !== 'PADRAO');
             
                             let periodoAnalisado = "Período Indefinido";
                             for (let i = 0; i < jsonData.length; i++) {
-                                if (jsonData[i]['DATA MONITORIA']) {
-                                    periodoAnalisado = jsonData[i]['DATA MONITORIA'];
-                                    break;
-                                }
+                                if (jsonData[i]['DATA MONITORIA']) { periodoAnalisado = jsonData[i]['DATA MONITORIA']; break; }
                             }
+                            app.monitoriasData.periodo = periodoAnalisado;
             
-                            let mapUsuarios = {};
-                            app.users.forEach(u => {
-                                mapUsuarios[u.matricula] = {
-                                    nome: u.nome,
-                                    matricula: u.matricula,
-                                    total: 0,
-                                    falta: 400,
-                                    pendenteFeedback: 0,
-                                    totalAbaixo85: 0,
-                                    feedbacksAplicados: 0,
-                                    operacao: 'N/A',
-                                    manual: false
-                                };
-                            });
-
-                            let detalhamentoLido = [];
-                            let notasValidas = [];
-                            let opsAvaliadosMap = {};
+                            let linhasNovas = [];
             
                             jsonData.forEach(row => {
                                 const monitorSup = row['MONITOR|SUPERVISOR'] || row['NOME'] || row['AVALIADOR'];
@@ -6129,140 +6166,50 @@
                                 const keyAliasParte = matricula.toUpperCase();
                                 
                                 if (app.config && app.config.aliases) {
-                                    if (app.config.aliases[keyAliasCompleta]) {
-                                        matricula = app.config.aliases[keyAliasCompleta];
-                                    } else if (app.config.aliases[keyAliasParte]) {
-                                        matricula = app.config.aliases[keyAliasParte];
-                                    }
+                                    if (app.config.aliases[keyAliasCompleta]) matricula = app.config.aliases[keyAliasCompleta];
+                                    else if (app.config.aliases[keyAliasParte]) matricula = app.config.aliases[keyAliasParte];
                                 }
                                 
-                                if (!mapUsuarios[matricula]) {
-                                    let userPorNome = app.users.find(u => u.nome.toUpperCase() === monitorSupStr.toUpperCase());
-                                    if (userPorNome) matricula = userPorNome.matricula;
-                                }
+                                let userObj = app.users.find(u => u.matricula === matricula || u.nome.toUpperCase() === monitorSupStr.toUpperCase());
+                                if(userObj) matricula = userObj.matricula;
             
-                                const isRegisteredMonitor = !!mapUsuarios[matricula];
-            
+                                const isRegisteredMonitor = !!userObj;
                                 const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
                                 const operacao = String(row['OPERACAO'] || '').toUpperCase();
             
-                                // CORREÇÃO DO ERRO TYPE ERROR (Verificando se mapUsuarios[matricula] existe antes de ler operacao)
-                                if(operacao && mapUsuarios[matricula] && mapUsuarios[matricula].operacao === 'N/A') {
-                                    mapUsuarios[matricula].operacao = operacao;
-                                }
+                                const isNeutro = titulo.includes('neutro') || operacao.includes('NEUTROS');
             
-                                const isNeutro = titulo.includes('neutro') || 
-                                                 operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
-                                                 operacao.includes('QUALIDADE - FORMULÃRIOS NEUTROS') || 
-                                                 operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS') || 
-                                                 operacao.includes('FORMULÁRIOS NEUTROS');
-            
-                                if (isRegisteredMonitor) {
-                                    mapUsuarios[matricula].total += 1;
-                                    mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
-                                }
-            
-                                let notaFinalLida = 'N/A (Neutro)';
-
+                                let notaFinalLida = 'N/A';
                                 if (!isNeutro) {
                                     let notaRaw = row['NOTA MONITORIA'];
-                                    if (notaRaw === undefined || notaRaw === null) {
-                                        notaRaw = row['RESULTADO'] || row['RESULTADO FINAL'] || 100;
-                                    }
-                                    
+                                    if (notaRaw === undefined || notaRaw === null) notaRaw = row['RESULTADO'] || row['RESULTADO FINAL'] || 100;
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
-                                    let nota = parseFloat(notaRaw);
-            
-                                    let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
-                                    let motivo = String(row['MOTIVO'] || '').toLowerCase();
-    
-                                    if (!isNaN(nota)) {
-                                        notaFinalLida = nota;
-                                        notasValidas.push(nota);
-                                        
-                                        const colOp = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
-                                        let opNome = app.utils.fixEncoding(String(row[colOp] || row['OPERADOR'] || 'Não Identificado')).trim();
-                                        
-                                        if(!opsAvaliadosMap[opNome]) opsAvaliadosMap[opNome] = { nome: opNome, qtd: 0, soma: 0 };
-                                        opsAvaliadosMap[opNome].qtd += 1;
-                                        opsAvaliadosMap[opNome].soma += nota;
-
-                                        if (nota < 85 && isRegisteredMonitor) {
-                                            mapUsuarios[matricula].totalAbaixo85 += 1;
-                                            let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
-                                            if (!isAplicado && (statusFb.includes('feedback_nao_aplicado') || statusFb.includes('feedback nao aplicado')) && motivo.includes('home office')) {
-                                                isAplicado = true;
-                                            }
-                                            
-                                            if (isAplicado) {
-                                                mapUsuarios[matricula].feedbacksAplicados += 1;
-                                            } else {
-                                                mapUsuarios[matricula].pendenteFeedback += 1;
-                                            }
-                                        }
-                                    }
+                                    notaFinalLida = parseFloat(notaRaw);
                                 }
-
+            
                                 const colOpFinal = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
                                 let opNomeDetalhe = app.utils.fixEncoding(String(row[colOpFinal] || row['OPERADOR'] || 'Não Identificado')).trim();
-
-                                detalhamentoLido.push({
-                                    monitor: isRegisteredMonitor ? mapUsuarios[matricula].nome : monitorSupStr,
-                                    matriculaMonitor: matricula,
+            
+                                linhasNovas.push({
+                                    source: 'PADRAO', // ETIQUETA MÁGICA
+                                    monitor: isRegisteredMonitor ? userObj.nome : monitorSupStr,
+                                    matriculaMonitor: isRegisteredMonitor ? matricula : null,
                                     isRegisteredMonitor: isRegisteredMonitor,
                                     operador: opNomeDetalhe,
-                                    nota: notaFinalLida,
+                                    nota: isNaN(notaFinalLida) ? 'N/A' : notaFinalLida,
                                     status: String(row['STATUS MONITORIA'] || row['STATUS'] || '-'),
                                     operacao: operacao,
                                     data: row['DATA MONITORIA'] || row['DATA'] || periodoAnalisado
                                 });
                             });
             
-                            const novoRanking = Object.values(mapUsuarios)
-                                .filter(u => u.total > 0)
-                                .sort((a, b) => b.total - a.total);
-            
-                            let mediaGeralTotal = notasValidas.length > 0 ? (notasValidas.reduce((a,b)=>a+b,0) / notasValidas.length).toFixed(2) : 0;
-                            let arrayOperadoresSorted = Object.values(opsAvaliadosMap).map(o => ({
-                                nome: o.nome,
-                                qtd: o.qtd,
-                                media: (o.soma / o.qtd).toFixed(2)
-                            })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
-
-                            app.monitoriasData = {
-                                periodo: periodoAnalisado,
-                                ranking: novoRanking,
-                                detalhes: {
-                                    mediaTotal: mediaGeralTotal,
-                                    colaboradores: arrayOperadoresSorted,
-                                    linhas: detalhamentoLido
-                                },
-                                ultimaAtualizacao: Date.now()
-                            };
-            
-                            novoRanking.forEach(r => {
-                                const usr = app.users.find(u => u.matricula === r.matricula);
-                                if(usr) {
-                                    if(!usr.results) usr.results = {};
-                                    if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
-                                    if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
-                                    usr.results[app.currentMonth]['g1'].real = r.total;
-                                }
-                            });
-                            app.storage.saveUsers(); 
-            
-                            app.storage.saveMonitorias().then(() => {
-                                document.getElementById('global-modal').classList.add('hidden');
-                                app.ui.showAlert("Importação Concluída", `Planilha lida com sucesso!<br><br><strong>Período Identificado:</strong> ${periodoAnalisado}<br><strong>Monitores Validados:</strong> ${novoRanking.length}`, "success");
-                                app.ui.renderTab('import_monitorias', true); 
-                            }).catch(err => {
-                                console.error("Erro ao salvar:", err);
-                                app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar.", "error");
-                            });
+                            // Salva a união das linhas e chama o recalculador mestre
+                            app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
+                            this.recalcularPainelMonitorias();
             
                         } catch (err) {
-                            console.error("Erro ao processar planilha:", err);
-                            app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente.", "error");
+                            console.error(err);
+                            app.ui.showAlert("Erro", "Não foi possível ler o arquivo Padrão.", "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
