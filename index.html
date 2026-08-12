@@ -5843,22 +5843,23 @@
                                     let nota = parseFloat(notaRaw);
             
                                     let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
-                                let motivo = String(row['MOTIVO'] || '').toLowerCase();
-
-                                if (!isNaN(nota) && nota < 85) {
-                                    mapUsuarios[matricula].totalAbaixo85 += 1;
-                                    
-                                    let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
-                                    
-                                    // Nova Regra: Considera aplicado se for Home Office, mesmo que o status seja "não aplicado"
-                                    if (!isAplicado && (statusFb.includes('feedback_nao_aplicado') || statusFb.includes('feedback nao aplicado')) && motivo.includes('home office')) {
-                                        isAplicado = true;
-                                    }
-                                    
-                                    if (isAplicado) {
-                                        mapUsuarios[matricula].feedbacksAplicados += 1;
-                                    } else {
-                                        mapUsuarios[matricula].pendenteFeedback += 1;
+                                    let motivo = String(row['MOTIVO'] || '').toLowerCase();
+    
+                                    if (!isNaN(nota) && nota < 85) {
+                                        mapUsuarios[matricula].totalAbaixo85 += 1;
+                                        
+                                        let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
+                                        
+                                        // Nova Regra: Considera aplicado se for Home Office, mesmo que o status seja "não aplicado"
+                                        if (!isAplicado && (statusFb.includes('feedback_nao_aplicado') || statusFb.includes('feedback nao aplicado')) && motivo.includes('home office')) {
+                                            isAplicado = true;
+                                        }
+                                        
+                                        if (isAplicado) {
+                                            mapUsuarios[matricula].feedbacksAplicados += 1;
+                                        } else {
+                                            mapUsuarios[matricula].pendenteFeedback += 1;
+                                        }
                                     }
                                 }
                             });
