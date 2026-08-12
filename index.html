@@ -5122,7 +5122,7 @@
                         let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-green-500' : 'text-orange-500';
                     
                         html += `
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-6">
                                 <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
                                     <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
                                     <div><div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalMonitorias}</div></div>
@@ -5250,7 +5250,7 @@
                         `;
                     } else {
                         html += `
-                            <div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">
+                            <div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2 mt-6">
                                 <i class="fa-solid fa-file-csv text-5xl mb-4 opacity-50"></i>
                                 <p>Nenhum dado importado para o mês atual.</p>
                                 <p class="text-xs mt-2">Faça o upload do relatório da plataforma para visualizar os dados.</p>
@@ -5258,7 +5258,7 @@
                         `;
                     }
                     
-                    // --- NOVO: VISÃO DETALHADA GLASSMORPHISM 3D (ADMIN) ---
+                    // --- VISÃO DETALHADA GLASSMORPHISM 3D (ADMIN) ---
                     if (state.detalhes) {
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
@@ -5273,14 +5273,14 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
                                     <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
                                         <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
-                                        <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${state.detalhes.mediaTotal}</div>
+                                        <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${state.detalhes.mediaTotal || 0}</div>
                                         <p class="text-xs text-slate-500">Média geral baseada em todas as notas computadas no arquivo importado.</p>
                                     </div>
                 
                                     <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform max-h-48 overflow-y-auto custom-scrollbar">
                                         <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
                                         <div class="space-y-4">
-                                            ${state.detalhes.colaboradores.map((op, idx) => {
+                                            ${state.detalhes.colaboradores ? state.detalhes.colaboradores.map((op, idx) => {
                                                 // Cruzamento Avançado de Notas
                                                 const analiseDoOperador = state.detalhes.linhas.filter(l => l.operador === op.nome);
                                                 
@@ -5312,7 +5312,7 @@
                                                     </div>
                                                 </div>
                                                 `;
-                                            }).join('')}
+                                            }).join('') : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -5335,7 +5335,7 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                ${state.detalhes.linhas.map(linha => `
+                                                ${state.detalhes.linhas ? state.detalhes.linhas.map(linha => `
                                                     <tr class="hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
                                                         <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
                                                         <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
@@ -5344,7 +5344,7 @@
                                                         <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                         <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
                                                     </tr>
-                                                `).join('')}
+                                                `).join('') : ''}
                                             </tbody>
                                         </table>
                                     </div>
