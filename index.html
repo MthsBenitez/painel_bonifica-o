@@ -5671,21 +5671,29 @@
                                     ${app.users.map(u => `<option value="${u.matricula}" ${u.matricula === matr ? 'selected' : ''}>${u.nome}</option>`).join('')}
                                 </select>
                             </div>
-                            <div class="grid grid-cols-1 gap-4 mt-2">
-                                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2"><i class="fa-solid fa-calculator text-blue-500"></i> Total Realizado (Calculadora)</label>
+                            
+                            <div class="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50 space-y-4">
+                                <div class="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest"><i class="fa-solid fa-calculator"></i> Calculadora (Ajuste Rápido)</div>
+                                
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Total Realizado</label>
                                     <div class="flex items-center gap-2">
-                                        <button type="button" onclick="document.getElementById('man-total').value = Math.max(0, parseInt(document.getElementById('man-total').value || 0) - 1)" class="bg-red-100 hover:bg-red-200 text-red-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">-</button>
-                                        <input type="number" id="man-total" value="${total}" class="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none text-center font-black text-xl text-blue-600 dark:text-blue-400 shadow-inner">
-                                        <button type="button" onclick="document.getElementById('man-total').value = parseInt(document.getElementById('man-total').value || 0) + 1" class="bg-green-100 hover:bg-green-200 text-green-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">+</button>
+                                        <input type="number" id="man-total" value="${total}" class="w-20 p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm font-black text-slate-800 dark:text-white text-center shadow-sm">
+                                        <span class="text-slate-400 font-bold text-lg">±</span>
+                                        <input type="number" id="calc-total-adj" placeholder="Qtd" class="w-16 p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm text-center dark:text-white shadow-inner">
+                                        <button type="button" onclick="document.getElementById('man-total').value = parseInt(document.getElementById('man-total').value||0) + parseInt(document.getElementById('calc-total-adj').value||0); document.getElementById('calc-total-adj').value='';" class="bg-green-500 hover:bg-green-600 text-white w-10 h-10 flex items-center justify-center rounded-lg font-black shadow-sm transition-colors">+</button>
+                                        <button type="button" onclick="document.getElementById('man-total').value = Math.max(0, parseInt(document.getElementById('man-total').value||0) - parseInt(document.getElementById('calc-total-adj').value||0)); document.getElementById('calc-total-adj').value='';" class="bg-red-500 hover:bg-red-600 text-white w-10 h-10 flex items-center justify-center rounded-lg font-black shadow-sm transition-colors">-</button>
                                     </div>
                                 </div>
-                                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2"><i class="fa-solid fa-calculator text-orange-500"></i> FBs Pendentes (Calculadora)</label>
+                                
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">FBs Pendentes</label>
                                     <div class="flex items-center gap-2">
-                                        <button type="button" onclick="document.getElementById('man-fbs').value = Math.max(0, parseInt(document.getElementById('man-fbs').value || 0) - 1)" class="bg-red-100 hover:bg-red-200 text-red-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">-</button>
-                                        <input type="number" id="man-fbs" value="${fbsPendentes}" class="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none text-center font-black text-xl text-orange-500 dark:text-orange-400 shadow-inner">
-                                        <button type="button" onclick="document.getElementById('man-fbs').value = parseInt(document.getElementById('man-fbs').value || 0) + 1" class="bg-green-100 hover:bg-green-200 text-green-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">+</button>
+                                        <input type="number" id="man-fbs" value="${fbsPendentes}" class="w-20 p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm font-black text-slate-800 dark:text-white text-center shadow-sm">
+                                        <span class="text-slate-400 font-bold text-lg">±</span>
+                                        <input type="number" id="calc-fbs-adj" placeholder="Qtd" class="w-16 p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm text-center dark:text-white shadow-inner">
+                                        <button type="button" onclick="document.getElementById('man-fbs').value = parseInt(document.getElementById('man-fbs').value||0) + parseInt(document.getElementById('calc-fbs-adj').value||0); document.getElementById('calc-fbs-adj').value='';" class="bg-green-500 hover:bg-green-600 text-white w-10 h-10 flex items-center justify-center rounded-lg font-black shadow-sm transition-colors">+</button>
+                                        <button type="button" onclick="document.getElementById('man-fbs').value = Math.max(0, parseInt(document.getElementById('man-fbs').value||0) - parseInt(document.getElementById('calc-fbs-adj').value||0)); document.getElementById('calc-fbs-adj').value='';" class="bg-red-500 hover:bg-red-600 text-white w-10 h-10 flex items-center justify-center rounded-lg font-black shadow-sm transition-colors">-</button>
                                     </div>
                                 </div>
                             </div>
