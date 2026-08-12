@@ -5222,6 +5222,77 @@
                         `;
                     }
                     
+                    // --- NOVO: VISÃO DETALHADA GLASSMORPHISM 3D (ADMIN) ---
+                    if (state.detalhes) {
+                        html += `
+                            <div class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
+                                <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                <div class="absolute left-0 bottom-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                
+                                <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
+                                    <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico da Importação
+                                </h3>
+                
+                                <!-- Cartões 3D Topo -->
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
+                                    <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
+                                        <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
+                                        <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${state.detalhes.mediaTotal}</div>
+                                        <p class="text-xs text-slate-500">Média geral baseada em todas as notas computadas no arquivo importado.</p>
+                                    </div>
+                
+                                    <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform max-h-48 overflow-y-auto custom-scrollbar">
+                                        <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1"><i class="fa-solid fa-users-gear mr-1"></i> Média por Colaborador Avaliado</div>
+                                        <div class="space-y-2">
+                                            ${state.detalhes.colaboradores.map((op, idx) => `
+                                                <div class="flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-800 pb-2">
+                                                    <div class="flex flex-col">
+                                                        <span class="font-bold text-slate-700 dark:text-slate-300">${idx+1}. ${op.nome}</span>
+                                                        <span class="text-[9px] text-slate-400">${op.qtd} avaliações recebidas</span>
+                                                    </div>
+                                                    <span class="font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded shadow-inner">${op.media}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                
+                                <!-- Tabela Linha por Linha Glassmorphism 3D -->
+                                <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
+                                    <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50">
+                                        <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
+                                    </div>
+                                    <div class="overflow-x-auto max-h-[500px] custom-scrollbar">
+                                        <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                            <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
+                                                <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                    <th class="py-3 px-4">Monitor</th>
+                                                    <th class="py-3 px-4">Operador Avaliado</th>
+                                                    <th class="py-3 px-4 text-center">Nota</th>
+                                                    <th class="py-3 px-4 text-center">Status Feedback</th>
+                                                    <th class="py-3 px-4">Operação</th>
+                                                    <th class="py-3 px-4 text-right">Data</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
+                                                ${state.detalhes.linhas.map(linha => `
+                                                    <tr class="hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                        <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
+                                                        <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
+                                                        <td class="py-3 px-4 text-center font-black ${linha.nota === 'N/A (Neutro/S.N)' ? 'text-slate-400' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                        <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
+                                                        <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
+                                                        <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
                     container.innerHTML = html;
                 },
 
@@ -5255,79 +5326,48 @@
                     const mediaDia = (myData.total / diasPassadosEfetivos).toFixed(1);
                     const metaDiaRestante = myData.falta > 0 ? Math.ceil(myData.falta / diasRestantes) : 0;
 
-                    html += `
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <!-- Card Realizado -->
-                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
-                                <div>
-                                    <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado</div>
-                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.total}</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Card Meta e Faltantes -->
-                            <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                <div class="text-3xl text-orange-500"><i class="fa-solid fa-bullseye"></i></div>
-                                <div>
-                                    <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Meta Mensal: ${meta}</div>
-                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.falta > 0 ? myData.falta : 0} <span class="text-sm font-medium text-slate-500">faltam</span></div>
-                                </div>
-                            </div>
-                            
-                            <!-- Card Feedbacks -->
-                            <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                <div>
-                                    <div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Pendentes</div>
-                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.pendenteFeedback}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Projeção Mensal com Barra Animada -->
-                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-blue-500 shadow-sm">
-                            <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <i class="fa-solid fa-chart-line text-blue-500"></i> Ritmo e Projeção Mês
-                            </h3>
-                            <div class="flex flex-col md:flex-row justify-between items-start gap-8">
-                                <div class="w-full md:w-3/5">
-                                    <div class="flex justify-between items-end mb-2">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Volume Validado</div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white leading-none">${myData.total} <span class="text-sm font-medium text-slate-500">/ ${meta}</span></div>
-                                    </div>
+                    // --- NOVO: VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
+                    if (state.detalhes && state.detalhes.linhas) {
+                        const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
+                        
+                        if (minhasLinhas.length > 0) {
+                            html += `
+                                <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg mt-8" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
+                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3">
+                                        <i class="fa-solid fa-list-ul text-purple-500"></i> Suas Avaliações Lidas do Arquivo
+                                    </h3>
                                     
-                                    <div class="w-full h-4 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner relative mt-2">
-                                        <div id="anim-prog-bar-${userMatricula}" class="h-full bg-gradient-to-r from-blue-400 via-blue-500 to-green-500 rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_15px_rgba(59,130,246,0.6)] spark-bar-fill" style="width: 0%;"></div>
+                                    <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden">
+                                        <div class="overflow-x-auto max-h-[400px] custom-scrollbar">
+                                            <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                                <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
+                                                    <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                        <th class="py-3 px-4">Operador Avaliado</th>
+                                                        <th class="py-3 px-4 text-center">Nota</th>
+                                                        <th class="py-3 px-4 text-center">Status Feedback</th>
+                                                        <th class="py-3 px-4">Operação</th>
+                                                        <th class="py-3 px-4 text-right">Data</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
+                                                    ${minhasLinhas.map(linha => `
+                                                        <tr class="hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                            <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
+                                                            <td class="py-3 px-4 text-center font-black ${linha.nota === 'N/A (Neutro/S.N)' ? 'text-slate-400' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                            <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
+                                                            <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
+                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
+                                                        </tr>
+                                                    `).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
-                                    <div class="text-right mt-1.5 text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest" id="anim-prog-text-${userMatricula}">0% Concluído</div>
                                 </div>
-                                
-                                <div class="w-full md:w-2/5 md:text-right border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-700 pt-4 md:pt-0 md:pl-8">
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Projeção Final Estimada</div>
-                                    <div class="text-4xl font-black ${projColor} drop-shadow-sm">${projecao} <span class="text-lg font-medium text-slate-500">/ ${meta}</span></div>
-                                </div>
-                            </div>
+                            `;
+                        }
+                    }
 
-                            <!-- CONTROLE DIÁRIO -->
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                                <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50">
-                                    <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-gauge-high"></i> Ritmo Atual (Média/Dia)</div>
-                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${mediaDia} <span class="text-xs text-slate-500 font-medium lowercase">monitorias / dia efetivo</span></div>
-                                </div>
-                                <div class="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-xl border border-orange-100 dark:border-orange-800/50">
-                                    <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-crosshairs"></i> Meta Diária Necessária</div>
-                                    <div class="text-2xl font-black text-slate-800 dark:text-white">${metaDiaRestante} <span class="text-xs text-slate-500 font-medium lowercase">p/ dia (restam ${diasRestantes} dias)</span></div>
-                                </div>
-                            </div>
-
-                            <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 flex justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
-                                <span>Dias Úteis no Mês: <strong class="text-slate-700 dark:text-slate-300">${wd.total}</strong></span>
-                                <span>Dias Analisados (Efetivos): <strong class="text-slate-700 dark:text-slate-300">${diasPassadosEfetivos}</strong></span>
-                            </div>
-                        </div>
-                    `;
-                    
                     container.innerHTML = html;
                     
                     // Injeção da Animação
@@ -5794,10 +5834,15 @@
                                     pendenteFeedback: 0,
                                     totalAbaixo85: 0,
                                     feedbacksAplicados: 0,
-                                    operacao: 'N/A', // Garantindo o padrão N/A para exibição limpa
+                                    operacao: 'N/A',
                                     manual: false
                                 };
                             });
+
+                            // Variáveis para a nova visão detalhada
+                            let detalhamentoLido = [];
+                            let notasValidas = [];
+                            let opsAvaliadosMap = {};
             
                             jsonData.forEach(row => {
                                 const monitorSup = row['MONITOR|SUPERVISOR'] || row['NOME'] || row['AVALIADOR'];
@@ -5828,19 +5873,23 @@
                                 const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
                                 const operacao = String(row['OPERACAO'] || '').toUpperCase();
             
-                                // Resgate dinâmico do nome da Operação (Fix N/A)
                                 if(operacao && mapUsuarios[matricula].operacao === 'N/A') {
                                     mapUsuarios[matricula].operacao = operacao;
                                 }
             
+                                // REGRA CORRIGIDA: Ignora o caractere corrompido nos formulários neutros
                                 const isNeutro = titulo.includes('neutro') || 
                                                  operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
-                                                 operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS') ||
+                                                 operacao.includes('QUALIDADE - FORMULÃRIOS NEUTROS') || 
+                                                 operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS') || 
                                                  operacao.includes('FORMULÁRIOS NEUTROS');
             
+                                // Soma na meta sempre (Mesmo se for neutro)
                                 mapUsuarios[matricula].total += 1;
                                 mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
             
+                                let notaFinalLida = 'N/A (Neutro)';
+
                                 if (!isNeutro) {
                                     let notaRaw = row['NOTA MONITORIA'];
                                     if (notaRaw === undefined || notaRaw === null) {
@@ -5853,36 +5902,73 @@
                                     let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
                                     let motivo = String(row['MOTIVO'] || '').toLowerCase();
     
-                                    if (!isNaN(nota) && nota < 85) {
-                                        mapUsuarios[matricula].totalAbaixo85 += 1;
+                                    if (!isNaN(nota)) {
+                                        notaFinalLida = nota;
+                                        notasValidas.push(nota);
                                         
-                                        let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
+                                        // Busca operador avaliado para a média
+                                        const colOp = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
+                                        let opNome = app.utils.fixEncoding(String(row[colOp] || row['OPERADOR'] || 'Não Identificado')).trim();
                                         
-                                        // Nova Regra: Considera aplicado se for Home Office, mesmo que o status seja "não aplicado"
-                                        if (!isAplicado && (statusFb.includes('feedback_nao_aplicado') || statusFb.includes('feedback nao aplicado')) && motivo.includes('home office')) {
-                                            isAplicado = true;
-                                        }
-                                        
-                                        if (isAplicado) {
-                                            mapUsuarios[matricula].feedbacksAplicados += 1;
-                                        } else {
-                                            mapUsuarios[matricula].pendenteFeedback += 1;
+                                        if(!opsAvaliadosMap[opNome]) opsAvaliadosMap[opNome] = { nome: opNome, qtd: 0, soma: 0 };
+                                        opsAvaliadosMap[opNome].qtd += 1;
+                                        opsAvaliadosMap[opNome].soma += nota;
+
+                                        // Regra do Feedback apenas para < 85
+                                        if (nota < 85) {
+                                            mapUsuarios[matricula].totalAbaixo85 += 1;
+                                            let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
+                                            if (!isAplicado && (statusFb.includes('feedback_nao_aplicado') || statusFb.includes('feedback nao aplicado')) && motivo.includes('home office')) {
+                                                isAplicado = true;
+                                            }
+                                            
+                                            if (isAplicado) {
+                                                mapUsuarios[matricula].feedbacksAplicados += 1;
+                                            } else {
+                                                mapUsuarios[matricula].pendenteFeedback += 1;
+                                            }
                                         }
                                     }
                                 }
+
+                                // Salva os detalhes linha a linha
+                                const colOpFinal = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
+                                let opNomeDetalhe = app.utils.fixEncoding(String(row[colOpFinal] || row['OPERADOR'] || 'Não Identificado')).trim();
+
+                                detalhamentoLido.push({
+                                    monitor: mapUsuarios[matricula].nome,
+                                    matriculaMonitor: matricula,
+                                    operador: opNomeDetalhe,
+                                    nota: notaFinalLida,
+                                    status: String(row['STATUS MONITORIA'] || row['STATUS'] || '-'),
+                                    operacao: operacao,
+                                    data: row['DATA MONITORIA'] || row['DATA'] || periodoAnalisado
+                                });
                             });
             
                             const novoRanking = Object.values(mapUsuarios)
                                 .filter(u => u.total > 0)
                                 .sort((a, b) => b.total - a.total);
             
+                            // Calcula as médias para o Front-End
+                            let mediaGeralTotal = notasValidas.length > 0 ? (notasValidas.reduce((a,b)=>a+b,0) / notasValidas.length).toFixed(2) : 0;
+                            let arrayOperadoresSorted = Object.values(opsAvaliadosMap).map(o => ({
+                                nome: o.nome,
+                                qtd: o.qtd,
+                                media: (o.soma / o.qtd).toFixed(2)
+                            })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
+
                             app.monitoriasData = {
                                 periodo: periodoAnalisado,
                                 ranking: novoRanking,
+                                detalhes: {
+                                    mediaTotal: mediaGeralTotal,
+                                    colaboradores: arrayOperadoresSorted,
+                                    linhas: detalhamentoLido
+                                },
                                 ultimaAtualizacao: Date.now()
                             };
             
-                            // Automação: Aplica aos Resultados Individuais (G1)
                             novoRanking.forEach(r => {
                                 const usr = app.users.find(u => u.matricula === r.matricula);
                                 if(usr) {
@@ -5892,29 +5978,22 @@
                                     usr.results[app.currentMonth]['g1'].real = r.total;
                                 }
                             });
-                            app.storage.saveUsers(); // Salva as métricas integradas
-
-                            app.monitoriasData = {
-                                periodo: periodoAnalisado,
-                                ranking: novoRanking,
-                                ultimaAtualizacao: Date.now()
-                            };
+                            app.storage.saveUsers(); 
             
                             app.storage.saveMonitorias().then(() => {
                                 document.getElementById('global-modal').classList.add('hidden');
                                 app.ui.showAlert("Importação Concluída", `Planilha lida com sucesso!<br><br><strong>Período Identificado:</strong> ${periodoAnalisado}<br><strong>Monitores Validados:</strong> ${novoRanking.length}`, "success");
                                 app.ui.renderTab('import_monitorias', true); 
                             }).catch(err => {
-                                console.error("Erro ao salvar no Firebase:", err);
-                                app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar no servidor.", "error");
+                                console.error("Erro ao salvar:", err);
+                                app.ui.showAlert("Erro de Conexão", "Os dados foram lidos, mas falharam ao salvar.", "error");
                             });
             
                         } catch (err) {
                             console.error("Erro ao processar planilha:", err);
-                            app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente. Verifique o formato.", "error");
+                            app.ui.showAlert("Erro de Leitura", "O arquivo não pôde ser lido corretamente.", "error");
                         }
                     };
-                    
                     reader.readAsArrayBuffer(file);
                 },
 
