@@ -5080,25 +5080,25 @@
                     
                     let html = `
                     <div class="flex flex-col sm:flex-row gap-3">
-                            <!-- NOVO BOTÃO: RESETAR -->
-                            <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
-                                <i class="fa-solid fa-trash-can"></i> Resetar Mês
-                            </button>
-                    
-                            <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-plus"></i> Adicionar Manual
-                            </button>
-                            
-                            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados da Amil">
-                                <i class="fa-solid fa-file-csv"></i> Relatório Amil
-                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
-                            </label>
-                    
-                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
-                                <i class="fa-solid fa-upload"></i> Relatório Padrão
-                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
-                            </label>
-                        </div>
+                        <!-- NOVO BOTÃO: RESETAR MÊS -->
+                        <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
+                            <i class="fa-solid fa-trash-can"></i> Resetar Mês
+                        </button>
+                
+                        <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                            <i class="fa-solid fa-plus"></i> Adicionar Manual
+                        </button>
+                        
+                        <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados da Amil">
+                            <i class="fa-solid fa-file-csv"></i> Relatório Amil
+                            <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
+                        </label>
+                
+                        <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
+                            <i class="fa-solid fa-upload"></i> Relatório Padrão
+                            <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                        </label>
+                    </div>
                     `;
                     
                     if(state.ranking && state.ranking.length > 0) {
@@ -5912,76 +5912,74 @@
                         app.ui.renderTab('import_monitorias', true);
                     });
                 },
-
-                // --- NOVA INTEGRAÇÃO: RELATÓRIO AMIL (SOMA INCREMENTAL FLEXÍVEL) ---
-                // --- INTEGRAÇÃO: RELATÓRIO AMIL (SOMA INCREMENTAL FLEXÍVEL) ---
-                // --- BOTÃO RESETAR MÊS ---
+            
+            // ==========================================
+                // 1. LÓGICA DO BOTÃO RESET
+                // ==========================================
                 resetarMonitorias() {
-                    app.ui.showConfirm("Cuidado!", "Isso apagará TODOS os dados de monitoria importados (Amil e Padrão) deste mês. Deseja continuar?", "app.admin.execResetarMonitorias()", true);
+                    app.ui.showConfirm("Atenção!", "Isso apagará TODOS os dados de monitoria importados (Amil e Padrão) deste mês. Deseja continuar?", "app.admin.execResetarMonitorias()", true);
                 },
             
                 execResetarMonitorias() {
-                    app.monitoriasData = { periodo: app.currentMonth, ranking: [], detalhes: { mediaTotal: 0, colaboradores: [], linhas: [] } };
-                    // Zera o painel individual (G1) de todas as meninas
+                    // Recria a estrutura base de forma segura para não quebrar a tela (Evita a Tela Branca)
+                    app.monitoriasData = { 
+                        periodo: app.currentMonth, 
+                        ranking: [], 
+                        detalhes: { mediaTotal: 0, colaboradores: [], linhas: [] } 
+                    };
+                    
+                    // Zera o painel individual (G1) das meninas
                     app.users.forEach(u => {
                         if(u.results && u.results[app.currentMonth] && u.results[app.currentMonth]['g1']) {
                             u.results[app.currentMonth]['g1'].real = 0;
                         }
                     });
+                    
                     app.storage.saveUsers();
                     app.storage.saveMonitorias().then(() => {
-                        app.ui.showAlert("Reset Concluído", "Todos os dados de monitoria do mês atual foram zerados.", "success");
                         app.ui.renderTab('import_monitorias', true);
+                        app.ui.showAlert("Reset Concluído", "Todos os relatórios do mês atual foram apagados com sucesso.", "success");
                     });
                 },
             
-                // --- FUNÇÃO CENTRALIZADORA DE CÁLCULO ---
+                // ==========================================
+                // 2. RECALCULADOR MESTRE UNIFICADO
+                // ==========================================
                 recalcularPainelMonitorias() {
-                    let linhasGlobais = app.monitoriasData.detalhes.linhas || [];
+                    let linhasGlobais = [];
+                    if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
+                        linhasGlobais = app.monitoriasData.detalhes.linhas;
+                    }
+            
                     let rankingMap = {};
                     let opsMap = {};
                     let somaNotas = 0;
                     let countNotas = 0;
             
-                    // Pré-popula o mapa com os monitores existentes no sistema
+                    // Pré-popula as monitoras cadastradas no sistema
                     app.users.forEach(u => {
                         rankingMap[u.matricula] = {
-                            nome: u.nome,
-                            matricula: u.matricula,
-                            total: 0,
-                            falta: 400,
-                            pendenteFeedback: 0,
-                            operacao: (u.operacoes && u.operacoes[0]) || 'N/A'
+                            nome: u.nome, matricula: u.matricula, total: 0, falta: 400, pendenteFeedback: 0, operacao: (u.operacoes && u.operacoes[0]) || 'N/A'
                         };
                     });
             
-                    // Varre TODAS as linhas juntas (Padrão + Amil)
                     linhasGlobais.forEach(linha => {
-                        // Conta Produtividade e Feedback (Apenas se vinculou ao usuário do sistema)
                         if (linha.isRegisteredMonitor && linha.matriculaMonitor) {
                             if (!rankingMap[linha.matriculaMonitor]) {
                                 rankingMap[linha.matriculaMonitor] = {
-                                    nome: linha.monitor, matricula: linha.matriculaMonitor,
-                                    total: 0, falta: 400, pendenteFeedback: 0, operacao: linha.operacao || 'N/A'
+                                    nome: linha.monitor, matricula: linha.matriculaMonitor, total: 0, falta: 400, pendenteFeedback: 0, operacao: linha.operacao || 'N/A'
                                 };
                             }
                             
                             rankingMap[linha.matriculaMonitor].total += 1;
                             rankingMap[linha.matriculaMonitor].falta = Math.max(0, 400 - rankingMap[linha.matriculaMonitor].total);
             
-                            // Lógica de pendente de feedback (notas abaixo de 85 que não foram aplicadas)
                             if (linha.nota !== 'N/A' && linha.nota < 85) {
-                                let isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado') || linha.source === 'AMIL'; // Amil não tem regra de pendente no momento, assumimos ok ou ajuste conforme regra
-                                if (!isAplicado && linha.source !== 'AMIL') {
-                                     rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
-                                } else if (linha.source === 'AMIL' && linha.nota < 85) {
-                                     // Se quiser que Amil < 85 conte como pendente automático, deixe descomentado. Se não, comente esta linha.
-                                     rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
-                                }
+                                let isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
+                                if (!isAplicado) rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
                             }
                         }
             
-                        // Conta Desempenho Operacional (Média da Operação)
                         if (typeof linha.nota === 'number' && !isNaN(linha.nota)) {
                             somaNotas += linha.nota;
                             countNotas++;
@@ -5992,16 +5990,21 @@
                         }
                     });
             
-                    // Converte os mapas em arrays ordenados
                     let novoRanking = Object.values(rankingMap).filter(r => r.total > 0).sort((a,b) => b.total - a.total);
                     let novaMediaTotal = countNotas > 0 ? (somaNotas / countNotas).toFixed(2) : 0;
                     let novosColaboradores = Object.values(opsMap).map(o => ({
-                        nome: o.nome,
-                        qtd: o.qtd,
-                        media: (o.soma / o.qtd).toFixed(2)
+                        nome: o.nome, qtd: o.qtd, media: (o.soma / o.qtd).toFixed(2)
                     })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
             
-                    // Salva os totais consolidados no Painel Financeiro de cada Usuário (G1)
+                    if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
+                    if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
+                    
+                    app.monitoriasData.ranking = novoRanking;
+                    app.monitoriasData.detalhes.mediaTotal = novaMediaTotal;
+                    app.monitoriasData.detalhes.colaboradores = novosColaboradores;
+                    app.monitoriasData.detalhes.linhas = linhasGlobais; 
+                    app.monitoriasData.ultimaAtualizacao = Date.now();
+            
                     novoRanking.forEach(r => {
                         const usr = app.users.find(u => u.matricula === r.matricula);
                         if(usr) {
@@ -6012,25 +6015,20 @@
                         }
                     });
             
-                    // Atualiza a fonte da verdade
-                    app.monitoriasData.ranking = novoRanking;
-                    app.monitoriasData.detalhes.mediaTotal = novaMediaTotal;
-                    app.monitoriasData.detalhes.colaboradores = novosColaboradores;
-                    app.monitoriasData.ultimaAtualizacao = Date.now();
-            
                     app.storage.saveUsers();
                     app.storage.saveMonitorias().then(() => {
                         app.ui.renderTab('import_monitorias', true);
-                        app.ui.showAlert("Processamento Concluído", "Dados consolidados com sucesso! As duas origens (Padrão e Amil) estão somadas no painel.", "success");
+                        app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente no painel de produtividade.", "success");
                     });
                 },
             
-                // --- IMPORTAÇÃO AMIL (INVERTE NOMES E SUBSTITUI SÓ AMIL) ---
+                // ==========================================
+                // 3. IMPORTAÇÃO AMIL (Substitui só AMIL)
+                // ==========================================
                 processarPlanilhaAmil(input) {
                     const file = input.files[0];
                     if (!file) return;
-            
-                    app.ui.showAlert("Processando Amil...", "Lendo as colunas e invertendo nomes...", "info");
+                    app.ui.showAlert("Processando Amil...", "Cruzando colunas e invertendo nomes...", "info");
             
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -6040,36 +6038,33 @@
                             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
             
-                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "Arquivo Amil vazio.", "error");
+                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "O arquivo da Amil está vazio.", "error");
             
-                            // Inicializa segurança
-                            if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { linhas: [] } };
-                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = { linhas: [] };
-                            if (!app.monitoriasData.detalhes.linhas) app.monitoriasData.detalhes.linhas = [];
+                            let linhasAtuais = [];
+                            if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
+                                linhasAtuais = app.monitoriasData.detalhes.linhas;
+                            }
             
-                            // LIMPA AS LINHAS ANTIGAS DA AMIL (Mantém as Padrão)
-                            let linhasMantidas = app.monitoriasData.detalhes.linhas.filter(l => l.source !== 'AMIL');
+                            // ETIQUETA: Mantém as Padrão, deleta as Amil antigas
+                            let linhasMantidas = linhasAtuais.filter(l => l.source !== 'AMIL');
+                            let linhasNovas = [];
+                            let matchCount = 0;
             
                             const getValByKeyword = (row, keyword) => {
                                 const key = Object.keys(row).find(k => k.toUpperCase().includes(keyword));
                                 return key ? row[key] : undefined;
                             };
             
-                            let linhasNovas = [];
-                            let matchCount = 0;
-            
                             jsonData.forEach(row => {
                                 let avaliadorRaw = getValByKeyword(row, 'AVALIADOR') || getValByKeyword(row, 'MONITOR');
                                 if (!avaliadorRaw) return;
             
-                                // Inversão do nome do Avaliador
                                 let nomeFormatado = String(avaliadorRaw).trim();
                                 if (nomeFormatado.includes(',')) {
                                     let partes = nomeFormatado.split(',');
                                     nomeFormatado = partes[1].trim() + ' ' + partes[0].trim();
                                 }
             
-                                // Inversão do nome do Operador
                                 let funcRaw = getValByKeyword(row, 'FUNCIONÁRIO') || getValByKeyword(row, 'FUNCIONARIO') || getValByKeyword(row, 'OPERADOR') || 'Não Identificado';
                                 let operadorFmt = String(funcRaw).trim();
                                 if (operadorFmt.includes(',')) {
@@ -6077,7 +6072,6 @@
                                     operadorFmt = p[1].trim() + ' ' + p[0].trim();
                                 }
             
-                                // Capturar Nota
                                 let notaRaw = getValByKeyword(row, 'PONTUAÇÃO') || getValByKeyword(row, 'PONTUACAO') || getValByKeyword(row, 'NOTA');
                                 let notaFormatada = 'N/A';
                                 if (notaRaw !== undefined && notaRaw !== null && notaRaw !== "") {
@@ -6085,7 +6079,6 @@
                                     notaFormatada = parseFloat(notaRaw);
                                 }
             
-                                // Linkar com usuário do sistema
                                 const keyNormal = nomeFormatado.toUpperCase();
                                 let matriculaEncontrada = app.config?.aliases?.[keyNormal] || null;
                                 let monitorObj = app.users.find(u => u.matricula === matriculaEncontrada || u.nome.toUpperCase() === keyNormal || u.nome.toUpperCase().includes(nomeFormatado.split(' ')[0].toUpperCase()));
@@ -6105,27 +6098,29 @@
                                 });
                             });
             
-                            if (matchCount === 0) {
-                                return app.ui.showAlert("Aviso", "O arquivo foi lido, mas nenhum Avaliador bateu com os cadastros do sistema. Use a aba 'Vincular Nomes'.", "error");
-                            }
+                            if (matchCount === 0) return app.ui.showAlert("Aviso", "Arquivo lido, mas nenhum nome bateu com os monitores cadastrados.", "error");
             
-                            // Salva a união das linhas e chama o recalculador mestre
+                            if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
+                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
+                            
+                            // Consolida
                             app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
                             this.recalcularPainelMonitorias();
             
                         } catch (err) {
                             console.error(err);
-                            app.ui.showAlert("Erro", "Falha ao processar CSV da Amil.", "error");
+                            app.ui.showAlert("Erro", "Falha ao processar o CSV da Amil.", "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
                 },
             
-                // --- IMPORTAÇÃO PADRÃO (SUBSTITUI SÓ PADRÃO E MANTÉM AMIL) ---
+                // ==========================================
+                // 4. IMPORTAÇÃO PADRÃO (Substitui só PADRÃO)
+                // ==========================================
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
-            
                     app.ui.showAlert("Processando Padrão...", "Lendo a planilha principal...", "info");
             
                     const reader = new FileReader();
@@ -6138,21 +6133,19 @@
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
             
-                            // Inicializa segurança
-                            if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { linhas: [] } };
-                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = { linhas: [] };
-                            if (!app.monitoriasData.detalhes.linhas) app.monitoriasData.detalhes.linhas = [];
+                            let linhasAtuais = [];
+                            if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
+                                linhasAtuais = app.monitoriasData.detalhes.linhas;
+                            }
             
-                            // LIMPA AS LINHAS PADRÃO ANTIGAS (Mantém a Amil intacta!)
-                            let linhasMantidas = app.monitoriasData.detalhes.linhas.filter(l => l.source !== 'PADRAO');
+                            // ETIQUETA: Mantém as Amil, deleta as Padrão antigas
+                            let linhasMantidas = linhasAtuais.filter(l => l.source !== 'PADRAO');
+                            let linhasNovas = [];
             
                             let periodoAnalisado = "Período Indefinido";
                             for (let i = 0; i < jsonData.length; i++) {
                                 if (jsonData[i]['DATA MONITORIA']) { periodoAnalisado = jsonData[i]['DATA MONITORIA']; break; }
                             }
-                            app.monitoriasData.periodo = periodoAnalisado;
-            
-                            let linhasNovas = [];
             
                             jsonData.forEach(row => {
                                 const monitorSup = row['MONITOR|SUPERVISOR'] || row['NOME'] || row['AVALIADOR'];
@@ -6176,7 +6169,6 @@
                                 const isRegisteredMonitor = !!userObj;
                                 const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
                                 const operacao = String(row['OPERACAO'] || '').toUpperCase();
-            
                                 const isNeutro = titulo.includes('neutro') || operacao.includes('NEUTROS');
             
                                 let notaFinalLida = 'N/A';
@@ -6203,8 +6195,13 @@
                                 });
                             });
             
-                            // Salva a união das linhas e chama o recalculador mestre
+                            if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
+                            if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
+                            
+                            app.monitoriasData.periodo = periodoAnalisado;
+                            // Consolida
                             app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
+                            
                             this.recalcularPainelMonitorias();
             
                         } catch (err) {
