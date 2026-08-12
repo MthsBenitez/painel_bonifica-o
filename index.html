@@ -5326,6 +5326,54 @@
                     const mediaDia = (myData.total / diasPassadosEfetivos).toFixed(1);
                     const metaDiaRestante = myData.falta > 0 ? Math.ceil(myData.falta / diasRestantes) : 0;
 
+                    // --- CÓDIGO RESTAURADO: DASHBOARD DE PROGRESSO E QUADRANTE ---
+                    const pct = Math.min(100, (myData.total / meta) * 100).toFixed(1);
+                    
+                    let quadrante = "Q5 (Insuficiente)";
+                    let quadColor = "text-red-500";
+                    if (pct >= 100) { quadrante = "Q1 (Excelente)"; quadColor = "text-green-500"; }
+                    else if (pct >= 90) { quadrante = "Q2 (Bom)"; quadColor = "text-blue-500"; }
+                    else if (pct >= 80) { quadrante = "Q3 (Regular)"; quadColor = "text-orange-500"; }
+                    else if (pct >= 70) { quadrante = "Q4 (Atenção)"; quadColor = "text-amber-500"; }
+
+                    html += `
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 mb-1">Total Realizado</div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.total} <span class="text-sm text-slate-500 font-medium">/ ${meta}</span></div>
+                            </div>
+                            <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1">Projeção Mês</div>
+                                <div class="text-2xl font-black ${projColor}">${projecao}</div>
+                            </div>
+                            <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1">Média Diária</div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white">${mediaDia}</div>
+                            </div>
+                            <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">Meta Dia (Restante)</div>
+                                <div class="text-2xl font-black text-orange-600 dark:text-orange-400">${metaDiaRestante}</div>
+                            </div>
+                        </div>
+
+                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative shadow-sm border-t-4 border-t-blue-500">
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 gap-4">
+                                <div>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> Progresso da Meta</h3>
+                                    <p class="text-xs text-slate-500 mt-1">Quadrante Atual: <strong class="${quadColor} bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded shadow-sm border border-slate-200 dark:border-slate-700">${quadrante}</strong></p>
+                                </div>
+                                <div class="text-left md:text-right">
+                                    <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Aproveitamento</div>
+                                    <div class="text-3xl font-black text-blue-600 dark:text-blue-400" id="anim-prog-text-${userMatricula}">0%</div>
+                                </div>
+                            </div>
+                            <div class="spark-bar-container w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+                                <div id="anim-prog-bar-${userMatricula}" class="spark-bar-fill bg-blue-500 h-full rounded-full transition-all duration-1000 w-0"></div>
+                            </div>
+                        </div>
+                    `;
+                    // --- FIM DO CÓDIGO RESTAURADO ---
+
                     // --- NOVO: VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
                     if (state.detalhes && state.detalhes.linhas) {
                         const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
