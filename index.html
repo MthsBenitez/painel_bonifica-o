@@ -5916,6 +5916,7 @@
                 },
 
                 // --- NOVA INTEGRAÇÃO: RELATÓRIO AMIL (SOMA INCREMENTAL FLEXÍVEL) ---
+                // --- INTEGRAÇÃO: RELATÓRIO AMIL (SOMA INCREMENTAL FLEXÍVEL) ---
                 processarPlanilhaAmil(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -5975,7 +5976,7 @@
                                     notaFormatada = parseFloat(notaRaw);
                                 }
 
-                                // 4. Encontrar o Avaliador no sistema (Suporta Vínculo de Nomes via Aba ADM)
+                                // 4. Encontrar o Avaliador no sistema
                                 const keyNormal = nomeFormatado.toUpperCase();
                                 let matriculaEncontrada = app.config?.aliases?.[keyNormal] || null;
                                 let monitorObj = app.users.find(u => u.matricula === matriculaEncontrada || u.nome.toUpperCase() === keyNormal || u.nome.toUpperCase().includes(nomeFormatado.split(' ')[0].toUpperCase()));
@@ -5997,7 +5998,6 @@
                                         });
                                     }
 
-                                    // Integra no painel financeiro individual (Meta G1)
                                     if(!monitorObj.results) monitorObj.results = {};
                                     if(!monitorObj.results[app.currentMonth]) monitorObj.results[app.currentMonth] = {status: 'pendente'};
                                     if(!monitorObj.results[app.currentMonth]['g1']) monitorObj.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
@@ -6007,7 +6007,7 @@
                                     countSoma++;
                                 }
 
-                                // 5. Adiciona a linha no detalhamento analítico (mesmo que não ache o monitor, para registro visual)
+                                // 5. Adiciona a linha no detalhamento analítico
                                 linhasAtuais.push({
                                     monitor: monitorObj ? monitorObj.nome : nomeFormatado,
                                     matriculaMonitor: monitorObj ? monitorObj.matricula : null,
@@ -6024,10 +6024,36 @@
                                 return app.ui.showAlert("Leitura Concluída", "O CSV foi lido, mas nenhum nome de Avaliador bateu com a equipe cadastrada, ou as notas estavam vazias. Se os nomes estiverem muito diferentes, use a aba 'Vincular Nomes'.", "error");
                             }
 
-                            // Reordena o Top e Salva
+                            // --- CORREÇÃO: RECALCULA PRODUTIVIDADE DAS OPERADORAS E MÉDIA TOTAL ---
+                            let somaNotas = 0;
+                            let countNotas = 0;
+                            let opsAvaliados = {};
+
+                            linhasAtuais.forEach(linha => {
+                                if (typeof linha.nota === 'number' && !isNaN(linha.nota)) {
+                                    somaNotas += linha.nota;
+                                    countNotas++;
+                                    
+                                    let opNome = linha.operador;
+                                    if (!opsAvaliados[opNome]) opsAvaliados[opNome] = { nome: opNome, qtd: 0, soma: 0 };
+                                    opsAvaliados[opNome].qtd += 1;
+                                    opsAvaliados[opNome].soma += linha.nota;
+                                }
+                            });
+
+                            let novaMediaTotal = countNotas > 0 ? (somaNotas / countNotas).toFixed(2) : 0;
+                            let novosColaboradores = Object.values(opsAvaliados).map(o => ({
+                                nome: o.nome,
+                                qtd: o.qtd,
+                                media: (o.soma / o.qtd).toFixed(2)
+                            })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
+
+                            // Salva dados
                             rankingAtual.sort((a,b) => b.total - a.total);
                             app.monitoriasData.ranking = rankingAtual;
                             app.monitoriasData.detalhes.linhas = linhasAtuais;
+                            app.monitoriasData.detalhes.mediaTotal = novaMediaTotal;
+                            app.monitoriasData.detalhes.colaboradores = novosColaboradores;
                             app.monitoriasData.ultimaAtualizacao = Date.now();
 
                             app.storage.saveUsers();
@@ -6044,7 +6070,7 @@
                     reader.readAsArrayBuffer(file);
                 },
                 
-                // --- ARQUIVETURA DE PROCESSAMENTO DE PLANILHAS (MESCLADA E CORRIGIDA) ---
+                // --- ARQUITETURA DE PROCESSAMENTO DE PLANILHAS (Padrão) ---
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -6087,7 +6113,6 @@
                                 };
                             });
 
-                            // Variáveis para a nova visão detalhada
                             let detalhamentoLido = [];
                             let notasValidas = [];
                             let opsAvaliadosMap = {};
@@ -6121,18 +6146,17 @@
                                 const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
                                 const operacao = String(row['OPERACAO'] || '').toUpperCase();
             
-                                if(operacao && mapUsuarios[matricula].operacao === 'N/A') {
+                                // CORREÇÃO DO ERRO TYPE ERROR (Verificando se mapUsuarios[matricula] existe antes de ler operacao)
+                                if(operacao && mapUsuarios[matricula] && mapUsuarios[matricula].operacao === 'N/A') {
                                     mapUsuarios[matricula].operacao = operacao;
                                 }
             
-                                // REGRA CORRIGIDA: Ignora o caractere corrompido nos formulários neutros
                                 const isNeutro = titulo.includes('neutro') || 
                                                  operacao.includes('QUALIDADE - FORMULÃ RIOS NEUTROS') || 
                                                  operacao.includes('QUALIDADE - FORMULÃRIOS NEUTROS') || 
                                                  operacao.includes('QUALIDADE - FORMULÁRIOS NEUTROS') || 
                                                  operacao.includes('FORMULÁRIOS NEUTROS');
             
-                                // Soma na meta sempre (APENAS se for um monitor cadastrado)
                                 if (isRegisteredMonitor) {
                                     mapUsuarios[matricula].total += 1;
                                     mapUsuarios[matricula].falta = Math.max(0, 400 - mapUsuarios[matricula].total);
@@ -6156,7 +6180,6 @@
                                         notaFinalLida = nota;
                                         notasValidas.push(nota);
                                         
-                                        // Busca operador avaliado para a média
                                         const colOp = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
                                         let opNome = app.utils.fixEncoding(String(row[colOp] || row['OPERADOR'] || 'Não Identificado')).trim();
                                         
@@ -6164,7 +6187,6 @@
                                         opsAvaliadosMap[opNome].qtd += 1;
                                         opsAvaliadosMap[opNome].soma += nota;
 
-                                        // Regra do Feedback apenas para < 85 (Somente registrados)
                                         if (nota < 85 && isRegisteredMonitor) {
                                             mapUsuarios[matricula].totalAbaixo85 += 1;
                                             let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
@@ -6181,7 +6203,6 @@
                                     }
                                 }
 
-                                // Salva os detalhes linha a linha
                                 const colOpFinal = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
                                 let opNomeDetalhe = app.utils.fixEncoding(String(row[colOpFinal] || row['OPERADOR'] || 'Não Identificado')).trim();
 
@@ -6201,7 +6222,6 @@
                                 .filter(u => u.total > 0)
                                 .sort((a, b) => b.total - a.total);
             
-                            // Calcula as médias para o Front-End
                             let mediaGeralTotal = notasValidas.length > 0 ? (notasValidas.reduce((a,b)=>a+b,0) / notasValidas.length).toFixed(2) : 0;
                             let arrayOperadoresSorted = Object.values(opsAvaliadosMap).map(o => ({
                                 nome: o.nome,
