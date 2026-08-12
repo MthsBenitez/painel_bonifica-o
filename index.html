@@ -510,14 +510,14 @@
     <!-- Modal Visualizar Evento Lindo (Modern Glassmorphism) -->
     <div id="view-event-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md transition-opacity">
         
-        <!-- Container Principal com Efeito Vidro e Mouse Tracking Inline -->
+        <!-- Container Principal -->
         <div class="relative bg-white/70 dark:bg-[#0f172a]/70 backdrop-blur-2xl rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.3)] max-w-md w-full mx-4 border border-white/50 dark:border-white/10 overflow-hidden transform transition-all group" onmousemove="const g = this.querySelector('.glass-glow'); const r = this.getBoundingClientRect(); g.style.left = (event.clientX - r.left) + 'px'; g.style.top = (event.clientY - r.top) + 'px';" onmouseenter="this.querySelector('.glass-glow').style.opacity='0.15'" onmouseleave="this.querySelector('.glass-glow').style.opacity='0'">
             
-            <!-- Brilho Dinâmico que segue o mouse (Captura a cor do tema do site automaticamente) -->
             <div class="glass-glow absolute w-[300px] h-[300px] rounded-full blur-[80px] pointer-events-none transition-opacity duration-500 -translate-x-1/2 -translate-y-1/2 z-0" style="background-color: var(--theme-color);"></div>
 
-            <!-- Header com Cor Dinâmica do Tema -->
-            <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="absolute top-4 right-4 text-white/70 hover:text-white bg-white/20 hover:bg-white/40 rounded-full w-8 h-8 flex items-center justify-center transition-colors backdrop-blur-md cursor-pointer z-50 shadow-md"><i class="fa-solid fa-xmark text-xl pointer-events-none"></i></button>
+            <!-- HEADER CORRIGIDO (Envolvido em uma div para não quebrar layout) -->
+            <div class="p-6 relative shrink-0 z-10">
+                <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="absolute top-4 right-4 text-white/70 hover:text-white bg-white/20 hover:bg-white/40 rounded-full w-8 h-8 flex items-center justify-center transition-colors backdrop-blur-md cursor-pointer z-50 shadow-md"><i class="fa-solid fa-xmark text-xl pointer-events-none"></i></button>
                 <div class="text-[10px] font-black uppercase tracking-widest text-white/80 mb-1 drop-shadow-sm" id="ve-tipo">Registro de Calendário</div>
                 <h3 class="font-extrabold text-2xl leading-tight drop-shadow-md" id="ve-tema">Tema</h3>
                 <div class="flex items-center gap-4 mt-4 text-sm font-semibold bg-white/10 px-4 py-2 rounded-xl border border-white/20 w-fit backdrop-blur-md shadow-inner">
@@ -557,14 +557,12 @@
             <!-- Footer (Botões) -->
             <div class="p-5 bg-white/60 dark:bg-slate-800/60 border-t border-white/50 dark:border-slate-700/50 flex flex-wrap justify-end gap-3 items-center relative z-10">
                 <button id="ve-btn-realizado" class="hidden mr-auto px-6 py-2.5 text-white rounded-xl font-extrabold text-sm shadow-lg transition-all transform hover:-translate-y-0.5" style="background-color: var(--theme-color);"><i class="fa-solid fa-check-circle mr-1.5"></i> Marcar Realizado</button>
-                
                 <button id="ve-btn-delete" class="px-5 py-2.5 bg-red-100 hover:bg-red-500 text-red-600 hover:text-white dark:bg-red-900/30 dark:hover:bg-red-600 dark:text-red-400 rounded-xl font-bold text-sm shadow-sm transition-all"><i class="fa-solid fa-trash"></i></button>
                 <button onclick="document.getElementById('view-event-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-200/50 dark:bg-slate-700/50 border border-transparent hover:bg-slate-300/50 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm shadow-sm transition-all backdrop-blur-sm">Fechar</button>
                 <button id="ve-btn-edit" class="px-6 py-2.5 bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl font-extrabold text-sm shadow-lg transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-pen-to-square mr-1.5"></i> Editar Evento</button>
             </div>
         </div>
     </div>
-
     <!-- Modal Visualização Legal Ata -->
     <div id="view-ata-legal-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
         <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
@@ -1883,7 +1881,12 @@
                     const ata = app.atasList[id];
                     if(!ata) return;
                     
-                    // NOVA TRAVA: Exigir validação do supervisor
+                    // NOVA TRAVA DE SEGURANÇA 1: Não permitir somar se a ata foi reprovada/devolvida
+                    if(ata.status === 'devolvido') {
+                        return app.ui.showAlert("Ação Inválida", "Não é possível contabilizar nos resultados uma ata que foi devolvida para correção.", "error");
+                    }
+
+                    // TRAVA DE SEGURANÇA 2: Exigir validação/nome do supervisor
                     if(!ata.sup || ata.sup.trim() === '-' || ata.sup.trim() === '') {
                         return app.ui.showAlert("Aprovação Pendente", "Esta calibração não possui um Supervisor Operacional vinculado ou aprovando a ata. Por favor, edite a ata e inclua o nome do supervisor antes de contabilizar nos resultados.", "error");
                     }
@@ -2892,6 +2895,7 @@
                         </div>
                     `;
 
+                    // Ponto da Correção: Declara 'list' apenas UMA vez
                     let list = allActs.filter(a => a.status === this.currentActionFilter);
                     
                     // NOVA GALERIA DE APROVADOS
@@ -2915,7 +2919,7 @@
                         html += `</div></div>`;
                     }
 
-                    let list = allActs.filter(a => a.status === this.currentActionFilter);
+                    // APLICAÇÃO DOS FILTROS (Sem redeclarar a variável)
                     if (this.actionFilterUser) list = list.filter(a => a.nome === this.actionFilterUser);
                     if (this.actionFilterOp) list = list.filter(a => a.codigoOpe === this.actionFilterOp);
                     list.sort((a,b) => b.timestamp - a.timestamp);
