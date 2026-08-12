@@ -5180,8 +5180,12 @@
                                     <td class="py-3 px-4 flex items-center gap-3">
                                         <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
                                         <div>
-                                            <div onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="font-bold text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline" title="Editar este lançamento">${userObj.nome} <i class="fa-solid fa-pen text-[10px] ml-1"></i></div>
-                                            <div class="text-[10px] text-slate-400 truncate max-w-[150px]">${r.operacao || 'N/A'}</div>
+                                            <div onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="font-bold text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:text-blue-700 transition-colors flex items-center gap-2" title="Abrir Calculadora / Editar Lançamento">
+                                                ${userObj.nome} 
+                                                <span class="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded flex items-center shadow-sm">
+                                                    <i class="fa-solid fa-calculator text-[10px]"></i>
+                                                </span>
+                                            </div>
                                         </div>
                                     </td>
                                     <td class="py-3 px-4 text-center font-black text-slate-700 dark:text-slate-200">${r.total}</td>
@@ -5667,9 +5671,23 @@
                                     ${app.users.map(u => `<option value="${u.matricula}" ${u.matricula === matr ? 'selected' : ''}>${u.nome}</option>`).join('')}
                                 </select>
                             </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Total Realizado</label><input type="number" id="man-total" value="${total}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">FBs Pendentes</label><input type="number" id="man-fbs" value="${fbsPendentes}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white"></div>
+                            <div class="grid grid-cols-1 gap-4 mt-2">
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2"><i class="fa-solid fa-calculator text-blue-500"></i> Total Realizado (Calculadora)</label>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button" onclick="document.getElementById('man-total').value = Math.max(0, parseInt(document.getElementById('man-total').value || 0) - 1)" class="bg-red-100 hover:bg-red-200 text-red-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">-</button>
+                                        <input type="number" id="man-total" value="${total}" class="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none text-center font-black text-xl text-blue-600 dark:text-blue-400 shadow-inner">
+                                        <button type="button" onclick="document.getElementById('man-total').value = parseInt(document.getElementById('man-total').value || 0) + 1" class="bg-green-100 hover:bg-green-200 text-green-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">+</button>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2"><i class="fa-solid fa-calculator text-orange-500"></i> FBs Pendentes (Calculadora)</label>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button" onclick="document.getElementById('man-fbs').value = Math.max(0, parseInt(document.getElementById('man-fbs').value || 0) - 1)" class="bg-red-100 hover:bg-red-200 text-red-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">-</button>
+                                        <input type="number" id="man-fbs" value="${fbsPendentes}" class="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none text-center font-black text-xl text-orange-500 dark:text-orange-400 shadow-inner">
+                                        <button type="button" onclick="document.getElementById('man-fbs').value = parseInt(document.getElementById('man-fbs').value || 0) + 1" class="bg-green-100 hover:bg-green-200 text-green-600 px-5 py-2.5 rounded-lg font-black transition-colors text-lg shadow-sm">+</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -5825,15 +5843,22 @@
                                     let nota = parseFloat(notaRaw);
             
                                     let statusFb = String(row['STATUS MONITORIA'] || '').toLowerCase();
-            
-                                    if (!isNaN(nota) && nota < 85) {
-                                        mapUsuarios[matricula].totalAbaixo85 += 1;
-                                        
-                                        if (statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado')) {
-                                            mapUsuarios[matricula].feedbacksAplicados += 1;
-                                        } else {
-                                            mapUsuarios[matricula].pendenteFeedback += 1;
-                                        }
+                                let motivo = String(row['MOTIVO'] || '').toLowerCase();
+
+                                if (!isNaN(nota) && nota < 85) {
+                                    mapUsuarios[matricula].totalAbaixo85 += 1;
+                                    
+                                    let isAplicado = statusFb.includes('feedback_aplicado') || statusFb.includes('feedback aplicado');
+                                    
+                                    // Nova Regra: Considera aplicado se for Home Office, mesmo que o status seja "não aplicado"
+                                    if (!isAplicado && (statusFb.includes('feedback_nao_aplicado') || statusFb.includes('feedback nao aplicado')) && motivo.includes('home office')) {
+                                        isAplicado = true;
+                                    }
+                                    
+                                    if (isAplicado) {
+                                        mapUsuarios[matricula].feedbacksAplicados += 1;
+                                    } else {
+                                        mapUsuarios[matricula].pendenteFeedback += 1;
                                     }
                                 }
                             });
