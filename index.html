@@ -5075,12 +5075,12 @@
                 renderView_ImportMonitorias(container) {
                     if(!app.isAdmin) return;
                     
-                    let state = app.monitoriasData || { ranking: [] };
+                    let state = app.monitoriasData || {};
+                    const rankingArray = state.ranking || []; // CORREÇÃO: Garante que seja um Array
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     
                     let html = `
                     <div class="flex flex-col sm:flex-row gap-3">
-                        <!-- NOVO BOTÃO: RESETAR MÊS -->
                         <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
                             <i class="fa-solid fa-trash-can"></i> Resetar Mês
                         </button>
@@ -5101,8 +5101,8 @@
                     </div>
                     `;
                     
-                    if(state.ranking && state.ranking.length > 0) {
-                        const numUsers = state.ranking.length;
+                    if(rankingArray.length > 0) {
+                        const numUsers = rankingArray.length;
                         const metaIndividual = 400; // META FIXA EXIGIDA DE MONITORIAS
                         const metaGlobal = numUsers * metaIndividual; 
                         
@@ -5110,14 +5110,14 @@
                         let totalFaltante = 0;
                         let totalFeedbacks = 0;
                         
-                        state.ranking.forEach(r => {
+                        rankingArray.forEach(r => {
                             totalMonitorias += r.total || 0;
                             totalFaltante += r.falta || 0;
                             totalFeedbacks += r.pendenteFeedback || 0;
                         });
                         
                         let pctGlobal = metaGlobal > 0 ? Math.min(100, (totalMonitorias / metaGlobal) * 100).toFixed(1) : 0;
-                        let diasPassadosGlobais = Math.max(1, wd.passed - 1); // Remove o dia de "Hoje" da conta
+                        let diasPassadosGlobais = Math.max(1, wd.passed - 1); 
                         let projecaoGlobal = Math.round((totalMonitorias / diasPassadosGlobais) * wd.total);
                         let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-green-500' : 'text-orange-500';
                     
@@ -5149,7 +5149,7 @@
                                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                                     <div>
                                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Volume Validado Total</div>
-                                        <div class="text-4xl font-black text-slate-800 dark:text-white flex items-baseline gap-2">
+                                        <div class="text-4xl font-black text-slate-800 dark:text-white flex items-center gap-2">
                                             ${totalMonitorias} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span>
                                         </div>
                                     </div>
@@ -5196,8 +5196,7 @@
                                         <tbody>
                         `;
                         
-                        // Lista a tabela ordenada pelo total (maior pro menor)
-                        state.ranking.sort((a,b) => b.total - a.total).forEach(r => {
+                        rankingArray.sort((a,b) => b.total - a.total).forEach(r => {
                             const userObj = app.users.find(u => u.matricula === r.matricula) || { nome: r.nome, foto: null };
                             const avatar = userObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(userObj.nome)}&background=cbd5e1&color=ffffff`;
                             
@@ -5281,10 +5280,10 @@
                                         <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
                                         <div class="space-y-4">
                                             ${state.detalhes.colaboradores ? state.detalhes.colaboradores.map((op, idx) => {
-                                                // Cruzamento Avançado de Notas
-                                                const analiseDoOperador = state.detalhes.linhas.filter(l => l.operador === op.nome);
+                                                // CORREÇÃO: Previne travamento caso as linhas não existam
+                                                const linhasSeguras = state.detalhes.linhas || [];
+                                                const analiseDoOperador = linhasSeguras.filter(l => l.operador === op.nome);
                                                 
-                                                // Média do Monitor Cadastrado vs Outros
                                                 const notasMonitor = analiseDoOperador.filter(l => l.isRegisteredMonitor && typeof l.nota === 'number').map(l => l.nota);
                                                 const notasOutros = analiseDoOperador.filter(l => !l.isRegisteredMonitor && typeof l.nota === 'number').map(l => l.nota);
                                                 
@@ -5357,9 +5356,12 @@
                 },
 
                 renderView_RankingMonitorias(container) {
-                    const state = app.monitoriasData || { ranking: [] };
+                    const state = app.monitoriasData || {};
+                    const rankingArray = state.ranking || []; // CORREÇÃO: Garante o Array Seguro
                     const userMatricula = app.currentUser ? app.currentUser.matricula : '';
-                    const myData = state.ranking.find(r => r.matricula === userMatricula);
+                    
+                    // Busca sem causar crash
+                    const myData = rankingArray.find(r => r.matricula === userMatricula);
 
                     let html = `
                         <div class="mb-8">
@@ -5386,7 +5388,6 @@
                     const mediaDia = (myData.total / diasPassadosEfetivos).toFixed(1);
                     const metaDiaRestante = myData.falta > 0 ? Math.ceil(myData.falta / diasRestantes) : 0;
 
-                    // --- CÓDIGO RESTAURADO: DASHBOARD DE PROGRESSO E QUADRANTE ---
                     const pct = Math.min(100, (myData.total / meta) * 100).toFixed(1);
                     
                     let quadrante = "Q5 (Insuficiente)";
@@ -5441,9 +5442,8 @@
                             </div>
                         </div>
                     `;
-                    // --- FIM DO CÓDIGO RESTAURADO ---
 
-                    // --- NOVO: VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
+                    // --- VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
                     if (state.detalhes && state.detalhes.linhas) {
                         const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
                         
@@ -5871,9 +5871,12 @@
                     
                     if(!matr) return app.ui.showAlert("Aviso", "Selecione um colaborador.", "error");
 
+                    // CORREÇÃO: Garante o array seguro para não travar inserções
                     if(!app.monitoriasData) app.monitoriasData = { ranking: [], ultimaAtualizacao: Date.now() };
+                    
                     const usr = app.users.find(u => u.matricula === matr);
-                    let ranking = app.monitoriasData.ranking;
+                    let ranking = app.monitoriasData.ranking || []; 
+                    
                     let idx = ranking.findIndex(r => r.matricula === matr);
 
                     if (idx > -1) {
@@ -5891,7 +5894,7 @@
                     usr.results[app.currentMonth]['g1'].real = total;
                     app.storage.saveUsers();
 
-                    app.monitoriasData.ranking = ranking;
+                    app.monitoriasData.ranking = ranking; // Reatribui pro objeto principal
                     app.storage.saveMonitorias().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.showAlert("Sucesso", "Lançamento de monitoria salvo e contabilizado nos resultados do colaborador.", "success");
