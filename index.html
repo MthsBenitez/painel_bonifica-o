@@ -2919,7 +2919,7 @@
                             if (fotoGaleria) {
                                 html += `
                                 <div class="relative min-w-[120px] w-[120px] h-[120px] rounded-xl overflow-hidden group border border-slate-300 dark:border-slate-600 shadow-sm shrink-0">
-                                    ${fotoGaleria.startsWith('data:application/pdf') ? `<div class="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file-pdf text-3xl"></i></div>` : `<img src="${fotoGaleria}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showImageFull('${act.id}')" title="Ação de ${act.nome}">`}
+                                    ${fotoGaleria.startsWith('data:application/pdf') ? `<div class="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file-pdf text-3xl"></i></div>` : `${fotoGaleria.startsWith('data:application/pdf') ? `<div class="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showImageFull('${act.id}')" title="Ver PDF de ${act.nome}"><i class="fa-solid fa-file-pdf text-3xl"></i></div>` : `<img src="${fotoGaleria}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showImageFull('${act.id}')" title="Ação de ${act.nome}">`}`}
                                     <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2 pointer-events-none">
                                         <div class="text-[8px] font-bold text-white truncate leading-tight">${act.nome}</div>
                                         <button onclick="event.stopPropagation(); app.actions.downloadImages('${act.id}')" class="self-end bg-white/90 text-slate-800 w-6 h-6 rounded-full flex items-center justify-center shadow-lg pointer-events-auto hover:bg-white hover:text-blue-600 transition-colors"><i class="fa-solid fa-download text-[10px]"></i></button>
@@ -2943,7 +2943,7 @@
                             html += `
                                 <div class="glass-card rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row mb-6">
                                     <div class="md:w-2/5 h-64 md:h-auto bg-slate-200 dark:bg-slate-800 relative group cursor-pointer" onclick="app.actions.showImageFull('${act.id}')">
-                                        <img src="${photoThumb}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+                                        ${photoThumb && photoThumb.startsWith('data:application/pdf') ? `<div class="w-full h-full bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 transition-transform duration-500 group-hover:scale-105"><i class="fa-solid fa-file-pdf text-5xl mb-2"></i><span class="text-xs font-bold">Documento PDF</span></div>` : `<img src="${photoThumb}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">`}
                                         <button onclick="event.stopPropagation(); app.actions.downloadImages('${act.id}')" class="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-slate-800 p-2.5 rounded-xl shadow-lg transition-colors"><i class="fa-solid fa-download"></i></button>
                                     </div>
                                     <div class="p-6 md:w-3/5 flex flex-col">
@@ -5606,13 +5606,101 @@
                         const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
                         
                         if (minhasLinhas.length > 0) {
+                            // --- Cálculo do Cruzamento Analítico para o Usuário ---
+                            const operadoresDesteMonitor = [...new Set(minhasLinhas.map(l => l.operador))];
+                            let userColaboradoresData = [];
+                            let somaMinhasNotas = 0;
+                            let countMinhasNotas = 0;
+
+                            operadoresDesteMonitor.forEach(opNome => {
+                                const todasLinhasOp = state.detalhes.linhas.filter(l => l.operador === opNome && typeof l.nota === 'number');
+                                const minhasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor === userMatricula);
+                                const outrasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor !== userMatricula);
+
+                                minhasLinhasOp.forEach(l => { somaMinhasNotas += l.nota; countMinhasNotas++; });
+
+                                const mediaMinha = minhasLinhasOp.length > 0 ? (minhasLinhasOp.reduce((a,b)=>a+b.nota,0)/minhasLinhasOp.length).toFixed(1) : '-';
+                                const mediaOutros = outrasLinhasOp.length > 0 ? (outrasLinhasOp.reduce((a,b)=>a+b.nota,0)/outrasLinhasOp.length).toFixed(1) : '-';
+                                const mediaTotal = todasLinhasOp.length > 0 ? (todasLinhasOp.reduce((a,b)=>a+b.nota,0)/todasLinhasOp.length).toFixed(1) : '-';
+
+                                userColaboradoresData.push({
+                                    nome: opNome,
+                                    minhasAvals: minhasLinhasOp.length,
+                                    mediaMinha,
+                                    mediaOutros,
+                                    mediaTotal
+                                });
+                            });
+
+                            const userMediaGeral = countMinhasNotas > 0 ? (somaMinhasNotas / countMinhasNotas).toFixed(1) : 0;
+
+                            // Ordena da menor média total para a maior
+                            userColaboradoresData.sort((a, b) => {
+                                let valA = a.mediaTotal === '-' ? 1000 : parseFloat(a.mediaTotal);
+                                let valB = b.mediaTotal === '-' ? 1000 : parseFloat(b.mediaTotal);
+                                return valA - valB;
+                            });
+                            
                             html += `
-                                <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg mt-8" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
-                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3">
-                                        <i class="fa-solid fa-list-ul text-purple-500"></i> Suas Avaliações Lidas do Arquivo
+                                <div class="mb-4 mt-8 flex justify-between items-end">
+                                    <div>
+                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">O que a plataforma leu sobre você?</h2>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Este é o espelho exato do relatório de monitorias que foi validado neste mês.</p>
+                                    </div>
+                                </div>
+                                <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg mt-4" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
+                                    <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                    
+                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
+                                        <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico (Meus Operadores)
                                     </h3>
                                     
-                                    <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
+                                        <!-- Card Média -->
+                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
+                                            <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Minha Média Aplicada (Mês)</div>
+                                            <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${userMediaGeral}</div>
+                                            <p class="text-xs text-slate-500">Média geral das ${countMinhasNotas} notas aplicadas por você.</p>
+                                        </div>
+                    
+                                        <!-- Cruzamento -->
+                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform max-h-48 overflow-y-auto custom-scrollbar">
+                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento (Você x Outros Monitores)</div>
+                                            <div class="space-y-4">
+                                                ${userColaboradoresData.map((op, idx) => `
+                                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                        <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                                            <div class="flex flex-col">
+                                                                <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}. ${op.nome}</span>
+                                                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Média Geral Absoluta</span>
+                                                            </div>
+                                                            <span class="font-black ${op.mediaTotal !== '-' && parseFloat(op.mediaTotal) < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Total">${op.mediaTotal}</span>
+                                                        </div>
+                                                        <div class="grid grid-cols-2 gap-2 text-center">
+                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
+                                                                <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Sua Média</div>
+                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaMinha}</div>
+                                                            </div>
+                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
+                                                                <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Outros Sup.</div>
+                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaOutros}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Tabela de Lidas User -->
+                                    <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
+                                        <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
+                                            <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
+                                            <div class="flex gap-2">
+                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display='')" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
+                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display=el.classList.contains('fb-pendente')?'':'none')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                            </div>
+                                        </div>
                                         <div class="overflow-x-auto max-h-[400px] custom-scrollbar">
                                             <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
                                                 <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
@@ -5625,15 +5713,19 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                    ${minhasLinhas.map(linha => `
-                                                        <tr class="hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
-                                                            <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
-                                                            <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
-                                                            <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
-                                                            <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
-                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
+                                                    ${minhasLinhas.map(linha => {
+                                                        const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
+                                                        const pendClass = !isAplicado ? 'fb-pendente' : '';
+                                                        return \`
+                                                        <tr class="linha-bruta-user \${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                            <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> \${linha.operador}</td>
+                                                            <td class="py-3 px-4 text-center font-black \${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">\${linha.nota}</td>
+                                                            <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">\${linha.status}</span></td>
+                                                            <td class="py-3 px-4 text-xs text-slate-500">\${linha.operacao}</td>
+                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">\${linha.data}</td>
                                                         </tr>
-                                                    `).join('')}
+                                                        \`;
+                                                    }).join('')}
                                                 </tbody>
                                             </table>
                                         </div>
