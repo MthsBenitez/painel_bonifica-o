@@ -1405,14 +1405,23 @@
                 showImageFull(actId) {
                     const act = app.actionsList[actId];
                     if(!act) return;
-                    const photos = act.photos || [act.photo]; // Fallback if old format
-                    let imagesHtml = photos.map(p => `<img src="${p}" class="w-full rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4">`).join('');
+                    const photos = act.photos || [act.photo]; 
                     
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-images text-blue-500"></i> Evidências Fotográficas (${photos.length})`;
+                    let imagesHtml = photos.map(p => {
+                        if(p.startsWith('data:application/pdf')) {
+                            // Se for PDF, renderiza o iFrame interativo
+                            return `<iframe src="${p}" class="w-full h-[70vh] rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4"></iframe>`;
+                        } else {
+                            // Se for imagem, renderiza normalmente
+                            return `<img src="${p}" class="w-full rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4">`;
+                        }
+                    }).join('');
+                    
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-folder-open text-blue-500"></i> Evidências Anexadas (${photos.length})`;
                     document.getElementById('modal-content').innerHTML = imagesHtml;
                     document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Fechar</button>`;
                     document.getElementById('global-modal').classList.remove('hidden');
-                }
+                },
             },
 
             ata: {
@@ -2910,7 +2919,7 @@
                             if (fotoGaleria) {
                                 html += `
                                 <div class="relative min-w-[120px] w-[120px] h-[120px] rounded-xl overflow-hidden group border border-slate-300 dark:border-slate-600 shadow-sm shrink-0">
-                                    <img src="${fotoGaleria}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showImageFull('${act.id}')" title="Ação de ${act.nome}">
+                                    ${fotoGaleria.startsWith('data:application/pdf') ? `<div class="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><i class="fa-solid fa-file-pdf text-3xl"></i></div>` : `<img src="${fotoGaleria}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showImageFull('${act.id}')" title="Ação de ${act.nome}">`}
                                     <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2 pointer-events-none">
                                         <div class="text-[8px] font-bold text-white truncate leading-tight">${act.nome}</div>
                                         <button onclick="event.stopPropagation(); app.actions.downloadImages('${act.id}')" class="self-end bg-white/90 text-slate-800 w-6 h-6 rounded-full flex items-center justify-center shadow-lg pointer-events-auto hover:bg-white hover:text-blue-600 transition-colors"><i class="fa-solid fa-download text-[10px]"></i></button>
@@ -3414,7 +3423,8 @@
                                               act.status === 'aprovado' ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold uppercase text-[9px]">Aprovado</span>` : 
                                               `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold uppercase text-[9px]">Reprovado</span>`;
                             const img = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
-                            const imgHTML = img ? `<img src="${img}" class="w-full h-24 object-cover rounded-lg mb-2">` : '';
+                            const isPdf = img.startsWith('data:application/pdf');
+                            const imgHTML = img ? (isPdf ? `<div class="w-full h-24 bg-slate-100 dark:bg-slate-800 flex items-center justify-center rounded-lg mb-2 text-slate-400"><i class="fa-solid fa-file-pdf text-4xl"></i></div>` : `<img src="${img}" class="w-full h-24 object-cover rounded-lg mb-2">`) : '';
                             html += `
                                 <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 flex flex-col">
                                     ${imgHTML}
@@ -5075,37 +5085,42 @@
                 },
 
                 renderView_ImportMonitorias(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.isAdmin && !app.currentUser) return;
                     
                     let state = app.monitoriasData || {};
-                    const rankingArray = state.ranking || []; // CORREÇÃO: Garante que seja um Array
+                    const rankingArray = state.ranking || []; 
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     
-                    let html = `
-                    <div class="flex flex-col sm:flex-row gap-3">
-                        <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
-                            <i class="fa-solid fa-trash-can"></i> Resetar Mês
-                        </button>
-                
-                        <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                            <i class="fa-solid fa-plus"></i> Adicionar Manual
-                        </button>
-                        
-                        <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados da Amil">
-                            <i class="fa-solid fa-file-csv"></i> Relatório Amil
-                            <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
-                        </label>
-                
-                        <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
-                            <i class="fa-solid fa-upload"></i> Relatório Padrão
-                            <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
-                        </label>
-                    </div>
-                    `;
+                    let html = '';
+
+                    // BARRAS DE BOTÕES (APENAS ADMIN VÊ)
+                    if(app.isAdmin) {
+                        html += `
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
+                                <i class="fa-solid fa-trash-can"></i> Resetar Mês
+                            </button>
                     
-                    if(rankingArray.length > 0) {
+                            <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-plus"></i> Adicionar Manual
+                            </button>
+                            
+                            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados da Amil">
+                                <i class="fa-solid fa-file-csv"></i> Relatório Amil
+                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
+                            </label>
+                    
+                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
+                                <i class="fa-solid fa-upload"></i> Relatório Padrão
+                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                            </label>
+                        </div>
+                        `;
+                    }
+                    
+                    if(app.isAdmin && rankingArray.length > 0) {
                         const numUsers = rankingArray.length;
-                        const metaIndividual = 400; // META FIXA EXIGIDA DE MONITORIAS
+                        const metaIndividual = 400; 
                         const metaGlobal = numUsers * metaIndividual; 
                         
                         let totalMonitorias = 0;
@@ -5249,7 +5264,7 @@
                                 </div>
                             </div>
                         `;
-                    } else {
+                    } else if (app.isAdmin) {
                         html += `
                             <div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2 mt-6">
                                 <i class="fa-solid fa-file-csv text-5xl mb-4 opacity-50"></i>
@@ -5260,7 +5275,7 @@
                     }
                     
                     // --- VISÃO DETALHADA GLASSMORPHISM 3D (ADMIN) ---
-                    if (state.detalhes) {
+                    if (app.isAdmin && state.detalhes && state.detalhes.linhas) {
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
                                 <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -5282,7 +5297,6 @@
                                         <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
                                         <div class="space-y-4">
                                             ${state.detalhes.colaboradores ? state.detalhes.colaboradores.map((op, idx) => {
-                                                // CORREÇÃO: Previne travamento caso as linhas não existam
                                                 const linhasSeguras = state.detalhes.linhas || [];
                                                 const analiseDoOperador = linhasSeguras.filter(l => l.operador === op.nome);
                                                 
@@ -5290,7 +5304,7 @@
                                                 const notasOutros = analiseDoOperador.filter(l => !l.isRegisteredMonitor && typeof l.nota === 'number').map(l => l.nota);
                                                 
                                                 const mediaMon = notasMonitor.length > 0 ? (notasMonitor.reduce((a,b)=>a+b,0)/notasMonitor.length).toFixed(1) : '-';
-                                                const mediaOut = notasOutros.length > 0 ? (notasOutros.reduce((a,b)=>a+b,0)/notasOutros.length).toFixed(1) : '-';
+                                                const mediaOutros = notasOutros.length > 0 ? (notasOutros.reduce((a,b)=>a+b,0)/notasOutros.length).toFixed(1) : '-';
                                                 
                                                 return `
                                                 <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -5308,7 +5322,7 @@
                                                         </div>
                                                         <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
                                                             <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Média Outros Sup.</div>
-                                                            <div class="font-black text-slate-700 dark:text-slate-300">${mediaOut}</div>
+                                                            <div class="font-black text-slate-700 dark:text-slate-300">${mediaOutros}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -5320,8 +5334,12 @@
                 
                                 <!-- Tabela Linha por Linha Glassmorphism 3D -->
                                 <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
-                                    <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50">
+                                    <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                                         <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
+                                        <div class="flex gap-2">
+                                            <button onclick="document.querySelectorAll('.linha-bruta').forEach(el => el.style.display='')" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
+                                            <button onclick="document.querySelectorAll('.linha-bruta').forEach(el => el.style.display=el.classList.contains('fb-pendente')?'':'none')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                        </div>
                                     </div>
                                     <div class="overflow-x-auto max-h-[500px] custom-scrollbar">
                                         <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
@@ -5336,8 +5354,11 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                ${state.detalhes.linhas ? state.detalhes.linhas.map(linha => `
-                                                    <tr class="hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                ${state.detalhes.linhas ? state.detalhes.linhas.map(linha => {
+                                                    const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
+                                                    const pendClass = !isAplicado ? 'fb-pendente' : '';
+                                                    return `
+                                                    <tr class="linha-bruta ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
                                                         <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
                                                         <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
                                                         <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
@@ -5345,7 +5366,8 @@
                                                         <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                         <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
                                                     </tr>
-                                                `).join('') : ''}
+                                                    `;
+                                                }).join('') : ''}
                                             </tbody>
                                         </table>
                                     </div>
@@ -5354,6 +5376,140 @@
                         `;
                     }
                     
+                    // --- VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
+                    if (!app.isAdmin && state.detalhes && state.detalhes.linhas) {
+                        const userMatricula = app.currentUser.matricula;
+                        const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
+                        
+                        if (minhasLinhas.length > 0) {
+                            // --- Cálculo do Cruzamento Analítico para o Usuário ---
+                            const operadoresDesteMonitor = [...new Set(minhasLinhas.map(l => l.operador))];
+                            let userColaboradoresData = [];
+                            let somaMinhasNotas = 0;
+                            let countMinhasNotas = 0;
+
+                            operadoresDesteMonitor.forEach(opNome => {
+                                const todasLinhasOp = state.detalhes.linhas.filter(l => l.operador === opNome && typeof l.nota === 'number');
+                                const minhasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor === userMatricula);
+                                const outrasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor !== userMatricula);
+
+                                minhasLinhasOp.forEach(l => { somaMinhasNotas += l.nota; countMinhasNotas++; });
+
+                                const mediaMinha = minhasLinhasOp.length > 0 ? (minhasLinhasOp.reduce((a,b)=>a+b.nota,0)/minhasLinhasOp.length).toFixed(1) : '-';
+                                const mediaOutros = outrasLinhasOp.length > 0 ? (outrasLinhasOp.reduce((a,b)=>a+b.nota,0)/outrasLinhasOp.length).toFixed(1) : '-';
+                                const mediaTotal = todasLinhasOp.length > 0 ? (todasLinhasOp.reduce((a,b)=>a+b.nota,0)/todasLinhasOp.length).toFixed(1) : '-';
+
+                                userColaboradoresData.push({
+                                    nome: opNome,
+                                    minhasAvals: minhasLinhasOp.length,
+                                    mediaMinha,
+                                    mediaOutros,
+                                    mediaTotal
+                                });
+                            });
+
+                            const userMediaGeral = countMinhasNotas > 0 ? (somaMinhasNotas / countMinhasNotas).toFixed(1) : 0;
+
+                            userColaboradoresData.sort((a, b) => {
+                                let valA = a.mediaTotal === '-' ? 1000 : parseFloat(a.mediaTotal);
+                                let valB = b.mediaTotal === '-' ? 1000 : parseFloat(b.mediaTotal);
+                                return valA - valB;
+                            });
+                            
+                            html += `
+                                <div class="mb-4 mt-8 flex justify-between items-end">
+                                    <div>
+                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">O que a plataforma leu sobre você?</h2>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Este é o espelho exato do relatório de monitorias que foi validado neste mês.</p>
+                                    </div>
+                                </div>
+                                <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
+                                    <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                    
+                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
+                                        <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico (Meus Operadores)
+                                    </h3>
+                                    
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
+                                        <!-- Card Média -->
+                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
+                                            <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Minha Média Aplicada (Mês)</div>
+                                            <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${userMediaGeral}</div>
+                                            <p class="text-xs text-slate-500">Média geral das ${countMinhasNotas} notas aplicadas por você.</p>
+                                        </div>
+                    
+                                        <!-- Cruzamento -->
+                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform max-h-48 overflow-y-auto custom-scrollbar">
+                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento (Você x Outros Monitores)</div>
+                                            <div class="space-y-4">
+                                                ${userColaboradoresData.map((op, idx) => `
+                                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                        <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                                            <div class="flex flex-col">
+                                                                <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}. ${op.nome}</span>
+                                                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Média Geral Absoluta</span>
+                                                            </div>
+                                                            <span class="font-black ${op.mediaTotal !== '-' && parseFloat(op.mediaTotal) < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Total">${op.mediaTotal}</span>
+                                                        </div>
+                                                        <div class="grid grid-cols-2 gap-2 text-center">
+                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
+                                                                <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Sua Média</div>
+                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaMinha}</div>
+                                                            </div>
+                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
+                                                                <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Outros Sup.</div>
+                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaOutros}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Tabela de Lidas User -->
+                                    <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
+                                        <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
+                                            <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
+                                            <div class="flex gap-2">
+                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display='')" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
+                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display=el.classList.contains('fb-pendente')?'':'none')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                            </div>
+                                        </div>
+                                        <div class="overflow-x-auto max-h-[400px] custom-scrollbar">
+                                            <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                                <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
+                                                    <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                        <th class="py-3 px-4">Operador Avaliado</th>
+                                                        <th class="py-3 px-4 text-center">Nota</th>
+                                                        <th class="py-3 px-4 text-center">Status Feedback</th>
+                                                        <th class="py-3 px-4">Operação</th>
+                                                        <th class="py-3 px-4 text-right">Data</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
+                                                    ${minhasLinhas.map(linha => {
+                                                        const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
+                                                        const pendClass = !isAplicado ? 'fb-pendente' : '';
+                                                        return `
+                                                        <tr class="linha-bruta-user ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                            <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
+                                                            <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                            <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
+                                                            <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
+                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
+                                                        </tr>
+                                                        `;
+                                                    }).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
                     container.innerHTML = html;
                 },
 
