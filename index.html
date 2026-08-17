@@ -825,14 +825,21 @@
                 
                 init() {
                     if (!window.firebase) {
-                        console.error("Firebase não carregou corretamente.");
+                        console.error("Firebase não carregou corretamente. Verifique sua internet ou AdBlocker.");
+                        alert("Erro crítico: As bibliotecas do banco de dados não carregaram.");
                         return;
                     }
-                    if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
+                    if (!firebase.apps.length) { 
+                        firebase.initializeApp(this.firebaseConfig); 
+                    }
                     
+                    console.log("Iniciando conexão com o Firebase...");
+
+                    // CORREÇÃO: Adicionado tratamento de erro na promessa do Firebase (o segundo callback)
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
-                        app.dataLoaded = true; // <--- ADICIONADO: Avisa o sistema que os dados já baixaram
+                        console.log("Dados recebidos do Firebase com sucesso!");
                         const data = snapshot.val();
+                        
                         if (data) {
                             if (data.config) {
                                 app.config = data.config;
@@ -861,17 +868,14 @@
                                 const rawUsers = Array.isArray(data.users) ? data.users : Object.values(data.users);
                                 
                                 app.users = rawUsers.filter(u => u !== null && u !== undefined).map(u => {
-                                    // Fallback rigoroso para estrutura de results corrompida
                                     if(u.results && typeof u.results !== 'object') {
                                         u.results = {};
                                     } else if(u.results && (u.results.g1 || u.results.g2)) {
-                                        // Conversão antiga (legado)
                                         const oldData = {...u.results};
                                         u.results = { "2026-06": oldData };
                                     }
                                     if(!u.results) u.results = {};
                                     
-                                    // PROTEÇÃO CONTRA CRASH: Força as operações a serem sempre listas. 
                                     if (u.operacoes) {
                                         u.operacoes = Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes);
                                     } else {
@@ -880,8 +884,10 @@
                                     
                                     return u;
                                 });
+                                console.log(`Usuários carregados: ${app.users.length}`);
                             } else {
                                 app.users = [];
+                                console.warn("Atenção: A base de dados existe, mas não possui usuários cadastrados.");
                             }
 
                             if (data.actions) app.actionsList = data.actions;
@@ -916,8 +922,7 @@
                             if (data.operacoes) {
                                 app.operacoesList = data.operacoes;
                             } else {
-                                // Cria as operações iniciais pedidas caso não existam no banco
-                                app.operacoesList = {}; // <-- ADICIONE ESTA LINHA PARA NÃO TRAVAR
+                                app.operacoesList = {}; 
                                 const opsIniciais = ["COPEL", "unimed hospitais", "sanepar", "pesquisa kanta", "pesquisa copel", "atrium", "Cocamar", "metrocard", "cnhi", "db", "hidrolabor", "amil", "parana clinicas", "dental", "we pink", "doctoralia", "pesquisa blend", "anatel", "Hospital Pequeno Principe", "Captação"];
                                 opsIniciais.forEach((op, idx) => {
                                     app.operacoesList['op_'+idx] = { id: 'op_'+idx, nome: op, max: 50 };
@@ -931,13 +936,8 @@
                             }
 
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
-                                // 1. Atualiza apenas as bolinhas de notificação silenciosamente
                                 app.notifications.updateBadge();
                                 
-                                // 2. Proteção contra o "apagão" de formulários:
-                                // O sistema só vai forçar a atualização da tela em tempo real se o usuário 
-                                // estiver em uma aba estritamente visual (Dashboards). Telas de preenchimento 
-                                // só serão atualizadas quando o próprio usuário clicar em Salvar ou Mudar de Aba.
                                 const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'campanha_mes'];
                                 
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
@@ -945,9 +945,18 @@
                                 }
                             }
                         } else {
+                            console.warn("Banco de dados VAZIO. Inicializando estruturas base.");
                             this.saveConfig();
                             this.saveUsers();
                         }
+                    }, (error) => {
+                        // CORREÇÃO: Tratamento do Erro do Firebase
+                        console.error("ERRO CRÍTICO DE CONEXÃO COM O FIREBASE:", error);
+                        app.ui.showAlert(
+                            "Erro de Conexão com o Banco", 
+                            `O banco de dados rejeitou o acesso (Provável erro nas Rules do Firebase).<br><br><b>Código do erro:</b> ${error.code}`, 
+                            "error"
+                        );
                     });
                 },
                 saveUsers() { return firebase.database().ref('sistema_bonificacao/users').set(app.users); },
