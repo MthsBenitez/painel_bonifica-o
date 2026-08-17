@@ -835,6 +835,10 @@
                     // Aqui passamos o callback de SUCESSO e o callback de ERRO
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
                         console.log("Dados recebidos com sucesso!");
+                        
+                        // CORREÇÃO CRÍTICA AQUI: Libera a trava de segurança para o Login funcionar
+                        app.dataLoaded = true; 
+                        
                         const data = snapshot.val();
                         if (data) {
                             if (data.config) {
@@ -927,7 +931,8 @@
                             this.saveUsers();
                         }
                     }, (error) => {
-                        // BLOCO CORRIGIDO: Tratamento de erro explícito
+                        // Trata também a rejeição/erro do Firebase, liberando a trava para exibir erro em tela se for o caso
+                        app.dataLoaded = true;
                         console.error("Erro na leitura do Firebase:", error);
                         app.ui.showAlert(
                             "Erro Crítico de Conexão", 
