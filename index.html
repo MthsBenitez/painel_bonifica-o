@@ -919,11 +919,36 @@
                                 if (updatedUser) app.currentUser = updatedUser;
                             }
 
+                            i// --- AUTO-LOGIN E RENOVAÇÃO DE TELA ---
+                            const todayStr = new Date().toLocaleDateString('pt-BR');
+                            const savedDate = localStorage.getItem('soft_session_date');
+                            const savedMat = localStorage.getItem('soft_session_mat');
+                            const savedIsAdmin = localStorage.getItem('soft_session_admin') === 'true';
+
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
+                                // Se já estiver dentro do sistema, apenas atualiza a tela suavemente
                                 app.notifications.updateBadge();
                                 const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'campanha_mes'];
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
                                     app.ui.renderTab(app.currentTab, true);
+                                }
+                            } else if (savedDate === todayStr && savedMat) {
+                                // Se deu F5 no mesmo dia, entra direto sem pedir senha!
+                                if (savedIsAdmin) {
+                                    app.isAdmin = true;
+                                    app.currentUser = null;
+                                    app.currentTab = localStorage.getItem('soft_session_tab') || 'dashboard_adm';
+                                    document.getElementById('view-login').classList.add('hidden');
+                                    app.ui.showApp();
+                                } else {
+                                    const userObj = app.users.find(u => u.matricula === savedMat);
+                                    if (userObj) {
+                                        app.isAdmin = false;
+                                        app.currentUser = userObj;
+                                        app.currentTab = localStorage.getItem('soft_session_tab') || 'meu_painel';
+                                        document.getElementById('view-login').classList.add('hidden');
+                                        app.auth.processAcceptances();
+                                    }
                                 }
                             }
                         } else {
@@ -2281,6 +2306,9 @@
 
                     if(mat === 'gestaosoft' && pwd === 'qualidade2026') {
                         app.isAdmin = true; app.currentUser = null; app.currentTab = 'dashboard_adm';
+                        localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
+                        localStorage.setItem('soft_session_mat', 'gestaosoft');
+                        localStorage.setItem('soft_session_admin', 'true');
                         document.getElementById('view-login').classList.add('hidden');
                         app.ui.showApp(); return;
                     }
@@ -2291,6 +2319,9 @@
                         app.users[userIdx].loginCount = (app.users[userIdx].loginCount || 0) + 1;
                         app.currentUser = app.users[userIdx];
                         app.currentTab = 'meu_painel';
+                        localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
+                        localStorage.setItem('soft_session_mat', app.users[userIdx].matricula);
+                        localStorage.setItem('soft_session_admin', 'false');
                         app.storage.saveUsers();
 
                         document.getElementById('view-login').classList.add('hidden');
@@ -2343,6 +2374,9 @@
 
                 logout() {
                     app.isAdmin = false; app.currentUser = null; window.selectedAdminEditUser = null;
+                    localStorage.removeItem('soft_session_date');
+                    localStorage.removeItem('soft_session_mat');
+                    localStorage.removeItem('soft_session_admin');
                     
                     const savedMat = localStorage.getItem('soft_saved_mat');
                     document.getElementById('login-mat').value = savedMat || '';
@@ -2815,6 +2849,7 @@
                     if (overlay) overlay.classList.add('hidden');
 
                     app.currentTab = tabId;
+                    localStorage.setItem('soft_session_tab', tabId);
                     this.renderNav();
                     const mainContainer = document.getElementById('content-container');
                     
@@ -6411,7 +6446,7 @@
                 processarPlanilhaMonitoria(input) {
                     const file = input.files[0];
                     if (!file) return;
-                    app.ui.showAlert("Processando Padrão...", "Lendo a planilha principal...", "info");
+                    app.ui.showAlert("Processando Padrão...", "Cruzando colunas e lendo dados...", "info");
             
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -6419,7 +6454,7 @@
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array' });
                             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
             
@@ -6431,19 +6466,22 @@
                             // ETIQUETA: Mantém as Amil, deleta as Padrão antigas
                             let linhasMantidas = linhasAtuais.filter(l => l.source !== 'PADRAO');
                             let linhasNovas = [];
+                            let matchCount = 0;
             
-                            let periodoAnalisado = "Período Indefinido";
-                            for (let i = 0; i < jsonData.length; i++) {
-                                if (jsonData[i]['DATA MONITORIA']) { periodoAnalisado = jsonData[i]['DATA MONITORIA']; break; }
-                            }
+                            const getValByKeyword = (row, keyword) => {
+                                const key = Object.keys(row).find(k => k.toUpperCase().includes(keyword));
+                                return key ? row[key] : undefined;
+                            };
+            
+                            let periodoAnalisado = new Date().toLocaleDateString('pt-BR');
             
                             jsonData.forEach(row => {
-                                const monitorSup = row['MONITOR|SUPERVISOR'] || row['NOME'] || row['AVALIADOR'];
-                                if (!monitorSup) return;
+                                // Busca Inteligente de Colunas
+                                let monitorRaw = getValByKeyword(row, 'MONITOR|SUPERVISOR') || getValByKeyword(row, 'NOME') || getValByKeyword(row, 'AVALIADOR');
+                                if (!monitorRaw) return;
             
-                                const monitorSupStr = String(monitorSup).trim();
-                                const parts = monitorSupStr.split('-');
-                                let matricula = parts[0].trim();
+                                const monitorSupStr = String(monitorRaw).trim();
+                                let matricula = monitorSupStr.split('-')[0].trim();
                                 
                                 const keyAliasCompleta = monitorSupStr.toUpperCase();
                                 const keyAliasParte = matricula.toUpperCase();
@@ -6453,24 +6491,35 @@
                                     else if (app.config.aliases[keyAliasParte]) matricula = app.config.aliases[keyAliasParte];
                                 }
                                 
-                                let userObj = app.users.find(u => u.matricula === matricula || u.nome.toUpperCase() === monitorSupStr.toUpperCase());
-                                if(userObj) matricula = userObj.matricula;
+                                let userObj = app.users.find(u => u.matricula === matricula || u.nome.toUpperCase() === monitorSupStr.toUpperCase() || u.nome.toUpperCase().includes(monitorSupStr.split(' ')[0].toUpperCase()));
+                                if(userObj) {
+                                    matricula = userObj.matricula;
+                                    matchCount++;
+                                }
             
                                 const isRegisteredMonitor = !!userObj;
-                                const titulo = String(row['TITULO QUESTIONARIO'] || '').toLowerCase();
-                                const operacao = String(row['OPERACAO'] || '').toUpperCase();
+                                const titulo = String(getValByKeyword(row, 'TITULO') || '').toLowerCase();
+                                const operacao = String(getValByKeyword(row, 'OPERACAO') || getValByKeyword(row, 'OPERAÇÃO') || '').toUpperCase();
                                 const isNeutro = titulo.includes('neutro') || operacao.includes('NEUTROS');
             
                                 let notaFinalLida = 'N/A';
                                 if (!isNeutro) {
-                                    let notaRaw = row['NOTA MONITORIA'];
-                                    if (notaRaw === undefined || notaRaw === null) notaRaw = row['RESULTADO'] || row['RESULTADO FINAL'] || 100;
+                                    let notaRaw = getValByKeyword(row, 'NOTA') || getValByKeyword(row, 'RESULTADO') || 100;
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
                                     notaFinalLida = parseFloat(notaRaw);
                                 }
             
-                                const colOpFinal = Object.keys(row).find(k => k.toUpperCase().includes('OPERADOR') || k.toUpperCase() === 'NOME COLABORADOR' || k.toUpperCase() === 'COLABORADOR') || 'COLABORADOR';
-                                let opNomeDetalhe = app.utils.fixEncoding(String(row[colOpFinal] || row['OPERADOR'] || 'Não Identificado')).trim();
+                                let opNomeDetalhe = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR') || getValByKeyword(row, 'COLABORADOR') || getValByKeyword(row, 'FUNCIONÁRIO') || 'Não Identificado')).trim();
+                                
+                                // Tratamento seguro de Data
+                                let dataRaw = getValByKeyword(row, 'DATA');
+                                let dataFmt = periodoAnalisado;
+                                if (typeof dataRaw === 'number') {
+                                    const dt = new Date((dataRaw - 25569) * 86400 * 1000);
+                                    dataFmt = dt.toLocaleDateString('pt-BR');
+                                } else if (dataRaw) {
+                                    dataFmt = String(dataRaw);
+                                }
             
                                 linhasNovas.push({
                                     source: 'PADRAO', // ETIQUETA MÁGICA
@@ -6479,24 +6528,25 @@
                                     isRegisteredMonitor: isRegisteredMonitor,
                                     operador: opNomeDetalhe,
                                     nota: isNaN(notaFinalLida) ? 'N/A' : notaFinalLida,
-                                    status: String(row['STATUS MONITORIA'] || row['STATUS'] || '-'),
-                                    operacao: operacao,
-                                    data: row['DATA MONITORIA'] || row['DATA'] || periodoAnalisado
+                                    status: String(getValByKeyword(row, 'STATUS') || '-'),
+                                    operacao: operacao || 'PADRÃO',
+                                    data: dataFmt
                                 });
                             });
+            
+                            if (matchCount === 0) return app.ui.showAlert("Aviso", "Arquivo lido, mas nenhum nome bateu com os monitores cadastrados.", "error");
             
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
                             
                             app.monitoriasData.periodo = periodoAnalisado;
-                            // Consolida
                             app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
                             
                             this.recalcularPainelMonitorias();
             
                         } catch (err) {
                             console.error(err);
-                            app.ui.showAlert("Erro", "Não foi possível ler o arquivo Padrão.", "error");
+                            app.ui.showAlert("Erro", "Não foi possível ler o arquivo Padrão. O formato pode estar corrompido.", "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
