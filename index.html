@@ -825,21 +825,17 @@
                 
                 init() {
                     if (!window.firebase) {
-                        console.error("Firebase não carregou corretamente. Verifique sua internet ou AdBlocker.");
-                        alert("Erro crítico: As bibliotecas do banco de dados não carregaram.");
+                        console.error("Firebase não carregou corretamente.");
                         return;
                     }
-                    if (!firebase.apps.length) { 
-                        firebase.initializeApp(this.firebaseConfig); 
-                    }
+                    if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
                     
-                    console.log("Iniciando conexão com o Firebase...");
+                    console.log("Tentando conectar ao banco de dados...");
 
-                    // CORREÇÃO: Adicionado tratamento de erro na promessa do Firebase (o segundo callback)
+                    // Aqui passamos o callback de SUCESSO e o callback de ERRO
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
-                        console.log("Dados recebidos do Firebase com sucesso!");
+                        console.log("Dados recebidos com sucesso!");
                         const data = snapshot.val();
-                        
                         if (data) {
                             if (data.config) {
                                 app.config = data.config;
@@ -854,7 +850,6 @@
                                 const g7 = app.config.goals.find(g => g.id === 'g7');
                                 if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
 
-                                // Regra: Remover G5 (Frequência) e recalcular pesos
                                 if (app.config.goals.find(g => g.id === 'g5')) {
                                     app.config.goals = app.config.goals.filter(g => g.id !== 'g5');
                                     const updateG6 = app.config.goals.find(g => g.id === 'g6');
@@ -866,7 +861,6 @@
                             
                             if (data.users) {
                                 const rawUsers = Array.isArray(data.users) ? data.users : Object.values(data.users);
-                                
                                 app.users = rawUsers.filter(u => u !== null && u !== undefined).map(u => {
                                     if(u.results && typeof u.results !== 'object') {
                                         u.results = {};
@@ -881,26 +875,16 @@
                                     } else {
                                         u.operacoes = [];
                                     }
-                                    
                                     return u;
                                 });
-                                console.log(`Usuários carregados: ${app.users.length}`);
                             } else {
                                 app.users = [];
-                                console.warn("Atenção: A base de dados existe, mas não possui usuários cadastrados.");
                             }
 
-                            if (data.actions) app.actionsList = data.actions;
-                            else app.actionsList = {};
-
-                            if (data.notifications) app.notificationsList = data.notifications;
-                            else app.notificationsList = {};
-
-                            if (data.events) app.eventsList = data.events;
-                            else app.eventsList = {};
-
-                            if (data.atas) app.atasList = data.atas;
-                            else app.atasList = {};
+                            if (data.actions) app.actionsList = data.actions; else app.actionsList = {};
+                            if (data.notifications) app.notificationsList = data.notifications; else app.notificationsList = {};
+                            if (data.events) app.eventsList = data.events; else app.eventsList = {};
+                            if (data.atas) app.atasList = data.atas; else app.atasList = {};
 
                             if (data.campanha) {
                                 app.campanhaData = data.campanha;
@@ -913,11 +897,7 @@
                                 };
                             }
 
-                            if (data.monitorias) {
-                                app.monitoriasData = data.monitorias;
-                            } else {
-                                app.monitoriasData = { ranking: [] };
-                            }
+                            if (data.monitorias) app.monitoriasData = data.monitorias; else app.monitoriasData = { ranking: [] };
                             
                             if (data.operacoes) {
                                 app.operacoesList = data.operacoes;
@@ -937,24 +917,21 @@
 
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
                                 app.notifications.updateBadge();
-                                
                                 const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'campanha_mes'];
-                                
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
                                     app.ui.renderTab(app.currentTab, true);
                                 }
                             }
                         } else {
-                            console.warn("Banco de dados VAZIO. Inicializando estruturas base.");
                             this.saveConfig();
                             this.saveUsers();
                         }
                     }, (error) => {
-                        // CORREÇÃO: Tratamento do Erro do Firebase
-                        console.error("ERRO CRÍTICO DE CONEXÃO COM O FIREBASE:", error);
+                        // BLOCO CORRIGIDO: Tratamento de erro explícito
+                        console.error("Erro na leitura do Firebase:", error);
                         app.ui.showAlert(
-                            "Erro de Conexão com o Banco", 
-                            `O banco de dados rejeitou o acesso (Provável erro nas Rules do Firebase).<br><br><b>Código do erro:</b> ${error.code}`, 
+                            "Erro Crítico de Conexão", 
+                            `O Firebase negou a leitura dos dados. Isso geralmente acontece porque as "Rules" (Regras) do banco expiraram.<br><br><b>Erro:</b> ${error.message}`, 
                             "error"
                         );
                     });
