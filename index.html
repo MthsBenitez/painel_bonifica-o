@@ -809,6 +809,9 @@
     <!-- Scripts da Aplicação -->
     <script>
         const app = {
+            dataLoaded: false, // <--- ADICIONADO: Trava de segurança do Firebase
+            config: { baseValue: 400, goals: [] }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
+            
             storage: {
                 firebaseConfig: {
                     apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
@@ -828,6 +831,7 @@
                     if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
                     
                     firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
+                        app.dataLoaded = true; // <--- ADICIONADO: Avisa o sistema que os dados já baixaram
                         const data = snapshot.val();
                         if (data) {
                             if (data.config) {
@@ -2244,6 +2248,13 @@
 
             auth: {
                 login() {
+                    // --- NOVA TRAVA DE SEGURANÇA ---
+                    // Se o usuário clicar em entrar antes da internet baixar os dados do Firebase:
+                    if (!app.dataLoaded) {
+                        return app.ui.showAlert("Sincronizando...", "O sistema está baixando os dados do servidor. Aguarde 2 segundinhos e clique em Entrar novamente.", "info");
+                    }
+                    // -------------------------------
+
                     const mat = document.getElementById('login-mat').value.trim();
                     const pwd = document.getElementById('login-pwd').value.trim();
                     const remember = document.getElementById('login-remember').checked;
