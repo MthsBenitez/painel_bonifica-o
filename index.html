@@ -6214,12 +6214,15 @@
                     if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
                     if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
                     usr.results[app.currentMonth]['g1'].real = total;
-                    app.storage.saveUsers();
-
                     app.monitoriasData.ranking = ranking; // Reatribui pro objeto principal
-                    app.storage.saveMonitorias().then(() => {
+                    
+                    // ATUALIZAÇÃO ATÔMICA
+                    firebase.database().ref('sistema_bonificacao').update({
+                        users: app.users,
+                        monitorias: app.monitoriasData
+                    }).then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
-                        app.ui.showAlert("Sucesso", "Lançamento de monitoria salvo e contabilizado nos resultados do colaborador.", "success");
+                        app.ui.showAlert("Sucesso", "Lançamento manual salvo e contabilizado nos resultados.", "success");
                         app.ui.renderTab('import_monitorias', true);
                     });
                 },
@@ -6230,9 +6233,13 @@
                     const usr = app.users.find(u => u.matricula === matr);
                     if(usr && usr.results && usr.results[app.currentMonth] && usr.results[app.currentMonth]['g1']) {
                         usr.results[app.currentMonth]['g1'].real = 0;
-                        app.storage.saveUsers();
                     }
-                    app.storage.saveMonitorias().then(() => {
+                    
+                    // ATUALIZAÇÃO ATÔMICA
+                    firebase.database().ref('sistema_bonificacao').update({
+                        users: app.users,
+                        monitorias: app.monitoriasData
+                    }).then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.renderTab('import_monitorias', true);
                     });
@@ -6260,8 +6267,11 @@
                         }
                     });
                     
-                    app.storage.saveUsers();
-                    app.storage.saveMonitorias().then(() => {
+                    // ATUALIZAÇÃO ATÔMICA: Salva usuários e limpa monitorias ao mesmo tempo!
+                    firebase.database().ref('sistema_bonificacao').update({
+                        users: app.users,
+                        monitorias: cleanData
+                    }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         app.ui.showAlert("Reset Concluído", "Todos os relatórios do mês atual foram apagados com sucesso.", "success");
                     });
@@ -6340,10 +6350,13 @@
                         }
                     });
             
-                    app.storage.saveUsers();
-                    app.storage.saveMonitorias().then(() => {
+                    // ATUALIZAÇÃO ATÔMICA: Previne a corrida de dados do Firebase
+                    firebase.database().ref('sistema_bonificacao').update({
+                        users: app.users,
+                        monitorias: app.monitoriasData
+                    }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
-                        app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente no painel de produtividade.", "success");
+                        app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente.", "success");
                     });
                 },
             
