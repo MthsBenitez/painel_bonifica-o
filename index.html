@@ -2890,7 +2890,8 @@
                         else if(tabId === 'analise_csv') this.renderView_AnaliseCSV(viewDiv);
                         else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);
                         else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);
-                        else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);
+                        else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -3505,7 +3506,7 @@
                     container.innerHTML = html;
                 },
 
-                calFiltroNome: '', calFiltroOp: '', calFiltroStatus: '', calFiltroTema: '',
+                calFiltroNome: '', calFiltroOp: '', calFiltroStatus: '', calFiltroTema: '', estudosFiltroOp: '',
 
                 renderView_Calendario(container) {
                     const mat = app.isAdmin ? 'ADM' : app.currentUser.matricula;
@@ -6136,7 +6137,6 @@
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laudos e Estudos Analíticos</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Formulário de preenchimento rápido (45s) focado em diagnóstico de causa-raiz para painéis e QBRs.</p>
                         </div>
                         
                         <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-purple-500 shadow-xl">
@@ -6154,26 +6154,13 @@
                                             ${operacoes}
                                         </select>
                                     </div>
-                                </div>
-
-                                <div class="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
-                                    <div class="absolute -right-4 -top-4 text-7xl text-slate-200 dark:text-slate-700 opacity-30"><i class="fa-solid fa-scale-unbalanced"></i></div>
-                                    <label class="block text-sm font-black text-slate-800 dark:text-white uppercase mb-4 tracking-wider relative z-10">Classificação Binária (Responsabilidade) *</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
-                                        <label class="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-orange-500 transition-colors group has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50 dark:has-[:checked]:bg-orange-900/20">
-                                            <input type="radio" name="laudo-resp" value="Erro Operacional" required class="w-5 h-5 accent-orange-600 cursor-pointer">
-                                            <div>
-                                                <div class="font-bold text-slate-800 dark:text-white group-has-[:checked]:text-orange-700 dark:group-has-[:checked]:text-orange-400">Erro Operacional</div>
-                                                <div class="text-[10px] text-slate-500 mt-0.5">Treinamento e Feedback na Operação</div>
-                                            </div>
-                                        </label>
-                                        <label class="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-red-500 transition-colors group has-[:checked]:border-red-500 has-[:checked]:bg-red-50 dark:has-[:checked]:bg-red-900/20">
-                                            <input type="radio" name="laudo-resp" value="Erro de Negócio" required class="w-5 h-5 accent-red-600 cursor-pointer">
-                                            <div>
-                                                <div class="font-bold text-slate-800 dark:text-white group-has-[:checked]:text-red-700 dark:group-has-[:checked]:text-red-400">Erro de Negócio</div>
-                                                <div class="text-[10px] text-slate-500 mt-0.5">Responsabilidade do Cliente Contratante</div>
-                                            </div>
-                                        </label>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">TEMA (Seja objetivo) *</label>
+                                        <input type="text" id="laudo-tema" required maxlength="100" placeholder="Ex: Fatura Incorreta (Máx 100 caracteres)" class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Motivo de Contato *</label>
+                                        <input type="text" id="laudo-motivo" required maxlength="100" placeholder="Ex: Cliente ligou para contestar valor..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
                                     </div>
                                 </div>
 
@@ -6244,6 +6231,31 @@
                                             <option value="Nenhuma ação necessária">Nenhuma ação necessária</option>
                                         </select>
                                     </div>
+                                    <div class="md:col-span-2">
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Campo Observação</label>
+                                        <input type="text" id="laudo-obs" maxlength="250" placeholder="Insira detalhes adicionais breves..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
+                                    </div>
+                                </div>
+
+                                <div class="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden mt-6">
+                                    <div class="absolute -right-4 -top-4 text-7xl text-slate-200 dark:text-slate-700 opacity-30"><i class="fa-solid fa-scale-unbalanced"></i></div>
+                                    <label class="block text-sm font-black text-slate-800 dark:text-white uppercase mb-4 tracking-wider relative z-10">Classificação Binária (Responsabilidade) *</label>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                                        <label class="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-orange-500 transition-colors group has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50 dark:has-[:checked]:bg-orange-900/20">
+                                            <input type="radio" name="laudo-resp" value="Erro Operacional" required class="w-5 h-5 accent-orange-600 cursor-pointer">
+                                            <div>
+                                                <div class="font-bold text-slate-800 dark:text-white group-has-[:checked]:text-orange-700 dark:group-has-[:checked]:text-orange-400">Erro Operacional</div>
+                                                <div class="text-[10px] text-slate-500 mt-0.5">Treinamento e Feedback na Operação</div>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-red-500 transition-colors group has-[:checked]:border-red-500 has-[:checked]:bg-red-50 dark:has-[:checked]:bg-red-900/20">
+                                            <input type="radio" name="laudo-resp" value="Erro de Processo" required class="w-5 h-5 accent-red-600 cursor-pointer">
+                                            <div>
+                                                <div class="font-bold text-slate-800 dark:text-white group-has-[:checked]:text-red-700 dark:group-has-[:checked]:text-red-400">Erro de Processo</div>
+                                                <div class="text-[10px] text-slate-500 mt-0.5">Responsabilidade do Cliente Contratante</div>
+                                            </div>
+                                        </label>
+                                    </div>
                                 </div>
 
                                 <div class="pt-6 border-t border-slate-200 dark:border-slate-700 flex justify-end">
@@ -6287,7 +6299,89 @@
                         `;
                     });
                     container.innerHTML = html;
-                }
+                },
+
+                renderView_DashboardEstudos(container) {
+                    if(!app.isAdmin) return;
+                    let laudos = app.laudos.list || [];
+
+                    const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.estudosFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
+
+                    if (this.estudosFiltroOp) laudos = laudos.filter(l => l.op === this.estudosFiltroOp);
+
+                    const totais = laudos.length;
+
+                    // Função inteligente para calcular porcentagem de qualquer indicador
+                    const calcPercent = (campo) => {
+                        const counts = {};
+                        laudos.forEach(l => {
+                            const val = l[campo] || 'N/A';
+                            counts[val] = (counts[val] || 0) + 1;
+                        });
+                        return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k, v]) => {
+                            const pct = totais > 0 ? ((v/totais)*100).toFixed(1) : 0;
+                            return `
+                                <div class="mb-3">
+                                    <div class="flex justify-between items-end text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                        <span class="truncate pr-2">${k}</span>
+                                        <span class="shrink-0 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded border border-purple-100 dark:border-purple-800/50">${v}x (${pct}%)</span>
+                                    </div>
+                                    <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+                                        <div class="h-full bg-purple-500 rounded-full" style="width: ${pct}%"></div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    };
+
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard de Laudos e Estudos</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Análise consolidada e percentual de todos os laudos preenchidos na memória.</p>
+                        </div>
+
+                        <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="text-xs font-bold text-slate-500 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros Ativos da Página</div>
+                            <select onchange="app.ui.estudosFiltroOp=this.value; app.ui.renderTab('dashboard_estudos', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-64 shadow-sm cursor-pointer">
+                                <option value="">Todas as Operações</option>${operacoes}
+                            </select>
+                        </div>
+                    `;
+
+                    if (totais === 0) {
+                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Nenhum laudo encontrado com os filtros atuais.</div>`;
+                    } else {
+                        html += `
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div class="glass-card p-6 rounded-2xl border-t-4 border-t-purple-500">
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white mb-5 text-sm uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-scale-unbalanced text-purple-500"></i> Responsabilidade</h3>
+                                    <div class="overflow-y-auto max-h-48 custom-scrollbar pr-2">${calcPercent('responsabilidade')}</div>
+                                </div>
+                                <div class="glass-card p-6 rounded-2xl border-t-4 border-t-blue-500">
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white mb-5 text-sm uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-bullseye text-blue-500"></i> Origem do Problema</h3>
+                                    <div class="overflow-y-auto max-h-48 custom-scrollbar pr-2">${calcPercent('origem')}</div>
+                                </div>
+                                <div class="glass-card p-6 rounded-2xl border-t-4 border-t-orange-500">
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white mb-5 text-sm uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-user-gear text-orange-500"></i> Habilidade do Operador</h3>
+                                    <div class="overflow-y-auto max-h-48 custom-scrollbar pr-2">${calcPercent('habilidade')}</div>
+                                </div>
+                                <div class="glass-card p-6 rounded-2xl border-t-4 border-t-green-500">
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white mb-5 text-sm uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-green-500"></i> Resolução (FCR)</h3>
+                                    <div class="overflow-y-auto max-h-48 custom-scrollbar pr-2">${calcPercent('fcr')}</div>
+                                </div>
+                                <div class="glass-card p-6 rounded-2xl border-t-4 border-t-yellow-500">
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white mb-5 text-sm uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-face-smile text-yellow-500"></i> Sentimento Final</h3>
+                                    <div class="overflow-y-auto max-h-48 custom-scrollbar pr-2">${calcPercent('sentimento')}</div>
+                                </div>
+                                <div class="glass-card p-6 rounded-2xl border-t-4 border-t-red-500">
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white mb-5 text-sm uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-wrench text-red-500"></i> Ação Corretiva</h3>
+                                    <div class="overflow-y-auto max-h-48 custom-scrollbar pr-2">${calcPercent('acao')}</div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    container.innerHTML = html;
+                },
                 
             }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
 
@@ -6302,6 +6396,8 @@
                     const payload = {
                         id: idLigacao,
                         op: document.getElementById('laudo-op').value,
+                        tema: document.getElementById('laudo-tema').value.trim(),
+                        motivo: document.getElementById('laudo-motivo').value.trim(),
                         responsabilidade: document.querySelector('input[name="laudo-resp"]:checked').value,
                         origem: document.getElementById('laudo-origem').value,
                         habilidade: document.getElementById('laudo-habilidade').value,
@@ -6309,6 +6405,7 @@
                         sentimento: document.getElementById('laudo-sentimento').value,
                         procedencia: document.getElementById('laudo-procedencia').value,
                         acao: document.getElementById('laudo-acao').value,
+                        obs: document.getElementById('laudo-obs').value.trim(),
                         data: new Date().toLocaleString('pt-BR'),
                         autor: app.currentUser ? app.currentUser.nome : 'Administração'
                     };
@@ -6319,7 +6416,7 @@
                     // Reset
                     document.getElementById('laudo-id').value = '';
                     document.querySelectorAll('input[name="laudo-resp"]').forEach(r => r.checked = false);
-                    ['origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao'].forEach(campo => {
+                    ['tema', 'motivo', 'origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao', 'obs'].forEach(campo => {
                         document.getElementById('laudo-'+campo).value = '';
                     });
 
@@ -6331,6 +6428,8 @@
                     const rows = this.list.map(l => ({
                         "Protocolo / ID": l.id,
                         "Operação": l.op,
+                        "Tema": l.tema,
+                        "Motivo Contato": l.motivo,
                         "Classificação (Responsabilidade)": l.responsabilidade,
                         "Origem do Problema": l.origem,
                         "Habilidade do Operador": l.habilidade,
@@ -6338,6 +6437,7 @@
                         "Sentimento Final": l.sentimento,
                         "Procedência Nota Baixa": l.procedencia,
                         "Ação Recomendada": l.acao,
+                        "Observação": l.obs,
                         "Data Auditoria": l.data,
                         "Auditor": l.autor
                     }));
