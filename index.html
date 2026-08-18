@@ -889,6 +889,7 @@
                             if (data.notifications) app.notificationsList = data.notifications; else app.notificationsList = {};
                             if (data.events) app.eventsList = data.events; else app.eventsList = {};
                             if (data.atas) app.atasList = data.atas; else app.atasList = {};
+                            if (data.laudos) app.laudos.list = data.laudos; else app.laudos.list = [];
 
                             if (data.campanha) {
                                 app.campanhaData = data.campanha;
@@ -973,6 +974,7 @@
                 saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
                 saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
+                saveLaudos() { return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
                 saveCampanha() { return firebase.database().ref('sistema_bonificacao/campanha').set(app.campanhaData || {}); },
                 saveMonitorias() { return firebase.database().ref('sistema_bonificacao/monitorias').set(app.monitoriasData || { ranking: [] }); }
             },
@@ -1261,13 +1263,26 @@
                     const reason = document.getElementById('reject-reason').value;
                     if(!reason) return app.ui.showAlert("Aviso", "O motivo da recusa é obrigatório.", "error");
                     
-                    app.actionsList[id].status = 'reprovado';
-                    app.actionsList[id].comentario = reason;
+                    const act = app.actionsList[id];
+                    
+                    // Se já estava aprovado, precisamos remover o ponto do usuário
+                    if (act.status === 'aprovado') {
+                        const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                        if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
+                            let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
+                            app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
+                            app.storage.saveUsers();
+                        }
+                    }
+
+                    act.status = 'reprovado';
+                    act.comentario = reason;
                     
                     app.storage.saveActions().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
-                        app.notifications.notify(app.actionsList[id].matricula, 'Ação Devolvida', `Sua ação enviada foi devolvida pela auditoria. Acesse o histórico para corrigir.`, 'error');
+                        app.notifications.notify(act.matricula, 'Ação Devolvida', `Uma ação sua foi devolvida pela auditoria. Acesse o histórico para corrigir.`, 'error');
                         app.ui.renderTab('validar_acoes', true);
+                        app.ui.showAlert("Devolvido", "Ação devolvida para o usuário corrigir.", "success");
                     });
                 },
                 compressImageAsync(file) {
@@ -1303,6 +1318,9 @@
                     
                     const btn = document.getElementById('btn-submit-action');
                     const fileInput = document.getElementById('act-foto');
+                    // Sincroniza o editor Rich Text com o input escondido
+                    const richText = document.getElementById('act-acao-rich');
+                    if (richText) document.getElementById('act-acao').value = richText.innerHTML.trim();
                     
                     const evtEditId = document.getElementById('act-edit-id').value;
                     const payload = {
@@ -2434,17 +2452,17 @@
                 
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
-                    { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, 
-                    { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
-                    { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
-                    { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Meu Painel', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'calendario', label:'Meu Calendário'}, {id:'perfil', label:'Meu Perfil'}] },
+                    { group: 'Registros', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
+                    { group: 'Central de Apoio', icon: 'fa-book-open', items: [{id:'regras', label:'Regras e Critérios'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] },
+                    { group: 'Campanha', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}, {id:'analise_csv', label:'Dash Analítico CSV'}] },
-                    { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
-                    { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, 
-                    { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'calibragem_audio', label:'Calibragem Áudio'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
-                    { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Colaborador'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. Laudos'}] },
+                    { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'import_monitorias', label:'Importar Monitorias'}, {id:'operacoes', label:'Cadastrar Operações'}] },
+                    { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'laudos_estudos', label:'Gestão de Laudos'}, {id:'calibragem_audio', label:'Calibragem de Áudio'}] },
+                    { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'gestao_equipe', label:'Gestão de Equipe'}, {id:'configuracoes', label:'Metas do Sistema'}, {id:'gestao_campanha', label:'Gestão Campanha'}] },
+                    { group: 'Central', icon: 'fa-book-open', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                 ],
 
                 // Função que extrai automaticamente todas as abas do sistema
@@ -3025,7 +3043,14 @@
                                             <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed"><span class="font-bold">Ação Detalhada:</span><br/>${act.acaoRealizada}</div>
                                             ${act.comentario ? `<div class="mt-3 pt-3 border-t border-red-200 text-xs text-red-600 font-bold"><i class="fa-solid fa-reply"></i> Motivo da Devolução: ${act.comentario}</div>` : ''}
                                         </div>
-                                        ${act.status === 'pendente' ? `
+                                        <div class="flex gap-3 mt-4">
+                                            ${act.status !== 'reprovado' ? `
+                                                <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-xs transition-colors shadow-sm border border-red-100"><i class="fa-solid fa-rotate-left mr-1"></i> ${act.status === 'aprovado' ? 'Desfazer e Devolver' : 'Devolver / Reprovar'}</button>
+                                            ` : ''}
+                                            ${act.status === 'pendente' ? `
+                                                <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors"><i class="fa-solid fa-check-double mr-1"></i> Validar (+1)</button>
+                                            ` : ''}
+                                        </div>
                                         <div class="flex gap-3">
                                             <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold text-xs">Devolver / Reprovar</button>
                                             <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold text-xs shadow-md">Validar (+1)</button>
@@ -3448,7 +3473,24 @@
                                         </select>
                                     </div>
                                     <div class="md:col-span-2"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Objetivo *</label><input type="text" id="act-objetivo" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
-                                    <div class="md:col-span-2"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Realizada *</label><textarea id="act-acao" required rows="3" class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></textarea></div>
+                                    <div class="md:col-span-2">
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Realizada Detalhada *</label>
+                                        <div class="w-full rounded-xl bg-slate-50 border border-slate-200 overflow-hidden focus-within:ring-2 focus-within:ring-green-500 transition-all">
+                                            <!-- Mini Toolbar -->
+                                            <div class="bg-slate-100/80 border-b border-slate-200 p-2 flex gap-2">
+                                                <button type="button" onclick="document.execCommand('bold', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600 font-bold" title="Negrito">B</button>
+                                                <button type="button" onclick="document.execCommand('italic', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600 italic" title="Itálico">I</button>
+                                                <button type="button" onclick="document.execCommand('underline', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600 underline" title="Sublinhado">U</button>
+                                                <div class="w-px h-6 bg-slate-300 mx-1 mt-1"></div>
+                                                <button type="button" onclick="document.execCommand('insertUnorderedList', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600" title="Lista com Marcadores"><i class="fa-solid fa-list-ul"></i></button>
+                                                <button type="button" onclick="document.execCommand('insertOrderedList', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600" title="Lista Numerada"><i class="fa-solid fa-list-ol"></i></button>
+                                            </div>
+                                            <!-- Área Editável -->
+                                            <div id="act-acao-rich" contenteditable="true" class="w-full p-4 min-h-[150px] max-h-[400px] overflow-y-auto outline-none text-sm bg-white cursor-text" placeholder="Descreva detalhadamente o que foi feito..."></div>
+                                            <!-- Input Oculto para salvar -->
+                                            <input type="hidden" id="act-acao" required>
+                                        </div>
+                                    </div>
                                     <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operadores Envolvidos *</label><input type="number" id="act-qtd" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
                                     <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Alinhado *</label><input type="text" id="act-gestor" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
                                     <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label><input type="text" id="act-ofensor" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
@@ -3906,10 +3948,10 @@
                         ? 'banner-legendary rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden shine-effect-legendary' 
                         : 'bg-gradient-to-r from-gray-800 to-black rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden';
                     
-                    const bannerTitleColor = isTotalMaxed ? 'text-cyan-300' : 'text-green-300/80';
-                    const bannerHighlightColor = isTotalMaxed ? 'text-purple-200' : 'text-green-100';
-                    const bannerValueColor = isTotalMaxed ? 'text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-green-400 drop-shadow-md';
-                    const bannerBadgeBg = isTotalMaxed ? 'bg-black/40 border-purple-400/50 backdrop-blur-xl' : 'bg-white/10 border-white/20';
+                    const bannerTitleColor = isTotalMaxed ? 'text-cyan-200' : 'text-slate-300 dark:text-green-300';
+                    const bannerHighlightColor = isTotalMaxed ? 'text-purple-100' : 'text-slate-200 dark:text-green-100';
+                    const bannerValueColor = isTotalMaxed ? 'text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-white dark:text-green-400 drop-shadow-md';
+                    const bannerBadgeBg = isTotalMaxed ? 'bg-black/40 border-purple-400/50 backdrop-blur-xl' : 'bg-slate-900/50 dark:bg-white/10 border-white/20 shadow-inner';
 
                     html += `
                         <div class="${bannerClass}">
@@ -6280,20 +6322,35 @@
 
                 renderLaudosHistory() {
                     const container = document.getElementById('laudos-history');
-                    if(!container || !app.laudos || app.laudos.list.length === 0) return;
+                    if(!container || !app.laudos || app.laudos.list.length === 0) {
+                        if(container) container.innerHTML = '<div class="text-sm text-slate-500 text-center py-4 bg-slate-50 rounded-xl border">Nenhum laudo encontrado.</div>';
+                        return;
+                    }
                     
                     let html = '';
-                    [...app.laudos.list].reverse().forEach(l => {
+                    // Usuário vê os seus; Admin vê todos
+                    const laudosParaMostrar = app.isAdmin 
+                        ? app.laudos.list 
+                        : app.laudos.list.filter(l => l.autor === (app.currentUser ? app.currentUser.nome : ''));
+
+                    [...laudosParaMostrar].reverse().forEach(l => {
                         const isOp = l.responsabilidade === 'Erro Operacional';
+                        const isMyLaudo = app.currentUser && l.autor === app.currentUser.nome;
+                        
                         html += `
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-purple-300 dark:hover:border-purple-600 transition-colors">
-                                <div>
-                                    <div class="font-bold text-slate-800 dark:text-white text-sm mb-1"><i class="fa-solid fa-headset text-slate-400 mr-1"></i> ID/Prot: ${l.id} <span class="text-[10px] text-slate-500 font-normal ml-2">(${l.op})</span></div>
-                                    <div class="text-xs text-slate-500 dark:text-slate-400">Origem: <span class="font-semibold text-slate-700 dark:text-slate-300">${l.origem}</span></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-3 hover:border-purple-300 transition-colors">
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                                    <div>
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm mb-1"><i class="fa-solid fa-headset text-slate-400 mr-1"></i> ID: ${l.id} <span class="text-[10px] text-slate-500 font-normal ml-2">(${l.op})</span></div>
+                                        <div class="text-xs text-slate-500">Autor: <strong>${l.autor}</strong> | Origem: <span class="font-semibold text-slate-700 dark:text-slate-300">${l.origem}</span></div>
+                                    </div>
+                                    <div class="text-right flex flex-col items-end">
+                                        <span class="${isOp ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-red-100 text-red-700 border-red-200'} px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm">${l.responsabilidade}</span>
+                                        <div class="text-[9px] text-slate-400 mt-2 font-mono"><i class="fa-solid fa-clock"></i> ${l.data}</div>
+                                    </div>
                                 </div>
-                                <div class="text-right flex flex-col items-end">
-                                    <span class="${isOp ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800/50'} px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm">${l.responsabilidade}</span>
-                                    <div class="text-[9px] text-slate-400 mt-2 font-mono"><i class="fa-solid fa-clock"></i> ${l.data}</div>
+                                <div class="border-t border-slate-100 dark:border-slate-700 pt-3 mt-1 flex justify-end gap-2">
+                                    ${(app.isAdmin || isMyLaudo) ? `<button type="button" onclick="app.ui.showConfirm('Excluir?', 'Deletar permanentemente este laudo?', 'app.laudos.list = app.laudos.list.filter(x => x.id !== \\'${l.id}\\'); app.storage.saveLaudos().then(() => app.ui.renderLaudosHistory());', true)" class="text-red-500 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"><i class="fa-solid fa-trash"></i> Excluir</button>` : ''}
                                 </div>
                             </div>
                         `;
@@ -6410,14 +6467,18 @@
                         autor: app.currentUser ? app.currentUser.nome : 'Administração'
                     };
 
+                    payload.status = 'concluido'; // Adicionando status
                     this.list.push(payload);
-                    app.ui.showAlert("Laudo Concluído", "Diagnóstico salvo em memória temporária. Lembre-se de baixar o relatório antes de fechar a página.", "success");
-
-                    // Reset
-                    document.getElementById('laudo-id').value = '';
-                    document.querySelectorAll('input[name="laudo-resp"]').forEach(r => r.checked = false);
-                    ['tema', 'motivo', 'origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao', 'obs'].forEach(campo => {
-                        document.getElementById('laudo-'+campo).value = '';
+                    
+                    app.storage.saveLaudos().then(() => {
+                        app.ui.showAlert("Laudo Concluído", "Diagnóstico salvo com sucesso no banco de dados.", "success");
+                        // Reset
+                        document.getElementById('laudo-id').value = '';
+                        document.querySelectorAll('input[name="laudo-resp"]').forEach(r => r.checked = false);
+                        ['tema', 'motivo', 'origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao', 'obs'].forEach(campo => {
+                            document.getElementById('laudo-'+campo).value = '';
+                        });
+                        app.ui.renderLaudosHistory();
                     });
 
                     app.ui.renderLaudosHistory();
