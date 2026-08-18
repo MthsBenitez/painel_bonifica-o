@@ -2455,7 +2455,7 @@
                     { group: 'Meu Painel', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'calendario', label:'Meu Calendário'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Registros', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
                     { group: 'Central de Apoio', icon: 'fa-book-open', items: [{id:'regras', label:'Regras e Critérios'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] },
-                    { group: 'Campanha', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }
+                    { group: '🏆 Campanha', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Colaborador'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. Laudos'}] },
@@ -3353,6 +3353,7 @@
                         if(emojisToSend > 0) app.ui.playFloatingEmojis(emojisToSend);
                     }, 50);
                 },
+                
                 renderView_GestaoCampanha(container) {
                     if(!app.isAdmin) return;
                     
