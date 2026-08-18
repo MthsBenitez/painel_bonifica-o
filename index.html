@@ -2436,14 +2436,14 @@
                 menusUser: [
                     { group: '🏆 Destaque', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }, 
                     { group: 'Desempenho', icon: 'fa-chart-pie', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'perfil', label:'Meu Perfil'}, {id:'calendario', label:'Meu Calendário'}] },
-                    { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}] },
+                    { group: 'Qualidade', icon: 'fa-camera', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'ata_reuniao', label:'Nova Ata'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
                     { group: 'Informações', icon: 'fa-circle-info', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Visões', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Geral'}, {id:'meu_painel', label:'Visão Monitor'}, {id:'analise_csv', label:'Dash Analítico CSV'}] },
                     { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'operacoes', label:'Operações'}, {id:'import_monitorias', label:'Importar Monitorias'}] },
                     { group: 'Campanha', icon: 'fa-trophy', items: [{id:'gestao_campanha', label:'Gestão de Equipes'}] }, 
-                    { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'calibragem_audio', label:'Calibragem Áudio'}] },
+                    { group: 'Qualidade', icon: 'fa-file-signature', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'calibragem_audio', label:'Calibragem Áudio'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
                     { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançamentos'}, {id:'gestao_equipe', label:'Gestão Equipe'}, {id:'configuracoes', label:'Metas'}, {id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -2889,7 +2889,8 @@
                         else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);
                         else if(tabId === 'analise_csv') this.renderView_AnaliseCSV(viewDiv);
                         else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);
-                        else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);// <--- ADICIONE ESTA LINHA
+                        else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);
+                        else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);// <--- ADICIONE ESTA LINHA
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -6129,7 +6130,228 @@
                     }
                 },
                 
+            setTimeout(() => app.calibragemAudio.setupDragAndDrop(), 100);
+                    }
+                },
+
+                renderView_LaudosEstudos(container) {
+                    const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
+                    
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laudos e Estudos Analíticos</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Formulário de preenchimento rápido (45s) focado em diagnóstico de causa-raiz para painéis e QBRs.</p>
+                        </div>
+                        
+                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-purple-500 shadow-xl">
+                            <form onsubmit="event.preventDefault(); app.laudos.submitLaudo();" class="space-y-6">
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">ID Ligação / Protocolo *</label>
+                                        <input type="text" id="laudo-id" required placeholder="Chave Única..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white font-mono shadow-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
+                                        <select id="laudo-op" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            ${operacoes}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+                                    <div class="absolute -right-4 -top-4 text-7xl text-slate-200 dark:text-slate-700 opacity-30"><i class="fa-solid fa-scale-unbalanced"></i></div>
+                                    <label class="block text-sm font-black text-slate-800 dark:text-white uppercase mb-4 tracking-wider relative z-10">Classificação Binária (Responsabilidade) *</label>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                                        <label class="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-orange-500 transition-colors group has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50 dark:has-[:checked]:bg-orange-900/20">
+                                            <input type="radio" name="laudo-resp" value="Erro Operacional" required class="w-5 h-5 accent-orange-600 cursor-pointer">
+                                            <div>
+                                                <div class="font-bold text-slate-800 dark:text-white group-has-[:checked]:text-orange-700 dark:group-has-[:checked]:text-orange-400">Erro Operacional</div>
+                                                <div class="text-[10px] text-slate-500 mt-0.5">Treinamento e Feedback na Operação</div>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-red-500 transition-colors group has-[:checked]:border-red-500 has-[:checked]:bg-red-50 dark:has-[:checked]:bg-red-900/20">
+                                            <input type="radio" name="laudo-resp" value="Erro de Negócio" required class="w-5 h-5 accent-red-600 cursor-pointer">
+                                            <div>
+                                                <div class="font-bold text-slate-800 dark:text-white group-has-[:checked]:text-red-700 dark:group-has-[:checked]:text-red-400">Erro de Negócio</div>
+                                                <div class="text-[10px] text-slate-500 mt-0.5">Responsabilidade do Cliente Contratante</div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Origem do Problema *</label>
+                                        <select id="laudo-origem" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            <option value="Procedimento / Política da Empresa">Procedimento / Política da Empresa</option>
+                                            <option value="Comportamento / Atendimento do Operador">Comportamento / Atendimento do Operador</option>
+                                            <option value="Conhecimento Técnico / Erro de Informação">Conhecimento Técnico / Erro de Informação</option>
+                                            <option value="Falha Sistêmica / Ferramenta / Queda">Falha Sistêmica / Ferramenta / Queda</option>
+                                            <option value="Produto / Serviço (Expectativa externa)">Produto / Serviço (Expectativa externa)</option>
+                                            <option value="Reclamação Não Procedente">Reclamação Não Procedente</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Habilidade do Operador *</label>
+                                        <select id="laudo-habilidade" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            <option value="Conforme (Sem desvios)">Conforme (Sem desvios)</option>
+                                            <option value="Falha em Empatia / Tom de Voz">Falha em Empatia / Tom de Voz</option>
+                                            <option value="Comunicação Confusa / Linguagem Inadequada">Comunicação Confusa / Linguagem Inadequada</option>
+                                            <option value="Falta de Escuta Ativa / Interrupções">Falta de Escuta Ativa / Interrupções</option>
+                                            <option value="Proatividade Baixa / Desinteresse">Proatividade Baixa / Desinteresse</option>
+                                            <option value="Procedimento Incorreto / Informação Errada">Procedimento Incorreto / Informação Errada</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">FCR (Resolução no 1º Contato) *</label>
+                                        <select id="laudo-fcr" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            <option value="Sim (Resolvido no contato)">Sim (Resolvido no contato)</option>
+                                            <option value="Não - Dependência de Backoffice/N2">Não - Dependência de Backoffice/N2</option>
+                                            <option value="Não - Erro/Despreparo do Operador">Não - Erro/Despreparo do Operador</option>
+                                            <option value="Não - Cliente não possuía dados/documentos">Não - Cliente não possuía dados/documentos</option>
+                                            <option value="Não - Limitação de Alçada/Regra de Negócio">Não - Limitação de Alçada/Regra de Negócio</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Sentimento Final do Cliente *</label>
+                                        <select id="laudo-sentimento" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            <option value="Satisfeito após explicação">Satisfeito após explicação</option>
+                                            <option value="Neutro / Resignado">Neutro / Resignado</option>
+                                            <option value="Irritado / Detrator com a Marca">Irritado / Detrator com a Marca</option>
+                                            <option value="Ameaça de Procon / Cancelamento / Jurídico">Ameaça de Procon / Cancelamento / Jurídico</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Procedência da Nota Baixa *</label>
+                                        <select id="laudo-procedencia" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            <option value="Procedente - Falha Operacional (Call Center)">Procedente - Falha Operacional (Call Center)</option>
+                                            <option value="Procedente - Falha de Processo / Produto (Cliente Contratante)">Procedente - Falha de Processo / Produto (Cliente Contratante)</option>
+                                            <option value="Improcedente - Cliente insatisfeito com regra legítima">Improcedente - Cliente insatisfeito com regra legítima</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Corretiva Recomendada *</label>
+                                        <select id="laudo-acao" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
+                                            <option value="">Selecione...</option>
+                                            <option value="Feedback Pontual com Operador">Feedback Pontual com Operador</option>
+                                            <option value="Reciclagem / Treinamento de Equipe">Reciclagem / Treinamento de Equipe</option>
+                                            <option value="Ajuste de Script / FAQ / Base de Conhecimento">Ajuste de Script / FAQ / Base de Conhecimento</option>
+                                            <option value="Alinhamento com Cliente Contratante (Processo/Política)">Alinhamento com Cliente Contratante (Processo/Política)</option>
+                                            <option value="Abertura de Chamado Técnico (Bug de Sistema)">Abertura de Chamado Técnico (Bug de Sistema)</option>
+                                            <option value="Nenhuma ação necessária">Nenhuma ação necessária</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="pt-6 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+                                    <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg flex items-center gap-2 transition-transform hover:-translate-y-0.5"><i class="fa-solid fa-paper-plane"></i> Registrar Laudo</button>
+                                </div>
+                            </form>
+                            
+                            <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
+                                <div class="flex justify-between items-center mb-6">
+                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico (Nesta Sessão)</h3>
+                                    <button onclick="app.laudos.exportToCSV()" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm"><i class="fa-solid fa-file-excel mr-1"></i> Baixar Relatório</button>
+                                </div>
+                                <div id="laudos-history" class="space-y-3 max-h-80 overflow-y-auto custom-scrollbar pr-2">
+                                    <div class="text-sm text-slate-500 dark:text-slate-400 text-center py-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-700/50">Você ainda não avaliou nenhuma ligação nesta sessão.</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                    this.renderLaudosHistory();
+                },
+
+                renderLaudosHistory() {
+                    const container = document.getElementById('laudos-history');
+                    if(!container || !app.laudos || app.laudos.list.length === 0) return;
+                    
+                    let html = '';
+                    [...app.laudos.list].reverse().forEach(l => {
+                        const isOp = l.responsabilidade === 'Erro Operacional';
+                        html += `
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-purple-300 dark:hover:border-purple-600 transition-colors">
+                                <div>
+                                    <div class="font-bold text-slate-800 dark:text-white text-sm mb-1"><i class="fa-solid fa-headset text-slate-400 mr-1"></i> ID/Prot: ${l.id} <span class="text-[10px] text-slate-500 font-normal ml-2">(${l.op})</span></div>
+                                    <div class="text-xs text-slate-500 dark:text-slate-400">Origem: <span class="font-semibold text-slate-700 dark:text-slate-300">${l.origem}</span></div>
+                                </div>
+                                <div class="text-right flex flex-col items-end">
+                                    <span class="${isOp ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800/50'} px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm">${l.responsabilidade}</span>
+                                    <div class="text-[9px] text-slate-400 mt-2 font-mono"><i class="fa-solid fa-clock"></i> ${l.data}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                }
+                
             }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
+
+            laudos: {
+                list: [],
+                submitLaudo() {
+                    const idLigacao = document.getElementById('laudo-id').value.trim();
+                    if(this.list.find(l => l.id === idLigacao)) {
+                        return app.ui.showAlert("Duplicidade", "Este ID de Ligação/Protocolo já foi avaliado por você nesta sessão.", "error");
+                    }
+
+                    const payload = {
+                        id: idLigacao,
+                        op: document.getElementById('laudo-op').value,
+                        responsabilidade: document.querySelector('input[name="laudo-resp"]:checked').value,
+                        origem: document.getElementById('laudo-origem').value,
+                        habilidade: document.getElementById('laudo-habilidade').value,
+                        fcr: document.getElementById('laudo-fcr').value,
+                        sentimento: document.getElementById('laudo-sentimento').value,
+                        procedencia: document.getElementById('laudo-procedencia').value,
+                        acao: document.getElementById('laudo-acao').value,
+                        data: new Date().toLocaleString('pt-BR'),
+                        autor: app.currentUser ? app.currentUser.nome : 'Administração'
+                    };
+
+                    this.list.push(payload);
+                    app.ui.showAlert("Laudo Concluído", "Diagnóstico salvo em memória temporária. Lembre-se de baixar o relatório antes de fechar a página.", "success");
+
+                    // Reset
+                    document.getElementById('laudo-id').value = '';
+                    document.querySelectorAll('input[name="laudo-resp"]').forEach(r => r.checked = false);
+                    ['origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao'].forEach(campo => {
+                        document.getElementById('laudo-'+campo).value = '';
+                    });
+
+                    app.ui.renderLaudosHistory();
+                },
+                exportToCSV() {
+                    if(this.list.length === 0) return app.ui.showAlert("Aviso", "Não há laudos para exportar.", "error");
+
+                    const rows = this.list.map(l => ({
+                        "Protocolo / ID": l.id,
+                        "Operação": l.op,
+                        "Classificação (Responsabilidade)": l.responsabilidade,
+                        "Origem do Problema": l.origem,
+                        "Habilidade do Operador": l.habilidade,
+                        "Resolução 1º Contato": l.fcr,
+                        "Sentimento Final": l.sentimento,
+                        "Procedência Nota Baixa": l.procedencia,
+                        "Ação Recomendada": l.acao,
+                        "Data Auditoria": l.data,
+                        "Auditor": l.autor
+                    }));
+
+                    const worksheet = XLSX.utils.json_to_sheet(rows);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "Laudos_QBR");
+                    XLSX.writeFile(workbook, `Laudos_Estudos_${new Date().toISOString().split('T')[0]}.xlsx`);
+                }
+            },
 
             admin: {
                 abrirModalMonitoriaManual(matriculaEdit = null) {
