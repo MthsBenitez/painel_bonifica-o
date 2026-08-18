@@ -889,7 +889,7 @@
                             if (data.notifications) app.notificationsList = data.notifications; else app.notificationsList = {};
                             if (data.events) app.eventsList = data.events; else app.eventsList = {};
                             if (data.atas) app.atasList = data.atas; else app.atasList = {};
-                            if (data.laudos) app.laudos.list = data.laudos; else app.laudos.list = [];
+                            if (data.laudos) app.laudos.list = Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean); else app.laudos.list = [];
 
                             if (data.campanha) {
                                 app.campanhaData = data.campanha;
@@ -1233,7 +1233,10 @@
                     document.getElementById('act-gestor').value = act.gestor;
                     document.getElementById('act-ofensor').value = act.ofensor;
                     document.getElementById('act-brindes').value = act.brindes;
-                    document.getElementById('file-name-display').innerText = "Evidências já carregadas. Clique se quiser substituir.";
+                    
+                    const richText = document.getElementById('act-acao-rich');
+                    if(richText) richText.innerHTML = act.acaoRealizada;
+                    
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     app.ui.showAlert("Edição", "O formulário foi preenchido com os dados desta ação. Faça as alterações e envie novamente.", "info");
                 },
@@ -1344,20 +1347,42 @@
                     for (let key in payload) {
                         if (payload[key] === '' || payload[key] === null) return app.ui.showAlert("Aviso", "Preencha todos os campos corretamente antes de enviar.", "error");
                     }
-                    if(this.tempFiles.length === 0) return app.ui.showAlert("Aviso", "Você precisa anexar pelo menos uma evidência visual.", "error");
+                    const existingAct = evtEditId ? app.actionsList[evtEditId] : null;
+                    
+                    if(this.tempFiles.length === 0 && (!existingAct || (!existingAct.photos && !existingAct.photo))) {
+                        return app.ui.showAlert("Aviso", "Você precisa anexar pelo menos uma evidência visual.", "error");
+                    }
+                    
+                    if(existingAct && this.tempFiles.length === 0) {
+                        payload.photos = existingAct.photos || [existingAct.photo];
+                    }
 
                     btn.disabled = true;
                     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Processando...`;
 
-                    const uploadPromises = this.tempFiles.map(file => this.compressImageAsync(file));
-                    
-                    // Limpa galeria após envio bem sucedido (Coloque isso visualmente)
-                    this.tempFiles = [];
-                    document.getElementById('act-preview-gallery').innerHTML = '';
-                    
-                    Promise.all(uploadPromises).then(base64Images => {
-                        payload.photos = base64Images;
+                    const finalizeSubmit = () => {
                         app.actionsList[payload.id] = payload;
+                        app.storage.saveActions().then(() => {
+                            app.notifications.notify('ADM', 'Ação Registrada/Atualizada', `${app.currentUser.nome} enviou uma ação para validação.`, 'info');
+                            app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação.", "success");
+                            this.tempFiles = []; 
+                            document.getElementById('act-preview-gallery').innerHTML = '';
+                            document.getElementById('act-edit-id').value = '';
+                            app.ui.renderTab('registrar_acao', true);
+                        });
+                    };
+
+                    if (this.tempFiles.length > 0) {
+                        const uploadPromises = this.tempFiles.map(file => this.compressImageAsync(file));
+                        this.tempFiles = [];
+                        document.getElementById('act-preview-gallery').innerHTML = '';
+                        Promise.all(uploadPromises).then(base64Images => {
+                            payload.photos = base64Images;
+                            finalizeSubmit();
+                        });
+                    } else {
+                        finalizeSubmit();
+                    }
                         
                         app.storage.saveActions().then(() => {
                             app.notifications.notify('ADM', 'Nova Ação Registrada', `${app.currentUser.nome} registrou uma ação para o mês de ${app.ui.formatMonthLabel(app.currentMonth)}.`, 'info');
@@ -3487,7 +3512,7 @@
                                                 <button type="button" onclick="document.execCommand('insertOrderedList', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600" title="Lista Numerada"><i class="fa-solid fa-list-ol"></i></button>
                                             </div>
                                             <!-- Área Editável -->
-                                            <div id="act-acao-rich" contenteditable="true" class="w-full p-4 min-h-[150px] max-h-[400px] overflow-y-auto outline-none text-sm bg-white cursor-text" placeholder="Descreva detalhadamente o que foi feito..."></div>
+                                            <div id="act-acao-rich" contenteditable="true" class="w-full p-4 min-h-[150px] max-h-[400px] overflow-y-auto outline-none text-sm bg-white dark:bg-slate-900 dark:text-white cursor-text" placeholder="Descreva detalhadamente o que foi feito..."></div>
                                             <!-- Input Oculto para salvar -->
                                             <input type="hidden" id="act-acao" required>
                                         </div>
