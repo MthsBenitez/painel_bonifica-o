@@ -8150,21 +8150,35 @@
         // SISTEMA DE DESLIZAMENTO SUAVE E AUTO-CORRETOR
         // ==========================================
         
-        // 1. Prepara o campo para o corretor no exato milissegundo do toque (antes do teclado subir)
-        document.addEventListener('pointerdown', function(e) {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                e.target.setAttribute('spellcheck', 'true');
-                e.target.setAttribute('autocorrect', 'on');
-                e.target.setAttribute('autocapitalize', 'sentences'); // Força letra maiúscula no início de frases
+        // 1. Prepara o campo ANTES do clique (quando o mouse passa por cima ou o dedo encosta)
+        const prepararCorretor = (e) => {
+            const tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA') {
+                if (e.target.getAttribute('spellcheck') !== 'true') {
+                    e.target.setAttribute('spellcheck', 'true');
+                    e.target.setAttribute('autocorrect', 'on');
+                    e.target.setAttribute('autocapitalize', 'sentences');
+                }
             }
-        }, { passive: true });
+        };
+        // Ouve tanto o mouse (PC) quanto o primeiro toque (Mobile)
+        document.addEventListener('mouseover', prepararCorretor, { passive: true });
+        document.addEventListener('touchstart', prepararCorretor, { passive: true });
 
-        // 2. Deslizamento suave "gostoso" ajustado para a animação do teclado
+        // 2. Deslizamento Inteligente (Diferencia Computador de Celular)
         document.addEventListener('focusin', function(e) {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+            const tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) {
+                
+                // Descobre se é um dispositivo de toque (Celular/Tablet) ou Mouse (Computador)
+                const isMobile = window.matchMedia("(pointer: coarse)").matches;
+                
+                // Se for celular, espera 450ms pro teclado subir. Se for computador, desliza na hora (50ms).
+                const delayTempo = isMobile ? 450 : 50;
+
                 setTimeout(() => {
-                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-                }, 450); // 450ms garante que o teclado virtual do celular já abriu completamente
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, delayTempo);
             }
         }, true);
 
