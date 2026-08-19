@@ -6814,7 +6814,12 @@
                                     operadorFmt = p[1].trim() + ' ' + p[0].trim();
                                 }
             
-                                let notaRaw = getValByKeyword(row, 'PONTUAÇÃO') || getValByKeyword(row, 'PONTUACAO') || getValByKeyword(row, 'NOTA');
+                                let p1 = getValByKeyword(row, 'PONTUAÇÃO');
+                                let p2 = getValByKeyword(row, 'PONTUACAO');
+                                let p3 = getValByKeyword(row, 'NOTA');
+                                // Pega o valor se existir (mesmo sendo 0)
+                                let notaRaw = (p1 !== undefined && p1 !== "") ? p1 : ((p2 !== undefined && p2 !== "") ? p2 : p3);
+                                
                                 let notaFormatada = 'N/A';
                                 if (notaRaw !== undefined && notaRaw !== null && notaRaw !== "") {
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
@@ -6921,7 +6926,11 @@
             
                                 let notaFinalLida = 'N/A';
                                 if (!isNeutro) {
-                                    let notaRaw = getValByKeyword(row, 'NOTA') || getValByKeyword(row, 'RESULTADO') || 100;
+                                    let val1 = getValByKeyword(row, 'NOTA');
+                                    let val2 = getValByKeyword(row, 'RESULTADO');
+                                    // Pega o valor se existir (mesmo sendo 0), senão joga 100
+                                    let notaRaw = (val1 !== undefined && val1 !== "") ? val1 : ((val2 !== undefined && val2 !== "") ? val2 : 100);
+                                    
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
                                     notaFinalLida = parseFloat(notaRaw);
                                 }
