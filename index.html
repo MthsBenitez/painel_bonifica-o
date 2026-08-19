@@ -8149,32 +8149,31 @@
         // ==========================================
         // SISTEMA DE DESLIZAMENTO SUAVE E AUTO-CORRETOR
         // ==========================================
-        
-        // 1. Prepara o campo ANTES do clique (quando o mouse passa por cima ou o dedo encosta)
-        const prepararCorretor = (e) => {
-            const tag = e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA') {
-                if (e.target.getAttribute('spellcheck') !== 'true') {
-                    e.target.setAttribute('spellcheck', 'true');
-                    e.target.setAttribute('autocorrect', 'on');
-                    e.target.setAttribute('autocapitalize', 'sentences');
-                }
+
+        // 1. Força a Ativação do Corretor e Idioma
+        const ativarCorretor = (el) => {
+            const tag = el.tagName;
+            const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
+            const isNotPassword = el.type !== 'password';
+
+            if (isInput && isNotPassword && el.getAttribute('spellcheck') !== 'true') {
+                el.setAttribute('spellcheck', 'true');
+                el.setAttribute('autocorrect', 'on');
+                el.setAttribute('autocapitalize', 'sentences');
+                el.setAttribute('lang', 'pt-BR'); // Obriga o PC a usar o dicionário BR
             }
         };
-        // Ouve tanto o mouse (PC) quanto o primeiro toque (Mobile)
-        document.addEventListener('mouseover', prepararCorretor, { passive: true });
-        document.addEventListener('touchstart', prepararCorretor, { passive: true });
 
-        // 2. Deslizamento Inteligente (Diferencia Computador de Celular)
+        // 2. Escuta Dinâmica: Aplica o corretor e faz o deslizamento gostoso
         document.addEventListener('focusin', function(e) {
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) {
-                
-                // Descobre se é um dispositivo de toque (Celular/Tablet) ou Mouse (Computador)
+
+                ativarCorretor(e.target);
+
+                // Lógica inteligente: PC x Mobile
                 const isMobile = window.matchMedia("(pointer: coarse)").matches;
-                
-                // Se for celular, espera 450ms pro teclado subir. Se for computador, desliza na hora (50ms).
-                const delayTempo = isMobile ? 450 : 50;
+                const delayTempo = isMobile ? 400 : 50; // PC desliza quase na hora, celular espera o teclado
 
                 setTimeout(() => {
                     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8182,8 +8181,15 @@
             }
         }, true);
 
-        // Boot do App
-        document.addEventListener('DOMContentLoaded', () => { app.ui.init(); });
+        // Boot do App com varredura preventiva
+        document.addEventListener('DOMContentLoaded', () => { 
+            app.ui.init(); 
+
+            // Varre os inputs que já nasceram na tela e injeta a autocorreção antes do clique
+            setTimeout(() => {
+                document.querySelectorAll('input[type="text"], textarea').forEach(ativarCorretor);
+            }, 500);
+        });
         
     </script>
 </body>
