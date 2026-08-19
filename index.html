@@ -279,6 +279,7 @@
                     <div id="cad-ops-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
                         <!-- Injetado dinamicamente -->
                     </div>
+                </div>
                     <!-- NOVA ÁREA: Permissão de Abas -->
                 <div>
                     <div class="flex justify-between items-center mb-1.5">
@@ -322,6 +323,7 @@
                     <div id="edit-ops-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
                         <!-- Injetado dinamicamente -->
                     </div>
+                </div>
                     <!-- NOVA ÁREA: Permissão de Abas -->
                 <div>
                     <div class="flex justify-between items-center mb-1.5">
@@ -403,7 +405,7 @@
                             <option value="Outros">Outros</option>
                         </select>
                     </div>
-<div                ><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
+                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
                         <select id="cal-op" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white">
                             <!-- Injetado dinamicamente -->
                         </select>
@@ -491,7 +493,7 @@
     </div>
 
     <!-- Modal Novo Evento Calendário -->
-    <div id="calendar-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
+    <div id="new-calendar-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-slate-200 dark:border-dark-border">
             <h3 class="font-bold text-lg text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-calendar-plus text-blue-600"></i> Adicionar Evento</h3>
             <div class="space-y-4">
@@ -6663,7 +6665,7 @@
                     // ATUALIZAÇÃO ATÔMICA: Salva usuários e limpa monitorias ao mesmo tempo!
                     firebase.database().ref('sistema_bonificacao').update({
                         users: app.users,
-                        monitorias: cleanData
+                        monitorias: app.monitoriasData
                     }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         app.ui.showAlert("Reset Concluído", "Todos os relatórios do mês atual foram apagados com sucesso.", "success");
@@ -7542,7 +7544,10 @@
                     const user = app.users[idx];
                     if(!user.results) user.results = {};
                     
-                    const oldStatus = user.results[app.currentMonth] ? user.results[app.currentMonth].status : 'pendente';
+                    const prevMonthData = user.results[app.currentMonth] || {};
+                    const oldStatus = prevMonthData.status || 'pendente';
+                    const oldDate = prevMonthData.fbDate;
+                    const oldTime = prevMonthData.fbTime;
                     
                     user.results[app.currentMonth] = {
                         ...this.collectResultsFromDOM(),
@@ -7550,8 +7555,8 @@
                     };
                     
                     if(oldStatus === 'agendado') {
-                        user.results[app.currentMonth].fbDate = user.results[app.currentMonth].fbDate;
-                        user.results[app.currentMonth].fbTime = user.results[app.currentMonth].fbTime;
+                        user.results[app.currentMonth].fbDate = oldDate;
+                        user.results[app.currentMonth].fbTime = oldTime;
                     }
 
                     app.storage.saveUsers().then(() => {
