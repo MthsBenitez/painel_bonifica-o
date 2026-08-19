@@ -8110,7 +8110,7 @@
                             return `${m}:${s}`;
                         };
                         
-                        const txt = comments?.map(c => 
+                        txt += comments?.map(c => 
                             `[${format(c.time)}] | Auditor: ${c.author}\nApontamento: "${c.text}"\n\n`
                         ).join("") || "";
                         
