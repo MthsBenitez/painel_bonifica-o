@@ -53,6 +53,7 @@
 
     <style>
         :root { --theme-color: #22c55e; /* Padrão atual verde */ }
+        html { scroll-behavior: smooth; } /* Rolagem suave nativa em toda a página */
         body { font-family: 'Poppins', sans-serif; transition: background-color 0.3s ease; }
         .glass-card { background: rgba(255, 255, 255, 1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); border: 1px solid #f1f5f9; }
         .dark .glass-card { background: rgba(30, 41, 59, 1); border-color: #334155; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
@@ -239,7 +240,7 @@
         
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
+<body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
 
     <!-- Efeito Mágico Tela Inteira (Ativado ao bater 100% em tudo) -->
     <div id="legendary-overlay" class="hidden page-legendary-mode">
@@ -8147,50 +8148,11 @@
             }; // Feche o objeto app aqui com ponto e vírgula
 
         // ==========================================
-        // SISTEMA DE DESLIZAMENTO SUAVE E AUTO-CORRETOR
+        // BOOT DO APLICATIVO
         // ==========================================
-
-        // 1. Força a Ativação do Corretor e Idioma
-        const ativarCorretor = (el) => {
-            const tag = el.tagName;
-            const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
-            const isNotPassword = el.type !== 'password';
-
-            if (isInput && isNotPassword && el.getAttribute('spellcheck') !== 'true') {
-                el.setAttribute('spellcheck', 'true');
-                el.setAttribute('autocorrect', 'on');
-                el.setAttribute('autocapitalize', 'sentences');
-                el.setAttribute('lang', 'pt-BR'); // Obriga o PC a usar o dicionário BR
-            }
-        };
-
-        // 2. Escuta Dinâmica: Aplica o corretor e faz o deslizamento gostoso
-        document.addEventListener('focusin', function(e) {
-            const tag = e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) {
-
-                ativarCorretor(e.target);
-
-                // Lógica inteligente: PC x Mobile
-                const isMobile = window.matchMedia("(pointer: coarse)").matches;
-                const delayTempo = isMobile ? 400 : 50; // PC desliza quase na hora, celular espera o teclado
-
-                setTimeout(() => {
-                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, delayTempo);
-            }
-        }, true);
-
-        // Boot do App com varredura preventiva
         document.addEventListener('DOMContentLoaded', () => { 
             app.ui.init(); 
-
-            // Varre os inputs que já nasceram na tela e injeta a autocorreção antes do clique
-            setTimeout(() => {
-                document.querySelectorAll('input[type="text"], textarea').forEach(ativarCorretor);
-            }, 500);
         });
-        
     </script>
 </body>
 </html>
