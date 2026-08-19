@@ -1383,14 +1383,6 @@
                     } else {
                         finalizeSubmit();
                     }
-                        
-                        app.storage.saveActions().then(() => {
-                            app.notifications.notify('ADM', 'Nova Ação Registrada', `${app.currentUser.nome} registrou uma ação para o mês de ${app.ui.formatMonthLabel(app.currentMonth)}.`, 'info');
-                            app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação da gestão.", "success");
-                            this.tempFiles = []; document.getElementById('act-preview-gallery').innerHTML = '';
-                            app.ui.renderTab('registrar_acao', true);
-                        });
-                    });
                 },
 
                 approveAction(id) {
@@ -2474,20 +2466,20 @@
 
             ui: {
                 currentActionFilter: 'pendente',
-                
+
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
-                    { group: 'Meu Painel', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Meus Resultados'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'calendario', label:'Meu Calendário'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Registros', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Registrar Ação'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Laudos e Estudos'}] },
-                    { group: 'Central de Apoio', icon: 'fa-book-open', items: [{id:'regras', label:'Regras e Critérios'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] },
-                    { group: '🏆 Campanha', icon: 'fa-crown', items: [{id:'campanha_mes', label:'Campanha do Trimestre'}] }
+                    { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'campanha_mes', label:'🏆 Campanha Trimestral'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
+                    { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras do Jogo'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Colaborador'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. Laudos'}] },
-                    { group: 'Operacional', icon: 'fa-network-wired', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'calendario', label:'Calendário'}, {id:'import_monitorias', label:'Importar Monitorias'}, {id:'operacoes', label:'Cadastrar Operações'}] },
-                    { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'ata_reuniao', label:'Nova Ata'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'laudos_estudos', label:'Gestão de Laudos'}, {id:'calibragem_audio', label:'Calibragem de Áudio'}] },
-                    { group: 'Administração', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'gestao_equipe', label:'Gestão de Equipe'}, {id:'configuracoes', label:'Metas do Sistema'}, {id:'gestao_campanha', label:'Gestão Campanha'}] },
-                    { group: 'Central', icon: 'fa-book-open', items: [{id:'regras', label:'Regras'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. OP'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
+                    { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Auditoria Laudos'}, {id:'calibragem_audio', label:'Lab. de Áudio'}] },
+                    { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}] },
+                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
                 // Função que extrai automaticamente todas as abas do sistema
@@ -3070,15 +3062,11 @@
                                         </div>
                                         <div class="flex gap-3 mt-4">
                                             ${act.status !== 'reprovado' ? `
-                                                <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-xs transition-colors shadow-sm border border-red-100"><i class="fa-solid fa-rotate-left mr-1"></i> ${act.status === 'aprovado' ? 'Desfazer e Devolver' : 'Devolver / Reprovar'}</button>
+                                                <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-xs transition-colors shadow-sm border border-red-100"><i class="fa-solid fa-rotate-left mr-1"></i> ${act.status === 'aprovado' ? 'Desfazer e Pedir Correção' : 'Devolver p/ Correção'}</button>
                                             ` : ''}
                                             ${act.status === 'pendente' ? `
-                                                <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors"><i class="fa-solid fa-check-double mr-1"></i> Validar (+1)</button>
+                                                <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors"><i class="fa-solid fa-check-double mr-1"></i> Aprovar (+1)</button>
                                             ` : ''}
-                                        </div>
-                                        <div class="flex gap-3">
-                                            <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold text-xs">Devolver / Reprovar</button>
-                                            <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold text-xs shadow-md">Validar (+1)</button>
                                         </div>` : ''}
                                     </div>
                                 </div>
@@ -3512,7 +3500,7 @@
                                                 <button type="button" onclick="document.execCommand('insertOrderedList', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600" title="Lista Numerada"><i class="fa-solid fa-list-ol"></i></button>
                                             </div>
                                             <!-- Área Editável -->
-                                            <div id="act-acao-rich" contenteditable="true" class="w-full p-4 min-h-[150px] max-h-[400px] overflow-y-auto outline-none text-sm bg-white dark:bg-slate-900 dark:text-white cursor-text" placeholder="Descreva detalhadamente o que foi feito..."></div>
+                                            <div id="act-acao-rich" contenteditable="true" class="w-full p-4 min-h-[250px] overflow-y-auto outline-none text-sm bg-white dark:bg-slate-900 dark:text-white cursor-text resize-y" placeholder="Descreva detalhadamente o que foi feito..."></div>
                                             <!-- Input Oculto para salvar -->
                                             <input type="hidden" id="act-acao" required>
                                         </div>
@@ -3974,8 +3962,8 @@
                         ? 'banner-legendary rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden shine-effect-legendary' 
                         : 'bg-gradient-to-r from-gray-800 to-black rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden';
                     
-                    const bannerTitleColor = isTotalMaxed ? 'text-cyan-200' : 'text-slate-300 dark:text-green-300';
-                    const bannerHighlightColor = isTotalMaxed ? 'text-purple-100' : 'text-slate-200 dark:text-green-100';
+                    const bannerTitleColor = isTotalMaxed ? 'text-cyan-200' : 'text-white/90 dark:text-green-300';
+                    const bannerHighlightColor = isTotalMaxed ? 'text-purple-100' : 'text-white dark:text-green-100';
                     const bannerValueColor = isTotalMaxed ? 'text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-white dark:text-green-400 drop-shadow-md';
                     const bannerBadgeBg = isTotalMaxed ? 'bg-black/40 border-purple-400/50 backdrop-blur-xl' : 'bg-slate-900/50 dark:bg-white/10 border-white/20 shadow-inner';
 
@@ -6333,7 +6321,7 @@
                             
                             <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
                                 <div class="flex justify-between items-center mb-6">
-                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico (Nesta Sessão)</h3>
+                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico Geral de Laudos</h3>
                                     <button onclick="app.laudos.exportToCSV()" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm"><i class="fa-solid fa-file-excel mr-1"></i> Baixar Relatório</button>
                                 </div>
                                 <div id="laudos-history" class="space-y-3 max-h-80 overflow-y-auto custom-scrollbar pr-2">
