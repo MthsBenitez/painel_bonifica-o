@@ -2455,9 +2455,9 @@
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'campanha_mes', label:'🏆 Campanha Trimestral'}] },
-                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras do Jogo'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
@@ -6189,9 +6189,14 @@
                                         <input type="text" id="laudo-id" required placeholder="Chave Única..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white font-mono shadow-sm">
                                     </div>
                                     <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operador Avaliado *</label>
+                                        <input type="text" id="laudo-nome-op" required placeholder="Nome do colaborador..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
+                                    </div>
+                                    <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
                                         <select id="laudo-op" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
                                             <option value="">Selecione...</option>
+                                            <option value="- Não se Aplica">- Não se Aplica</option>
                                             ${operacoes}
                                         </select>
                                     </div>
@@ -6199,7 +6204,7 @@
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">TEMA (Seja objetivo) *</label>
                                         <input type="text" id="laudo-tema" required maxlength="100" placeholder="Ex: Fatura Incorreta (Máx 100 caracteres)" class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
                                     </div>
-                                    <div>
+                                    <div class="md:col-span-2">
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Motivo de Contato *</label>
                                         <input type="text" id="laudo-motivo" required maxlength="100" placeholder="Ex: Cliente ligou para contestar valor..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
                                     </div>
@@ -6208,69 +6213,75 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Origem do Problema *</label>
-                                        <select id="laudo-origem" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
-                                            <option value="">Selecione...</option>
-                                            <option value="Procedimento / Política da Empresa">Procedimento / Política da Empresa</option>
-                                            <option value="Comportamento / Atendimento do Operador">Comportamento / Atendimento do Operador</option>
-                                            <option value="Conhecimento Técnico / Erro de Informação">Conhecimento Técnico / Erro de Informação</option>
-                                            <option value="Falha Sistêmica / Ferramenta / Queda">Falha Sistêmica / Ferramenta / Queda</option>
-                                            <option value="Produto / Serviço (Expectativa externa)">Produto / Serviço (Expectativa externa)</option>
-                                            <option value="Reclamação Não Procedente">Reclamação Não Procedente</option>
-                                        </select>
+                                        <input type="text" list="list-origem" id="laudo-origem" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
+                                        <datalist id="list-origem">
+                                            <option value="- Não se Aplica"></option>
+                                            <option value="Procedimento / Política da Empresa"></option>
+                                            <option value="Comportamento / Atendimento do Operador"></option>
+                                            <option value="Conhecimento Técnico / Erro de Informação"></option>
+                                            <option value="Falha Sistêmica / Ferramenta / Queda"></option>
+                                            <option value="Produto / Serviço (Expectativa externa)"></option>
+                                            <option value="Reclamação Não Procedente"></option>
+                                        </datalist>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Habilidade do Operador *</label>
-                                        <select id="laudo-habilidade" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
-                                            <option value="">Selecione...</option>
-                                            <option value="Conforme (Sem desvios)">Conforme (Sem desvios)</option>
-                                            <option value="Falha em Empatia / Tom de Voz">Falha em Empatia / Tom de Voz</option>
-                                            <option value="Comunicação Confusa / Linguagem Inadequada">Comunicação Confusa / Linguagem Inadequada</option>
-                                            <option value="Falta de Escuta Ativa / Interrupções">Falta de Escuta Ativa / Interrupções</option>
-                                            <option value="Proatividade Baixa / Desinteresse">Proatividade Baixa / Desinteresse</option>
-                                            <option value="Procedimento Incorreto / Informação Errada">Procedimento Incorreto / Informação Errada</option>
-                                        </select>
+                                        <input type="text" list="list-habilidade" id="laudo-habilidade" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
+                                        <datalist id="list-habilidade">
+                                            <option value="- Não se Aplica"></option>
+                                            <option value="Conforme (Sem desvios)"></option>
+                                            <option value="Falha em Empatia / Tom de Voz"></option>
+                                            <option value="Comunicação Confusa / Linguagem Inadequada"></option>
+                                            <option value="Falta de Escuta Ativa / Interrupções"></option>
+                                            <option value="Proatividade Baixa / Desinteresse"></option>
+                                            <option value="Procedimento Incorreto / Informação Errada"></option>
+                                        </datalist>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">FCR (Resolução no 1º Contato) *</label>
-                                        <select id="laudo-fcr" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
-                                            <option value="">Selecione...</option>
-                                            <option value="Sim (Resolvido no contato)">Sim (Resolvido no contato)</option>
-                                            <option value="Não - Dependência de Backoffice/N2">Não - Dependência de Backoffice/N2</option>
-                                            <option value="Não - Erro/Despreparo do Operador">Não - Erro/Despreparo do Operador</option>
-                                            <option value="Não - Cliente não possuía dados/documentos">Não - Cliente não possuía dados/documentos</option>
-                                            <option value="Não - Limitação de Alçada/Regra de Negócio">Não - Limitação de Alçada/Regra de Negócio</option>
-                                        </select>
+                                        <input type="text" list="list-fcr" id="laudo-fcr" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
+                                        <datalist id="list-fcr">
+                                            <option value="- Não se Aplica"></option>
+                                            <option value="Sim (Resolvido no contato)"></option>
+                                            <option value="Não - Dependência de Backoffice/N2"></option>
+                                            <option value="Não - Erro/Despreparo do Operador"></option>
+                                            <option value="Não - Cliente não possuía dados/documentos"></option>
+                                            <option value="Não - Limitação de Alçada/Regra de Negócio"></option>
+                                        </datalist>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Sentimento Final do Cliente *</label>
-                                        <select id="laudo-sentimento" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
-                                            <option value="">Selecione...</option>
-                                            <option value="Satisfeito após explicação">Satisfeito após explicação</option>
-                                            <option value="Neutro / Resignado">Neutro / Resignado</option>
-                                            <option value="Irritado / Detrator com a Marca">Irritado / Detrator com a Marca</option>
-                                            <option value="Ameaça de Procon / Cancelamento / Jurídico">Ameaça de Procon / Cancelamento / Jurídico</option>
-                                        </select>
+                                        <input type="text" list="list-sentimento" id="laudo-sentimento" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
+                                        <datalist id="list-sentimento">
+                                            <option value="- Não se Aplica"></option>
+                                            <option value="Satisfeito após explicação"></option>
+                                            <option value="Neutro / Resignado"></option>
+                                            <option value="Irritado / Detrator com a Marca"></option>
+                                            <option value="Ameaça de Procon / Cancelamento / Jurídico"></option>
+                                        </datalist>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Procedência da Nota Baixa *</label>
-                                        <select id="laudo-procedencia" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
-                                            <option value="">Selecione...</option>
-                                            <option value="Procedente - Falha Operacional (Call Center)">Procedente - Falha Operacional (Call Center)</option>
-                                            <option value="Procedente - Falha de Processo / Produto (Cliente Contratante)">Procedente - Falha de Processo / Produto (Cliente Contratante)</option>
-                                            <option value="Improcedente - Cliente insatisfeito com regra legítima">Improcedente - Cliente insatisfeito com regra legítima</option>
-                                        </select>
+                                        <input type="text" list="list-procedencia" id="laudo-procedencia" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
+                                        <datalist id="list-procedencia">
+                                            <option value="- Não se Aplica"></option>
+                                            <option value="Procedente - Falha Operacional (Call Center)"></option>
+                                            <option value="Procedente - Falha de Processo / Produto (Cliente Contratante)"></option>
+                                            <option value="Improcedente - Cliente insatisfeito com regra legítima"></option>
+                                        </datalist>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Corretiva Recomendada *</label>
-                                        <select id="laudo-acao" required class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white cursor-pointer shadow-sm">
-                                            <option value="">Selecione...</option>
-                                            <option value="Feedback Pontual com Operador">Feedback Pontual com Operador</option>
-                                            <option value="Reciclagem / Treinamento de Equipe">Reciclagem / Treinamento de Equipe</option>
-                                            <option value="Ajuste de Script / FAQ / Base de Conhecimento">Ajuste de Script / FAQ / Base de Conhecimento</option>
-                                            <option value="Alinhamento com Cliente Contratante (Processo/Política)">Alinhamento com Cliente Contratante (Processo/Política)</option>
-                                            <option value="Abertura de Chamado Técnico (Bug de Sistema)">Abertura de Chamado Técnico (Bug de Sistema)</option>
-                                            <option value="Nenhuma ação necessária">Nenhuma ação necessária</option>
-                                        </select>
+                                        <input type="text" list="list-acao" id="laudo-acao" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
+                                        <datalist id="list-acao">
+                                            <option value="- Não se Aplica"></option>
+                                            <option value="Feedback Pontual com Operador"></option>
+                                            <option value="Reciclagem / Treinamento de Equipe"></option>
+                                            <option value="Ajuste de Script / FAQ / Base de Conhecimento"></option>
+                                            <option value="Alinhamento com Cliente Contratante (Processo/Política)"></option>
+                                            <option value="Abertura de Chamado Técnico (Bug de Sistema)"></option>
+                                            <option value="Nenhuma ação necessária"></option>
+                                        </datalist>
                                     </div>
                                     <div class="md:col-span-2">
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Campo Observação</label>
@@ -6451,6 +6462,7 @@
 
                     const payload = {
                         id: idLigacao,
+                        nomeOp: document.getElementById('laudo-nome-op').value.trim(),
                         op: document.getElementById('laudo-op').value,
                         tema: document.getElementById('laudo-tema').value.trim(),
                         motivo: document.getElementById('laudo-motivo').value.trim(),
@@ -6474,7 +6486,7 @@
                         // Reset
                         document.getElementById('laudo-id').value = '';
                         document.querySelectorAll('input[name="laudo-resp"]').forEach(r => r.checked = false);
-                        ['tema', 'motivo', 'origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao', 'obs'].forEach(campo => {
+                        ['nome-op', 'tema', 'motivo', 'origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao', 'obs'].forEach(campo => {
                             document.getElementById('laudo-'+campo).value = '';
                         });
                         app.ui.renderLaudosHistory();
@@ -6487,6 +6499,7 @@
 
                     const rows = this.list.map(l => ({
                         "Protocolo / ID": l.id,
+                        "Nome do Operador": l.nomeOp || 'N/A',
                         "Operação": l.op,
                         "Tema": l.tema,
                         "Motivo Contato": l.motivo,
