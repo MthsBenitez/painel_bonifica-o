@@ -8110,10 +8110,9 @@
                             return `${m}:${s}`;
                         };
                         
-                        comments.forEach(c => {
-                            txt += `[${format(c.time)}] | Auditor: ${c.author}\n`;
-                            txt += `Apontamento: "${c.text}"\n\n`;
-                        });
+                        const txt = comments?.map(c => 
+                            `[${format(c.time)}] | Auditor: ${c.author}\nApontamento: "${c.text}"\n\n`
+                        ).join("") || "";
                         
                         txt += `-------------------------------------------------------\nGerado automaticamente via Portal de Resultados`;
                         
