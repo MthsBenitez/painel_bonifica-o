@@ -6188,13 +6188,33 @@
                 renderView_LaudosEstudos(container) {
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     
+                    // --- FUNÇÃO GERADORA DE CAIXINHAS (DESIGN PREMIUM) ---
+                    const gerarCaixinhas = (nomeCampo, cor, opcoes) => {
+                        let cClass = '';
+                        if(cor === 'blue') cClass = 'peer-checked:border-blue-500 peer-checked:bg-blue-50 dark:peer-checked:bg-blue-900/20 group-hover:text-blue-600 peer-checked:text-blue-700 dark:peer-checked:text-blue-400 hover:border-blue-300';
+                        if(cor === 'green') cClass = 'peer-checked:border-green-500 peer-checked:bg-green-50 dark:peer-checked:bg-green-900/20 group-hover:text-green-600 peer-checked:text-green-700 dark:peer-checked:text-green-400 hover:border-green-300';
+                        if(cor === 'orange') cClass = 'peer-checked:border-orange-500 peer-checked:bg-orange-50 dark:peer-checked:bg-orange-900/20 group-hover:text-orange-600 peer-checked:text-orange-700 dark:peer-checked:text-orange-400 hover:border-orange-300';
+                        if(cor === 'red') cClass = 'peer-checked:border-red-500 peer-checked:bg-red-50 dark:peer-checked:bg-red-900/20 group-hover:text-red-600 peer-checked:text-red-700 dark:peer-checked:text-red-400 hover:border-red-300';
+                        if(cor === 'purple') cClass = 'peer-checked:border-purple-500 peer-checked:bg-purple-50 dark:peer-checked:bg-purple-900/20 group-hover:text-purple-600 peer-checked:text-purple-700 dark:peer-checked:text-purple-400 hover:border-purple-300';
+
+                        return `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">` + opcoes.map(op => `
+                            <label class="cursor-pointer group h-full">
+                                <input type="radio" name="${nomeCampo}" value="${op.label}" class="peer sr-only" required>
+                                <div class="p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition-all text-center h-full flex flex-col items-center justify-center shadow-sm ${cClass}">
+                                    <span class="text-3xl mb-2 drop-shadow-sm transition-transform group-hover:scale-110">${op.emoji}</span>
+                                    <span class="text-[10px] font-black text-slate-600 dark:text-slate-400 leading-tight transition-colors">${op.label}</span>
+                                </div>
+                            </label>
+                        `).join('') + `</div>`;
+                    };
+
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laudos e Estudos Analíticos</h2>
                         </div>
                         
                         <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-purple-500 shadow-xl">
-                            <form onsubmit="event.preventDefault(); app.laudos.submitLaudo();" class="space-y-6">
+                            <form onsubmit="event.preventDefault(); app.laudos.submitLaudo();" class="space-y-8">
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <div>
@@ -6223,80 +6243,63 @@
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Origem do Problema *</label>
-                                        <input type="text" list="list-origem" id="laudo-origem" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
-                                        <datalist id="list-origem">
-                                            <option value="- Não se Aplica"></option>
-                                            <option value="Procedimento / Política da Empresa"></option>
-                                            <option value="Comportamento / Atendimento do Operador"></option>
-                                            <option value="Conhecimento Técnico / Erro de Informação"></option>
-                                            <option value="Falha Sistêmica / Ferramenta / Queda"></option>
-                                            <option value="Produto / Serviço (Expectativa externa)"></option>
-                                            <option value="Reclamação Não Procedente"></option>
-                                        </datalist>
+                                <div class="space-y-6">
+                                    <div class="bg-blue-50/30 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                                        <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-bullseye text-blue-500 mr-1"></i> Origem do Problema *</label>
+                                        ${gerarCaixinhas('laudo-origem', 'blue', [
+                                            { label: "Política da Empresa", emoji: "🏢" }, { label: "Comportamento Operador", emoji: "🗣️" },
+                                            { label: "Erro de Informação", emoji: "🧠" }, { label: "Falha de Sistema", emoji: "💻" },
+                                            { label: "Serviço/Produto", emoji: "📦" }, { label: "Reclamação Indevida", emoji: "🚫" }
+                                        ])}
                                     </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Habilidade do Operador *</label>
-                                        <input type="text" list="list-habilidade" id="laudo-habilidade" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
-                                        <datalist id="list-habilidade">
-                                            <option value="- Não se Aplica"></option>
-                                            <option value="Conforme (Sem desvios)"></option>
-                                            <option value="Falha em Empatia / Tom de Voz"></option>
-                                            <option value="Comunicação Confusa / Linguagem Inadequada"></option>
-                                            <option value="Falta de Escuta Ativa / Interrupções"></option>
-                                            <option value="Proatividade Baixa / Desinteresse"></option>
-                                            <option value="Procedimento Incorreto / Informação Errada"></option>
-                                        </datalist>
+
+                                    <div class="bg-orange-50/30 dark:bg-orange-900/10 p-5 rounded-2xl border border-orange-100 dark:border-orange-900/30">
+                                        <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-user-gear text-orange-500 mr-1"></i> Habilidade do Operador *</label>
+                                        ${gerarCaixinhas('laudo-habilidade', 'orange', [
+                                            { label: "Conforme (Sem erros)", emoji: "✅" }, { label: "Falha Empatia/Tom", emoji: "😒" },
+                                            { label: "Comunicação Confusa", emoji: "🗣️" }, { label: "Sem Escuta Ativa", emoji: "🙉" },
+                                            { label: "Baixa Proatividade", emoji: "🐢" }, { label: "Processo Incorreto", emoji: "❌" }
+                                        ])}
                                     </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">FCR (Resolução no 1º Contato) *</label>
-                                        <input type="text" list="list-fcr" id="laudo-fcr" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
-                                        <datalist id="list-fcr">
-                                            <option value="- Não se Aplica"></option>
-                                            <option value="Sim (Resolvido no contato)"></option>
-                                            <option value="Não - Dependência de Backoffice/N2"></option>
-                                            <option value="Não - Erro/Despreparo do Operador"></option>
-                                            <option value="Não - Cliente não possuía dados/documentos"></option>
-                                            <option value="Não - Limitação de Alçada/Regra de Negócio"></option>
-                                        </datalist>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div class="bg-green-50/30 dark:bg-green-900/10 p-5 rounded-2xl border border-green-100 dark:border-green-900/30">
+                                            <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-headset text-green-500 mr-1"></i> Resolução (FCR) *</label>
+                                            ${gerarCaixinhas('laudo-fcr', 'green', [
+                                                { label: "Sim (Resolvido)", emoji: "✨" }, { label: "Não - Erro Operador", emoji: "⚠️" },
+                                                { label: "Não - Backoffice", emoji: "⏳" }, { label: "Não - Sem dados", emoji: "📄" },
+                                                { label: "Não - Regra Contrato", emoji: "🔒" }, { label: "Não Se Aplica", emoji: "➖" }
+                                            ])}
+                                        </div>
+
+                                        <div class="bg-purple-50/30 dark:bg-purple-900/10 p-5 rounded-2xl border border-purple-100 dark:border-purple-900/30">
+                                            <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-face-smile text-purple-500 mr-1"></i> Sentimento do Cliente *</label>
+                                            ${gerarCaixinhas('laudo-sentimento', 'purple', [
+                                                { label: "Satisfeito", emoji: "😊" }, { label: "Neutro / Resignado", emoji: "😐" },
+                                                { label: "Irritado / Detrator", emoji: "😠" }, { label: "Ameaça Jurídica", emoji: "🤬" }
+                                            ])}
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Sentimento Final do Cliente *</label>
-                                        <input type="text" list="list-sentimento" id="laudo-sentimento" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
-                                        <datalist id="list-sentimento">
-                                            <option value="- Não se Aplica"></option>
-                                            <option value="Satisfeito após explicação"></option>
-                                            <option value="Neutro / Resignado"></option>
-                                            <option value="Irritado / Detrator com a Marca"></option>
-                                            <option value="Ameaça de Procon / Cancelamento / Jurídico"></option>
-                                        </datalist>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div class="bg-red-50/30 dark:bg-red-900/10 p-5 rounded-2xl border border-red-100 dark:border-red-900/30">
+                                            <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-thumbs-down text-red-500 mr-1"></i> Procedência da Nota Baixa *</label>
+                                            ${gerarCaixinhas('laudo-procedencia', 'red', [
+                                                { label: "Falha do Operador", emoji: "🎧" }, { label: "Falha da Empresa", emoji: "🏢" },
+                                                { label: "Improcedente", emoji: "🛡️" }, { label: "Não Se Aplica", emoji: "➖" }
+                                            ])}
+                                        </div>
+
+                                        <div class="bg-slate-100/50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                            <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-wrench text-slate-500 mr-1"></i> Ação Corretiva *</label>
+                                            ${gerarCaixinhas('laudo-acao', 'blue', [
+                                                { label: "Feedback Pontual", emoji: "💬" }, { label: "Reciclagem", emoji: "📚" },
+                                                { label: "Ajuste de Base/FAQ", emoji: "📝" }, { label: "Chamado TI (Bug)", emoji: "🐛" }
+                                            ])}
+                                        </div>
                                     </div>
+
                                     <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Procedência da Nota Baixa *</label>
-                                        <input type="text" list="list-procedencia" id="laudo-procedencia" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
-                                        <datalist id="list-procedencia">
-                                            <option value="- Não se Aplica"></option>
-                                            <option value="Procedente - Falha Operacional (Call Center)"></option>
-                                            <option value="Procedente - Falha de Processo / Produto (Cliente Contratante)"></option>
-                                            <option value="Improcedente - Cliente insatisfeito com regra legítima"></option>
-                                        </datalist>
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Corretiva Recomendada *</label>
-                                        <input type="text" list="list-acao" id="laudo-acao" required autocomplete="off" placeholder="Selecione ou digite..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm cursor-text">
-                                        <datalist id="list-acao">
-                                            <option value="- Não se Aplica"></option>
-                                            <option value="Feedback Pontual com Operador"></option>
-                                            <option value="Reciclagem / Treinamento de Equipe"></option>
-                                            <option value="Ajuste de Script / FAQ / Base de Conhecimento"></option>
-                                            <option value="Alinhamento com Cliente Contratante (Processo/Política)"></option>
-                                            <option value="Abertura de Chamado Técnico (Bug de Sistema)"></option>
-                                            <option value="Nenhuma ação necessária"></option>
-                                        </datalist>
-                                    </div>
-                                    <div class="md:col-span-2">
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Campo Observação</label>
                                         <input type="text" id="laudo-obs" maxlength="250" placeholder="Insira detalhes adicionais breves..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white shadow-sm">
                                     </div>
@@ -6480,15 +6483,16 @@
                         tema: document.getElementById('laudo-tema').value.trim(),
                         motivo: document.getElementById('laudo-motivo').value.trim(),
                         responsabilidade: document.querySelector('input[name="laudo-resp"]:checked').value,
-                        origem: document.getElementById('laudo-origem').value,
-                        habilidade: document.getElementById('laudo-habilidade').value,
-                        fcr: document.getElementById('laudo-fcr').value,
-                        sentimento: document.getElementById('laudo-sentimento').value,
-                        procedencia: document.getElementById('laudo-procedencia').value,
-                        acao: document.getElementById('laudo-acao').value,
+                        origem: document.querySelector('input[name="laudo-origem"]:checked')?.value || '',
+                        habilidade: document.querySelector('input[name="laudo-habilidade"]:checked')?.value || '',
+                        fcr: document.querySelector('input[name="laudo-fcr"]:checked')?.value || '',
+                        sentimento: document.querySelector('input[name="laudo-sentimento"]:checked')?.value || '',
+                        procedencia: document.querySelector('input[name="laudo-procedencia"]:checked')?.value || '',
+                        acao: document.querySelector('input[name="laudo-acao"]:checked')?.value || '',
                         obs: document.getElementById('laudo-obs').value.trim(),
                         data: new Date().toLocaleString('pt-BR'),
-                        autor: app.currentUser ? app.currentUser.nome : 'Administração'
+                        autor: app.currentUser ? app.currentUser.nome : 'Administração',
+                        status: 'concluido'
                     };
 
                     payload.status = 'concluido'; // Adicionando status
@@ -8141,6 +8145,22 @@
                     }
                 }
             }; // Feche o objeto app aqui com ponto e vírgula
+
+        // ==========================================
+        // SISTEMA DE DESLIZAMENTO SUAVE E AUTO-CORRETOR
+        // ==========================================
+        document.addEventListener('focusin', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+                // Força o navegador e teclados de celular a ativarem a correção ortográfica
+                e.target.setAttribute('spellcheck', 'true');
+                e.target.setAttribute('autocorrect', 'on');
+                
+                // Deslizamento suave "gostoso" para manter o campo no centro da visão
+                setTimeout(() => {
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 300);
+            }
+        }, true);
 
         // Boot
         document.addEventListener('DOMContentLoaded', () => { app.ui.init(); });
