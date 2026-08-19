@@ -8149,20 +8149,26 @@
         // ==========================================
         // SISTEMA DE DESLIZAMENTO SUAVE E AUTO-CORRETOR
         // ==========================================
-        document.addEventListener('focusin', function(e) {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
-                // Força o navegador e teclados de celular a ativarem a correção ortográfica
+        
+        // 1. Prepara o campo para o corretor no exato milissegundo do toque (antes do teclado subir)
+        document.addEventListener('pointerdown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
                 e.target.setAttribute('spellcheck', 'true');
                 e.target.setAttribute('autocorrect', 'on');
-                
-                // Deslizamento suave "gostoso" para manter o campo no centro da visão
+                e.target.setAttribute('autocapitalize', 'sentences'); // Força letra maiúscula no início de frases
+            }
+        }, { passive: true });
+
+        // 2. Deslizamento suave "gostoso" ajustado para a animação do teclado
+        document.addEventListener('focusin', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
                 setTimeout(() => {
-                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 300);
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                }, 450); // 450ms garante que o teclado virtual do celular já abriu completamente
             }
         }, true);
 
-        // Boot
+        // Boot do App
         document.addEventListener('DOMContentLoaded', () => { app.ui.init(); });
         
     </script>
