@@ -2240,6 +2240,12 @@
                     // A trava de exclusão para datas retroativas foi removida
                     app.ui.showConfirm("Aviso", "Remover permanentemente este evento?", `app.calendar.executeDelete('${id}')`, true);
                 },
+                
+                executeDelete(id) {
+                    delete app.eventsList[id];
+                    app.storage.saveEvents().then(() => app.ui.renderTab('calendario', true));
+                }
+            }, // <-- AQUI: Fechamento correto do objeto calendar
             
             // --- MOTOR MATEMÁTICO ---
             calc: {
