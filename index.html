@@ -2172,10 +2172,7 @@
                     }
                 },
                 openModal(dateStr, evtId = null) {
-                    if(!app.isAdmin) {
-                        const today = new Date().toISOString().split('T')[0];
-                        if(dateStr < today) return app.ui.showAlert("Acesso Negado", "Não é permitido alterar ou incluir dados em datas retroativas. Fale com a Administração.", "error");
-                    }
+                    // A trava de datas retroativas para usuários comuns foi removida
                     document.getElementById('cal-data').value = dateStr;
                     document.getElementById('cal-edit-id').value = evtId || '';
                     document.getElementById('cal-anexo-link').classList.add('hidden');
@@ -2225,14 +2222,9 @@
                 },
 
                 deleteEvent(id) {
-                    if(!app.isAdmin) {
-                        const today = new Date().toISOString().split('T')[0];
-                        if(app.eventsList[id].data < today) return app.ui.showAlert("Bloqueio", "Registros passados não podem ser excluídos.", "error");
-                    }
+                    // A trava de exclusão para datas retroativas foi removida
                     app.ui.showConfirm("Aviso", "Remover permanentemente este evento?", `app.calendar.executeDelete('${id}')`, true);
                 },
-                executeDelete(id) { delete app.eventsList[id]; app.storage.saveEvents().then(() => app.ui.renderTab('calendario', true)); }
-            },
             
             // --- MOTOR MATEMÁTICO ---
             calc: {
