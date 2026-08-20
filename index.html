@@ -247,6 +247,46 @@
         .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
         .lenis.lenis-stopped { overflow: hidden; }
         .lenis.lenis-scrolling iframe { pointer-events: none; }
+    /* Loader Uiverse - Sincronização */
+        .loader {
+          width: 48px;
+          height: 48px;
+          background: #353535;
+          display: block;
+          margin: 20px auto;
+          position: relative;
+          box-sizing: border-box;
+          animation: rotationBack 1s ease-in-out infinite reverse;
+        }
+        .loader::before {
+          content: '';
+          box-sizing: border-box;
+          left: 0;
+          top: 0;
+          transform: rotate(45deg);
+          position: absolute;
+          width: 48px;
+          height: 48px;
+          background: #2e2e2e;
+          box-shadow: 0 0 5px rgba(0, 0, 0, 0.15);
+        }
+        .loader::after {
+          content: '';
+          box-sizing: border-box;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          background: rgb(0, 0, 0);
+          transform: translate(-50%, -50%);
+          box-shadow: 0 0 5px rgba(0, 0, 0, 0.15);
+        }
+        @keyframes rotationBack {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(-360deg); }
+        }
     </style>
 
     <!-- Bibliotecas Premium UX/UI -->
@@ -284,6 +324,15 @@
             <button onclick="document.getElementById('error-boundary-screen').classList.add('hidden')" class="w-full mt-3 bg-transparent text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold py-2 transition-colors uppercase">
                 Ignorar e tentar continuar
             </button>
+        </div>
+    </div>
+
+    <!-- Tela de Sincronização (Loader Customizado) -->
+    <div id="sync-loader-screen" class="hidden fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 transition-opacity">
+        <div class="bg-white dark:bg-dark-surface p-10 rounded-[2rem] text-center relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-slate-700 flex flex-col items-center">
+            <span class="loader"></span>
+            <h2 class="text-xl font-black text-slate-800 dark:text-white mt-8 mb-2 tracking-tight">Sincronizando...</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-sm">Aguarde, estamos baixando os dados do servidor.</p>
         </div>
     </div>
 
@@ -2384,7 +2433,19 @@
                     // --- NOVA TRAVA DE SEGURANÇA ---
                     // Se o usuário clicar em entrar antes da internet baixar os dados do Firebase:
                     if (!app.dataLoaded) {
-                        return app.ui.showAlert("Sincronizando...", "O sistema está baixando os dados do servidor. Aguarde 2 segundinhos e clique em Entrar novamente.", "info");
+                        const loaderScreen = document.getElementById('sync-loader-screen');
+                        if (loaderScreen) loaderScreen.classList.remove('hidden');
+                        
+                        // O sistema checa sozinho a cada 1 segundo se os dados já chegaram
+                        const checkData = setInterval(() => {
+                            if (app.dataLoaded) {
+                                clearInterval(checkData); // Para o radar
+                                if (loaderScreen) loaderScreen.classList.add('hidden'); // Esconde o loader
+                                app.auth.login(); // Faz o login automaticamente!
+                            }
+                        }, 1000);
+                        
+                        return; // Pausa a execução atual
                     }
                     // -------------------------------
 
