@@ -2214,7 +2214,7 @@
                     const workbook = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(workbook, worksheet, "Gestao_Atas");
                     XLSX.writeFile(workbook, `Gestao_Atas_${new Date().toISOString().split('T')[0]}.xlsx`);
-                }
+                },
 
                 // NOVO: Motor de IA Gemini
                 async gerarComIA() {
