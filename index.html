@@ -267,6 +267,26 @@
         <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-cyan-600/30 rounded-full blur-[120px] animate-pulse" style="animation-delay: 1s;"></div>
     </div>
 
+    <!-- Tela de Proteção contra Erros (Global Error Boundary) -->
+    <div id="error-boundary-screen" class="hidden fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 transition-opacity">
+        <div class="bg-white dark:bg-dark-surface max-w-lg w-full p-10 rounded-[2rem] text-center relative overflow-hidden border-t-4 border-t-red-500 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+            <div class="absolute -right-10 -top-10 text-9xl text-red-500/10"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="w-24 h-24 bg-red-50 dark:bg-red-900/30 text-red-500 mx-auto rounded-full flex items-center justify-center text-5xl mb-6 shadow-inner animate-bounce border border-red-100 dark:border-red-800">
+                <i class="fa-solid fa-plug-circle-xmark"></i>
+            </div>
+            <h2 class="text-3xl font-black text-slate-800 dark:text-white mb-3 tracking-tight">Ops! Algo quebrou.</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mb-8 leading-relaxed">
+                Detectamos uma instabilidade temporária ao tentar executar este comando. Pedimos desculpas pelo inconveniente! Nossa equipe técnica já foi alertada e o sistema será normalizado em breve.
+            </p>
+            <button onclick="window.location.reload()" class="w-full bg-red-500 hover:bg-red-600 text-white font-extrabold py-4 rounded-xl shadow-lg transition-transform hover:-translate-y-1 flex items-center justify-center gap-2 uppercase tracking-widest text-sm">
+                <i class="fa-solid fa-rotate-right"></i> Recarregar Sistema
+            </button>
+            <button onclick="document.getElementById('error-boundary-screen').classList.add('hidden')" class="w-full mt-3 bg-transparent text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold py-2 transition-colors uppercase">
+                Ignorar e tentar continuar
+            </button>
+        </div>
+    </div>
+
     <!-- Modal Global de Alertas -->
     <div id="global-modal" class="fixed inset-0 z-[90] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border transform transition-all">
@@ -362,16 +382,24 @@
         </div>
     </div>
 
-    <!-- Modal Command Palette (Busca Rápida) -->
-    <div id="command-palette-modal" class="fixed inset-0 z-[100] hidden flex items-start justify-center pt-[15vh] bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" onclick="if(event.target === this) this.classList.add('hidden')">
-        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-2xl mx-4 border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col animate-fade-in transform scale-100">
-            <div class="flex items-center px-5 py-4 border-b border-slate-100 dark:border-slate-700">
-                <i class="fa-solid fa-magnifying-glass text-blue-500 text-xl"></i>
-                <input type="text" id="command-input" class="w-full bg-transparent border-none outline-none px-4 text-slate-700 dark:text-white placeholder-slate-400 text-lg" placeholder="Para onde vamos? (Ex: 'Atas', 'Painel')" onkeyup="app.ui.filterCommands(this.value)" autocomplete="off">
-                <span class="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700">ESC</span>
-            </div>
-            <div id="command-results" class="max-h-80 overflow-y-auto custom-scrollbar p-3 space-y-1">
-                <!-- Resultados injetados via JS -->
+    <!-- Modal Command Palette (Busca Rápida 3D Premium) -->
+    <div id="command-palette-modal" class="fixed inset-0 z-[100] hidden flex items-start justify-center pt-[15vh] bg-slate-900/60 dark:bg-black/80 backdrop-blur-md transition-opacity" onclick="if(event.target === this) this.classList.add('hidden')">
+        <!-- Container Magnético 3D -->
+        <div class="magnetic-search-container relative w-full max-w-2xl mx-4 group perspective-[1000px] transform transition-all duration-300">
+            <!-- Glow animado interativo que usa a cor do tema -->
+            <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-[var(--theme-color)] rounded-3xl blur-lg opacity-30 group-hover:opacity-60 transition duration-500 pointer-events-none"></div>
+            
+            <div class="relative bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-2xl rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/50 dark:border-slate-700/50 overflow-hidden flex flex-col transform transition-all duration-300 group-hover:-translate-y-1">
+                <div class="flex items-center px-6 py-5 border-b border-slate-200/50 dark:border-slate-700/50">
+                    <div class="w-12 h-12 flex items-center justify-center rounded-full bg-slate-100/50 dark:bg-slate-800/50 text-[var(--theme-color)] text-xl animate-pulse shadow-inner border border-slate-200 dark:border-slate-700">
+                        <i class="fa-solid fa-magnifying-glass transition-transform group-hover:scale-110"></i>
+                    </div>
+                    <input type="text" id="command-input" class="w-full bg-transparent border-none outline-none px-5 text-slate-800 dark:text-white placeholder-slate-400 text-xl font-medium tracking-tight" placeholder="Pesquise para navegar... (Ex: 'Atas', 'Painel')" onkeyup="app.ui.filterCommands(this.value)" autocomplete="off">
+                    <span class="text-[10px] uppercase font-black tracking-widest bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 shadow-sm transition-colors group-hover:border-[var(--theme-color)] group-hover:text-[var(--theme-color)]">ESC</span>
+                </div>
+                <div id="command-results" class="max-h-[60vh] overflow-y-auto custom-scrollbar p-3 space-y-1">
+                    <!-- Resultados injetados via JS -->
+                </div>
             </div>
         </div>
     </div>
@@ -8299,6 +8327,19 @@
         // BOOT DO APLICATIVO E UX PREMIUM
         // ==========================================
         document.addEventListener('DOMContentLoaded', () => { 
+
+            // Sistema Global de Proteção contra Erros (Ativa a tela visual)
+            window.addEventListener('error', function(e) {
+                // Captura apenas erros reais de script, ignora pequenos erros de carregamento de imagem externa
+                if(e.filename && e.filename.includes(window.location.hostname)) {
+                    const errScreen = document.getElementById('error-boundary-screen');
+                    if(errScreen) errScreen.classList.remove('hidden');
+                }
+            });
+            window.addEventListener('unhandledrejection', function(e) {
+                const errScreen = document.getElementById('error-boundary-screen');
+                if(errScreen) errScreen.classList.remove('hidden');
+            });
 
             // Atalho Ctrl+K ou Cmd+K para a Command Palette
             document.addEventListener('keydown', (e) => {
