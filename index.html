@@ -2216,8 +2216,6 @@
                     XLSX.writeFile(workbook, `Gestao_Atas_${new Date().toISOString().split('T')[0]}.xlsx`);
                 }
 
-                },
-
                 // NOVO: Motor de IA Gemini
                 async gerarComIA() {
                     const inputText = document.getElementById('ata-ia-input').value.trim();
