@@ -2217,6 +2217,11 @@
               },
 
               async gerarComIA() {
+                  // Trava Inicial de Segurança
+                  if (!app.config || !app.config.geminiApiKey) {
+                      return app.ui.showAlert("IA Desconectada", "A integração com a Inteligência Artificial não foi configurada. O Administrador precisa inserir a chave da API nas Configurações do Sistema.", "error");
+                  }
+
                   const inputEl = document.getElementById('ata-ia-input');
                   const outputEl = document.getElementById('ata-fortes');
                   const btn = document.getElementById('btn-ia-gerar');
@@ -2230,50 +2235,21 @@
                   btn.disabled = true;
                   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando com IA...';
 
-                  // COLE SUA CHAVE DE API DO GOOGLE AI STUDIO AQUI (Começa com AIzaSy...)
-                  const apiKey = 'COLE_SUA_CHAVE_AIzaSy_AQUI';
+                  // Recupera de forma dinâmica as configurações do painel ADM
+                  const apiKey = app.config.geminiApiKey;
                   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-                  const promptEstatico = `Você é um assistente especializado exclusivamente em redigir atas de reunião profissionais, claras e objetivas.
-
-Seu único objetivo é transformar o texto transcrito/descrito de uma reunião em uma ata estruturada.
-
-REGRAS OBRIGATÓRIAS:
-1. Fonte única de informação: Use APENAS os dados fornecidos no texto colado. NÃO invente, deduza, adivinhe ou adicione nenhuma informação externa (sem alucinações).
-2. Linguagem: Use um tom profissional, direto e fácil de entender. É PROIBIDO usar termos arcaicos (como "outrossim", "doravante", "deliberou-se"), jargões difíceis ou palavras rebuscadas. Qualquer pessoa deve ler e compreender com facilidade.
-3. Informações ausentes: Se participantes, datas ou prazos não forem mencionados no texto fornecido, preencha o respectivo campo com "Não informado".
-4. Escopo estrito: Não dê conselhos, não faça comentários extras e não escreva saudações antes ou depois. Entregue apenas o modelo preenchido.
-
-ESTRUTURA DA ATA:
-
-**ATA DE REUNIÃO**
-
-* **Data e Horário:** [Inserir se mencionado, senão "Não informado"]
-* **Participantes:** [Nomes mencionados, senão "Não informado"]
-* **Objetivo da Reunião:** [Resumo em 1 ou 2 frases simples sobre o foco do encontro]
-
-**Principais Pontos Discutidos:**
-* [Item 1 em tópicos simples e claros]
-* [Item 2 em tópicos simples e claros]
-* [Item 3...]
-
-**Decisões Tomadas:**
-* [O que ficou decidido]
-
-**Próximos Passos e Tarefas:**
-* **O que fazer:** [Tarefa] | **Responsável:** [Nome] | **Prazo:** [Data/Prazo se houver]
-
----
-
-TEXTO DA REUNIÃO:
-${inputText}`;
+                  const promptAdmin = app.config.geminiPrompt || 'Crie uma ata profissional objetiva para a reunião abaixo:';
+                  
+                  // Une o Prompt Perfeito + o Texto Colado do Usuário
+                  const promptFinal = `${promptAdmin}\n\n--- INÍCIO DO TEXTO DA REUNIÃO ---\n${textoBruto}\n--- FIM DO TEXTO DA REUNIÃO ---`;
 
                     try {
                         const response = await fetch(endpoint, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                contents: [{ parts: [{ text: promptEstatico }] }]
+                                contents: [{ parts: [{ text: promptFinal }] }]
                             })
                         });
 
@@ -4053,6 +4029,12 @@ ${inputText}`;
                     // NOVO: Puxando a lista de operações dinamicamente
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     
+                    // Check de Inteligência Artificial
+                    const isIAConnected = !!(app.config && app.config.geminiApiKey);
+                    const iaBadge = isIAConnected 
+                        ? '<span class="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded text-[9px] font-bold ml-auto flex items-center gap-1 border border-green-200 dark:border-green-800/50 shadow-sm"><i class="fa-solid fa-link"></i> IA Conectada</span>' 
+                        : '<span class="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-1 rounded text-[9px] font-bold ml-auto flex items-center gap-1 border border-red-200 dark:border-red-800/50 shadow-sm"><i class="fa-solid fa-link-slash"></i> IA Desconectada</span>';
+
                     const html = `
                         <div class="mb-8 flex justify-between items-center">
                             <div>
@@ -4066,9 +4048,12 @@ ${inputText}`;
                             <!-- Bloco Assistente IA Gemini -->
                             <div class="mb-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/10 dark:to-indigo-900/10 rounded-3xl border border-purple-200 dark:border-purple-800/30 relative overflow-hidden shadow-inner">
                                 <div class="absolute -right-4 -top-4 text-9xl text-purple-500/10 pointer-events-none"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-                                <h4 class="font-black text-purple-700 dark:text-purple-400 text-sm uppercase tracking-wider mb-2 flex items-center gap-2 relative z-10">
-                                    <i class="fa-solid fa-robot"></i> Assistente IA (Gemini)
-                                </h4>
+                                <div class="flex justify-between items-center mb-2 relative z-10">
+                                    <h4 class="font-black text-purple-700 dark:text-purple-400 text-sm uppercase tracking-wider flex items-center gap-2">
+                                        <i class="fa-solid fa-robot"></i> Assistente IA (Gemini)
+                                    </h4>
+                                    ${iaBadge}
+                                </div>
                                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-4 relative z-10 leading-relaxed">
                                     Cole a transcrição ou anotações brutas do áudio da reunião abaixo. A inteligência artificial irá estruturar a ata conforme os padrões corporativos.
                                 </p>
@@ -4727,6 +4712,23 @@ ${inputText}`;
                             </tfoot>
                         </table>
                     </div>
+
+                    <!-- Integração Inteligência Artificial (Gemini) -->
+                    <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-purple-100 dark:border-slate-700">
+                        <h3 class="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-robot text-purple-500"></i> Integração Inteligência Artificial (Gemini)</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-5">Configure a API Key e o comportamento padrão da IA. Ao preencher a chave, o Assistente será ativado automaticamente para que todos os usuários possam gerar atas automatizadas.</p>
+                        <div class="grid grid-cols-1 gap-5">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Chave da API (Google AI Studio)</label>
+                                <input type="password" id="cfg-gemini-key" value="${app.config.geminiApiKey || ''}" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm font-mono" placeholder="AIzaSy...">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Prompt de Comando (Instrução Base)</label>
+                                <textarea id="cfg-gemini-prompt" rows="8" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm resize-y" placeholder="Digite como a IA deve se comportar. O texto da reunião será enviado logo abaixo desta instrução.">${app.config.geminiPrompt || 'Você é um assistente especializado exclusivamente em redigir atas de reunião profissionais, claras e objetivas.\\n\\nREGRAS OBRIGATÓRIAS:\\n1. Fonte única de informação: Use APENAS os dados fornecidos no texto.\\n2. Linguagem: Use um tom profissional e direto.\\n3. Escopo estrito: Não dê conselhos, entregue apenas o modelo preenchido.\\n\\nESTRUTURA DA ATA:\\n**Data e Horário:**\\n**Participantes:**\\n**Objetivo da Reunião:**\\n\\n**Principais Pontos Discutidos:**\\n- Ponto 1\\n- Ponto 2\\n\\n**Decisões e Próximos Passos:**\\n- Ação | Responsável | Prazo'}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mt-8 flex justify-end">
                         <button onclick="app.admin.saveConfig()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
                     </div>
@@ -7893,7 +7895,13 @@ ${inputText}`;
 
                     if (wTotal > 1.01 || wTotal < 0.99) return app.ui.showAlert("Erro Matemático", "A soma das frações deve resultar exatamente em 1.00 (100%). Ajuste os pesos e tente novamente.", "error");
 
-                    app.storage.saveConfig().then(() => app.ui.showAlert("Metas Salvas", "Nova arquitetura aplicada ao sistema com sucesso.", "success"));
+                    // Salvar Integração Gemini
+                    const geminiKeyEl = document.getElementById('cfg-gemini-key');
+                    const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
+                    if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
+                    if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
+
+                    app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
                 },
 
                 loadUserEditor() {
