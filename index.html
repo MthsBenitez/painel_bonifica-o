@@ -6408,20 +6408,38 @@
                 renderView_LaudosEstudos(container) {
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     
-                    // --- FUNÇÃO GERADORA DE CAIXINHAS (DESIGN PREMIUM) ---
+                    // --- FUNÇÃO GERADORA DE CAIXINHAS (DESIGN PREMIUM & PADRONIZADO) ---
                     const gerarCaixinhas = (nomeCampo, cor, opcoes) => {
                         let cClass = '';
-                        if(cor === 'blue') cClass = 'peer-checked:border-blue-500 peer-checked:bg-blue-50 dark:peer-checked:bg-blue-900/20 group-hover:text-blue-600 peer-checked:text-blue-700 dark:peer-checked:text-blue-400 hover:border-blue-300';
-                        if(cor === 'green') cClass = 'peer-checked:border-green-500 peer-checked:bg-green-50 dark:peer-checked:bg-green-900/20 group-hover:text-green-600 peer-checked:text-green-700 dark:peer-checked:text-green-400 hover:border-green-300';
-                        if(cor === 'orange') cClass = 'peer-checked:border-orange-500 peer-checked:bg-orange-50 dark:peer-checked:bg-orange-900/20 group-hover:text-orange-600 peer-checked:text-orange-700 dark:peer-checked:text-orange-400 hover:border-orange-300';
-                        if(cor === 'red') cClass = 'peer-checked:border-red-500 peer-checked:bg-red-50 dark:peer-checked:bg-red-900/20 group-hover:text-red-600 peer-checked:text-red-700 dark:peer-checked:text-red-400 hover:border-red-300';
-                        if(cor === 'purple') cClass = 'peer-checked:border-purple-500 peer-checked:bg-purple-50 dark:peer-checked:bg-purple-900/20 group-hover:text-purple-600 peer-checked:text-purple-700 dark:peer-checked:text-purple-400 hover:border-purple-300';
+                        let iconClass = 'text-slate-300 dark:text-slate-600 group-hover:scale-110 transition-transform duration-300 mb-2 text-2xl ';
+                        
+                        if(cor === 'blue') {
+                            cClass = 'peer-checked:border-blue-500 peer-checked:bg-blue-50 dark:peer-checked:bg-blue-900/20 group-hover:text-blue-600 peer-checked:text-blue-700 dark:peer-checked:text-blue-400 hover:border-blue-300';
+                            iconClass += 'peer-checked:text-blue-500';
+                        }
+                        if(cor === 'green') {
+                            cClass = 'peer-checked:border-green-500 peer-checked:bg-green-50 dark:peer-checked:bg-green-900/20 group-hover:text-green-600 peer-checked:text-green-700 dark:peer-checked:text-green-400 hover:border-green-300';
+                            iconClass += 'peer-checked:text-green-500';
+                        }
+                        if(cor === 'orange') {
+                            cClass = 'peer-checked:border-orange-500 peer-checked:bg-orange-50 dark:peer-checked:bg-orange-900/20 group-hover:text-orange-600 peer-checked:text-orange-700 dark:peer-checked:text-orange-400 hover:border-orange-300';
+                            iconClass += 'peer-checked:text-orange-500';
+                        }
+                        if(cor === 'red') {
+                            cClass = 'peer-checked:border-red-500 peer-checked:bg-red-50 dark:peer-checked:bg-red-900/20 group-hover:text-red-600 peer-checked:text-red-700 dark:peer-checked:text-red-400 hover:border-red-300';
+                            iconClass += 'peer-checked:text-red-500';
+                        }
+                        if(cor === 'purple') {
+                            cClass = 'peer-checked:border-purple-500 peer-checked:bg-purple-50 dark:peer-checked:bg-purple-900/20 group-hover:text-purple-600 peer-checked:text-purple-700 dark:peer-checked:text-purple-400 hover:border-purple-300';
+                            iconClass += 'peer-checked:text-purple-500';
+                        }
 
-                        return `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">` + opcoes.map(op => `
+                        // Força min-h-[95px] para manter todos do mesmo tamanho exato
+                        return `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3 mt-2">` + opcoes.map(op => `
                             <label class="cursor-pointer group h-full">
                                 <input type="radio" name="${nomeCampo}" value="${op.label}" class="peer sr-only" required>
-                                <div class="p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition-all text-center h-full flex flex-col items-center justify-center shadow-sm ${cClass}">
-                                    <span class="text-3xl mb-2 drop-shadow-sm transition-transform group-hover:scale-110">${op.emoji}</span>
+                                <div class="p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition-all text-center h-full min-h-[95px] flex flex-col items-center justify-center shadow-sm ${cClass}">
+                                    <i class="fa-solid ${op.icon} ${iconClass}"></i>
                                     <span class="text-[10px] font-black text-slate-600 dark:text-slate-400 leading-tight transition-colors">${op.label}</span>
                                 </div>
                             </label>
@@ -6467,18 +6485,26 @@
                                     <div class="bg-blue-50/30 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
                                         <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-bullseye text-blue-500 mr-1"></i> Origem do Problema *</label>
                                         ${gerarCaixinhas('laudo-origem', 'blue', [
-                                            { label: "Política da Empresa", emoji: "🏢" }, { label: "Comportamento Operador", emoji: "🗣️" },
-                                            { label: "Erro de Informação", emoji: "🧠" }, { label: "Falha de Sistema", emoji: "💻" },
-                                            { label: "Serviço/Produto", emoji: "📦" }, { label: "Reclamação Indevida", emoji: "🚫" }
+                                            { label: "Política da Empresa", icon: "fa-building" }, 
+                                            { label: "Comportamento Operador", icon: "fa-user-tie" },
+                                            { label: "Erro de Informação", icon: "fa-circle-info" }, 
+                                            { label: "Falha de Sistema", icon: "fa-desktop" },
+                                            { label: "Serviço/Produto", icon: "fa-box-open" }, 
+                                            { label: "Reclamação Indevida", icon: "fa-ban" },
+                                            { label: "Não se Aplica", icon: "fa-minus" }
                                         ])}
                                     </div>
 
                                     <div class="bg-orange-50/30 dark:bg-orange-900/10 p-5 rounded-2xl border border-orange-100 dark:border-orange-900/30">
                                         <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-user-gear text-orange-500 mr-1"></i> Habilidade do Operador *</label>
                                         ${gerarCaixinhas('laudo-habilidade', 'orange', [
-                                            { label: "Conforme (Sem erros)", emoji: "✅" }, { label: "Falha Empatia/Tom", emoji: "😒" },
-                                            { label: "Comunicação Confusa", emoji: "🗣️" }, { label: "Sem Escuta Ativa", emoji: "🙉" },
-                                            { label: "Baixa Proatividade", emoji: "🐢" }, { label: "Processo Incorreto", emoji: "❌" }
+                                            { label: "Conforme (Sem erros)", icon: "fa-circle-check" }, 
+                                            { label: "Falha Empatia/Tom", icon: "fa-face-frown" },
+                                            { label: "Comunicação Confusa", icon: "fa-comments" }, 
+                                            { label: "Sem Escuta Ativa", icon: "fa-ear-deaf" },
+                                            { label: "Baixa Proatividade", icon: "fa-hourglass-half" }, 
+                                            { label: "Processo Incorreto", icon: "fa-circle-xmark" },
+                                            { label: "Não se Aplica", icon: "fa-minus" }
                                         ])}
                                     </div>
 
@@ -6486,17 +6512,23 @@
                                         <div class="bg-green-50/30 dark:bg-green-900/10 p-5 rounded-2xl border border-green-100 dark:border-green-900/30">
                                             <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-headset text-green-500 mr-1"></i> Resolução (FCR) *</label>
                                             ${gerarCaixinhas('laudo-fcr', 'green', [
-                                                { label: "Sim (Resolvido)", emoji: "✨" }, { label: "Não - Erro Operador", emoji: "⚠️" },
-                                                { label: "Não - Backoffice", emoji: "⏳" }, { label: "Não - Sem dados", emoji: "📄" },
-                                                { label: "Não - Regra Contrato", emoji: "🔒" }, { label: "Não Se Aplica", emoji: "➖" }
+                                                { label: "Sim (Resolvido)", icon: "fa-wand-magic-sparkles" }, 
+                                                { label: "Não - Erro Operador", icon: "fa-triangle-exclamation" },
+                                                { label: "Não - Backoffice", icon: "fa-clock-rotate-left" }, 
+                                                { label: "Não - Sem dados", icon: "fa-file-circle-xmark" },
+                                                { label: "Não - Regra Contrato", icon: "fa-file-signature" }, 
+                                                { label: "Não Se Aplica", icon: "fa-minus" }
                                             ])}
                                         </div>
 
                                         <div class="bg-purple-50/30 dark:bg-purple-900/10 p-5 rounded-2xl border border-purple-100 dark:border-purple-900/30">
                                             <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-face-smile text-purple-500 mr-1"></i> Sentimento do Cliente *</label>
                                             ${gerarCaixinhas('laudo-sentimento', 'purple', [
-                                                { label: "Satisfeito", emoji: "😊" }, { label: "Neutro / Resignado", emoji: "😐" },
-                                                { label: "Irritado / Detrator", emoji: "😠" }, { label: "Ameaça Jurídica", emoji: "🤬" }
+                                                { label: "Satisfeito", icon: "fa-face-smile-beam" }, 
+                                                { label: "Neutro / Resignado", icon: "fa-face-meh" },
+                                                { label: "Irritado / Detrator", icon: "fa-face-angry" }, 
+                                                { label: "Ameaça Jurídica", icon: "fa-scale-unbalanced" },
+                                                { label: "Não se Aplica", icon: "fa-minus" }
                                             ])}
                                         </div>
                                     </div>
@@ -6505,16 +6537,21 @@
                                         <div class="bg-red-50/30 dark:bg-red-900/10 p-5 rounded-2xl border border-red-100 dark:border-red-900/30">
                                             <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-thumbs-down text-red-500 mr-1"></i> Procedência da Nota Baixa *</label>
                                             ${gerarCaixinhas('laudo-procedencia', 'red', [
-                                                { label: "Falha do Operador", emoji: "🎧" }, { label: "Falha da Empresa", emoji: "🏢" },
-                                                { label: "Improcedente", emoji: "🛡️" }, { label: "Não Se Aplica", emoji: "➖" }
+                                                { label: "Falha do Operador", icon: "fa-headset" }, 
+                                                { label: "Falha da Empresa", icon: "fa-building" },
+                                                { label: "Improcedente", icon: "fa-shield-halved" }, 
+                                                { label: "Não Se Aplica", icon: "fa-minus" }
                                             ])}
                                         </div>
 
                                         <div class="bg-slate-100/50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
                                             <label class="block text-sm font-black text-slate-700 dark:text-slate-200 uppercase mb-2"><i class="fa-solid fa-wrench text-slate-500 mr-1"></i> Ação Corretiva *</label>
                                             ${gerarCaixinhas('laudo-acao', 'blue', [
-                                                { label: "Feedback Pontual", emoji: "💬" }, { label: "Reciclagem", emoji: "📚" },
-                                                { label: "Ajuste de Base/FAQ", emoji: "📝" }, { label: "Chamado TI (Bug)", emoji: "🐛" }
+                                                { label: "Feedback Pontual", icon: "fa-message" }, 
+                                                { label: "Reciclagem", icon: "fa-book-open" },
+                                                { label: "Ajuste de Base/FAQ", icon: "fa-file-pen" }, 
+                                                { label: "Chamado TI (Bug)", icon: "fa-bug" },
+                                                { label: "Não se Aplica", icon: "fa-minus" }
                                             ])}
                                         </div>
                                     </div>
