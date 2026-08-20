@@ -7874,26 +7874,38 @@
                     app.storage.saveUsers().then(() => { app.ui.renderTab('gestao_equipe', true); app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); });
                 },
 
-                updateConfigPreview() {
+                saveConfig() {
+                    // 1. Prioridade: Salvar Configurações Gerais e Integração Gemini PRIMEIRO
+                    const baseEl = document.getElementById('cfg-base');
+                    if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
+
+                    const geminiKeyEl = document.getElementById('cfg-gemini-key');
+                    const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
+                    if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
+                    if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
+                    
+                    // 2. Validação Matemática das Metas (Pesos)
                     let wTotal = 0;
-                    app.config.goals.forEach((g, i) => {
-                        const tEl = document.getElementById(`cfg-t-${i}`);
-                        const wEl = document.getElementById(`cfg-w-${i}`);
-                        if(tEl) g.title = tEl.value;
-                        if(wEl) {
-                            g.weight = parseFloat(wEl.value) || 0;
-                            document.getElementById(`cfg-p-${i}`).textContent = (g.weight * 100).toFixed(0) + '%';
+                    let hasGoals = app.config.goals && app.config.goals.length > 0;
+                    
+                    if (hasGoals) {
+                        app.config.goals.forEach((g, i) => {
+                            const tEl = document.getElementById(`cfg-t-${i}`);
+                            const wEl = document.getElementById(`cfg-w-${i}`);
+                            if(tEl) g.title = tEl.value;
+                            if(wEl) g.weight = parseFloat(wEl.value) || 0;
                             wTotal += g.weight;
+                        });
+
+                        if (wTotal > 1.01 || wTotal < 0.99) {
+                            // Salva a Chave da IA no banco, mas avisa sobre as metas estarem erradas
+                            app.storage.saveConfig();
+                            return app.ui.showAlert("Chave IA Salva - Erro nas Metas", "A Chave da Inteligência Artificial foi salva com sucesso! Porém, a soma das frações das metas não dá 100%. Ajuste os pesos e salve novamente.", "error");
                         }
-                    });
-                    const tW = document.getElementById('cfg-total-w');
-                    const tP = document.getElementById('cfg-total-p');
-                    if(tW) tW.textContent = wTotal.toFixed(2);
-                    if(tP) tP.textContent = (wTotal * 100).toFixed(0) + '%';
-                    if(tP) {
-                        tP.classList.remove('text-green-600','text-red-500');
-                        if (wTotal > 1.01 || wTotal < 0.99) tP.classList.add('text-red-500'); else tP.classList.add('text-green-600');
                     }
+
+                    // 3. Salva tudo com sucesso se a matemática estiver correta ou não houver metas
+                    app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
                 },
 
                 saveConfig() {
