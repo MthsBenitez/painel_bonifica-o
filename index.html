@@ -2217,72 +2217,87 @@
               },
 
               async gerarComIA() {
-                  // Trava Inicial de Segurança
-                  if (!app.config || !app.config.geminiApiKey) {
-                      return app.ui.showAlert("IA Desconectada", "A integração com a Inteligência Artificial não foi configurada. O Administrador precisa inserir a chave da API nas Configurações do Sistema.", "error");
+              if (!app.config || !app.config.geminiApiKey) {
+                  return app.ui.showAlert("IA Desconectada", "A integração com a Inteligência Artificial não foi configurada. O Administrador precisa inserir a chave da API nas Configurações do Sistema.", "error");
+              }
+
+              const inputEl = document.getElementById('ata-ia-input');
+              const campoFortes = document.getElementById('ata-fortes');
+              const btn = document.getElementById('btn-ia-gerar');
+              const textoBruto = inputEl ? inputEl.value.trim() : '';
+
+              if (!textoBruto) {
+                  return app.ui.showAlert("Aviso", "Cole o texto descritivo da reunião no campo da IA antes de gerar.", "error");
+              }
+
+              btn.disabled = true;
+              btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando com IA...';
+
+              // Remove possíveis espaços em branco acidentais da chave API
+              const apiKey = app.config.geminiApiKey.trim();
+              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+              const promptAdmin = app.config.geminiPrompt || 'Crie uma ata profissional objetiva para a reunião abaixo:';
+              const promptFinal = `${promptAdmin}\n\n--- INÍCIO DO TEXTO DA REUNIÃO ---\n${textoBruto}\n--- FIM DO TEXTO DA REUNIÃO ---`;
+
+              try {
+                  const response = await fetch(endpoint, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          contents: [{ parts: [{ text: promptFinal }] }],
+                          // Relaxando os filtros de segurança para evitar falsos positivos em contextos de negócios
+                          safetySettings: [
+                              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                          ]
+                      })
+                  });
+
+                  const data = await response.json();
+
+                  // Se o Google recusar, extraímos a mensagem exata do erro
+                  if (!response.ok) {
+                      throw new Error(data.error ? data.error.message : `Erro HTTP: ${response.status}`);
                   }
 
-                  const inputEl = document.getElementById('ata-ia-input');
-                  const outputEl = document.getElementById('ata-fortes');
-                  const btn = document.getElementById('btn-ia-gerar');
-                  const textoBruto = inputEl ? inputEl.value.trim() : '';
-
-                  if (!textoBruto) {
-                      return app.ui.showAlert("Aviso", "Cole o texto descritivo da reunião no campo da IA antes de gerar.", "error");
+                  // Se o Google bloqueou por segurança mesmo com os filtros relaxados
+                  if (data.promptFeedback && data.promptFeedback.blockReason) {
+                      throw new Error(`O texto foi bloqueado pelas políticas do Google. Motivo: ${data.promptFeedback.blockReason}`);
                   }
 
-                  const originalBtnContent = btn.innerHTML;
-                  btn.disabled = true;
-                  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando com IA...';
+                  // Extraindo a resposta com segurança
+                  if (data.candidates && data.candidates.length > 0) {
+                      const candidate = data.candidates[0];
 
-                  // Recupera de forma dinâmica as configurações do painel ADM
-                  const apiKey = app.config.geminiApiKey;
-                  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                      if (candidate.finishReason !== 'STOP') {
+                           throw new Error(`Geração incompleta. Motivo da interrupção: ${candidate.finishReason}`);
+                      }
 
-                  const promptAdmin = app.config.geminiPrompt || 'Crie uma ata profissional objetiva para a reunião abaixo:';
-                  
-                  // Une o Prompt Perfeito + o Texto Colado do Usuário
-                  const promptFinal = `${promptAdmin}\n\n--- INÍCIO DO TEXTO DA REUNIÃO ---\n${textoBruto}\n--- FIM DO TEXTO DA REUNIÃO ---`;
+                      if (candidate.content && candidate.content.parts && candidate.content.parts[0].text) {
+                          campoFortes.value = candidate.content.parts[0].text;
 
-                    try {
-                        const response = await fetch(endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{ parts: [{ text: promptFinal }] }]
-                            })
-                        });
+                          if (typeof autosize !== 'undefined') autosize.update(campoFortes);
+                          campoFortes.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-                        const data = await response.json();
-                        
-                        if (data.candidates && data.candidates[0].content.parts[0].text) {
-                            const textGerado = data.candidates[0].content.parts[0].text;
-                            
-                            // Injeta o texto lindamente gerado no campo de Pontos Discutidos
-                            const campoFortes = document.getElementById('ata-fortes');
-                            campoFortes.value = textGerado;
-                            
-                            // Expande a caixa de texto se a biblioteca autosize estiver carregada
-                            if (typeof autosize !== 'undefined') autosize.update(campoFortes);
-                            
-                            // Rola a tela suavemente para o resultado
-                            campoFortes.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            
-                            app.ui.showAlert("Ata Gerada com Sucesso!", "A Inteligência Artificial processou o texto e preencheu o campo de Pontos Discutidos com o escopo da ata. Verifique se precisa de ajustes, preencha o cabeçalho e salve!", "success");
-                        } else {
-                            throw new Error("Formato de resposta inesperado da API.");
-                        }
-                    } catch (error) {
-                        console.error("Erro API Gemini:", error);
-                        app.ui.showAlert("Erro na IA", "Não foi possível gerar a ata. Verifique se a sua chave de API é válida e se você tem conexão com a internet.", "error");
-                    } finally {
-                        btn.disabled = false;
-                        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
-                    }
-                },
-            }, // <-- ESTA CHAVE E VÍRGULA ESTAVAM FALTANDO PARA FECHAR O BLOCO "ata"
+                          app.ui.showAlert("Ata Gerada com Sucesso!", "A Inteligência Artificial processou o texto e preencheu o campo de Pontos Discutidos. Verifique os dados, preencha o cabeçalho e salve!", "success");
+                      } else {
+                          throw new Error("A API retornou sucesso, mas o texto veio vazio.");
+                      }
+                  } else {
+                      throw new Error("Formato de resposta inesperado da API.");
+                  }
+              } catch (error) {
+                  console.error("Erro API Gemini:", error);
+                  // Agora o alerta exibe o erro REAL para ajudar no diagnóstico
+                  app.ui.showAlert("Falha na Comunicação", `Não foi possível gerar a ata.<br><br><b>Motivo:</b> ${error.message}<br><br>Verifique se a Chave da API nas configurações está correta e válida.`, "error");
+              } finally {
+                  btn.disabled = false;
+                  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
+              }
+          },
 
             calendar: {
                 viewEvent(id) {
