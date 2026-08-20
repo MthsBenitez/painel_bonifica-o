@@ -2298,9 +2298,10 @@
                   btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
               }
           }
+        }, // <--- CORREÇÃO: Fechando a gaveta 'ata' e separando com vírgula!
 
-            calendar: {
-                viewEvent(id) {
+        calendar: {
+            viewEvent(id) {
                     const evt = app.eventsList[id];
                     if(!evt) return;
                     document.getElementById('ve-tipo').textContent = evt.tipo === 'pessoal' ? 'Controle Diário' : 'Evento de Operação';
