@@ -6982,12 +6982,17 @@
                     
                     app.storage.saveLaudos().then(() => {
                         app.ui.showAlert("Laudo Concluído", "Diagnóstico salvo com sucesso no banco de dados.", "success");
-                        // Reset
+                        // CORREÇÃO: Reset seguro separando campos de texto dos botões de seleção
                         document.getElementById('laudo-id').value = '';
-                        document.querySelectorAll('input[name="laudo-resp"]').forEach(r => r.checked = false);
-                        ['nome-op', 'tema', 'motivo', 'origem', 'habilidade', 'fcr', 'sentimento', 'procedencia', 'acao', 'obs'].forEach(campo => {
-                            document.getElementById('laudo-'+campo).value = '';
-                        });
+                        document.getElementById('laudo-nome-op').value = '';
+                        document.getElementById('laudo-op').value = '';
+                        document.getElementById('laudo-tema').value = '';
+                        document.getElementById('laudo-motivo').value = '';
+                        document.getElementById('laudo-obs').value = '';
+                        
+                        // Desmarca todas as caixinhas e opções (Radio Buttons)
+                        document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+                        
                         app.ui.renderLaudosHistory();
                     });
 
@@ -7875,43 +7880,16 @@
                 },
 
                 saveConfig() {
-                    // 1. Prioridade: Salvar Configurações Gerais e Integração Gemini PRIMEIRO
                     const baseEl = document.getElementById('cfg-base');
                     if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
-
+                    
+                    // CORREÇÃO: Salvar Integração Gemini ANTES da validação matemática das metas
                     const geminiKeyEl = document.getElementById('cfg-gemini-key');
                     const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
                     if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
                     if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
-                    
-                    // 2. Validação Matemática das Metas (Pesos)
-                    let wTotal = 0;
-                    let hasGoals = app.config.goals && app.config.goals.length > 0;
-                    
-                    if (hasGoals) {
-                        app.config.goals.forEach((g, i) => {
-                            const tEl = document.getElementById(`cfg-t-${i}`);
-                            const wEl = document.getElementById(`cfg-w-${i}`);
-                            if(tEl) g.title = tEl.value;
-                            if(wEl) g.weight = parseFloat(wEl.value) || 0;
-                            wTotal += g.weight;
-                        });
 
-                        if (wTotal > 1.01 || wTotal < 0.99) {
-                            // Salva a Chave da IA no banco, mas avisa sobre as metas estarem erradas
-                            app.storage.saveConfig();
-                            return app.ui.showAlert("Chave IA Salva - Erro nas Metas", "A Chave da Inteligência Artificial foi salva com sucesso! Porém, a soma das frações das metas não dá 100%. Ajuste os pesos e salve novamente.", "error");
-                        }
-                    }
-
-                    // 3. Salva tudo com sucesso se a matemática estiver correta ou não houver metas
-                    app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
-                },
-
-                saveConfig() {
-                    const baseEl = document.getElementById('cfg-base');
-                    if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
-                    
+                    // Validar Matemática das Metas
                     let wTotal = 0;
                     app.config.goals.forEach((g, i) => {
                         const tEl = document.getElementById(`cfg-t-${i}`);
@@ -7921,13 +7899,10 @@
                         wTotal += g.weight;
                     });
 
-                    if (wTotal > 1.01 || wTotal < 0.99) return app.ui.showAlert("Erro Matemático", "A soma das frações deve resultar exatamente em 1.00 (100%). Ajuste os pesos e tente novamente.", "error");
-
-                    // Salvar Integração Gemini
-                    const geminiKeyEl = document.getElementById('cfg-gemini-key');
-                    const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
-                    if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
-                    if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
+                    if (wTotal > 1.01 || wTotal < 0.99) {
+                        app.storage.saveConfig(); // Salva a chave da IA no banco mesmo se a matemática estiver errada
+                        return app.ui.showAlert("Chave Salva! Porém, Erro Matemático", "Sua Chave de IA foi salva, mas a soma das frações das metas deve resultar exatamente em 1.00 (100%). Ajuste os pesos.", "error");
+                    }
 
                     app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
                 },
