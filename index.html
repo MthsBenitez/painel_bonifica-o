@@ -1015,6 +1015,9 @@
                             if (data.config) {
                                 app.config = data.config;
                                 
+                                // CORREÇÃO: Previne o erro "Ops! Algo quebrou" se as metas estiverem vazias
+                                if (!app.config.goals) app.config.goals = [];
+                                
                                 // Correções dinâmicas de migração do banco
                                 const g3 = app.config.goals.find(g => g.id === 'g3');
                                 if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
@@ -2216,12 +2219,7 @@
                   XLSX.writeFile(workbook, `Gestao_Atas_${new Date().toISOString().split('T')[0]}.xlsx`);
               },
 
-              async gerarComIA() {
-              if (!app.config || !app.config.geminiApiKey) {
-                  return app.ui.showAlert("IA Desconectada", "A integração com a Inteligência Artificial não foi configurada. O Administrador precisa inserir a chave da API nas Configurações do Sistema.", "error");
-              }
-
-              const inputEl = document.getElementById('ata-ia-input');
+              sync gerarComIA() {
               const campoFortes = document.getElementById('ata-fortes');
               const btn = document.getElementById('btn-ia-gerar');
               const textoBruto = inputEl ? inputEl.value.trim() : '';
@@ -7883,13 +7881,6 @@
                     const baseEl = document.getElementById('cfg-base');
                     if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
                     
-                    // CORREÇÃO: Salvar Integração Gemini ANTES da validação matemática das metas
-                    const geminiKeyEl = document.getElementById('cfg-gemini-key');
-                    const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
-                    if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
-                    if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
-
-                    // Validar Matemática das Metas
                     let wTotal = 0;
                     app.config.goals.forEach((g, i) => {
                         const tEl = document.getElementById(`cfg-t-${i}`);
@@ -7899,10 +7890,13 @@
                         wTotal += g.weight;
                     });
 
-                    if (wTotal > 1.01 || wTotal < 0.99) {
-                        app.storage.saveConfig(); // Salva a chave da IA no banco mesmo se a matemática estiver errada
-                        return app.ui.showAlert("Chave Salva! Porém, Erro Matemático", "Sua Chave de IA foi salva, mas a soma das frações das metas deve resultar exatamente em 1.00 (100%). Ajuste os pesos.", "error");
-                    }
+                    if (wTotal > 1.01 || wTotal < 0.99) return app.ui.showAlert("Erro Matemático", "A soma das frações deve resultar exatamente em 1.00 (100%). Ajuste os pesos e tente novamente.", "error");
+
+                    // Salvar Integração Gemini
+                    const geminiKeyEl = document.getElementById('cfg-gemini-key');
+                    const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
+                    if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
+                    if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
 
                     app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
                 },
