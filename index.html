@@ -238,8 +238,24 @@
             color: #94a3b8 !important; /* text-slate-400 */
         }
         
+    /* Classe para os futuros botões magnéticos */
+        .magnetic-btn { display: inline-block; transform-style: preserve-3d; }
+        
+        /* CSS Obrigatório do Lenis (Scroll Suave) */
+        html.lenis { height: auto; }
+        .lenis.lenis-smooth { scroll-behavior: auto; }
+        .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+        .lenis.lenis-stopped { overflow: hidden; }
+        .lenis.lenis-scrolling iframe { pointer-events: none; }
     </style>
+
+    <!-- Bibliotecas Premium UX/UI -->
+    <script src="https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.29/bundled/lenis.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/autosize.js/6.0.1/autosize.min.js"></script>
+    <!-- GSAP (Usaremos no próximo passo para animações complexas) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
+    
 <body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
 
     <!-- Efeito Mágico Tela Inteira (Ativado ao bater 100% em tudo) -->
@@ -2932,6 +2948,9 @@
                     }
                     
                     viewDiv.classList.remove('hidden');
+
+                    // Dispara a magia do UX sempre que a tela carrega (com leve atraso para o DOM respirar)
+                    setTimeout(() => this.applyPremiumUX(), 100);
                 },
 
                 renderView_ValidarAcoes(container) {
@@ -6466,6 +6485,33 @@
                     }
                     container.innerHTML = html;
                 },
+
+                applyPremiumUX() {
+                    // 1. Textareas Auto-expansíveis (Autosize)
+                    if (typeof autosize !== 'undefined') {
+                        autosize(document.querySelectorAll('textarea'));
+                    }
+
+                    // 2. Salva-Vidas (Rascunho em LocalStorage)
+                    document.querySelectorAll('textarea, input[type="text"]').forEach(el => {
+                        // Ignora campos sem ID, campos de filtro, ou somente leitura
+                        if(!el.id || el.id.includes('filtro') || el.readOnly) return;
+                        
+                        const draftKey = 'draft_ux_' + el.id;
+                        
+                        // Recupera o rascunho se existir e o campo estiver vazio
+                        const savedDraft = localStorage.getItem(draftKey);
+                        if(savedDraft && !el.value) {
+                            el.value = savedDraft;
+                            if (typeof autosize !== 'undefined') autosize.update(el); // Reajusta a caixa
+                        }
+                        
+                        // Salva o texto magicamente a cada tecla digitada
+                        el.addEventListener('input', () => {
+                            localStorage.setItem(draftKey, el.value);
+                        });
+                    });
+                }
                 
             }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
 
@@ -8148,10 +8194,28 @@
             }; // Feche o objeto app aqui com ponto e vírgula
 
         // ==========================================
-        // BOOT DO APLICATIVO
+        // BOOT DO APLICATIVO E UX PREMIUM
         // ==========================================
         document.addEventListener('DOMContentLoaded', () => { 
             app.ui.init(); 
+
+            // Ligando o Motor do Scroll Amanteigado (Lenis)
+            if (typeof Lenis !== 'undefined') {
+                const lenis = new Lenis({
+                    duration: 1.2,
+                    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+                    direction: 'vertical',
+                    gestureDirection: 'vertical',
+                    smooth: true,
+                    smoothTouch: false,
+                });
+
+                function raf(time) {
+                    lenis.raf(time);
+                    requestAnimationFrame(raf);
+                }
+                requestAnimationFrame(raf);
+            }
         });
     </script>
 </body>
