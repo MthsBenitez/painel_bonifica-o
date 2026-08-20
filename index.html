@@ -362,6 +362,20 @@
         </div>
     </div>
 
+    <!-- Modal Command Palette (Busca Rápida) -->
+    <div id="command-palette-modal" class="fixed inset-0 z-[100] hidden flex items-start justify-center pt-[15vh] bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" onclick="if(event.target === this) this.classList.add('hidden')">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-2xl mx-4 border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col animate-fade-in transform scale-100">
+            <div class="flex items-center px-5 py-4 border-b border-slate-100 dark:border-slate-700">
+                <i class="fa-solid fa-magnifying-glass text-blue-500 text-xl"></i>
+                <input type="text" id="command-input" class="w-full bg-transparent border-none outline-none px-4 text-slate-700 dark:text-white placeholder-slate-400 text-lg" placeholder="Para onde vamos? (Ex: 'Atas', 'Painel')" onkeyup="app.ui.filterCommands(this.value)" autocomplete="off">
+                <span class="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700">ESC</span>
+            </div>
+            <div id="command-results" class="max-h-80 overflow-y-auto custom-scrollbar p-3 space-y-1">
+                <!-- Resultados injetados via JS -->
+            </div>
+        </div>
+    </div>
+
 <!-- Modal de Troca de Senha -->
     <div id="pwd-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
@@ -2666,6 +2680,44 @@
 
                 openPwdModal() { document.getElementById('new-password-input').value = ''; document.getElementById('pwd-modal').classList.remove('hidden'); },
                 closePwdModal() { document.getElementById('pwd-modal').classList.add('hidden'); },
+
+                // --- COMMAND PALETTE (BUSCA RÁPIDA) ---
+                openCommandPalette() {
+                    const modal = document.getElementById('command-palette-modal');
+                    modal.classList.remove('hidden');
+                    document.getElementById('command-input').value = '';
+                    this.filterCommands('');
+                    setTimeout(() => document.getElementById('command-input').focus(), 100);
+                },
+                closeCommandPalette() {
+                    document.getElementById('command-palette-modal').classList.add('hidden');
+                },
+                filterCommands(query) {
+                    const term = query.toLowerCase();
+                    const container = document.getElementById('command-results');
+                    const abas = this.getAllSystemTabs();
+                    
+                    // Filtra pelo termo digitado
+                    let filtered = abas.filter(tab => tab.label.toLowerCase().includes(term));
+                    
+                    // Respeita as permissões do usuário se não for admin
+                    if(!app.isAdmin && app.currentUser && app.currentUser.abasLiberadas) {
+                        filtered = filtered.filter(tab => app.currentUser.abasLiberadas.includes(tab.id) || tab.isDefault);
+                    }
+
+                    if(filtered.length === 0) {
+                        container.innerHTML = `<div class="p-8 text-center text-slate-400 flex flex-col items-center"><i class="fa-solid fa-ghost text-4xl mb-3 opacity-50"></i><p class="text-sm font-medium">Nenhum atalho encontrado para "${query}"</p></div>`;
+                        return;
+                    }
+
+                    container.innerHTML = filtered.map(tab => `
+                        <button onclick="app.ui.renderTab('${tab.id}', true); app.ui.closeCommandPalette();" class="w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-4 group border border-transparent hover:border-blue-100 dark:hover:border-blue-800/50">
+                            <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 group-hover:bg-white dark:group-hover:bg-slate-900 flex items-center justify-center text-slate-400 group-hover:text-blue-500 shadow-sm transition-colors"><i class="fa-solid fa-arrow-right"></i></div>
+                            <div class="font-semibold text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">${tab.label.replace(' (ADM)', '')}</div>
+                            ${tab.label.includes('(ADM)') ? `<span class="ml-auto text-[9px] bg-purple-100 text-purple-600 px-2 py-1 rounded font-bold shadow-sm">ADM</span>` : ''}
+                        </button>
+                    `).join('');
+                },
                 
                 showPointsAnimation(eqName, pts) {
                     const div = document.createElement('div');
@@ -5168,7 +5220,19 @@
                     `;
 
                     if(atas.length === 0) {
-                        html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Você ainda não registrou nenhuma ata.</div>`;
+                        html += `
+                            <div class="col-span-1 lg:col-span-2 p-12 text-center glass-card rounded-3xl border-dashed border-2 border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center min-h-[350px]">
+                                <div class="w-24 h-24 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-6 shadow-inner relative">
+                                    <div class="absolute inset-0 rounded-full border-4 border-blue-100 dark:border-blue-800 animate-ping opacity-20"></div>
+                                    <i class="fa-solid fa-folder-open text-4xl text-blue-400 dark:text-blue-500 animate-bounce"></i>
+                                </div>
+                                <h3 class="text-xl font-extrabold text-slate-700 dark:text-slate-200 mb-2">Sua mesa está limpa!</h3>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mb-6 leading-relaxed">Você ainda não possui nenhum registro. Que tal começar documentando sua próxima reunião ou calibração?</p>
+                                <button onclick="app.ui.renderTab('ata_reuniao', true)" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-transform hover:-translate-y-1 flex items-center gap-2">
+                                    <i class="fa-solid fa-plus"></i> Criar Minha Primeira Ata
+                                </button>
+                            </div>
+                        `;
                     } else {
                         atas.forEach(ata => {
                             const isDevolvido = ata.status === 'devolvido';
@@ -8235,6 +8299,18 @@
         // BOOT DO APLICATIVO E UX PREMIUM
         // ==========================================
         document.addEventListener('DOMContentLoaded', () => { 
+
+            // Atalho Ctrl+K ou Cmd+K para a Command Palette
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                    e.preventDefault();
+                    app.ui.openCommandPalette();
+                }
+                if (e.key === 'Escape') {
+                    app.ui.closeCommandPalette();
+                }
+            });
+            
             app.ui.init(); 
 
             // Ligando o Motor do Scroll Amanteigado (Lenis)
