@@ -1398,7 +1398,7 @@
                 editAction(id) {
                     const act = app.actionsList[id];
                     if(!act) return;
-                    document.getElementById('act-edit-id').value = '';
+                    document.getElementById('act-edit-id').value = id; // CORREÇÃO: Mantém o ID original para sobrescrever a ação!
                     document.getElementById('act-data').value = act.dataAcao;
                     document.getElementById('act-codigo').value = act.codigoOpe;
                     document.getElementById('act-objetivo').value = act.objetivo;
@@ -2768,6 +2768,18 @@
                 // ------------------------------------------------------------
                 valuesHidden: false,
                 timerInterval: null,
+                
+                // CORREÇÃO: Função auxiliar para filtrar pendentes de forma segura
+                filterPendingRows(className, showOnlyPending) {
+                    document.querySelectorAll('.' + className).forEach(el => {
+                        if (showOnlyPending) {
+                            el.style.display = el.classList.contains('fb-pendente') ? '' : 'none';
+                        } else {
+                            el.style.display = '';
+                        }
+                    });
+                },
+
                 toggleFinanceVisibility() {
                     this.valuesHidden = !this.valuesHidden;
                     this.renderTab('meu_painel', true);
@@ -6001,8 +6013,8 @@
                                         <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                                             <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
                                             <div class="flex gap-2">
-                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display='')" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
-                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display=el.classList.contains('fb-pendente')?'':'none')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                                <button onclick="app.ui.filterPendingRows('linha-bruta', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
+                                            <button onclick="app.ui.filterPendingRows('linha-bruta', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
                                             </div>
                                         </div>
                                         <div class="overflow-x-auto max-h-[400px] custom-scrollbar">
@@ -6226,8 +6238,8 @@
                                         <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                                             <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
                                             <div class="flex gap-2">
-                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display='')" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
-                                                <button onclick="document.querySelectorAll('.linha-bruta-user').forEach(el => el.style.display=el.classList.contains('fb-pendente')?'':'none')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
+                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
                                             </div>
                                         </div>
                                         <div class="overflow-x-auto max-h-[400px] custom-scrollbar">
@@ -6905,6 +6917,11 @@
                 },
 
                 applyPremiumUX() {
+                    // CORREÇÃO: Avisa ao Lenis para não "roubar" a rolagem do mouse nas listas internas
+                    document.querySelectorAll('.overflow-y-auto, .overflow-x-auto, .custom-scrollbar').forEach(el => {
+                        el.setAttribute('data-lenis-prevent', 'true');
+                    });
+
                     // 1. Textareas Auto-expansíveis (Autosize)
                     if (typeof autosize !== 'undefined') {
                         autosize(document.querySelectorAll('textarea'));
