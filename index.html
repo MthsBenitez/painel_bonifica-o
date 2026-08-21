@@ -6013,8 +6013,8 @@
                                         <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                                             <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
                                             <div class="flex gap-2">
-                                                <button onclick="app.ui.filterPendingRows('linha-bruta', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
-                                            <button onclick="app.ui.filterPendingRows('linha-bruta', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
+                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
                                             </div>
                                         </div>
                                         <div class="overflow-x-auto max-h-[400px] custom-scrollbar">
@@ -6056,10 +6056,9 @@
 
                 renderView_RankingMonitorias(container) {
                     const state = app.monitoriasData || {};
-                    const rankingArray = state.ranking || []; // CORREÇÃO: Garante o Array Seguro
+                    const rankingArray = state.ranking || []; 
                     const userMatricula = app.currentUser ? app.currentUser.matricula : '';
                     
-                    // Busca sem causar crash
                     const myData = rankingArray.find(r => r.matricula === userMatricula);
 
                     let html = `
@@ -6076,7 +6075,7 @@
                     }
 
                     const wd = app.utils.getWorkingDays(app.currentMonth);
-                    const meta = 400; // Meta padrão estabelecida pela qualidade
+                    const meta = 400; 
                     
                     const diasPassadosEfetivos = Math.max(1, wd.passed - 1);
                     const diasRestantes = Math.max(1, wd.total - diasPassadosEfetivos);
@@ -6096,7 +6095,6 @@
                     else if (pct >= 80) { quadrante = "Q3 (Regular)"; quadColor = "text-orange-500"; }
                     else if (pct >= 70) { quadrante = "Q4 (Atenção)"; quadColor = "text-amber-500"; }
 
-                    // Calcular ganho financeiro real projetado
                     const myResults = app.currentUser.results && app.currentUser.results[app.currentMonth] ? app.currentUser.results[app.currentMonth] : {};
                     const financeData = app.calc.getGoalResult('g1', { ...myResults, g1: { meta: 400, real: myData.total } });
                     const valorDinheiro = financeData.received.toFixed(2).replace('.', ',');
@@ -6147,7 +6145,6 @@
                         const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
                         
                         if (minhasLinhas.length > 0) {
-                            // --- Cálculo do Cruzamento Analítico para o Usuário ---
                             const operadoresDesteMonitor = [...new Set(minhasLinhas.map(l => l.operador))];
                             let userColaboradoresData = [];
                             let somaMinhasNotas = 0;
@@ -6175,7 +6172,6 @@
 
                             const userMediaGeral = countMinhasNotas > 0 ? (somaMinhasNotas / countMinhasNotas).toFixed(1) : 0;
 
-                            // Ordena da menor média total para a maior
                             userColaboradoresData.sort((a, b) => {
                                 let valA = a.mediaTotal === '-' ? 1000 : parseFloat(a.mediaTotal);
                                 let valB = b.mediaTotal === '-' ? 1000 : parseFloat(b.mediaTotal);
@@ -6197,14 +6193,12 @@
                                     </h3>
                                     
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
-                                        <!-- Card Média -->
                                         <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
                                             <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Minha Média Aplicada (Mês)</div>
                                             <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${userMediaGeral}</div>
                                             <p class="text-xs text-slate-500">Média geral das ${countMinhasNotas} notas aplicadas por você.</p>
                                         </div>
-                    
-                                        <!-- Cruzamento -->
+
                                         <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform max-h-48 overflow-y-auto custom-scrollbar">
                                             <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento (Você x Outros Monitores)</div>
                                             <div class="space-y-4">
@@ -6233,7 +6227,6 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Tabela de Lidas User (CORRIGIDA AQUI) -->
                                     <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
                                         <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                                             <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
@@ -6278,7 +6271,6 @@
 
                     container.innerHTML = html;
                     
-                    // Injeção da Animação
                     setTimeout(() => {
                         const bar = document.getElementById(`anim-prog-bar-${userMatricula}`);
                         const text = document.getElementById(`anim-prog-text-${userMatricula}`);
