@@ -7079,7 +7079,13 @@
                     let opsArray = Object.values(operadoresMap);
                     
                     opsArray.forEach(o => {
-                        o.pct = o.realizadas > 0 ? (((o.escuta + o.novasCanc) / o.realizadas) * 100) : 0;
+                        // Trava: Se a Escuta (Validada) for 0, a porcentagem fica zerada, 
+                        // ignorando as canceladas para não gerar falso positivo.
+                        if (o.escuta === 0) {
+                            o.pct = 0;
+                        } else {
+                            o.pct = o.realizadas > 0 ? (((o.escuta + o.novasCanc) / o.realizadas) * 100) : 0;
+                        }
                     });
 
                     opsArray.sort((a, b) => {
@@ -7383,7 +7389,10 @@
                     });
 
                     const rows = Object.values(operadoresMap).map(o => {
-                        const pct = o.realizadas > 0 ? (((o.escuta + o.novasCanc) / o.realizadas) * 100).toFixed(2) : 0;
+                        let pct = 0;
+                        if (o.escuta > 0 && o.realizadas > 0) {
+                            pct = (((o.escuta + o.novasCanc) / o.realizadas) * 100).toFixed(2);
+                        }
                         return {
                             "Operador": o.nome,
                             "Total Realizadas": o.realizadas,
