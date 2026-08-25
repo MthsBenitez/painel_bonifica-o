@@ -2739,7 +2739,7 @@
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Auditoria Laudos'}, {id:'calibragem_audio', label:'Lab. de Áudio'}] },
-                    { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
+                    { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -3257,6 +3257,7 @@
                             else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);
                             else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);
                             else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
+                            else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                         }, 400); // Fim do atraso do Skeleton
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
@@ -6908,6 +6909,175 @@
                     container.innerHTML = html;
                 },
 
+                renderView_PesquisasAnatel(container) {
+                    if(!app.isAdmin) return;
+                    
+                    if(!app.anatelData) app.anatelData = { registros: [] };
+                    const reg = app.anatelData.registros;
+                    
+                    let totalRealizadas = 0;
+                    let totalEscuta = 0;
+                    let totalCancFor = 0;
+                    let totalCancCq = 0;
+                    
+                    const operadoresMap = {};
+                    const campanhasMap = {};
+                    
+                    reg.forEach(r => {
+                        totalRealizadas += r.realizadas;
+                        totalEscuta += r.escuta;
+                        totalCancFor += r.cancFor;
+                        totalCancCq += r.cancCq;
+                        
+                        if(!operadoresMap[r.entrevistador]) {
+                            operadoresMap[r.entrevistador] = { nome: r.entrevistador, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0 };
+                        }
+                        operadoresMap[r.entrevistador].realizadas += r.realizadas;
+                        operadoresMap[r.entrevistador].escuta += r.escuta;
+                        operadoresMap[r.entrevistador].cancFor += r.cancFor;
+                        operadoresMap[r.entrevistador].cancCq += r.cancCq;
+                        
+                        if(!campanhasMap[r.campanha]) {
+                            campanhasMap[r.campanha] = { nome: r.campanha, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0 };
+                        }
+                        campanhasMap[r.campanha].realizadas += r.realizadas;
+                        campanhasMap[r.campanha].escuta += r.escuta;
+                        campanhasMap[r.campanha].cancFor += r.cancFor;
+                        campanhasMap[r.campanha].cancCq += r.cancCq;
+                    });
+                    
+                    const pctGeral = totalRealizadas > 0 ? ((totalEscuta / totalRealizadas) * 100).toFixed(1) : 0;
+                    const metaAtingidaGeral = pctGeral >= 10;
+                    
+                    const textoPronto = `Atualmente temos ${totalRealizadas} pesquisas realizadas e ${totalEscuta} monitorias, representando ${pctGeral}% do total de pesquisas.\n${totalEscuta} validadas pelo portal HSR.`;
+                    
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Pesquisas Anatel</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Importe múltiplos relatórios e consolide a meta de monitoria da operação (10%).</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="app.admin.limparAnatel()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors"><i class="fa-solid fa-trash-can"></i> Limpar Tudo</button>
+                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm">
+                                    <i class="fa-solid fa-file-excel"></i> Importar Relatórios
+                                    <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarAnatelFiles(this)" onclick="this.value = null">
+                                </label>
+                            </div>
+                        </div>
+                    `;
+                    
+                    if (reg.length === 0) {
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
+                                    <i class="fa-solid fa-file-excel text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
+                                    <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Nenhum dado de pesquisa importado</h3>
+                                    <p class="text-slate-400 text-sm max-w-md mx-auto">Faça o upload dos arquivos (telefone fixo, pré pago, pós pago, banda larga) juntos ou separados para analisar.</p>
+                                </div>`;
+                        container.innerHTML = html;
+                        return;
+                    }
+                    
+                    html += `
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="glass-card p-5 rounded-2xl flex flex-col justify-center border-l-4 border-l-blue-500">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Realizadas</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${totalRealizadas}</div>
+                            </div>
+                            <div class="glass-card p-5 rounded-2xl flex flex-col justify-center border-l-4 border-l-green-500">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Monitorias (FOR)</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${totalEscuta}</div>
+                            </div>
+                            <div class="glass-card p-5 rounded-2xl flex flex-col justify-center border-l-4 ${metaAtingidaGeral ? 'border-l-green-500' : 'border-l-red-500'}">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">% Monitorado (Meta 10%)</div>
+                                <div class="text-3xl font-black ${metaAtingidaGeral ? 'text-green-500' : 'text-red-500'}">${pctGeral}%</div>
+                            </div>
+                            <div class="glass-card p-5 rounded-2xl flex flex-col justify-center border-l-4 border-l-orange-500">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Canceladas Totais</div>
+                                <div class="text-3xl font-black text-orange-500">${totalCancFor + totalCancCq} <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">(${totalCancFor} FOR / ${totalCancCq} CQ)</span></div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-card p-6 rounded-3xl mb-8 relative border-t-4 border-t-purple-500 bg-purple-50/30 dark:bg-purple-900/10 shadow-sm">
+                            <button onclick="navigator.clipboard.writeText(document.getElementById('anatel-copy-text').innerText); app.ui.showAlert('Copiado', 'Texto copiado para a área de transferência.', 'success')" class="absolute top-4 right-4 bg-purple-100 text-purple-600 hover:bg-purple-200 dark:bg-purple-900/50 dark:text-purple-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-regular fa-copy mr-1"></i> Copiar Texto</button>
+                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-3 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-align-left text-purple-500"></i> Resumo para Relatório</h3>
+                            <div id="anatel-copy-text" class="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">${textoPronto}</div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                            <div class="glass-card p-6 rounded-3xl lg:col-span-1 border-t-4 border-t-indigo-500 overflow-hidden flex flex-col shadow-sm">
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider"><i class="fa-solid fa-layer-group text-indigo-500"></i> Por Campanha (Arquivo)</h3>
+                                <div class="overflow-x-auto custom-scrollbar flex-1">
+                                    <table class="w-full text-left text-xs whitespace-nowrap">
+                                        <thead class="bg-slate-50 dark:bg-slate-800/80 uppercase text-[9px] text-slate-500 tracking-wider">
+                                            <tr><th class="p-2 rounded-tl-lg">Campanha</th><th class="p-2 text-center">Real.</th><th class="p-2 text-center">Escuta</th><th class="p-2 text-right rounded-tr-lg">% Mon.</th></tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
+                    `;
+                    
+                    Object.values(campanhasMap).sort((a,b) => b.realizadas - a.realizadas).forEach(c => {
+                        const pct = c.realizadas > 0 ? ((c.escuta / c.realizadas) * 100).toFixed(1) : 0;
+                        const color = pct >= 10 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+                        html += `
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                <td class="p-2 font-bold text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title="${c.nome}">${c.nome}</td>
+                                <td class="p-2 text-center font-medium">${c.realizadas}</td>
+                                <td class="p-2 text-center font-medium">${c.escuta}</td>
+                                <td class="p-2 text-right font-black ${color}">${pct}%</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="glass-card p-6 rounded-3xl lg:col-span-2 border-t-4 border-t-teal-500 overflow-hidden flex flex-col shadow-sm">
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider"><i class="fa-solid fa-headset text-teal-500"></i> Detalhamento por Entrevistador</h3>
+                                <div class="overflow-x-auto custom-scrollbar flex-1">
+                                    <table class="w-full text-left text-xs whitespace-nowrap">
+                                        <thead class="bg-slate-50 dark:bg-slate-800/80 uppercase text-[9px] text-slate-500 tracking-wider">
+                                            <tr>
+                                                <th class="p-3 rounded-tl-lg">Nome do Operador</th>
+                                                <th class="p-3 text-center">Realizadas</th>
+                                                <th class="p-3 text-center">Monitorias</th>
+                                                <th class="p-3 text-center">Meta (10%)</th>
+                                                <th class="p-3 text-center">Canc. (FOR)</th>
+                                                <th class="p-3 text-center rounded-tr-lg">Canc. (CQ)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
+                    `;
+                    
+                    Object.values(operadoresMap).sort((a,b) => b.realizadas - a.realizadas).forEach(o => {
+                        const pct = o.realizadas > 0 ? ((o.escuta / o.realizadas) * 100).toFixed(1) : 0;
+                        const badgeColor = pct >= 10 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800/50' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800/50';
+                        const icon = pct >= 10 ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-xmark"></i>';
+                        
+                        html += `
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                <td class="p-3 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user text-slate-300 dark:text-slate-600 mr-2 text-[10px]"></i> ${o.nome}</td>
+                                <td class="p-3 text-center font-black">${o.realizadas}</td>
+                                <td class="p-3 text-center font-black text-blue-600 dark:text-blue-400">${o.escuta}</td>
+                                <td class="p-3 text-center"><span class="px-2 py-0.5 rounded shadow-sm font-bold text-[10px] ${badgeColor}">${icon} ${pct}%</span></td>
+                                <td class="p-3 text-center font-medium text-orange-500">${o.cancFor > 0 ? o.cancFor : '-'}</td>
+                                <td class="p-3 text-center font-medium text-orange-500">${o.cancCq > 0 ? o.cancCq : '-'}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    container.innerHTML = html;
+                },
+
                 applyPremiumUX() {
                     // CORREÇÃO: Avisa ao Lenis para não "roubar" a rolagem do mouse nas listas internas
                     document.querySelectorAll('.overflow-y-auto, .overflow-x-auto, .custom-scrollbar').forEach(el => {
@@ -7034,6 +7204,74 @@
             },
 
             admin: {
+                limparAnatel() {
+                    app.ui.showConfirm("Zerar Dados", "Isso apagará todas as pesquisas Anatel importadas nesta sessão atual. Continuar?", "app.anatelData = { registros: [] }; app.ui.renderTab('pesquisas_anatel', true);", true);
+                },
+
+                processarAnatelFiles(input) {
+                    const files = Array.from(input.files);
+                    if (files.length === 0) return;
+                    
+                    if(!app.anatelData || !app.anatelData.registros) app.anatelData = { registros: [] };
+                    
+                    app.ui.showAlert("Processando...", "Lendo relatórios. Como as planilhas podem ser pesadas, isso levará alguns segundos...", "info");
+                    
+                    let processedCount = 0;
+                    
+                    files.forEach(file => {
+                        const reader = new FileReader();
+                        const campanhaName = file.name.replace(/\.[^/.]+$/, ""); 
+                        
+                        reader.onload = (e) => {
+                            try {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
+                                
+                                jsonData.forEach(row => {
+                                    // Puxa o nome independentemente de como foi escrito no cabeçalho
+                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR');
+                                    let entrevistador = keyEntrevistador ? row[keyEntrevistador] : '';
+                                    if (!entrevistador) return;
+                                    
+                                    // Limpeza rigorosa do sufixo "_SOFT" se existir
+                                    entrevistador = entrevistador.toString().replace(/_SOFT$/i, '').trim();
+                                    
+                                    const keyRealizadas = Object.keys(row).find(k => k.trim().toUpperCase().includes('TOTAL REALIZADAS') || k.trim().toUpperCase() === 'REALIZADAS');
+                                    const keyEscuta = Object.keys(row).find(k => k.trim().toUpperCase().includes('FOR_ESCUTA'));
+                                    const keyCancFor = Object.keys(row).find(k => k.trim().toUpperCase().includes('CANCELADAS (FOR)'));
+                                    const keyCancCq = Object.keys(row).find(k => k.trim().toUpperCase().includes('CANCELADAS (CQ)'));
+                                    
+                                    const realizadas = keyRealizadas ? (parseInt(row[keyRealizadas]) || 0) : 0;
+                                    const escuta = keyEscuta ? (parseInt(row[keyEscuta]) || 0) : 0;
+                                    const cancFor = keyCancFor ? (parseInt(row[keyCancFor]) || 0) : 0;
+                                    const cancCq = keyCancCq ? (parseInt(row[keyCancCq]) || 0) : 0;
+                                    
+                                    app.anatelData.registros.push({
+                                        campanha: campanhaName,
+                                        entrevistador: entrevistador,
+                                        realizadas: realizadas,
+                                        escuta: escuta,
+                                        cancFor: cancFor,
+                                        cancCq: cancCq
+                                    });
+                                });
+                            } catch (err) {
+                                console.error("Erro na conversão:", err);
+                            }
+                            
+                            processedCount++;
+                            if (processedCount === files.length) {
+                                app.ui.renderTab('pesquisas_anatel', true);
+                                app.ui.showAlert("Importação Concluída", "Tabelas integradas e cruzamento estatístico realizado com sucesso.", "success");
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    });
+                    input.value = ''; // Limpa o botão pro usuário poder jogar os mesmos arquivos se precisar de novo
+                },
+
                 abrirModalMonitoriaManual(matriculaEdit = null) {
                     const ranking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
                     let nome = '', matr = '', total = 0, fbsPendentes = 0;
