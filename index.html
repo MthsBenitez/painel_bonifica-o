@@ -2759,7 +2759,7 @@
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'analise_csv', label:'Inteligência CSV'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Auditoria Laudos'}, {id:'calibragem_audio', label:'Lab. de Áudio'}] },
                     { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}] },
@@ -3274,7 +3274,6 @@
                             else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
                             else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
                             else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);
-                            else if(tabId === 'analise_csv') this.renderView_AnaliseCSV(viewDiv);
                             else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);
                             else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);
                             else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);
@@ -6305,157 +6304,6 @@
                     }, 150);
                 },
                 
-               renderView_AnaliseCSV(container) {
-                    if (!app.isAdmin) return;
-
-                    const data = app.analiseCSVData;
-
-                    let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Analítico (Inteligência)</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1 mb-2">Diagnóstico profundo de qualidade, ofensores e produtividade.</p>
-                                ${data ? `
-                                <div class="flex items-center gap-3">
-                                    <span class="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-3 py-1 rounded-lg text-xs font-bold shadow-sm"><i class="fa-solid fa-network-wired"></i> ${data.infoOperacao || 'N/A'}</span>
-                                    <span class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 px-3 py-1 rounded-lg text-xs font-bold shadow-sm"><i class="fa-regular fa-calendar"></i> ${data.infoData || 'N/A'}</span>
-                                </div>
-                                ` : ''}
-                            </div>
-                            <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-file-csv"></i> Importar Novo CSV
-                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
-                            </label>
-                        </div>
-                    `;
-
-                    if (!data) {
-                        html += `
-                            <div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
-                                <i class="fa-solid fa-chart-pie text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
-                                <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Nenhum dado analítico carregado</h3>
-                                <p class="text-slate-400 text-sm max-w-md mx-auto">Faça o upload do relatório bruto da plataforma de qualidade para gerar a inteligência visual.</p>
-                            </div>
-                        `;
-                        container.innerHTML = html;
-                        return;
-                    }
-
-                    let avgSla = 0;
-                    if (data.slaList && data.slaList.length > 0) {
-                        avgSla = (data.slaList.reduce((a,b)=>a+b,0) / data.slaList.length).toFixed(1);
-                    }
-
-                    const topGaps = Object.entries(data.falhasComuns).sort((a,b) => b[1] - a[1]).slice(0, 8);
-                    const criticalGaps = data.falhasCriticasArray || [];
-
-                    html += `
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-blue-500">
-                                <div class="text-3xl text-blue-500"><i class="fa-solid fa-headset"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase">Total Avaliado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${data.totalLinhas}</div></div>
-                            </div>
-                            <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-orange-500">
-                                <div class="text-3xl text-orange-500"><i class="fa-solid fa-stopwatch"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase">SLA Médio Feedback</div><div class="text-2xl font-black text-slate-800 dark:text-white">${avgSla} <span class="text-sm text-slate-500 font-medium">dias</span></div></div>
-                            </div>
-                            <div class="glass-card p-5 rounded-2xl flex items-center gap-4 border-l-4 border-l-red-500">
-                                <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase">Alertas Críticos</div><div class="text-2xl font-black text-slate-800 dark:text-white">${criticalGaps.length}</div></div>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-green-500 flex flex-col h-[400px]">
-                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-ranking-star text-green-500"></i> Desempenho de Operadores</h3>
-                                <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
-                                    ${data.rankOperadores.map((op, idx) => {
-                                        const isTop = idx < 3;
-                                        const isBottom = idx >= data.rankOperadores.length - 3 && data.rankOperadores.length > 5;
-                                        const badge = isTop ? '<i class="fa-solid fa-crown text-yellow-500 ml-1"></i>' : (isBottom ? '<i class="fa-solid fa-arrow-trend-down text-red-500 ml-1"></i>' : '');
-                                        const colorClass = op.media >= 90 ? 'text-green-600' : (op.media >= 70 ? 'text-orange-500' : 'text-red-500');
-                                        return `
-                                            <div class="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
-                                                <div class="flex items-center gap-3">
-                                                    <div class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center font-black text-xs text-slate-500">${idx+1}º</div>
-                                                    <div>
-                                                        <div class="font-bold text-sm text-slate-800 dark:text-white flex items-center">${op.nome} ${badge}</div>
-                                                        <div class="text-[10px] text-slate-500 font-medium">${op.notas.length} avaliações | Min: ${op.min} | Max: ${op.max}</div>
-                                                    </div>
-                                                </div>
-                                                <div class="font-black text-lg ${colorClass} bg-white dark:bg-slate-900 px-3 py-1 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">${op.media.toFixed(1)}</div>
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </div>
-
-                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-purple-500 flex flex-col h-[400px]">
-                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-clipboard-user text-purple-500"></i> Produtividade (Avaliadores)</h3>
-                                <div class="overflow-y-auto custom-scrollbar pr-2 space-y-3 flex-1">
-                                    ${Object.values(data.monitorProdutividade).sort((a,b)=>b.qtd - a.qtd).map(m => `
-                                        <div class="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                                            <div>
-                                                <div class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2"><div class="w-6 h-6 rounded bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-600 text-xs"><i class="fa-solid fa-user-tie"></i></div> ${m.nome}</div>
-                                                <div class="text-[10px] text-slate-500 mt-1.5 pl-8">Rigor Médio Aplicado: <strong class="text-slate-700 dark:text-slate-300">${m.mediaNota.toFixed(1)} pts</strong></div>
-                                            </div>
-                                            <div class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-black px-4 py-2 rounded-lg text-sm shadow-sm">${m.qtd} vol</div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-orange-500">
-                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-bar text-orange-500"></i> Oportunidades Frequentes (Treinamento)</h3>
-                                <div class="space-y-4 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                                    ${topGaps.length === 0 ? `<div class="text-sm text-slate-400 italic">Sem falhas operacionais registradas.</div>` : 
-                                    topGaps.map((g, i) => {
-                                        const pct = Math.min(100, (g[1] / data.totalLinhas) * 100).toFixed(1);
-                                        return `
-                                            <div>
-                                                <div class="flex justify-between items-end text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                                                    <span class="truncate pr-2">${i+1}. ${g[0]}</span>
-                                                    <span class="text-orange-600 dark:text-orange-400 shrink-0 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-800/50">${g[1]}x (${pct}%)</span>
-                                                </div>
-                                                <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
-                                                    <div class="h-full bg-orange-500 rounded-full" style="width: ${pct}%"></div>
-                                                </div>
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </div>
-
-                            <div class="glass-card p-6 rounded-3xl border-t-4 border-t-red-600">
-                                <h3 class="font-extrabold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-skull-crossbones text-red-600"></i> Radar de Risco (Zeramentos)</h3>
-                                <div class="overflow-y-auto custom-scrollbar pr-2 max-h-[350px] space-y-4 bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                                    ${criticalGaps.length === 0 ? `<div class="text-sm text-green-600 font-bold p-6 text-center bg-green-50 dark:bg-green-900/10 rounded-xl border border-green-200 dark:border-green-800/50"><i class="fa-solid fa-shield-check text-3xl mb-2 block"></i> Excelente! Nenhuma infração grave registrada.</div>` : 
-                                    criticalGaps.map((cg, i) => {
-                                        const pct = Math.min(100, (cg.count / data.totalLinhas) * 100).toFixed(1);
-                                        return `
-                                            <div class="mb-4">
-                                                <div class="flex justify-between items-end text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                                                    <span class="truncate pr-2 text-red-800 dark:text-red-400">${i+1}. ${cg.nome}</span>
-                                                    <span class="text-red-600 dark:text-red-400 shrink-0 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded border border-red-100 dark:border-red-800/50">${cg.count}x (${pct}%)</span>
-                                                </div>
-                                                <div class="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner mb-3">
-                                                    <div class="h-full bg-red-500 rounded-full" style="width: ${pct}%"></div>
-                                                </div>
-                                                <div class="flex flex-wrap gap-1.5">
-                                                    ${cg.operadores.map(op => `<span class="bg-white dark:bg-slate-800 text-[9px] font-bold text-slate-500 dark:text-slate-400 px-2.5 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700"><i class="fa-solid fa-user text-red-400 mr-1"></i>${op}</span>`).join('')}
-                                                </div>
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    container.innerHTML = html;
-                },
 
                 renderView_CalibragemAudio(container) {
                     if(!app.isAdmin) return;
