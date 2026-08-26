@@ -6795,7 +6795,7 @@
                     window.scrollTo({ top: currentScroll, behavior: 'instant' });
                 },
 
-                analiseSortCol: 'media', analiseSortDir: 'desc',
+                analiseSortCol: 'media', analiseSortDir: 'desc', analiseFiltroRelatorio: '',
                 sortAnaliseTable(col) {
                     if(this.analiseSortCol === col) {
                         this.analiseSortDir = this.analiseSortDir === 'asc' ? 'desc' : 'asc';
@@ -6809,7 +6809,7 @@
                 },
 
                 showOperatorsModal(falhaNome, type) {
-                    const data = app.analiseCSVDinamicoData;
+                    const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data) return;
                     const falhaObj = type === 'critica' 
                         ? data.falhasCriticasArray.find(f => f.nome === falhaNome)
@@ -6837,7 +6837,6 @@
                     `;
                     document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-sm transition-all w-full md:w-auto">Fechar Lista</button>`;
                     
-                    // UX Magic: Alarga o modal principal dinamicamente
                     const modalBox = document.querySelector('#global-modal > div');
                     modalBox.classList.remove('max-w-lg', 'max-w-5xl'); 
                     modalBox.classList.add('max-w-4xl');
@@ -6847,7 +6846,7 @@
                 
                 openOperadorAnaliseModal(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
-                    const data = app.analiseCSVDinamicoData;
+                    const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data || !data.operadores[nome]) return;
                 
                     const opData = data.operadores[nome];
@@ -6855,12 +6854,10 @@
                     
                     opData.avaliacoes.forEach((aval, idx) => {
                         
-                        // Helper interno para renderizar a linha de pergunta formatada
                         const renderPergunta = (p, isCritica) => {
                             let ansUpper = p.a.toUpperCase();
                             let respHtml = p.a;
                             
-                            // Regra de cores visual (Critica Inverte a Regra de Sucesso)
                             if (isCritica) {
                                 if (ansUpper === 'SIM') respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> SIM (FALHA)</span>`;
                                 else if (ansUpper === 'NÃO' || ansUpper === 'NAO') respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> NÃO</span>`;
@@ -6916,7 +6913,6 @@
                             `;
                         }
                 
-                        // UX: A primeira auditoria vem aberta, as outras fecham
                         const isOpen = idx === 0 ? 'open' : '';
                 
                         htmlList += `
@@ -6972,7 +6968,6 @@
                         <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-5xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-sm transition-colors">Fechar Detalhamento</button>
                     `;
                     
-                    // UX Magic: Deixa esse modal grandão
                     const modalBox = document.querySelector('#global-modal > div');
                     modalBox.classList.remove('max-w-lg', 'max-w-4xl');
                     modalBox.classList.add('max-w-5xl');
@@ -6982,7 +6977,7 @@
 
                 exportOperadorAnaliseXLSX(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
-                    const data = app.analiseCSVDinamicoData;
+                    const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data || !data.operadores[nome]) return;
 
                     const opData = data.operadores[nome];
@@ -7009,18 +7004,25 @@
                 },
 
                 renderView_AnaliseCSVDinamico(container) {
-                    let data = app.analiseCSVDinamicoData || null;
+                    let mainData = app.analiseCSVDinamicoData || null;
+                    let data = mainData ? mainData.consolidado : null;
 
                     let html = `
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                             <div class="w-full xl:w-auto">
                                 <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">${data ? data.infoOperacao : 'Analítico Operação (Smart CSV)'}</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">
-                                    <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Última gravação lida: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
+                                    <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
                                 </p>
                             </div>
-                            <div class="flex items-center gap-3 w-full xl:w-auto">
-                                ${data ? `<button onclick="app.analiseCSVDinamicoData = null; app.ui.renderTab('analise_csv_dinamico', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Limpar Dados</button>` : ''}
+                            <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                                ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                    <select onchange="app.ui.analiseFiltroRelatorio=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
+                                        <option value="">Visão Consolidada (Todos)</option>
+                                        ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio === r.nome ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
+                                    </select>
+                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
+                                ` : ''}
                                 <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
@@ -8388,7 +8390,7 @@
                     const file = input.files[0];
                     if (!file) return;
 
-                    app.ui.showAlert("Analisando Dados", "Nossa Inteligência está cruzando as informações da sua planilha...", "info");
+                    app.ui.showAlert("Lendo...", "Abrindo o arquivo e preparando para importação...", "info");
 
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -8402,154 +8404,192 @@
                                 return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
                             }
 
-                            window.currentCSVAnaliseData = rows;
-                            app.admin.gerarInteligenciaCSV(rows);
+                            window.tempCSVAnaliseData = rows;
                             
-                            app.ui.renderTab('analise_csv_dinamico', true);
-                            app.ui.showAlert("Pronto!", "Dashboard de Inteligência gerado com sucesso.", "success");
+                            // Abre modal para nomear o formulário
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-tag text-blue-500"></i> Nomear Formulário/Relatório`;
+                            document.getElementById('modal-content').innerHTML = `
+                                <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Este arquivo será consolidado com as importações anteriores. Para que as perguntas de Qualidade não se misturem e baguncem o painel, por favor, defina um nome claro para identificar a origem delas (Ex: <em>Qualidade Vendas, Checklist Atendimento, etc</em>):</p>
+                                <input type="text" id="csv-form-name" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 shadow-inner" placeholder="Digite o nome do formulário...">
+                            `;
+                            document.getElementById('modal-actions').innerHTML = `
+                                <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                                <button onclick="app.admin.confirmarNomeCSV()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-md transition-all transform hover:-translate-y-0.5">Importar e Consolidar</button>
+                            `;
+                            document.getElementById('global-modal').classList.remove('hidden');
+                            
+                            // Foca automaticamente no campo para digitar
+                            setTimeout(() => document.getElementById('csv-form-name').focus(), 100);
                             
                         } catch (error) {
                             console.error(error);
-                            app.ui.showAlert("Erro", "Falha ao processar o arquivo. Verifique se é um CSV/XLSX válido.", "error");
+                            app.ui.showAlert("Erro", "Falha ao ler a estrutura do arquivo. Verifique se é um CSV/XLSX válido.", "error");
                         }
                     };
                     reader.readAsBinaryString(file);
                 },
 
-                gerarInteligenciaCSV(rows) {
+                confirmarNomeCSV() {
+                    const nomeForm = document.getElementById('csv-form-name').value.trim();
+                    if(!nomeForm) return app.ui.showAlert("Aviso Obrigatório", "Você precisa definir um nome para que as perguntas não se misturem no consolidador global.", "error");
+                    
+                    document.getElementById('global-modal').classList.add('hidden');
+                    
+                    // Inicializa a Gaveta se for a primeira vez
+                    if(!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) {
+                        app.analiseCSVDinamicoData = { relatorios: [], consolidado: null };
+                    }
+                    
+                    // Salva na memória o arquivo Bruto + O nome
+                    app.analiseCSVDinamicoData.relatorios.push({
+                        id: Date.now(),
+                        nome: nomeForm,
+                        rows: window.tempCSVAnaliseData
+                    });
+                    
+                    window.tempCSVAnaliseData = null; // Limpa cache
+                    
+                    // Força a UI a mostrar "Visão Consolidada" quando entra algo novo
+                    app.ui.analiseFiltroRelatorio = ''; 
+                    
+                    // Reconstrói a Inteligência cruzando tudo que tem na Gaveta
+                    this.gerarInteligenciaCSV();
+                    
+                    app.ui.renderTab('analise_csv_dinamico', true);
+                    app.ui.showAlert("Concluído!", "Dados importados. O sistema atualizou as médias de operadores e isolou as perguntas no consolidado geral.", "success");
+                },
+
+                gerarInteligenciaCSV() {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) return;
+                    
+                    let filtro = app.ui.analiseFiltroRelatorio || '';
+                    let relatoriosAtivos = app.analiseCSVDinamicoData.relatorios;
+                    
+                    if(filtro) {
+                        relatoriosAtivos = relatoriosAtivos.filter(r => r.nome === filtro);
+                    }
+
                     const data = {
-                        totalLinhas: rows.length,
+                        totalLinhas: 0,
                         operadores: {},
                         falhasComuns: {},
                         falhasCriticas: {},
                         monitorProdutividade: {},
-                        slaList: [],
-                        infoData: 'N/A',
-                        infoOperacao: 'N/A'
+                        infoData: new Date().toLocaleDateString('pt-BR'),
+                        infoOperacao: filtro ? `Formulário: ${filtro}` : 'Visão Consolidada (Geral)'
                     };
 
-                    const chaves = Object.keys(rows[0]);
-                    
-                    const colMonitor = chaves.find(k => k.toUpperCase() === 'MONITOR' || k.toUpperCase() === 'AVALIADOR') 
-                        || chaves.find(k => k.toUpperCase().includes('MONITOR') && !k.toUpperCase().includes('NOTA') && !k.toUpperCase().includes('STATUS'));
+                    relatoriosAtivos.forEach(relatorio => {
+                        const rows = relatorio.rows;
+                        const formNameDisplay = relatorio.nome;
                         
-                    const colNome = chaves.find(k => k.toUpperCase() === 'NOME' || k.toUpperCase() === 'COLABORADOR') 
-                        || chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('CRACHA') || k.toUpperCase().includes('ATENDENTE')) || chaves[0];
-                        
-                    const colOperacao = chaves.find(k => k.toUpperCase() === 'OPERACAO' || k.toUpperCase() === 'OPERAÇÃO') 
-                        || chaves.find(k => k.toUpperCase().includes('OPERA'));
-                        
-                    const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') 
-                        || chaves.find(k => k.toUpperCase().includes('DATA DA AUDI') || k.toUpperCase().includes('DATA DA AVA'));
-                        
-                    const colNota = chaves.find(k => k.toUpperCase().includes('NOTA')) || 'NOTA';
-                    const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
+                        if (rows.length === 0) return;
+                        data.totalLinhas += rows.length;
 
-                    const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
-                    // Filtra corretamente o Peso 0 para falhas críticas
-                    const colunasCriticas = colunasAvaliacao.filter(k => {
-                        let match = k.match(/=\s*PESO:([0-9.,]+)/i);
-                        return match && parseFloat(match[1].replace(',', '.')) === 0;
-                    });
-                    const colunasComuns = colunasAvaliacao.filter(k => {
-                        let match = k.match(/=\s*PESO:([0-9.,]+)/i);
-                        return match && parseFloat(match[1].replace(',', '.')) > 0;
-                    });
-
-                    // Função interna para corrigir o número bugado de Data do Excel
-                    const formatarDataExcel = (val) => {
-                        if (!val || val === 'S/D') return 'S/D';
-                        if (!isNaN(val) && Number(val) > 20000) {
-                            const dt = new Date((Number(val) - 25569) * 86400 * 1000);
-                            return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
-                        }
-                        return String(val);
-                    };
-
-                    if (rows.length > 0) {
-                        let rawDate = rows[0][colDataAudit];
-                        if (typeof rawDate === 'number') {
-                            const dt = new Date((rawDate - 25569) * 86400 * 1000);
-                            const dia = String(dt.getDate()).padStart(2, '0');
-                            const mes = String(dt.getMonth() + 1).padStart(2, '0');
-                            const ano = dt.getFullYear();
-                            const hr = String(dt.getHours()).padStart(2, '0');
-                            const min = String(dt.getMinutes()).padStart(2, '0');
-                            data.infoData = `${dia}/${mes}/${ano} ${hr}:${min}`;
-                        } else if (rawDate) {
-                            data.infoData = String(rawDate);
-                        }
+                        const chaves = Object.keys(rows[0]);
                         
-                        let rawOp = rows[0][colOperacao];
-                        if (rawOp) data.infoOperacao = app.utils.fixEncoding(String(rawOp).toUpperCase());
-                    }
+                        const colMonitor = chaves.find(k => k.toUpperCase() === 'MONITOR' || k.toUpperCase() === 'AVALIADOR') 
+                            || chaves.find(k => k.toUpperCase().includes('MONITOR') && !k.toUpperCase().includes('NOTA') && !k.toUpperCase().includes('STATUS'));
+                            
+                        const colNome = chaves.find(k => k.toUpperCase() === 'NOME' || k.toUpperCase() === 'COLABORADOR') 
+                            || chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('CRACHA') || k.toUpperCase().includes('ATENDENTE')) || chaves[0];
+                            
+                        const colOperacao = chaves.find(k => k.toUpperCase() === 'OPERACAO' || k.toUpperCase() === 'OPERAÇÃO') 
+                            || chaves.find(k => k.toUpperCase().includes('OPERA'));
+                            
+                        const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') 
+                            || chaves.find(k => k.toUpperCase().includes('DATA DA AUDI') || k.toUpperCase().includes('DATA DA AVA'));
+                            
+                        const colNota = chaves.find(k => k.toUpperCase().includes('NOTA')) || 'NOTA';
+                        const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
 
-                    rows.forEach(row => {
-                        const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
-                        let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
+                        const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
                         
-                        // Retira a matrícula caso venha no formato "12345 - NOME"
-                        if (monitor.includes(' - ')) {
-                            monitor = monitor.split(' - ').slice(1).join(' - ').trim();
-                        }
-                        
-                        let nota = 0;
-                        if (row[colNota] !== undefined && row[colNota] !== '') {
-                            nota = parseFloat(row[colNota].toString().replace(',', '.'));
-                        }
-
-                        if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
-                        data.operadores[op].notas.push(nota);
-                        if (nota < data.operadores[op].min) data.operadores[op].min = nota;
-                        if (nota > data.operadores[op].max) data.operadores[op].max = nota;
-
-                        // Guarda as avaliações completas do operador (Formulário Sim/Não)
-                        let questionsArray = [];
-                        colunasAvaliacao.forEach(col => {
-                            let pesoMatch = col.match(/=\s*PESO:([0-9.,]+)/i);
-                            let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
-                            let ans = (row[col] || '').toString().trim();
-                            let cleanQ = app.utils.fixEncoding(col.split('=')[0].trim());
-                            questionsArray.push({ q: cleanQ, p: peso, a: ans });
+                        const colunasCriticas = colunasAvaliacao.filter(k => {
+                            let match = k.match(/=\s*PESO:([0-9.,]+)/i);
+                            return match && parseFloat(match[1].replace(',', '.')) === 0;
                         });
-                        
-                        data.operadores[op].avaliacoes.push({
-                            monitor: monitor,
-                            data: formatarDataExcel(row[colDataAudit] || row[colDataGrav]),
-                            nota: nota,
-                            perguntas: questionsArray
+                        const colunasComuns = colunasAvaliacao.filter(k => {
+                            let match = k.match(/=\s*PESO:([0-9.,]+)/i);
+                            return match && parseFloat(match[1].replace(',', '.')) > 0;
                         });
 
-                        colunasComuns.forEach(col => {
-                            const val = (row[col] || '').toString().trim().toUpperCase();
-                            if (val === 'NÃO' || val === 'NAO') {
-                                const cleanGap = app.utils.fixEncoding(col.split('=')[0].trim()); // Pega só o texto da pergunta
-                                if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: new Set() };
-                                data.falhasComuns[cleanGap].count += 1;
-                                data.falhasComuns[cleanGap].operadores.add(op);
+                        const formatarDataExcel = (val) => {
+                            if (!val || val === 'S/D') return 'S/D';
+                            if (!isNaN(val) && Number(val) > 20000) {
+                                const dt = new Date((Number(val) - 25569) * 86400 * 1000);
+                                return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
                             }
-                        });
+                            return String(val);
+                        };
 
-                        colunasCriticas.forEach(col => {
-                            const val = (row[col] || '').toString().trim().toUpperCase();
-                            if (val === 'SIM') { // Regra do peso 0: SIM é falha.
-                                const cleanGap = app.utils.fixEncoding(col.split('=')[0].trim());
-                                if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
-                                data.falhasCriticas[cleanGap].count += 1;
-                                data.falhasCriticas[cleanGap].operadores.add(op);
+                        rows.forEach(row => {
+                            const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
+                            let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
+                            
+                            if (monitor.includes(' - ')) {
+                                monitor = monitor.split(' - ').slice(1).join(' - ').trim();
                             }
+                            
+                            let nota = 0;
+                            if (row[colNota] !== undefined && row[colNota] !== '') {
+                                nota = parseFloat(row[colNota].toString().replace(',', '.'));
+                            }
+
+                            if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
+                            data.operadores[op].notas.push(nota);
+                            if (nota < data.operadores[op].min) data.operadores[op].min = nota;
+                            if (nota > data.operadores[op].max) data.operadores[op].max = nota;
+
+                            let questionsArray = [];
+                            colunasAvaliacao.forEach(col => {
+                                let pesoMatch = col.match(/=\s*PESO:([0-9.,]+)/i);
+                                let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
+                                let ans = (row[col] || '').toString().trim();
+                                
+                                // MÁGICA DE ISOLAMENTO AQUI: Carimba de qual formulário veio essa pergunta!
+                                let cleanQ = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
+                                questionsArray.push({ q: cleanQ, p: peso, a: ans });
+                            });
+                            
+                            data.operadores[op].avaliacoes.push({
+                                monitor: monitor,
+                                data: formatarDataExcel(row[colDataAudit] || row[colDataGrav]),
+                                nota: nota,
+                                perguntas: questionsArray
+                            });
+
+                            colunasComuns.forEach(col => {
+                                const val = (row[col] || '').toString().trim().toUpperCase();
+                                if (val === 'NÃO' || val === 'NAO') {
+                                    const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
+                                    if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: new Set() };
+                                    data.falhasComuns[cleanGap].count += 1;
+                                    data.falhasComuns[cleanGap].operadores.add(op);
+                                }
+                            });
+
+                            colunasCriticas.forEach(col => {
+                                const val = (row[col] || '').toString().trim().toUpperCase();
+                                if (val === 'SIM') { // Regra padrão: SIM na coluna Peso 0 é a Falha.
+                                    const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
+                                    if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
+                                    data.falhasCriticas[cleanGap].count += 1;
+                                    data.falhasCriticas[cleanGap].operadores.add(op);
+                                }
+                            });
+
+                            if (!data.monitorProdutividade[monitor]) {
+                                data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
+                            }
+                            data.monitorProdutividade[monitor].qtd += 1;
+                            data.monitorProdutividade[monitor].somaNotas += nota;
                         });
-
-                        if (!data.monitorProdutividade[monitor]) {
-                            data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
-                        }
-                        data.monitorProdutividade[monitor].qtd += 1;
-                        data.monitorProdutividade[monitor].somaNotas += nota;
-
                     });
 
+                    // Médias globais consolidadas
                     Object.values(data.operadores).forEach(op => {
-                        op.media = (op.notas.reduce((a,b) => a+b, 0) / op.notas.length).toFixed(2);
+                        op.media = op.notas.length > 0 ? (op.notas.reduce((a,b) => a+b, 0) / op.notas.length).toFixed(2) : 0;
                     });
                     
                     Object.values(data.monitorProdutividade).forEach(m => {
@@ -8559,17 +8599,17 @@
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
                         .sort((a,b) => b.count - a.count)
-                        .slice(0, 5); // TOP 5 Criticas
+                        .slice(0, 5); // TOP 5
 
                     data.falhasComunsArray = Object.entries(data.falhasComuns)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
                         .sort((a,b) => b.count - a.count)
-                        .slice(0, 10); // TOP 10 Comuns
+                        .slice(0, 10); // TOP 10
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => b.mediaNota - a.mediaNota);
                     
-                    app.analiseCSVDinamicoData = data; // Correção do nome da variável global
+                    app.analiseCSVDinamicoData.consolidado = data;
                 },
 
                 // ==========================================
