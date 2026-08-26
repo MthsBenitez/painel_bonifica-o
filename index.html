@@ -884,7 +884,7 @@
         
         <!-- Header -->
         <header class="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-sm shadow-sm border-b border-slate-200 dark:border-slate-800 z-20 sticky top-0">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="max-w-[1600px] w-[96%] mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
                     <div class="flex items-center gap-3">
                         <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
@@ -962,7 +962,7 @@
             </div>
             
             <!-- Navegação Tabs -->
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-slate-50/90 dark:bg-[#0f172a]/90 backdrop-blur-sm">
+            <div class="max-w-[1600px] w-[96%] mx-auto px-4 sm:px-6 lg:px-8 bg-slate-50/90 dark:bg-[#0f172a]/90 backdrop-blur-sm">
                 <nav class="flex space-x-2 pt-3 overflow-x-auto no-scrollbar" id="main-nav">
                     <!-- Injetado via JS -->
                 </nav>
@@ -970,7 +970,7 @@
         </header>
 
         <!-- Container de Conteúdo -->
-        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10 flex-1">
+        <main class="max-w-[1600px] w-[96%] mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10 flex-1">
             <div id="content-container" class="relative w-full h-full">
                 <!-- Views injetadas em sub-containers via JS para reter estado/memória -->
             </div>
@@ -6964,23 +6964,24 @@
                     const textoPronto = `Atualmente temos ${totalRealizadas} pesquisas realizadas e ${totalMonitoriasRealizadas} monitorias, representando ${pctComCanceladas}% do total de pesquisas.\n${totalEscuta} validadas pelo portal HSR e ${totalNovasCanc} canceladas, impossibilitando a validação.`;
                     
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Report Interno de Monitorias Anatel</h2>
+                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
+                            <div class="w-full xl:w-auto">
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Report Interno Anatel</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Visão consolidada de qualidade e cancelamentos.</p>
                             </div>
                     `;
 
                     // Painel Exclusivo ADM
                     if(app.isAdmin) {
                         html += `
-                            <div class="flex flex-wrap gap-2">
-                                <button onclick="app.admin.limparAnatel()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors shadow-sm"><i class="fa-solid fa-trash-can"></i> Limpar Tudo</button>
-                                <label class="bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm">
-                                    <i class="fa-solid fa-file-csv"></i> Importar Canceladas S/ Validação
+                            <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 w-full xl:w-auto">
+                                <button onclick="app.admin.limparAnatel()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Limpar Tudo</button>
+                                <label class="bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-file-csv"></i> Canceladas S/ Valid.
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarAnatelCanceladas(this)" onclick="this.value = null">
                                 </label>
-                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm">
-                                    <i class="fa-solid fa-file-excel"></i> Importar Relatórios Padrão
+                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-file-excel"></i> Relatórios Padrão
                                     <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarAnatelFiles(this)" onclick="this.value = null">
                                 </label>
                             </div>
@@ -6994,29 +6995,29 @@
                         return;
                     }
                     
-                    // Cartões 3D Magnéticos e menos coloridos
+                    // Cartões 3D Magnéticos (com alinhamento e textos otimizados)
                     html += `
                         <div class="grid grid-cols-2 xl:grid-cols-5 gap-6 mb-10">
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">Total Realizadas</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">Total Realizadas</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${totalRealizadas}</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn relative overflow-hidden">
                                 <div class="absolute right-0 top-0 w-16 h-16 bg-blue-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">Total de Monitorias Realizadas</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">Monitorias Realizadas</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${totalMonitoriasRealizadas}</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">Monitorias Validadas</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">Monitorias Validadas</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${totalEscuta}</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn relative overflow-hidden">
                                 <div class="absolute right-0 top-0 w-16 h-16 bg-green-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">% Monitorado (Meta 10%)</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">% Monitorado (Meta 10%)</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${pctComCanceladas}%</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">Canceladas Totais (FOR+CQ)</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">Canc. Totais (FOR+CQ)</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${totalCancFor + totalCancCq} <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest ml-1">(${totalCancFor} FOR / ${totalCancCq} CQ)</span></div>
                             </div>
                         </div>
