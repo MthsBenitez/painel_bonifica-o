@@ -2756,12 +2756,12 @@
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'campanha_mes', label:'🏆 Campanha Trimestral'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Auditoria Laudos'}, {id:'calibragem_audio', label:'Lab. de Áudio'}] },
-                    { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Análise CSV Inteligente'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
+                    { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -6782,6 +6782,7 @@
 
                 anatelSortCol: 'realizadas', anatelSortDir: 'desc',
                 sortAnatelTable(col) {
+                    
                     if(this.anatelSortCol === col) {
                         this.anatelSortDir = this.anatelSortDir === 'asc' ? 'desc' : 'asc';
                     } else {
@@ -6794,86 +6795,232 @@
                     window.scrollTo({ top: currentScroll, behavior: 'instant' });
                 },
 
+                analiseSortCol: 'media', analiseSortDir: 'desc',
+                sortAnaliseTable(col) {
+                    if(this.analiseSortCol === col) {
+                        this.analiseSortDir = this.analiseSortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.analiseSortCol = col;
+                        this.analiseSortDir = 'desc';
+                    }
+                    const currentScroll = window.scrollY;
+                    this.renderTab('analise_csv_dinamico', true);
+                    window.scrollTo({ top: currentScroll, behavior: 'instant' });
+                },
+
+                showOperatorsModal(falhaNome, type) {
+                    const data = app.analiseCSVDinamicoData;
+                    if(!data) return;
+                    const falhaObj = type === 'critica' 
+                        ? data.falhasCriticasArray.find(f => f.nome === falhaNome)
+                        : data.falhasComunsArray.find(f => f.nome === falhaNome);
+                    
+                    if(!falhaObj) return;
+
+                    let htmlList = `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4 max-h-60 overflow-y-auto custom-scrollbar p-1">`;
+                    falhaObj.operadores.forEach(op => {
+                        htmlList += `<div class="bg-white dark:bg-slate-800 p-2.5 rounded-xl text-[11px] font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2 hover:border-blue-300 transition-colors"><i class="fa-solid fa-user-circle text-blue-500 text-lg"></i> ${op}</div>`;
+                    });
+                    htmlList += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users-viewfinder text-blue-500"></i> Quem cometeu essa falha?`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="text-sm font-black text-slate-800 dark:text-white mb-1 border-b border-slate-200 dark:border-slate-700 pb-2">${falhaNome}</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-3">Total de pessoas únicas: ${falhaObj.operadores.length}</div>
+                        ${htmlList}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-lg font-bold text-sm shadow-sm">Fechar Aba</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                openOperadorAnaliseModal(nomeEncoded) {
+                    const nome = decodeURIComponent(nomeEncoded);
+                    const data = app.analiseCSVDinamicoData;
+                    if(!data || !data.operadores[nome]) return;
+
+                    const opData = data.operadores[nome];
+                    let htmlList = `<div class="space-y-6 mt-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-4">`;
+                    
+                    opData.avaliacoes.forEach((aval, idx) => {
+                        htmlList += `
+                            <div class="bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                <div class="bg-white dark:bg-slate-900 p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                                    <div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Auditoria ${idx+1} • Aplicada por:</div>
+                                        <div class="font-black text-blue-600 dark:text-blue-400 text-sm"><i class="fa-solid fa-headset mr-1"></i> ${aval.monitor}</div>
+                                        <div class="text-[9px] text-slate-400 mt-1 font-mono"><i class="fa-regular fa-calendar"></i> ${aval.data}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Nota</div>
+                                        <div class="text-2xl font-black ${aval.nota < 85 ? 'text-red-500' : 'text-green-500'}">${aval.nota}</div>
+                                    </div>
+                                </div>
+                                <div class="p-4 bg-slate-50/50 dark:bg-slate-800/30">
+                                    <table class="w-full text-left text-xs">
+                                        <thead>
+                                            <tr class="text-[9px] uppercase text-slate-400 tracking-widest border-b border-slate-200 dark:border-slate-700">
+                                                <th class="pb-2 w-3/5">Item Avaliado</th>
+                                                <th class="pb-2 text-center w-1/5">Peso</th>
+                                                <th class="pb-2 text-right w-1/5">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
+                        `;
+                        
+                        aval.perguntas.forEach(p => {
+                            // Regra de cor da resposta: 
+                            // Se Peso for 0 (Critica): SIM é Vermelho (Errou), NÃO é Verde (Acertou)
+                            // Se Peso > 0 (Comum): SIM é Verde (Acertou), NÃO é Vermelho (Errou)
+                            let isCritica = p.p === 0;
+                            let ansUpper = p.a.toUpperCase();
+                            let respHtml = p.a;
+                            
+                            if (isCritica) {
+                                if (ansUpper === 'SIM') respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded shadow-sm border border-red-200"><i class="fa-solid fa-xmark mr-1"></i> SIM (Falha)</span>`;
+                                else if (ansUpper === 'NÃO' || ansUpper === 'NAO') respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded shadow-sm border border-green-200"><i class="fa-solid fa-check mr-1"></i> NÃO</span>`;
+                            } else {
+                                if (ansUpper === 'SIM') respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded shadow-sm border border-green-200"><i class="fa-solid fa-check mr-1"></i> SIM</span>`;
+                                else if (ansUpper === 'NÃO' || ansUpper === 'NAO') respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded shadow-sm border border-red-200"><i class="fa-solid fa-xmark mr-1"></i> NÃO (Falha)</span>`;
+                            }
+
+                            htmlList += `
+                                <tr>
+                                    <td class="py-2.5 font-medium text-slate-600 dark:text-slate-300 pr-2 leading-tight">${p.q}</td>
+                                    <td class="py-2.5 text-center font-mono text-slate-400">${p.p.toFixed(2)}</td>
+                                    <td class="py-2.5 text-right">${respHtml}</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        htmlList += `</tbody></table></div></div>`;
+                    });
+                    htmlList += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-id-card text-purple-500"></i> Histórico Operacional: ${nome}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="flex justify-between items-center mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-0.5">Resumo</span>
+                                <span class="text-sm font-black text-slate-700 dark:text-slate-200">${opData.qtd} Monitorias Aplicadas | Média Final: ${opData.media}</span>
+                            </div>
+                        </div>
+                        ${htmlList}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="app.ui.exportOperadorAnaliseXLSX('${nomeEncoded}')" class="mr-auto px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-file-excel mr-1"></i> Extrair XLSX Deste Operador</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-lg font-bold text-sm shadow-sm transition-colors">Fechar Detalhamento</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                exportOperadorAnaliseXLSX(nomeEncoded) {
+                    const nome = decodeURIComponent(nomeEncoded);
+                    const data = app.analiseCSVDinamicoData;
+                    if(!data || !data.operadores[nome]) return;
+
+                    const opData = data.operadores[nome];
+                    const rows = [];
+
+                    opData.avaliacoes.forEach((aval, idx) => {
+                        aval.perguntas.forEach(p => {
+                            rows.push({
+                                "Operador": nome,
+                                "Monitor": aval.monitor,
+                                "Data": aval.data,
+                                "Nota Geral da Ligação": aval.nota,
+                                "Item Avaliado": p.q,
+                                "Peso": p.p,
+                                "Resposta do Monitor": p.a
+                            });
+                        });
+                    });
+
+                    const worksheet = XLSX.utils.json_to_sheet(rows);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "Formularios_Detalhes");
+                    XLSX.writeFile(workbook, `Analitico_${nome.replace(/\s+/g, '_')}.xlsx`);
+                },
+
                 renderView_AnaliseCSVDinamico(container) {
-                    if (!app.isAdmin) return;
                     let data = app.analiseCSVDinamicoData || null;
 
                     let html = `
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                             <div class="w-full xl:w-auto">
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">${data ? data.operacao : 'Análise CSV Inteligente'}</h2>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">${data ? data.infoOperacao : 'Analítico Operação (Smart CSV)'}</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">
-                                    <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Período analisado: <strong class="text-slate-700 dark:text-slate-300">${data ? data.periodo : 'Aguardando Arquivo...'}</strong>
+                                    <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Última gravação lida: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
                                 </p>
                             </div>
                             <div class="flex items-center gap-3 w-full xl:w-auto">
                                 ${data ? `<button onclick="app.analiseCSVDinamicoData = null; app.ui.renderTab('analise_csv_dinamico', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Limpar Dados</button>` : ''}
                                 <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVDinamico(this)" onclick="this.value = null">
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                 </label>
                             </div>
                         </div>
                     `;
 
                     if (!data) {
-                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-900/10"><i class="fa-solid fa-magnifying-glass-chart text-6xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3><p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema irá ler automaticamente os pesos das perguntas, cruzar os acertos, e mapear falhas críticas e ofensores.</p></div>`;
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-900/10"><i class="fa-solid fa-magnifying-glass-chart text-6xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3><p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema irá ler automaticamente os pesos das perguntas, cruzar os acertos, mapear falhas e compilar os formulários.</p></div>`;
                         container.innerHTML = html;
                         return;
                     }
 
-                    // --- DASHBOARD CARDS ---
+                    // --- DASHBOARD CARDS MESTRES ---
                     html += `
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-8">
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-blue-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Média Geral (Nota)</div>
-                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400">${data.mediaGeral}</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Analisado</div>
+                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400">${data.totalLinhas} <span class="text-sm font-medium text-slate-400 ml-1">Ligs.</span></div>
                             </div>
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-green-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Feedback Aplicado</div>
-                                <div class="text-3xl font-black text-green-600 dark:text-green-400">${data.contadores.feedback_aplicado}</div>
-                            </div>
-                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-red-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Sem Feedback</div>
-                                <div class="text-3xl font-black text-red-600 dark:text-red-400">${data.contadores.monitorado}</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Média da Operação</div>
+                                <div class="text-3xl font-black text-green-600 dark:text-green-400">${(data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2)}</div>
                             </div>
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-orange-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Feedback Não Aplicado</div>
-                                <div class="text-3xl font-black text-orange-600 dark:text-orange-400">${data.contadores.feedback_nao_aplicado}</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Comuns Totais</div>
+                                <div class="text-3xl font-black text-orange-600 dark:text-orange-400">${data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0)}</div>
+                            </div>
+                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-red-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Críticas Totais</div>
+                                <div class="text-3xl font-black text-red-600 dark:text-red-400">${data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0)}</div>
+                            </div>
+                        </div>
+
+                        <!-- MÉDIAS POR MONITOR -->
+                        <div class="glass-card p-6 rounded-3xl mb-8 border border-slate-200 dark:border-slate-700 overflow-x-auto shadow-sm">
+                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-blue-500"></i> Calibragem (Média Geral por Monitor)</h3>
+                            <div class="flex gap-4">
+                                ${data.rankMonitores.map((m, idx) => `
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 min-w-[200px] flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-lg">${idx+1}º</div>
+                                        <div>
+                                            <div class="font-bold text-slate-700 dark:text-slate-300 text-sm truncate w-28" title="${m.nome}">${m.nome.split(' ')[0]}</div>
+                                            <div class="text-xs text-slate-500">Média: <strong class="text-slate-800 dark:text-white">${m.mediaNota}</strong> <span class="ml-1 opacity-70">(${m.qtd} ligs)</span></div>
+                                        </div>
+                                    </div>
+                                `).join('')}
                             </div>
                         </div>
 
                         <!-- LISTAS DE OFENSORES E FALHAS CRÍTICAS -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                            <!-- Ofensores -->
-                            <div class="glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-sm relative overflow-hidden">
-                                <div class="absolute -right-4 -top-4 text-8xl text-orange-500/10 pointer-events-none"><i class="fa-solid fa-users-slash"></i></div>
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-user-injured text-orange-500"></i> Top 5 Ofensores (Mais Erros)</h3>
-                                <div class="space-y-3 relative z-10">
-                                    ${data.topOfensores.map((op, idx) => `
-                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center hover:border-orange-300 transition-colors">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-6 h-6 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 flex items-center justify-center text-[10px] font-black">${idx+1}</div>
-                                                <div class="font-bold text-slate-700 dark:text-slate-300 text-sm">${op.nome}</div>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="text-lg font-black text-orange-600 dark:text-orange-400">${op.totalErros} <span class="text-[10px] text-slate-500 font-bold uppercase">Erros</span></div>
-                                            </div>
-                                        </div>
-                                    `).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhum erro computado.</div>'}
-                                </div>
-                            </div>
-
+                            
                             <!-- Falhas Críticas -->
                             <div class="glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-red-600 shadow-sm relative overflow-hidden">
                                 <div class="absolute -right-4 -top-4 text-8xl text-red-500/10 pointer-events-none"><i class="fa-solid fa-radiation"></i></div>
                                 <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-skull-crossbones text-red-600"></i> Principais Falhas Críticas (Peso 0.00)</h3>
                                 <div class="space-y-3 relative z-10">
-                                    ${data.topFalhasCriticas.map((f, idx) => `
-                                        <div class="bg-red-50 dark:bg-red-900/10 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 flex justify-between items-center hover:border-red-300 transition-colors">
+                                    ${data.falhasCriticasArray.map((f, idx) => `
+                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'critica')" class="bg-red-50 dark:bg-red-900/10 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 flex justify-between items-center hover:border-red-400 cursor-pointer transition-colors group">
                                             <div class="flex items-start gap-3">
                                                 <i class="fa-solid fa-triangle-exclamation text-red-500 mt-1"></i>
-                                                <div class="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-tight line-clamp-2" title="${f.pergunta}">${f.pergunta}</div>
+                                                <div>
+                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
+                                                    <div class="text-[10px] text-red-500 mt-1 font-bold group-hover:underline">Ver operadores afetados</div>
+                                                </div>
                                             </div>
                                             <div class="text-right shrink-0 ml-4">
                                                 <span class="bg-red-600 text-white font-black px-3 py-1 rounded-lg text-sm shadow-sm">${f.count}x</span>
@@ -6882,34 +7029,80 @@
                                     `).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha crítica (peso 0) cometida. Parabéns!</div>'}
                                 </div>
                             </div>
+
+                            <!-- Falhas Normais / Comuns -->
+                            <div class="glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-sm relative overflow-hidden">
+                                <div class="absolute -right-4 -top-4 text-8xl text-orange-500/10 pointer-events-none"><i class="fa-solid fa-chart-bar"></i></div>
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-layer-group text-orange-500"></i> Principais Desvios Normais</h3>
+                                <div class="space-y-3 relative z-10 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
+                                    ${data.falhasComunsArray.map((f, idx) => `
+                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'comum')" class="bg-orange-50 dark:bg-orange-900/10 p-3.5 rounded-xl border border-orange-100 dark:border-orange-900/30 flex justify-between items-center hover:border-orange-400 cursor-pointer transition-colors group">
+                                            <div class="flex items-start gap-3 pr-2">
+                                                <div class="font-black text-orange-400 mt-0.5">${idx+1}.</div>
+                                                <div>
+                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-[11px] leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
+                                                    <div class="text-[9px] text-orange-600 mt-1 font-bold group-hover:underline">Ver operadores afetados</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-right shrink-0">
+                                                <span class="bg-orange-500 text-white font-black px-2.5 py-1 rounded-lg text-xs shadow-sm">${f.count}x</span>
+                                            </div>
+                                        </div>
+                                    `).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha computada.</div>'}
+                                </div>
+                            </div>
                         </div>
 
                         <!-- TABELA DETALHADA -->
                         <div class="glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
-                            <div class="overflow-x-auto max-h-[500px] custom-scrollbar">
+                            <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
                                 <table class="w-full text-left whitespace-nowrap text-sm border-collapse">
                                     <thead class="bg-slate-100/80 dark:bg-slate-800/80 sticky top-0 z-20 backdrop-blur-md shadow-sm">
-                                        <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                            <th class="py-4 px-4 rounded-tl-xl">Crachá</th>
-                                            <th class="py-4 px-4">Nome do Operador</th>
-                                            <th class="py-4 px-4 text-center">Monitorias</th>
-                                            <th class="py-4 px-4 text-center">Média de Nota</th>
-                                            <th class="py-4 px-4 text-center text-red-500">Total Erros</th>
-                                            <th class="py-4 px-4 text-center text-orange-500 rounded-tr-xl">% de Erro</th>
+                                        <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer select-none">
+                                            <th class="py-4 px-4 rounded-tl-xl hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('nome')">Nome do Operador <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
+                                            <th class="py-4 px-4 text-center hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('notas')">Ligs Analisadas <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
+                                            <th class="py-4 px-4 text-center hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('min')">Menor Nota <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
+                                            <th class="py-4 px-4 text-center text-blue-600 hover:text-blue-700 transition-colors" onclick="app.ui.sortAnaliseTable('media')">Média Final <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
+                                            <th class="py-4 px-4 text-right text-slate-400 rounded-tr-xl">Ação</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                        ${data.operadoresArr.sort((a,b) => b.media - a.media).map(op => `
-                                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                                <td class="py-3 px-4 font-mono text-xs text-slate-500">${op.matricula}</td>
-                                                <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-headset text-slate-300 dark:text-slate-600 mr-2 text-[10px]"></i>${op.nome}</td>
-                                                <td class="py-3 px-4 text-center font-bold text-slate-600 dark:text-slate-400">${op.qtd}</td>
-                                                <td class="py-3 px-4 text-center font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-slate-50/50 dark:bg-slate-800/20">${op.media}</td>
-                                                <td class="py-3 px-4 text-center font-bold text-red-600 dark:text-red-400">${op.totalErros}</td>
-                                                <td class="py-3 px-4 text-center font-black text-orange-500">${op.taxaErro}%</td>
-                                            </tr>
-                                        `).join('')}
+                    `;
+                    
+                    // Lógica de Ordenação da Tabela
+                    let arrSort = [...data.rankOperadores];
+                    arrSort.sort((a,b) => {
+                        let vA, vB;
+                        if(this.analiseSortCol === 'nome') { vA = a.nome; vB = b.nome; }
+                        else if(this.analiseSortCol === 'notas') { vA = a.notas.length; vB = b.notas.length; }
+                        else if(this.analiseSortCol === 'min') { vA = a.min; vB = b.min; }
+                        else { vA = parseFloat(a.media); vB = parseFloat(b.media); }
+
+                        if(typeof vA === 'string') return this.analiseSortDir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA);
+                        return this.analiseSortDir === 'asc' ? vA - vB : vB - vA;
+                    });
+
+                    arrSort.forEach(op => {
+                        html += `
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                                <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">
+                                    <div class="flex items-center gap-3">
+                                        <i class="fa-solid fa-headset text-slate-300 dark:text-slate-600 text-lg"></i>
+                                        <span class="group-hover:text-blue-600 transition-colors cursor-pointer" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">${op.nome}</span>
+                                    </div>
+                                </td>
+                                <td class="py-3 px-4 text-center font-bold text-slate-600 dark:text-slate-400">${op.notas.length}</td>
+                                <td class="py-3 px-4 text-center font-bold text-orange-500">${op.min}</td>
+                                <td class="py-3 px-4 text-center font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-slate-50/50 dark:bg-slate-800/20 text-lg">${op.media}</td>
+                                <td class="py-3 px-4 text-right">
+                                    <button onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors shadow-sm"><i class="fa-solid fa-eye mr-1"></i> Detalhar</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `
                                     </tbody>
                                 </table>
                             </div>
@@ -8216,23 +8409,42 @@
                             nota = parseFloat(row[colNota].toString().replace(',', '.'));
                         }
 
-                        if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0 };
+                        if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
                         data.operadores[op].notas.push(nota);
                         if (nota < data.operadores[op].min) data.operadores[op].min = nota;
                         if (nota > data.operadores[op].max) data.operadores[op].max = nota;
 
+                        // Guarda as avaliações completas do operador (Formulário Sim/Não)
+                        let questionsArray = [];
+                        colunasAvaliacao.forEach(col => {
+                            let pesoMatch = col.match(/=\s*PESO:([0-9.,]+)/i);
+                            let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
+                            let ans = (row[col] || '').toString().trim();
+                            let cleanQ = app.utils.fixEncoding(col.split('=')[0].trim());
+                            questionsArray.push({ q: cleanQ, p: peso, a: ans });
+                        });
+                        
+                        data.operadores[op].avaliacoes.push({
+                            monitor: monitor,
+                            data: (row[colDataAudit] || row[colDataGrav] || 'S/D').toString(),
+                            nota: nota,
+                            perguntas: questionsArray
+                        });
+
                         colunasComuns.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
                             if (val === 'NÃO' || val === 'NAO') {
-                                const cleanGap = app.utils.fixEncoding(col);
-                                data.falhasComuns[cleanGap] = (data.falhasComuns[cleanGap] || 0) + 1;
+                                const cleanGap = app.utils.fixEncoding(col.split('=')[0].trim()); // Pega só o texto da pergunta
+                                if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: new Set() };
+                                data.falhasComuns[cleanGap].count += 1;
+                                data.falhasComuns[cleanGap].operadores.add(op);
                             }
                         });
 
                         colunasCriticas.forEach(col => {
                             const val = (row[col] || '').toString().trim().toUpperCase();
-                            if (val === 'NÃO' || val === 'NAO') {
-                                const cleanGap = app.utils.fixEncoding(col);
+                            if (val === 'SIM') { // Regra do peso 0: SIM é falha.
+                                const cleanGap = app.utils.fixEncoding(col.split('=')[0].trim());
                                 if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
                                 data.falhasCriticas[cleanGap].count += 1;
                                 data.falhasCriticas[cleanGap].operadores.add(op);
@@ -8245,40 +8457,30 @@
                         data.monitorProdutividade[monitor].qtd += 1;
                         data.monitorProdutividade[monitor].somaNotas += nota;
 
-                        if (colDataAudit && colDataGrav && row[colDataAudit] && row[colDataGrav]) {
-                            const parseDate = (val) => {
-                                if(typeof val === 'number') return new Date((val - 25569)*86400*1000); 
-                                const parts = val.toString().split(' ')[0].split('/'); 
-                                if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
-                                return new Date(val);
-                            };
-                            
-                            const dA = parseDate(row[colDataAudit]);
-                            const dG = parseDate(row[colDataGrav]);
-                            
-                            if (!isNaN(dA) && !isNaN(dG)) {
-                                const diffTime = Math.abs(dA - dG);
-                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                data.slaList.push(diffDays);
-                            }
-                        }
                     });
 
                     Object.values(data.operadores).forEach(op => {
-                        op.media = op.notas.reduce((a,b) => a+b, 0) / op.notas.length;
+                        op.media = (op.notas.reduce((a,b) => a+b, 0) / op.notas.length).toFixed(2);
                     });
+                    
                     Object.values(data.monitorProdutividade).forEach(m => {
-                        m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd) : 0;
+                        m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd).toFixed(2) : 0;
                     });
 
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
                         .sort((a,b) => b.count - a.count)
-                        .slice(0, 5);
+                        .slice(0, 5); // TOP 5 Criticas
+
+                    data.falhasComunsArray = Object.entries(data.falhasComuns)
+                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
+                        .sort((a,b) => b.count - a.count)
+                        .slice(0, 10); // TOP 10 Comuns
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
+                    data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => b.mediaNota - a.mediaNota);
                     
-                    app.analiseCSVData = data;
+                    app.analiseCSVDinamicoData = data; // Correção do nome da variável global
                 },
 
                 // ==========================================
