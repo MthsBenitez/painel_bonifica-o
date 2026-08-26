@@ -2006,6 +2006,8 @@
                     if(!ata) return;
                     
                     app.ui.renderTab('ata_reuniao', true);
+                    
+                    // CORREÇÃO: O timeout subiu de 200 para 500ms para aguardar o Loader da tela terminar
                     setTimeout(() => {
                         let editInput = document.getElementById('ata-edit-id');
                         if(editInput) editInput.value = id;
@@ -2031,10 +2033,26 @@
                         if(ata.rawExtras && ata.rawExtras.length > 0) {
                             ata.rawExtras.forEach(p => this.addParticipante(p.nome, p.cargo));
                         }
+
+                        // NOVO: Adiciona botão para "Apenas Salvar" sem precisar baixar PDF
+                        const btnContainer = document.querySelector('#ata-edit-id').parentElement.querySelector('.mt-10');
+                        if (btnContainer && !document.getElementById('btn-apenas-salvar')) {
+                            const btnSave = document.createElement('button');
+                            btnSave.id = 'btn-apenas-salvar';
+                            btnSave.type = 'button';
+                            btnSave.className = 'flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2';
+                            btnSave.innerHTML = '<i class="fa-solid fa-check"></i> Salvar Correção (Sem Baixar)';
+                            btnSave.onclick = () => { 
+                                if(app.ata.saveAtaToDB(false)) {
+                                    setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
+                                }
+                            };
+                            btnContainer.insertBefore(btnSave, btnContainer.firstChild);
+                        }
                         
                         window.scrollTo({ top: 0, behavior: 'smooth' });
-                        app.ui.showAlert("Modo Edição", "Os dados da Ata foram carregados. Faça as correções e gere a ata novamente para salvar as alterações.", "info");
-                    }, 200);
+                        app.ui.showAlert("Modo Edição", "Os dados da Ata foram carregados. Faça as correções necessárias e clique em 'Salvar Correção'.", "info");
+                    }, 500);
                 },
                 excluirAta(id) {
                     if(app.isAdmin) {
