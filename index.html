@@ -6908,8 +6908,11 @@
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="app.ui.exportOperadorAnaliseXLSX('${nomeEncoded}')" class="mr-auto px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm shadow-md transition-colors"><i class="fa-solid fa-file-excel mr-1"></i> Extrair XLSX Deste Operador</button>
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-lg font-bold text-sm shadow-sm transition-colors">Fechar Detalhamento</button>
+                        <button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-5xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-lg font-bold text-sm shadow-sm transition-colors">Fechar Detalhamento</button>
                     `;
+                    
+                    // Magia UX: Deixa esse modal grandão sem quebrar o resto do sistema
+                    document.querySelector('#global-modal > div').classList.replace('max-w-lg', 'max-w-5xl');
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
@@ -8338,7 +8341,7 @@
                             window.currentCSVAnaliseData = rows;
                             app.admin.gerarInteligenciaCSV(rows);
                             
-                            app.ui.renderTab('analise_csv', true);
+                            app.ui.renderTab('analise_csv_dinamico', true);
                             app.ui.showAlert("Pronto!", "Dashboard de Inteligência gerado com sucesso.", "success");
                             
                         } catch (error) {
@@ -8379,8 +8382,19 @@
                     const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
 
                     const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
-                    const colunasCriticas = colunasAvaliacao.filter(k => k.includes('100.00') || k.includes('100,00'));
-                    const colunasComuns = colunasAvaliacao.filter(k => !k.includes('100.00') && !k.includes('100,00'));
+                    // Filtra corretamente o Peso 0 para falhas críticas
+                    const colunasCriticas = colunasAvaliacao.filter(k => k.includes('0.00') || k.includes('0,00'));
+                    const colunasComuns = colunasAvaliacao.filter(k => !k.includes('0.00') && !k.includes('0,00'));
+
+                    // Função interna para corrigir o número bugado de Data do Excel
+                    const formatarDataExcel = (val) => {
+                        if (!val || val === 'S/D') return 'S/D';
+                        if (!isNaN(val) && Number(val) > 20000) {
+                            const dt = new Date((Number(val) - 25569) * 86400 * 1000);
+                            return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+                        }
+                        return String(val);
+                    };
 
                     if (rows.length > 0) {
                         let rawDate = rows[0][colDataAudit];
@@ -8402,7 +8416,12 @@
 
                     rows.forEach(row => {
                         const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
-                        const monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
+                        let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
+                        
+                        // Retira a matrícula caso venha no formato "12345 - NOME"
+                        if (monitor.includes(' - ')) {
+                            monitor = monitor.split(' - ').slice(1).join(' - ').trim();
+                        }
                         
                         let nota = 0;
                         if (row[colNota] !== undefined && row[colNota] !== '') {
@@ -8426,7 +8445,7 @@
                         
                         data.operadores[op].avaliacoes.push({
                             monitor: monitor,
-                            data: (row[colDataAudit] || row[colDataGrav] || 'S/D').toString(),
+                            data: formatarDataExcel(row[colDataAudit] || row[colDataGrav]),
                             nota: nota,
                             perguntas: questionsArray
                         });
