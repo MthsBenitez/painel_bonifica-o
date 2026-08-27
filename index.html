@@ -344,7 +344,8 @@
 
     <!-- Bibliotecas Premium UX/UI -->
     <script src="https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.29/bundled/lenis.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/autosize.js/6.0.1/autosize.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/autosize.js/6.0.1/autosize.min.js"></script><!-- Captura de Tela (Apresentações) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- GSAP (Usaremos no próximo passo para animações complexas) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <!-- Lottie Files Player -->
@@ -2834,7 +2835,7 @@
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}, {id:'apresentacoes_monitorias', label:'Apresentações'}] },
                     { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Auditoria Laudos'}, {id:'calibragem_audio', label:'Lab. de Áudio'}] },
                     { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}] },
@@ -3355,6 +3356,7 @@
                             else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
+                            else if(tabId === 'apresentacoes_monitorias') this.renderView_ApresentacoesMonitorias(viewDiv);
                         }, 400); // Fim do atraso do Skeleton
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
@@ -8715,9 +8717,74 @@
                     app.analiseCSVDinamicoData.consolidado = data;
                 },
 
-                // ==========================================
-                // TODAS AS SUAS FUNÇÕES ANTIGAS DO ADMIN RESTAURADAS AQUI PARA BAIXO
-                // ==========================================
+              renderView_ApresentacaoMonitorias(container) {
+                    if(!app.isAdmin) return;
+                    
+                    // Injeta a biblioteca de "Fotografia de Tela" automaticamente no fundo
+                    if(!window.html2canvas) {
+                        const script = document.createElement('script');
+                        script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                        document.head.appendChild(script);
+                    }
+
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Média Evolução Mensal & Insights Gerais</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gere sua apresentação automaticamente e exporte para o Canva.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-file-excel text-lg"></i> Importar Planilha Amil
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarApresentacaoMonitorias(this)" onclick="this.value = null">
+                                </label>
+                                <button onclick="app.admin.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF (16:9)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Palco da Apresentação com rolagem para não quebrar monitores pequenos -->
+                        <div class="overflow-x-auto w-full border border-slate-200 dark:border-slate-700 rounded-[2rem] custom-scrollbar bg-slate-100 dark:bg-slate-900 p-4 md:p-8">
+                            <!-- Tamanho Ultra HD (1920x1080) forçado para encaixar no Canva perfeitamente -->
+                            <div id="area-apresentacao" class="bg-white p-12 flex flex-col justify-between shadow-2xl mx-auto border border-slate-200" style="width: 1920px; min-width: 1920px; height: 1080px; min-height: 1080px;">
+                                
+                                <h1 class="text-[55px] font-black text-center text-slate-800 mb-10 uppercase tracking-tight">Média Evolução Mensal & Insights Gerais</h1>
+                                
+                                <!-- Cartões dos 6 Meses -->
+                                <div id="apresentacao-cards" class="grid grid-cols-3 gap-8 mb-10">
+                                    <div class="p-16 text-center text-slate-400 border-4 border-dashed border-slate-200 rounded-3xl col-span-3 text-2xl font-bold flex flex-col items-center justify-center h-64">
+                                        <i class="fa-solid fa-cloud-arrow-up text-5xl mb-4 text-slate-300"></i> Importe a planilha para gerar os cartões.
+                                    </div>
+                                </div>
+                                
+                                <!-- Tabela Matricial Skills x Meses -->
+                                <div id="apresentacao-tabela" class="mb-10 rounded-3xl overflow-hidden border-4 border-slate-200">
+                                    <table class="w-full text-left text-2xl bg-slate-50 h-32">
+                                        <tbody>
+                                            <tr><td class="p-8 text-center text-slate-400 italic">A tabela com os setores (Skill) aparecerá aqui após o processamento...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <!-- Caixas de Diagnóstico -->
+                                <div class="grid grid-cols-2 gap-10 mt-auto">
+                                    <div class="bg-blue-50 p-8 rounded-3xl border-4 border-blue-200">
+                                        <h3 class="font-black text-blue-800 text-3xl mb-6 flex items-center gap-3"><i class="fa-solid fa-chart-line text-blue-600"></i> Diagnóstico das Curvas</h3>
+                                        <textarea class="w-full h-40 bg-transparent outline-none resize-none text-slate-700 text-2xl" placeholder="Aponte aqui os principais insights positivos e avaliações de cenário..."></textarea>
+                                    </div>
+                                    <div class="bg-purple-50 p-8 rounded-3xl border-4 border-purple-200">
+                                        <h3 class="font-black text-purple-800 text-3xl mb-6 flex items-center gap-3"><i class="fa-solid fa-lightbulb text-purple-600"></i> Diagnóstico das Curvas</h3>
+                                        <textarea class="w-full h-40 bg-transparent outline-none resize-none text-slate-700 text-2xl" placeholder="Aponte aqui os planos de ação e pontos a desenvolver..."></textarea>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                },
+                
                 viewUserProfile(mat) {
                     const u = app.users.find(x => x.matricula === mat);
                     if(!u) return;
@@ -9719,6 +9786,189 @@
                         document.body.removeChild(link);
                     }
                 }
+
+                processarApresentacaoMonitorias(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+                    app.ui.showAlert("Processando...", "Cruzando setores e calculando médias evolutivas...", "info");
+                    
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                            
+                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
+
+                            // Buscar Nomes Exatos ou aproximados das colunas conforme sua instrução
+                            const keys = Object.keys(jsonData[0]);
+                            const colData = keys.find(k => k.trim().toUpperCase() === 'DATA DA MONITORIA' || k.toUpperCase().includes('DATA'));
+                            const colNota = keys.find(k => k.trim().toUpperCase() === 'NOTA' || k.toUpperCase().includes('NOTA'));
+                            const colIlha = keys.find(k => k.trim().toUpperCase() === 'ILHA' || k.toUpperCase().includes('ILHA'));
+
+                            if(!colData || !colNota || !colIlha) {
+                                return app.ui.showAlert("Erro de Estrutura", "Não encontrei as colunas com os nomes 'Data da Monitoria', 'Nota' e 'Ilha'. Verifique o arquivo.", "error");
+                            }
+
+                            let rawRecords = [];
+
+                            jsonData.forEach(row => {
+                                let d = row[colData];
+                                let dtObj;
+                                
+                                // Tratamento de Data Excel (Número) ou Texto (DD/MM/YYYY)
+                                if(typeof d === 'number') {
+                                    dtObj = new Date((d - 25569) * 86400 * 1000);
+                                } else if (typeof d === 'string') {
+                                    let parts = d.split(' ')[0].split('/');
+                                    if(parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                    else dtObj = new Date(d);
+                                }
+                                
+                                if(!dtObj || isNaN(dtObj)) return; // Ignora se não for data
+                                
+                                const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+                                let mesAnoStr = `${meses[dtObj.getMonth()]} ${dtObj.getFullYear()}`;
+                                let sortKey = dtObj.getFullYear() * 100 + dtObj.getMonth(); // Facilita ordenar cronologicamente
+
+                                let notaStr = String(row[colNota]).replace(',', '.').replace('%', '');
+                                let nota = parseFloat(notaStr);
+                                if(isNaN(nota)) return;
+
+                                let ilha = String(row[colIlha]).trim();
+                                if(!ilha || ilha === '-') ilha = "Sem Setor";
+
+                                rawRecords.push({ mesAnoStr, sortKey, nota, ilha });
+                            });
+
+                            // Agrupar por Mês e por Ilha
+                            const monthMap = {};
+                            rawRecords.forEach(r => {
+                                if(!monthMap[r.sortKey]) monthMap[r.sortKey] = { label: r.mesAnoStr, sortKey: r.sortKey, somaNotas: 0, count: 0, ilhas: {} };
+                                monthMap[r.sortKey].somaNotas += r.nota;
+                                monthMap[r.sortKey].count++;
+                                
+                                if(!monthMap[r.sortKey].ilhas[r.ilha]) monthMap[r.sortKey].ilhas[r.ilha] = { somaNotas: 0, count: 0 };
+                                monthMap[r.sortKey].ilhas[r.ilha].somaNotas += r.nota;
+                                monthMap[r.sortKey].ilhas[r.ilha].count++;
+                            });
+
+                            // Pega no máximo os 6 meses mais recentes em ordem crescente
+                            let sortedMonths = Object.values(monthMap).sort((a,b) => a.sortKey - b.sortKey);
+                            if(sortedMonths.length > 6) sortedMonths = sortedMonths.slice(sortedMonths.length - 6);
+
+                            const allIlhasSet = new Set();
+                            sortedMonths.forEach(m => Object.keys(m.ilhas).forEach(i => allIlhasSet.add(i)));
+                            const allIlhas = Array.from(allIlhasSet).sort();
+
+                            // Renderizando Cartões 
+                            let cardsHtml = '';
+                            sortedMonths.forEach(m => {
+                                let media = (m.somaNotas / m.count).toFixed(2);
+                                let corBg = media >= 85 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700';
+                                if (media >= 80 && media < 85) corBg = 'bg-orange-50 border-orange-200 text-orange-700';
+                                
+                                cardsHtml += `
+                                    <div class="${corBg} border-4 rounded-[2rem] p-8 flex flex-col justify-center items-center shadow-md h-56 transition-transform hover:-translate-y-1">
+                                        <span class="text-3xl font-black uppercase tracking-widest opacity-80 mb-2">${m.label}</span>
+                                        <span class="text-[5.5rem] font-black leading-none drop-shadow-sm">${media}</span>
+                                    </div>
+                                `;
+                            });
+                            
+                            // Preenche o buraco se tiver menos de 6 meses
+                            for(let i = sortedMonths.length; i < 6; i++) {
+                                cardsHtml += `<div class="bg-slate-50 border-4 border-slate-200 rounded-[2rem] p-8 flex flex-col justify-center items-center opacity-40 h-56"><span class="text-3xl font-bold uppercase tracking-widest mb-2">-</span><span class="text-[5.5rem] font-black">-</span></div>`;
+                            }
+                            document.getElementById('apresentacao-cards').innerHTML = cardsHtml;
+
+                            // Renderizando Tabela Matricial
+                            let thHtml = `<th class="p-6 border-b-4 border-r-2 border-slate-300 w-1/4">Skill / Mês</th>`;
+                            sortedMonths.forEach(m => { thHtml += `<th class="p-6 border-b-4 border-slate-300 text-center">${m.label}</th>`; });
+                            thHtml += `<th class="p-6 border-b-4 border-l-4 border-slate-300 text-center bg-slate-100 text-blue-700">Média (Skill)</th>`;
+
+                            let tbHtml = '';
+                            allIlhas.forEach(ilha => {
+                                let sumIlha = 0, countIlha = 0;
+                                let rowHtml = `<td class="p-6 font-black text-slate-700 border-b-2 border-r-2 border-slate-200">${ilha}</td>`;
+                                
+                                sortedMonths.forEach(m => {
+                                    if(m.ilhas[ilha]) {
+                                        let val = m.ilhas[ilha].somaNotas / m.ilhas[ilha].count;
+                                        sumIlha += m.ilhas[ilha].somaNotas;
+                                        countIlha += m.ilhas[ilha].count;
+                                        rowHtml += `<td class="p-6 text-center border-b-2 border-slate-200 font-bold text-slate-600">${val.toFixed(2)}</td>`;
+                                    } else {
+                                        rowHtml += `<td class="p-6 text-center border-b-2 border-slate-200 text-slate-300">-</td>`;
+                                    }
+                                });
+                                
+                                let mediaIlha = countIlha > 0 ? (sumIlha / countIlha).toFixed(2) : '-';
+                                rowHtml += `<td class="p-6 text-center border-b-2 border-l-4 border-slate-200 font-black text-blue-600 bg-slate-50">${mediaIlha}</td>`;
+                                tbHtml += `<tr>${rowHtml}</tr>`;
+                            });
+
+                            // Média Geral Linha Final
+                            let bottomRowHtml = `<td class="p-6 font-black uppercase text-slate-800 border-t-4 border-r-2 border-slate-300">Média Geral</td>`;
+                            let totalSomaGlobal = 0, totalCountGlobal = 0;
+                            sortedMonths.forEach(m => {
+                                let media = (m.somaNotas / m.count).toFixed(2);
+                                totalSomaGlobal += m.somaNotas;
+                                totalCountGlobal += m.count;
+                                bottomRowHtml += `<td class="p-6 text-center font-black border-t-4 border-slate-300 text-green-600">${media}</td>`;
+                            });
+                            let mediaAbsoluta = totalCountGlobal > 0 ? (totalSomaGlobal / totalCountGlobal).toFixed(2) : '-';
+                            bottomRowHtml += `<td class="p-6 text-center font-black border-t-4 border-l-4 border-slate-300 bg-slate-800 text-white text-3xl">${mediaAbsoluta}</td>`;
+
+                            document.getElementById('apresentacao-tabela').innerHTML = `
+                                <table class="w-full text-left text-2xl">
+                                    <thead class="bg-slate-200 text-slate-700 uppercase tracking-widest font-black"><tr>${thHtml}</tr></thead>
+                                    <tbody class="bg-white">${tbHtml}<tr class="bg-slate-100">${bottomRowHtml}</tr></tbody>
+                                </table>
+                            `;
+
+                            app.ui.showAlert("Pronto!", "Apresentação gerada com sucesso! Você já pode inserir seus diagnósticos nos campos inferiores.", "success");
+
+                        } catch (err) {
+                            console.error(err);
+                            app.ui.showAlert("Erro", "Falha ao processar o arquivo. Certifique-se que é o formato exigido.", "error");
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                    input.value = ''; // Limpa o botão para poder subir novamente se precisar
+                },
+
+                exportarApresentacaoPDF() {
+                    if (!window.html2canvas) {
+                        return app.ui.showAlert("Aviso", "A biblioteca de conversão de imagem ainda está carregando no fundo. Tente em 3 segundos.", "info");
+                    }
+                    
+                    app.ui.showAlert("Exportando...", "Aguarde enquanto desenhamos o PDF em altíssima resolução (Tamanho 16:9)...", "info");
+                    
+                    const area = document.getElementById('area-apresentacao');
+                    
+                    // Tiramos uma foto "perfeita" da div do container gigante que criamos
+                    html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+                        const imgData = canvas.toDataURL('image/png');
+                        
+                        // Cria PDF com proporções idênticas às de uma Apresentação no Canva
+                        const pdf = new window.jspdf.jsPDF({
+                            orientation: 'landscape',
+                            unit: 'px',
+                            format: [1920, 1080]
+                        });
+                        
+                        pdf.addImage(imgData, 'PNG', 0, 0, 1920, 1080);
+                        pdf.save(`Apresentacao_Monitoria_${new Date().toISOString().split('T')[0]}.pdf`);
+                        app.ui.showAlert("Fantástico!", "PDF gerado com sucesso! Agora é só importar no seu projeto do Canva.", "success");
+                    }).catch(err => {
+                        console.error(err);
+                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar o PDF. Tente novamente.", "error");
+                    });
+                }
+
             }; // Feche o objeto app aqui com ponto e vírgula
 
         // ==========================================
