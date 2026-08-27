@@ -10055,16 +10055,18 @@
                     style.innerHTML = `
                         @media print {
                             @page { size: A4 landscape; margin: 0mm; }
-                            body, html { margin: 0 !important; padding: 0 !important; background: white !important; }
+                            body, html { margin: 0 !important; padding: 0 !important; background: white !important; overflow: hidden !important; }
                             #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
-                            #view-app, main, #content-container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+                            #view-app, main, #content-container { padding: 0 !important; margin: 0 !important; max-width: none !important; overflow: visible !important; }
                             .overflow-x-auto { overflow: visible !important; }
                             #area-apresentacao { 
-                                transform: scale(0.66); 
-                                transform-origin: top left; 
+                                transform: scale(0.58) !important; /* Ajuste fino de 0.66 para 0.58 para enquadramento A4 */
+                                transform-origin: top left !important; 
                                 box-shadow: none !important; 
                                 border: none !important; 
                                 margin: 0 !important; 
+                                page-break-inside: avoid !important; /* Evita fatiamento do documento */
+                                break-inside: avoid !important;
                             }
                             /* Força a cor de fundo nas tabelas/cards no PDF */
                             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
