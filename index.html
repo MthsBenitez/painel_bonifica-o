@@ -333,9 +333,9 @@
         .animated-submit-btn.is-flying .state--default .icon:before { animation: contrailBtn 0.8s linear forwards; }
         @keyframes contrailBtn { 0% { width: 0; opacity: 1; } 8% { width: 15px; } 60% { opacity: 0.7; width: 80px; } 100% { opacity: 0; width: 160px; } }
         
-        .state--sent { display: none; position: absolute; inset: 0; }
+        .animated-submit-btn .state.state--sent { display: none; position: absolute; inset: 0; }
         .animated-submit-btn.is-flying .state--default { opacity: 0; transition: opacity 0.5s ease 0.5s; }
-        .animated-submit-btn.is-flying .state--sent { display: flex; }
+        .animated-submit-btn.is-flying .state.state--sent { display: flex; }
         .animated-submit-btn.is-flying .state--sent span { opacity: 0; animation: slideDownBtn 0.8s ease forwards calc(var(--i) * 0.2s); }
         .animated-submit-btn.is-flying .state--sent .icon { opacity: 0; animation: appearBtn 1.2s ease forwards 0.8s; }
         @keyframes appearBtn { 0% { opacity: 0; transform: scale(4) rotate(-40deg); color: #fff; filter: blur(4px); } 30% { opacity: 1; transform: scale(0.6); filter: blur(1px); } 50% { opacity: 1; transform: scale(1.2); filter: blur(0); } 100% { opacity: 1; transform: scale(1); } }
