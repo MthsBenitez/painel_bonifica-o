@@ -8722,74 +8722,6 @@
                     
                     app.analiseCSVDinamicoData.consolidado = data;
                 },
-
-                renderView_ApresentacoesMonitorias(container) {
-                  if(!app.isAdmin) return;
-
-                  // Injeta a biblioteca de "Fotografia de Tela" automaticamente no fundo
-                    if(!window.html2canvas) {
-                        const script = document.createElement('script');
-                        script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-                        document.head.appendChild(script);
-                    }
-
-                    let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Média Evolução Mensal & Insights Gerais</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gere sua apresentação automaticamente e exporte para o Canva.</p>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-3">
-                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-file-excel text-lg"></i> Importar Planilha Amil
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarApresentacaoMonitorias(this)" onclick="this.value = null">
-                                </label>
-                                <button onclick="app.admin.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF (16:9)
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Palco da Apresentação com rolagem para não quebrar monitores pequenos -->
-                        <div class="overflow-x-auto w-full border border-slate-200 dark:border-slate-700 rounded-[2rem] custom-scrollbar bg-slate-100 dark:bg-slate-900 p-4 md:p-8">
-                            <!-- Tamanho Ultra HD (1920x1080) forçado para encaixar no Canva perfeitamente -->
-                            <div id="area-apresentacao" class="bg-white p-12 flex flex-col justify-between shadow-2xl mx-auto border border-slate-200" style="width: 1920px; min-width: 1920px; height: 1080px; min-height: 1080px;">
-                                
-                                <h1 class="text-[55px] font-black text-center text-slate-800 mb-10 uppercase tracking-tight">Média Evolução Mensal & Insights Gerais</h1>
-                                
-                                <!-- Cartões dos 6 Meses -->
-                                <div id="apresentacao-cards" class="grid grid-cols-3 gap-8 mb-10">
-                                    <div class="p-16 text-center text-slate-400 border-4 border-dashed border-slate-200 rounded-3xl col-span-3 text-2xl font-bold flex flex-col items-center justify-center h-64">
-                                        <i class="fa-solid fa-cloud-arrow-up text-5xl mb-4 text-slate-300"></i> Importe a planilha para gerar os cartões.
-                                    </div>
-                                </div>
-                                
-                                <!-- Tabela Matricial Skills x Meses -->
-                                <div id="apresentacao-tabela" class="mb-10 rounded-3xl overflow-hidden border-4 border-slate-200">
-                                    <table class="w-full text-left text-2xl bg-slate-50 h-32">
-                                        <tbody>
-                                            <tr><td class="p-8 text-center text-slate-400 italic">A tabela com os setores (Skill) aparecerá aqui após o processamento...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                
-                                <!-- Caixas de Diagnóstico -->
-                                <div class="grid grid-cols-2 gap-10 mt-auto">
-                                    <div class="bg-blue-50 p-8 rounded-3xl border-4 border-blue-200">
-                                        <h3 class="font-black text-blue-800 text-3xl mb-6 flex items-center gap-3"><i class="fa-solid fa-chart-line text-blue-600"></i> Diagnóstico das Curvas</h3>
-                                        <textarea class="w-full h-40 bg-transparent outline-none resize-none text-slate-700 text-2xl" placeholder="Aponte aqui os principais insights positivos e avaliações de cenário..."></textarea>
-                                    </div>
-                                    <div class="bg-purple-50 p-8 rounded-3xl border-4 border-purple-200">
-                                        <h3 class="font-black text-purple-800 text-3xl mb-6 flex items-center gap-3"><i class="fa-solid fa-lightbulb text-purple-600"></i> Diagnóstico das Curvas</h3>
-                                        <textarea class="w-full h-40 bg-transparent outline-none resize-none text-slate-700 text-2xl" placeholder="Aponte aqui os planos de ação e pontos a desenvolver..."></textarea>
-                                    </div>
-                                </div>
-
-                            </div>
-                        </div>
-                    `;
-                    container.innerHTML = html;
-                },
                 
                 viewUserProfile(mat) {
                     const u = app.users.find(x => x.matricula === mat);
@@ -9791,61 +9723,128 @@
                     }
                 }, // <--- CORRIGIDO: Apenas UMA chave para fechar 'calibragemAudio', mantendo o bloco 'admin' aberto!
 
-            processarApresentacaoMonitorias(input) {
-                const file = input.files[0];
-                if (!file) return;
-                app.ui.showAlert("Processando...", "Cruzando setores e calculando médias evolutivas...", "info");
-                
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-                        
-                        if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
+            renderView_ApresentacoesMonitorias(container) {
+                  if(!app.isAdmin) return;
 
-                        // Busca inteligente e flexível de colunas (ignora maiúsculas/minúsculas e variações)
-                        const keys = Object.keys(jsonData[0]);
-                        const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
+                  // Injeta a biblioteca de "Fotografia de Tela" automaticamente no fundo
+                    if(!window.html2canvas) {
+                        const script = document.createElement('script');
+                        script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                        document.head.appendChild(script);
+                    }
 
-                        const colData = findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA']);
-                        const colNota = findCol(['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO']);
-                        const colIlha = findCol(['ILHA', 'SETOR', 'EQUIPE', 'UNIDADE']);
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Média Evolução Mensal & Insights Gerais</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gere sua apresentação automaticamente e exporte para o Canva.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-file-excel text-lg"></i> Importar Planilha Amil
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarApresentacaoMonitorias(this)" onclick="this.value = null">
+                                </label>
+                                <button onclick="app.admin.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF (Adaptável)
+                                </button>
+                            </div>
+                        </div>
 
-                        if(!colData || !colNota || !colIlha) {
-                            return app.ui.showAlert("Erro de Estrutura", "Não foi possível localizar automaticamente as colunas de 'Data', 'Nota' e 'Ilha' na planilha Amil. Verifique os títulos do arquivo.", "error");
-                        }
-
-                        let rawRecords = [];
-
-                        jsonData.forEach(row => {
-                            let d = row[colData];
-                            let dtObj = null;
-                            
-                            if (d !== undefined && d !== null && d !== '') {
-                                if (typeof d === 'number') {
-                                    dtObj = new Date((d - 25569) * 86400 * 1000);
-                                } else if (typeof d === 'string') {
-                                    let cleanStr = d.split(' ')[0].trim();
-                                    if (cleanStr.includes('/')) {
-                                        let parts = cleanStr.split('/');
-                                        if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
-                                    } else if (cleanStr.includes('-')) {
-                                        let parts = cleanStr.split('-');
-                                        if (parts.length === 3) {
-                                            // Se vier no formato AAAA-MM-DD
-                                            if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
-                                            else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
-                                        }
-                                    }
-                                    if (!dtObj || isNaN(dtObj)) dtObj = new Date(d);
-                                }
-                            }
-                            
-                            if(!dtObj || isNaN(dtObj)) return; // Ignora linhas sem data válida
+                        <!-- Palco da Apresentação com rolagem para não quebrar monitores pequenos -->
+                        <div class="overflow-x-auto w-full border border-slate-200 dark:border-slate-700 rounded-[2rem] custom-scrollbar bg-slate-100 dark:bg-slate-900 p-4 md:p-8">
+                            <!-- Tamanho Ultra HD (1920) forçado na largura, com altura expansível (max-content) -->
+                            <div id="area-apresentacao" class="bg-white p-12 flex flex-col justify-between shadow-2xl mx-auto border border-slate-200" style="width: 1920px; min-width: 1920px; min-height: 1080px; height: max-content;">
                                 
+                                <h1 class="text-[55px] font-black text-center text-slate-800 mb-10 uppercase tracking-tight">Média Evolução Mensal & Insights Gerais</h1>
+                                
+                                <!-- Cartões dos Meses -->
+                                <div id="apresentacao-cards" class="grid gap-8 mb-10" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+                                    <div class="p-16 text-center text-slate-400 border-4 border-dashed border-slate-200 rounded-3xl text-2xl font-bold flex flex-col items-center justify-center h-64" style="grid-column: 1 / -1;">
+                                        <i class="fa-solid fa-cloud-arrow-up text-5xl mb-4 text-slate-300"></i> Importe a planilha para gerar os cartões com as cores dinâmicas.
+                                    </div>
+                                </div>
+                                
+                                <!-- Tabela Matricial Skills x Meses -->
+                                <div id="apresentacao-tabela" class="mb-10 rounded-3xl overflow-hidden border-4 border-slate-200">
+                                    <table class="w-full text-left text-2xl bg-slate-50 h-32">
+                                        <tbody>
+                                            <tr><td class="p-8 text-center text-slate-400 italic">A tabela com TODOS os setores aparecerá aqui...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <!-- Caixas de Diagnóstico -->
+                                <div class="grid grid-cols-2 gap-10 mt-auto pt-6">
+                                    <div class="bg-blue-50 p-8 rounded-3xl border-4 border-blue-200">
+                                        <h3 class="font-black text-blue-800 text-3xl mb-6 flex items-center gap-3"><i class="fa-solid fa-chart-line text-blue-600"></i> Diagnóstico das Curvas</h3>
+                                        <textarea class="w-full h-40 bg-transparent outline-none resize-none text-slate-700 text-2xl" placeholder="Aponte aqui os principais insights positivos e avaliações de cenário..."></textarea>
+                                    </div>
+                                    <div class="bg-purple-50 p-8 rounded-3xl border-4 border-purple-200">
+                                        <h3 class="font-black text-purple-800 text-3xl mb-6 flex items-center gap-3"><i class="fa-solid fa-lightbulb text-purple-600"></i> Planos de Ação</h3>
+                                        <textarea class="w-full h-40 bg-transparent outline-none resize-none text-slate-700 text-2xl" placeholder="Aponte aqui os planos de ação e pontos a desenvolver..."></textarea>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                },
+
+                processarApresentacaoMonitorias(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+                    app.ui.showAlert("Processando...", "Cruzando todos os setores e adaptando o design da página...", "info");
+                    
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                            
+                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
+
+                            // Busca inteligente e flexível de colunas (ignora maiúsculas/minúsculas e variações)
+                            const keys = Object.keys(jsonData[0]);
+                            const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
+
+                            const colData = findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA']);
+                            const colNota = findCol(['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO']);
+                            const colIlha = findCol(['ILHA', 'SETOR', 'EQUIPE', 'UNIDADE']);
+
+                            if(!colData || !colNota || !colIlha) {
+                                return app.ui.showAlert("Erro de Estrutura", "Não foi possível localizar automaticamente as colunas de 'Data', 'Nota' e 'Ilha' na planilha. Verifique os títulos do arquivo.", "error");
+                            }
+
+                            let rawRecords = [];
+
+                            jsonData.forEach(row => {
+                                let d = row[colData];
+                                let dtObj = null;
+                                
+                                if (d !== undefined && d !== null && d !== '') {
+                                    if (typeof d === 'number') {
+                                        dtObj = new Date((d - 25569) * 86400 * 1000);
+                                    } else if (typeof d === 'string') {
+                                        let cleanStr = d.split(' ')[0].trim();
+                                        if (cleanStr.includes('/')) {
+                                            let parts = cleanStr.split('/');
+                                            if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                        } else if (cleanStr.includes('-')) {
+                                            let parts = cleanStr.split('-');
+                                            if (parts.length === 3) {
+                                                if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
+                                                else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                            }
+                                        }
+                                        if (!dtObj || isNaN(dtObj)) dtObj = new Date(d);
+                                    }
+                                }
+                                
+                                if(!dtObj || isNaN(dtObj)) return; // Ignora linhas sem data válida
+                                    
                                 const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
                                 let mesAnoStr = `${meses[dtObj.getMonth()]} ${dtObj.getFullYear()}`;
                                 let sortKey = dtObj.getFullYear() * 100 + dtObj.getMonth(); // Facilita ordenar cronologicamente
@@ -9872,20 +9871,32 @@
                                 monthMap[r.sortKey].ilhas[r.ilha].count++;
                             });
 
-                            // Pega no máximo os 6 meses mais recentes em ordem crescente
+                            // Pega TODOS os meses (Sem limite)
                             let sortedMonths = Object.values(monthMap).sort((a,b) => a.sortKey - b.sortKey);
-                            if(sortedMonths.length > 6) sortedMonths = sortedMonths.slice(sortedMonths.length - 6);
 
                             const allIlhasSet = new Set();
                             sortedMonths.forEach(m => Object.keys(m.ilhas).forEach(i => allIlhasSet.add(i)));
                             const allIlhas = Array.from(allIlhasSet).sort();
 
-                            // Renderizando Cartões 
+                            // Calcular Mínimo e Máximo Absolutos dos Meses
+                            let mediasGlobais = sortedMonths.map(m => parseFloat((m.somaNotas / m.count).toFixed(2)));
+                            let maxMedia = Math.max(...mediasGlobais);
+                            let minMedia = Math.min(...mediasGlobais);
+
+                            // Renderizando Cartões Dinâmicos 
                             let cardsHtml = '';
                             sortedMonths.forEach(m => {
-                                let media = (m.somaNotas / m.count).toFixed(2);
-                                let corBg = media >= 85 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700';
-                                if (media >= 80 && media < 85) corBg = 'bg-orange-50 border-orange-200 text-orange-700';
+                                let mediaFloat = parseFloat((m.somaNotas / m.count).toFixed(2));
+                                let media = mediaFloat.toFixed(2);
+                                
+                                // Cor Neutra Base
+                                let corBg = 'bg-slate-50 border-slate-200 text-slate-700';
+                                
+                                // Aplica cores apenas se houver variação (Se todos os meses tiverem 100, ficam neutros)
+                                if (sortedMonths.length > 1 && maxMedia !== minMedia) {
+                                    if (mediaFloat === maxMedia) corBg = 'bg-green-50 border-green-200 text-green-700';
+                                    else if (mediaFloat === minMedia) corBg = 'bg-red-50 border-red-200 text-red-700';
+                                }
                                 
                                 cardsHtml += `
                                     <div class="${corBg} border-4 rounded-[2rem] p-8 flex flex-col justify-center items-center shadow-md h-56 transition-transform hover:-translate-y-1">
@@ -9895,13 +9906,13 @@
                                 `;
                             });
                             
-                            // Preenche o buraco se tiver menos de 6 meses
-                            for(let i = sortedMonths.length; i < 6; i++) {
-                                cardsHtml += `<div class="bg-slate-50 border-4 border-slate-200 rounded-[2rem] p-8 flex flex-col justify-center items-center opacity-40 h-56"><span class="text-3xl font-bold uppercase tracking-widest mb-2">-</span><span class="text-[5.5rem] font-black">-</span></div>`;
-                            }
+                            // Adapta o CSS Grid para 2 linhas matemáticas exatas
+                            let cols = Math.ceil(sortedMonths.length / 2);
+                            if (cols < 1) cols = 1;
+                            document.getElementById('apresentacao-cards').style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
                             document.getElementById('apresentacao-cards').innerHTML = cardsHtml;
 
-                            // Renderizando Tabela Matricial
+                            // Renderizando Tabela Matricial de Skills
                             let thHtml = `<th class="p-6 border-b-4 border-r-2 border-slate-300 w-1/4">Skill / Mês</th>`;
                             sortedMonths.forEach(m => { thHtml += `<th class="p-6 border-b-4 border-slate-300 text-center">${m.label}</th>`; });
                             thHtml += `<th class="p-6 border-b-4 border-l-4 border-slate-300 text-center bg-slate-100 text-blue-700">Média (Skill)</th>`;
@@ -9916,28 +9927,40 @@
                                         let val = m.ilhas[ilha].somaNotas / m.ilhas[ilha].count;
                                         sumIlha += m.ilhas[ilha].somaNotas;
                                         countIlha += m.ilhas[ilha].count;
-                                        rowHtml += `<td class="p-6 text-center border-b-2 border-slate-200 font-bold text-slate-600">${val.toFixed(2)}</td>`;
+                                        
+                                        // CORREÇÃO: Alerta Laranja Suave se for menor ou igual a 89,99
+                                        let colorClass = val <= 89.9999 ? 'bg-orange-100 text-orange-700' : 'text-slate-600';
+                                        
+                                        rowHtml += `<td class="p-6 text-center border-b-2 border-slate-200 font-bold ${colorClass}">${val.toFixed(2)}</td>`;
                                     } else {
                                         rowHtml += `<td class="p-6 text-center border-b-2 border-slate-200 text-slate-300">-</td>`;
                                     }
                                 });
                                 
-                                let mediaIlha = countIlha > 0 ? (sumIlha / countIlha).toFixed(2) : '-';
-                                rowHtml += `<td class="p-6 text-center border-b-2 border-l-4 border-slate-200 font-black text-blue-600 bg-slate-50">${mediaIlha}</td>`;
+                                let mediaIlhaFloat = countIlha > 0 ? (sumIlha / countIlha) : 0;
+                                let mediaIlhaStr = countIlha > 0 ? mediaIlhaFloat.toFixed(2) : '-';
+                                let mediaColorClass = mediaIlhaFloat <= 89.9999 ? 'bg-orange-100 text-orange-700' : 'bg-slate-50 text-blue-600';
+                                
+                                rowHtml += `<td class="p-6 text-center border-b-2 border-l-4 border-slate-200 font-black ${mediaColorClass}">${mediaIlhaStr}</td>`;
                                 tbHtml += `<tr>${rowHtml}</tr>`;
                             });
 
                             // Média Geral Linha Final
                             let bottomRowHtml = `<td class="p-6 font-black uppercase text-slate-800 border-t-4 border-r-2 border-slate-300">Média Geral</td>`;
                             let totalSomaGlobal = 0, totalCountGlobal = 0;
+                            
                             sortedMonths.forEach(m => {
-                                let media = (m.somaNotas / m.count).toFixed(2);
+                                let mediaFloat = m.count > 0 ? (m.somaNotas / m.count) : 0;
+                                let media = mediaFloat.toFixed(2);
                                 totalSomaGlobal += m.somaNotas;
                                 totalCountGlobal += m.count;
-                                bottomRowHtml += `<td class="p-6 text-center font-black border-t-4 border-slate-300 text-green-600">${media}</td>`;
+                                let colorClass = mediaFloat <= 89.9999 ? 'text-orange-500' : 'text-green-600';
+                                bottomRowHtml += `<td class="p-6 text-center font-black border-t-4 border-slate-300 ${colorClass}">${media}</td>`;
                             });
-                            let mediaAbsoluta = totalCountGlobal > 0 ? (totalSomaGlobal / totalCountGlobal).toFixed(2) : '-';
-                            bottomRowHtml += `<td class="p-6 text-center font-black border-t-4 border-l-4 border-slate-300 bg-slate-800 text-white text-3xl">${mediaAbsoluta}</td>`;
+                            
+                            let mediaAbsolutaFloat = totalCountGlobal > 0 ? (totalSomaGlobal / totalCountGlobal) : 0;
+                            let mediaAbsolutaStr = totalCountGlobal > 0 ? mediaAbsolutaFloat.toFixed(2) : '-';
+                            bottomRowHtml += `<td class="p-6 text-center font-black border-t-4 border-l-4 border-slate-300 bg-slate-800 text-white text-3xl">${mediaAbsolutaStr}</td>`;
 
                             document.getElementById('apresentacao-tabela').innerHTML = `
                                 <table class="w-full text-left text-2xl">
@@ -9946,7 +9969,7 @@
                                 </table>
                             `;
 
-                            app.ui.showAlert("Pronto!", "Apresentação gerada com sucesso! Você já pode inserir seus diagnósticos nos campos inferiores.", "success");
+                            app.ui.showAlert("Pronto!", "Apresentação gerada com sucesso! O tamanho da tela se ajustou automaticamente e todos os setores estão presentes.", "success");
 
                         } catch (err) {
                             console.error(err);
@@ -9958,11 +9981,12 @@
                 },
 
                 exportarApresentacaoPDF() {
-                    if (!window.html2canvas) {
-                        return app.ui.showAlert("Aviso", "A biblioteca de conversão de imagem ainda está carregando no fundo. Tente em 3 segundos.", "info");
+                    // Proteção garantida caso a biblioteca não esteja carregada no DOM
+                    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
+                        return app.ui.showAlert("Aviso", "A biblioteca de conversão de imagem ainda está carregando no sistema. Aguarde uns segundos e clique novamente.", "info");
                     }
                     
-                    app.ui.showAlert("Exportando...", "Aguarde enquanto desenhamos o PDF em altíssima resolução (Tamanho 16:9)...", "info");
+                    app.ui.showAlert("Exportando...", "Aguarde enquanto desenhamos o PDF em altíssima resolução. Isso pode levar alguns segundos dependendo da quantidade de meses e operações...", "info");
                     
                     const area = document.getElementById('area-apresentacao');
                     
@@ -9970,19 +9994,23 @@
                     html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
                         const imgData = canvas.toDataURL('image/png');
                         
-                        // Cria PDF com proporções idênticas às de uma Apresentação no Canva
+                        // Captura a altura real da div que agora é elástica (pode ser maior que 1080)
+                        const realWidth = area.offsetWidth;
+                        const realHeight = area.offsetHeight;
+                        
+                        // Cria PDF adaptativo 
                         const pdf = new window.jspdf.jsPDF({
-                            orientation: 'landscape',
+                            orientation: realWidth > realHeight ? 'landscape' : 'portrait',
                             unit: 'px',
-                            format: [1920, 1080]
+                            format: [realWidth, realHeight]
                         });
                         
-                        pdf.addImage(imgData, 'PNG', 0, 0, 1920, 1080);
+                        pdf.addImage(imgData, 'PNG', 0, 0, realWidth, realHeight);
                         pdf.save(`Apresentacao_Monitoria_${new Date().toISOString().split('T')[0]}.pdf`);
-                        app.ui.showAlert("Fantástico!", "PDF gerado com sucesso! Agora é só importar no seu projeto do Canva.", "success");
+                        app.ui.showAlert("Fantástico!", "PDF gerado com sucesso sem cortes! Agora é só importar no seu Canva ou enviar por e-mail.", "success");
                     }).catch(err => {
                         console.error(err);
-                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar o PDF. Tente novamente.", "error");
+                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar a imagem do PDF. Tente novamente.", "error");
                     });
                 }
 
