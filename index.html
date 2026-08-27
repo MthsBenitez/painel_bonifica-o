@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal de Resultados | Softmarketing</title>
 
-    <!-- SheetJS (Excel Export) -->Exportar PDF (Adaptável)
+    <!-- SheetJS (Excel Export) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <!-- Tailwind CSS -->
@@ -9734,7 +9734,7 @@
                     }
 
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div id="apresentacao-topo-actions" class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Média Evolução Mensal & Insights Gerais</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gere sua apresentação automaticamente e exporte para o Canva.</p>
@@ -10041,7 +10041,7 @@
 
                 modoApresentacao() {
                     const header = document.querySelector('header');
-                    const topoActions = document.querySelector('.mb-8.flex.flex-col.md\\:flex-row');
+                    const topoActions = document.getElementById('apresentacao-topo-actions');
                     const wrapper = document.querySelector('.overflow-x-auto.w-full.border');
                     
                     // Esconde menus e formatações de fundo
@@ -10054,18 +10054,37 @@
                     style.id = 'print-style-apresentacao';
                     style.innerHTML = `
                         @media print {
-                            @page { size: A4 landscape; margin: 0mm; }
-                            body, html { margin: 0 !important; padding: 0 !important; background: white !important; overflow: hidden !important; }
-                            #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
-                            #view-app, main, #content-container { padding: 0 !important; margin: 0 !important; max-width: none !important; overflow: visible !important; }
+                            @page { size: A4 landscape; margin: 0; }
+                            body, html { 
+                                margin: 0 !important; 
+                                padding: 0 !important; 
+                                background: white !important; 
+                                overflow: hidden !important; /* Impede a rolagem na folha impressa */
+                                width: 100% !important;
+                                height: 100% !important;
+                            }
+                            #btn-sair-apresentacao, header, nav, #global-modal, #apresentacao-topo-actions { 
+                                display: none !important; 
+                            }
+                            #view-app, main, #content-container { 
+                                padding: 0 !important; 
+                                margin: 0 !important; 
+                                max-width: none !important; 
+                                overflow: visible !important; 
+                            }
                             .overflow-x-auto { overflow: visible !important; }
                             #area-apresentacao { 
-                                transform: scale(0.58) !important; /* Ajuste fino de 0.66 para 0.58 para enquadramento A4 */
+                                transform: scale(0.57) !important; /* Escala ajustada milimetricamente para A4 */
                                 transform-origin: top left !important; 
                                 box-shadow: none !important; 
                                 border: none !important; 
                                 margin: 0 !important; 
-                                page-break-inside: avoid !important; /* Evita fatiamento do documento */
+                                width: 1920px !important;
+                                height: 1080px !important; /* Trava a altura */
+                                max-height: 1080px !important;
+                                overflow: hidden !important; /* Corta qualquer milímetro que passe da página 1 */
+                                page-break-after: avoid !important;
+                                page-break-before: avoid !important;
                                 break-inside: avoid !important;
                             }
                             /* Força a cor de fundo nas tabelas/cards no PDF */
@@ -10091,11 +10110,11 @@
                     };
                     document.body.appendChild(btnSair);
 
-                    // Tenta entrar em Tela Cheia (Alguns navegadores bloqueiam se não for evento direto)
+                    // Tenta entrar em Tela Cheia
                     document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
                     
-                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b> (ou Cmd + P no Mac). Como as cores de fundo estão ativadas, o PDF ficará perfeito.", "success");
-                }                
+                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b> (ou Cmd + P no Mac). Como as cores de fundo estão ativadas, o PDF ficará perfeito na sua folha A4 em modo Paisagem.", "success");
+                }              
 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
