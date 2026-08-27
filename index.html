@@ -9988,25 +9988,24 @@
                         return app.ui.showAlert("Aviso", "A biblioteca de conversão de imagem ainda está carregando no sistema. Aguarde uns segundos e clique novamente.", "info");
                     }
                     
-                    app.ui.showAlert("Exportando...", "Aguarde enquanto preparamos o documento. Isso pode levar alguns segundos dependendo da quantidade de dados...", "info");
+                    app.ui.showAlert("Exportando...", "Otimizando a imagem para evitar sobrecarga de memória. Isso pode levar alguns segundos...", "info");
                     
                     const area = document.getElementById('area-apresentacao');
-                    
-                    // 1º TRUQUE MÁGICO: Salvar o scroll e voltar pro topo. O html2canvas "buga" se a tela estiver rolada para baixo.
                     const currentScroll = window.scrollY;
-                    window.scrollTo(0, 0);
+                    window.scrollTo(0, 0); // Trava o scroll no topo por segurança
                     
-                    // 2º TRUQUE MÁGICO: Reduzir levemente a escala (0.85) e ativar allowTaint ajuda a não estourar a RAM do navegador
+                    // ESCALA 0.6: É o "ponto doce" para manter leitura de texto perfeita e usar pouquíssima RAM
                     html2canvas(area, { 
-                        scale: 0.85, 
+                        scale: 0.6, 
                         useCORS: true, 
                         allowTaint: true,
+                        scrollY: 0,
                         backgroundColor: '#ffffff',
                         logging: false
                     }).then(canvas => {
                         try {
-                            // 3º TRUQUE: Compressão inteligente do JPEG (0.7)
-                            const imgData = canvas.toDataURL('image/jpeg', 0.7);
+                            // Compressão JPEG agressiva (0.6) para o arquivo final ficar leve
+                            const imgData = canvas.toDataURL('image/jpeg', 0.6);
                             
                             const realWidth = area.offsetWidth;
                             const realHeight = area.offsetHeight;
@@ -10019,16 +10018,15 @@
                             
                             pdf.addImage(imgData, 'JPEG', 0, 0, realWidth, realHeight);
                             pdf.save(`Apresentacao_Monitoria_${new Date().toISOString().split('T')[0]}.pdf`);
-                            app.ui.showAlert("Fantástico!", "PDF gerado com sucesso! Agora é só importar no seu Canva ou enviar por e-mail.", "success");
+                            app.ui.showAlert("Fantástico!", "PDF gerado com sucesso! Arquivo otimizado e leve para envio.", "success");
                         } catch (pdfErr) {
                             console.error("Erro no jsPDF:", pdfErr);
-                            app.ui.showAlert("Erro ao Montar PDF", "A imagem foi gerada, mas o arquivo ficou grande demais para o navegador montar o PDF.", "error");
+                            app.ui.showAlert("Erro de Tamanho", "A tabela possui centenas de linhas e o PDF ficou longo demais para ser montado de uma só vez.", "error");
                         }
                     }).catch(err => {
                         console.error("Erro no html2canvas:", err);
-                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar. Sua tabela possui dados demais e excedeu a memória do navegador.", "error");
+                        app.ui.showAlert("Limite Atingido", "A quantidade de dados na tela ainda ultrapassa o limite de processamento gráfico do seu navegador. Considere reduzir o volume de dados importados.", "error");
                     }).finally(() => {
-                        // Devolve a tela exatamente para onde o usuário estava olhando
                         window.scrollTo(0, currentScroll);
                     });
                 }
