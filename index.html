@@ -2266,8 +2266,8 @@
                   return app.ui.showAlert("Chave da API Ausente", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
               }
 
-              // Usando o modelo universal (gemini-pro) para evitar bloqueios de região/conta
-              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+              // Voltamos para o modelo oficial atualizado
+              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
               try {
                   const response = await fetch(endpoint, {
@@ -8862,8 +8862,8 @@
                 }
 
                 const apiKey = keyInput.value.trim();
-                // Mudamos para o modelo universal (gemini-pro) que funciona em todas as contas gratuitas
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+                // Voltamos para o modelo oficial atualizado
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
                 btnTest.disabled = true;
                 btnTest.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testando...';
