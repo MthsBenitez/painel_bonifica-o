@@ -1434,8 +1434,42 @@
                     const richText = document.getElementById('act-acao-rich');
                     if(richText) richText.innerHTML = act.acaoRealizada;
                     
+                    // --- NOVA LÓGICA: Devolver e exibir as imagens originais na galeria ---
+                    app.actions.removeAllFiles(); // Limpa arquivos temporários soltos
+                    const gallery = document.getElementById('act-preview-gallery');
+                    const photos = act.photos || (act.photo ? [act.photo] : []);
+                    
+                    if (photos.length > 0) {
+                        photos.forEach(p => {
+                            const div = document.createElement('div');
+                            div.className = 'relative w-20 h-20 rounded-xl overflow-hidden shadow-sm border-2 border-green-500 opacity-90 group';
+                            
+                            if (p.startsWith('data:application/pdf')) {
+                                div.innerHTML = `
+                                    <div class="w-full h-full bg-blue-50 flex flex-col items-center justify-center text-blue-500">
+                                        <i class="fa-solid fa-file-pdf text-2xl"></i>
+                                        <span class="text-[8px] font-bold mt-1 text-center leading-tight">Salvo</span>
+                                    </div>
+                                `;
+                            } else {
+                                div.innerHTML = `
+                                    <img src="${p}" class="w-full h-full object-cover">
+                                    <div class="absolute bottom-0 inset-x-0 bg-green-500/90 text-[8px] font-black text-white text-center py-0.5 uppercase tracking-widest"><i class="fa-solid fa-check"></i> Salvo</div>
+                                `;
+                            }
+                            gallery.appendChild(div);
+                        });
+                        
+                        // Aviso didático para o usuário
+                        const aviso = document.createElement('div');
+                        aviso.className = 'w-full text-[10px] text-orange-500 font-bold mt-1 animate-fade-in';
+                        aviso.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Suas evidências originais estão a salvo! Se você anexar novas fotos agora, elas irão <strong>substituir</strong> as antigas.';
+                        gallery.appendChild(aviso);
+                    }
+                    // -----------------------------------------------------------------------
+                    
                     window.scrollTo({ top: 0, behavior: 'smooth' });
-                    app.ui.showAlert("Edição", "O formulário foi preenchido com os dados desta ação. Faça as alterações e envie novamente.", "info");
+                    app.ui.showAlert("Modo Edição", "Formulário preenchido. Suas imagens originais foram recuperadas nos anexos!", "info");
                 },
                 downloadImages(actId) {
                     const act = app.actionsList[actId];
