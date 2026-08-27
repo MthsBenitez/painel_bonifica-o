@@ -8817,11 +8817,41 @@
                 },
 
                 execDeleteUser(mat) {
-                    app.users = app.users.filter(u => u.matricula !== mat);
-                    app.storage.saveUsers().then(() => { app.ui.renderTab('gestao_equipe', true); app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); });
-                },
+                app.users = app.users.filter(u => u.matricula !== mat);
+                app.storage.saveUsers().then(() => { app.ui.renderTab('gestao_equipe', true); app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); });
+            },
 
-                saveConfig() {
+            updateConfigPreview() {
+                try {
+                    let wTotal = 0;
+                    app.config.goals.forEach((g, i) => {
+                        const wEl = document.getElementById(`cfg-w-${i}`);
+                        const pEl = document.getElementById(`cfg-p-${i}`);
+                        if(wEl && pEl) {
+                            const weight = parseFloat(wEl.value) || 0;
+                            wTotal += weight;
+                            pEl.textContent = (weight * 100).toFixed(0) + '%';
+                        }
+                    });
+
+                    const totalW = document.getElementById('cfg-total-w');
+                    const totalP = document.getElementById('cfg-total-p');
+                    const isError = wTotal > 1.01 || wTotal < 0.99;
+
+                    if(totalW) {
+                        totalW.textContent = wTotal.toFixed(2);
+                        totalW.className = isError ? 'py-4 px-4 text-center font-black text-red-500 text-lg' : 'py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg';
+                    }
+                    if(totalP) {
+                        totalP.textContent = (wTotal * 100).toFixed(0) + '%';
+                        totalP.className = isError ? 'py-4 px-4 text-center font-black text-red-500 text-lg' : 'py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg';
+                    }
+                } catch(e) {
+                    console.error("Erro no cálculo das metas:", e);
+                }
+            },
+
+            saveConfig() {
                     const baseEl = document.getElementById('cfg-base');
                     if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
                     
@@ -9566,7 +9596,10 @@
 
             // Sistema Global de Proteção contra Erros (Ativa a tela visual)
             window.addEventListener('error', function(e) {
-                // Captura apenas erros reais de script, ignora pequenos erros de carregamento de imagem externa
+            // Imprime o erro no Console (F12) para ajudar no diagnóstico
+                console.error("🚨 Erro detectado pelo sistema:", e.error || e.message);
+
+            // Captura apenas erros reais de script, ignora pequenos erros de carregamento de imagem externa
                 if(e.filename && e.filename.includes(window.location.hostname)) {
                     const errScreen = document.getElementById('error-boundary-screen');
                     if(errScreen) errScreen.classList.remove('hidden');
