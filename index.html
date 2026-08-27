@@ -3356,7 +3356,7 @@
                             else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
-                            else if(tabId === 'apresentacoes_monitorias') this.renderView_ApresentacoesMonitorias(viewDiv);
+                            else if(tabId === 'apresentacoes_monitorias') app.renderView_ApresentacoesMonitorias(viewDiv);
                         }, 400); // Fim do atraso do Skeleton
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
