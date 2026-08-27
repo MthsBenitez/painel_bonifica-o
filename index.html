@@ -10041,10 +10041,12 @@
 
                 modoApresentacao() {
                     const header = document.querySelector('header');
-                    const topoActions = document.getElementById('apresentacao-topo-actions');
+                    
+                    // Seletor blindado: se não achar pelo ID, acha por ser o primeiro bloco da tela!
+                    const topoActions = document.getElementById('apresentacao-topo-actions') || document.querySelector('#view-container-apresentacoes_monitorias > div.mb-8');
                     const wrapper = document.querySelector('.overflow-x-auto.w-full.border');
                     
-                    // Esconde menus e formatações de fundo
+                    // Esconde menus e formatações de fundo na TELA
                     if (header) header.classList.add('hidden');
                     if (topoActions) topoActions.classList.add('hidden');
                     if (wrapper) wrapper.classList.remove('border', 'p-4', 'md:p-8', 'rounded-[2rem]', 'bg-slate-100', 'dark:bg-slate-900');
@@ -10059,12 +10061,13 @@
                                 margin: 0 !important; 
                                 padding: 0 !important; 
                                 background: white !important; 
-                                overflow: hidden !important; /* Impede a rolagem na folha impressa */
-                                width: 100% !important;
-                                height: 100% !important;
                             }
                             #btn-sair-apresentacao, header, nav, #global-modal, #apresentacao-topo-actions { 
                                 display: none !important; 
+                            }
+                            /* Trava de segurança para sumir com a barra de botões no PDF */
+                            #view-container-apresentacoes_monitorias > div.mb-8 {
+                                display: none !important;
                             }
                             #view-app, main, #content-container { 
                                 padding: 0 !important; 
@@ -10073,19 +10076,18 @@
                                 overflow: visible !important; 
                             }
                             .overflow-x-auto { overflow: visible !important; }
+                            
                             #area-apresentacao { 
-                                transform: scale(0.57) !important; /* Escala ajustada milimetricamente para A4 */
+                                transform: scale(0.53) !important; /* Escala ajustada para abraçar a tabela inteira */
                                 transform-origin: top left !important; 
                                 box-shadow: none !important; 
                                 border: none !important; 
                                 margin: 0 !important; 
                                 width: 1920px !important;
-                                height: 1080px !important; /* Trava a altura */
-                                max-height: 1080px !important;
-                                overflow: hidden !important; /* Corta qualquer milímetro que passe da página 1 */
-                                page-break-after: avoid !important;
-                                page-break-before: avoid !important;
-                                break-inside: avoid !important;
+                                height: max-content !important; /* O SEGREDO: Libera o crescimento vertical */
+                                max-height: none !important; /* Tira a guilhotina de 1080px */
+                                overflow: visible !important; /* Permite que a tabela inteira seja desenhada */
+                                page-break-inside: avoid !important;
                             }
                             /* Força a cor de fundo nas tabelas/cards no PDF */
                             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -10113,8 +10115,8 @@
                     // Tenta entrar em Tela Cheia
                     document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
                     
-                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b> (ou Cmd + P no Mac). Como as cores de fundo estão ativadas, o PDF ficará perfeito na sua folha A4 em modo Paisagem.", "success");
-                }              
+                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para <b>não cortar mais a tabela</b> e encaixar em folha única.", "success");
+                }            
 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
