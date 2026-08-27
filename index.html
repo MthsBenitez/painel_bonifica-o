@@ -10056,16 +10056,20 @@
                     style.id = 'print-style-apresentacao';
                     style.innerHTML = `
                         @media print {
-                            @page { size: A4 landscape; margin: 0; }
+                            /* O SEGREDO: Criamos um "papel" em altíssima resolução, do tamanho exato da tela! */
+                            @page { size: 1920px 1400px; margin: 0; }
+                            
                             body, html { 
                                 margin: 0 !important; 
                                 padding: 0 !important; 
                                 background: white !important; 
+                                width: 1920px !important;
+                                height: 1400px !important;
                             }
                             #btn-sair-apresentacao, header, nav, #global-modal, #apresentacao-topo-actions { 
                                 display: none !important; 
                             }
-                            /* Trava de segurança para sumir com a barra de botões no PDF */
+                            /* Trava de segurança extra para sumir com a barra de botões no PDF */
                             #view-container-apresentacoes_monitorias > div.mb-8 {
                                 display: none !important;
                             }
@@ -10078,16 +10082,14 @@
                             .overflow-x-auto { overflow: visible !important; }
                             
                             #area-apresentacao { 
-                                transform: scale(0.53) !important; /* Escala ajustada para abraçar a tabela inteira */
-                                transform-origin: top left !important; 
-                                box-shadow: none !important; 
-                                border: none !important; 
-                                margin: 0 !important; 
+                                transform: none !important; /* Retiramos a escala que confundia o Chrome */
                                 width: 1920px !important;
-                                height: max-content !important; /* O SEGREDO: Libera o crescimento vertical */
-                                max-height: none !important; /* Tira a guilhotina de 1080px */
-                                overflow: visible !important; /* Permite que a tabela inteira seja desenhada */
+                                height: 1400px !important; /* Altura exata da página customizada */
+                                max-height: 1400px !important;
+                                margin: 0 !important; 
+                                overflow: hidden !important; 
                                 page-break-inside: avoid !important;
+                                break-inside: avoid !important;
                             }
                             /* Força a cor de fundo nas tabelas/cards no PDF */
                             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -10115,8 +10117,8 @@
                     // Tenta entrar em Tela Cheia
                     document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
                     
-                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para <b>não cortar mais a tabela</b> e encaixar em folha única.", "success");
-                }            
+                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para criar um PDF de <b>página única e alta resolução</b> englobando toda a sua tabela.", "success");
+                }          
 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
