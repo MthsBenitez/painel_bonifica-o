@@ -9788,46 +9788,59 @@
                 },
 
                 processarApresentacaoMonitorias(input) {
-                    const file = input.files[0];
-                    if (!file) return;
-                    app.ui.showAlert("Processando...", "Cruzando setores e calculando médias evolutivas...", "info");
-                    
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        try {
-                            const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array' });
-                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                const file = input.files[0];
+                if (!file) return;
+                app.ui.showAlert("Processando...", "Cruzando setores e calculando médias evolutivas...", "info");
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                        
+                        if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
+
+                        // Busca inteligente e flexível de colunas (ignora maiúsculas/minúsculas e variações)
+                        const keys = Object.keys(jsonData[0]);
+                        const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
+
+                        const colData = findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA']);
+                        const colNota = findCol(['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO']);
+                        const colIlha = findCol(['ILHA', 'SETOR', 'EQUIPE', 'UNIDADE']);
+
+                        if(!colData || !colNota || !colIlha) {
+                            return app.ui.showAlert("Erro de Estrutura", "Não foi possível localizar automaticamente as colunas de 'Data', 'Nota' e 'Ilha' na planilha Amil. Verifique os títulos do arquivo.", "error");
+                        }
+
+                        let rawRecords = [];
+
+                        jsonData.forEach(row => {
+                            let d = row[colData];
+                            let dtObj = null;
                             
-                            if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
-
-                            // Buscar Nomes Exatos ou aproximados das colunas conforme sua instrução
-                            const keys = Object.keys(jsonData[0]);
-                            const colData = keys.find(k => k.trim().toUpperCase() === 'DATA DA MONITORIA' || k.toUpperCase().includes('DATA'));
-                            const colNota = keys.find(k => k.trim().toUpperCase() === 'NOTA' || k.toUpperCase().includes('NOTA'));
-                            const colIlha = keys.find(k => k.trim().toUpperCase() === 'ILHA' || k.toUpperCase().includes('ILHA'));
-
-                            if(!colData || !colNota || !colIlha) {
-                                return app.ui.showAlert("Erro de Estrutura", "Não encontrei as colunas com os nomes 'Data da Monitoria', 'Nota' e 'Ilha'. Verifique o arquivo.", "error");
-                            }
-
-                            let rawRecords = [];
-
-                            jsonData.forEach(row => {
-                                let d = row[colData];
-                                let dtObj;
-                                
-                                // Tratamento de Data Excel (Número) ou Texto (DD/MM/YYYY)
-                                if(typeof d === 'number') {
+                            if (d !== undefined && d !== null && d !== '') {
+                                if (typeof d === 'number') {
                                     dtObj = new Date((d - 25569) * 86400 * 1000);
                                 } else if (typeof d === 'string') {
-                                    let parts = d.split(' ')[0].split('/');
-                                    if(parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
-                                    else dtObj = new Date(d);
+                                    let cleanStr = d.split(' ')[0].trim();
+                                    if (cleanStr.includes('/')) {
+                                        let parts = cleanStr.split('/');
+                                        if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                    } else if (cleanStr.includes('-')) {
+                                        let parts = cleanStr.split('-');
+                                        if (parts.length === 3) {
+                                            // Se vier no formato AAAA-MM-DD
+                                            if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
+                                            else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                        }
+                                    }
+                                    if (!dtObj || isNaN(dtObj)) dtObj = new Date(d);
                                 }
-                                
-                                if(!dtObj || isNaN(dtObj)) return; // Ignora se não for data
+                            }
+                            
+                            if(!dtObj || isNaN(dtObj)) return; // Ignora linhas sem data válida
                                 
                                 const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
                                 let mesAnoStr = `${meses[dtObj.getMonth()]} ${dtObj.getFullYear()}`;
