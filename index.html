@@ -2259,18 +2259,18 @@
               // Valida e remove espaços em branco da chave API
               const apiKey = (app.config.geminiApiKey || '').trim();
 
-              // Escudo Protetor: Impede que o sistema ligue pro Google sem a chave
+              // Valida e remove espaços em branco da chave API
+              const apiKey = (app.config.geminiApiKey || '').trim();
+
+              // Escudo Protetor Básico
               if (!apiKey || apiKey === '') {
                   btn.disabled = false;
                   btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
-                  return app.ui.showAlert("Chave da API Ausente ou Inválida", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
+                  return app.ui.showAlert("Chave da API Ausente", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
               }
 
-              // Trocamos o modelo de 'gemini-1.5-flash' para 'gemini-1.5-pro' (mais inteligente e amplamente disponível)
-              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
-
-              const promptAdmin = app.config.geminiPrompt || 'Crie uma ata profissional objetiva para a reunião abaixo:';
-              const promptFinal = `${promptAdmin}\n\n--- INÍCIO DO TEXTO DA REUNIÃO ---\n${textoBruto}\n--- FIM DO TEXTO DA REUNIÃO ---`;
+              // Usando o modelo flash (mais rápido e otimizado para textos)
+              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
               try {
                   const response = await fetch(endpoint, {
@@ -4781,7 +4781,12 @@
                         <div class="grid grid-cols-1 gap-5">
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Chave da API (Google AI Studio)</label>
-                                <input type="password" id="cfg-gemini-key" value="${app.config.geminiApiKey || ''}" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm font-mono" placeholder="AIzaSy...">
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <input type="password" id="cfg-gemini-key" value="${app.config.geminiApiKey || ''}" class="flex-1 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm font-mono" placeholder="Cole sua chave de API aqui...">
+                                    <button type="button" onclick="app.admin.testarChaveGemini()" id="btn-test-gemini" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-5 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm whitespace-nowrap">
+                                        <i class="fa-solid fa-plug-circle-check"></i> Testar Conexão
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Prompt de Comando (Instrução Base)</label>
@@ -8822,36 +8827,76 @@
             },
 
             updateConfigPreview() {
-                try {
-                    let wTotal = 0;
-                    app.config.goals.forEach((g, i) => {
-                        const wEl = document.getElementById(`cfg-w-${i}`);
-                        const pEl = document.getElementById(`cfg-p-${i}`);
-                        if(wEl && pEl) {
-                            const weight = parseFloat(wEl.value) || 0;
-                            wTotal += weight;
-                            pEl.textContent = (weight * 100).toFixed(0) + '%';
+                    try {
+                        let wTotal = 0;
+                        app.config.goals.forEach((g, i) => {
+                            const wEl = document.getElementById(`cfg-w-${i}`);
+                            const pEl = document.getElementById(`cfg-p-${i}`);
+                            if(wEl && pEl) {
+                                const weight = parseFloat(wEl.value) || 0;
+                                wTotal += weight;
+                                pEl.textContent = (weight * 100).toFixed(0) + '%';
+                            }
+                        });
+                        
+                        const totalW = document.getElementById('cfg-total-w');
+                        const totalP = document.getElementById('cfg-total-p');
+                        const isError = wTotal > 1.01 || wTotal < 0.99;
+                        
+                        if(totalW) {
+                            totalW.textContent = wTotal.toFixed(2);
+                            totalW.className = isError ? 'py-4 px-4 text-center font-black text-red-500 text-lg' : 'py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg';
                         }
+                        if(totalP) {
+                            totalP.textContent = (wTotal * 100).toFixed(0) + '%';
+                            totalP.className = isError ? 'py-4 px-4 text-center font-black text-red-500 text-lg' : 'py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg';
+                        }
+                    } catch(e) {
+                        console.error("Erro no cálculo das metas:", e);
+                    }
+                },
+
+                async testarChaveGemini() {
+                const keyInput = document.getElementById('cfg-gemini-key');
+                const btnTest = document.getElementById('btn-test-gemini');
+
+                if (!keyInput || !keyInput.value.trim()) {
+                    return app.ui.showAlert("Aviso", "Cole uma chave no campo antes de testar.", "error");
+                }
+
+                const apiKey = keyInput.value.trim();
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+                btnTest.disabled = true;
+                btnTest.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testando...';
+
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: "Responda apenas 'OK' se estiver funcionando." }] }]
+                        })
                     });
 
-                    const totalW = document.getElementById('cfg-total-w');
-                    const totalP = document.getElementById('cfg-total-p');
-                    const isError = wTotal > 1.01 || wTotal < 0.99;
+                    const data = await response.json();
 
-                    if(totalW) {
-                        totalW.textContent = wTotal.toFixed(2);
-                        totalW.className = isError ? 'py-4 px-4 text-center font-black text-red-500 text-lg' : 'py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg';
+                    if (!response.ok) {
+                        throw new Error(data.error ? data.error.message : `Erro HTTP: ${response.status}`);
                     }
-                    if(totalP) {
-                        totalP.textContent = (wTotal * 100).toFixed(0) + '%';
-                        totalP.className = isError ? 'py-4 px-4 text-center font-black text-red-500 text-lg' : 'py-4 px-4 text-center font-black text-green-600 dark:text-green-400 text-lg';
-                    }
-                } catch(e) {
-                    console.error("Erro no cálculo das metas:", e);
+
+                    app.ui.showAlert("Conexão Bem-Sucedida! 🟢", "A chave é válida e a Inteligência Artificial respondeu corretamente. Não esqueça de clicar no botão verde <b>Salvar Nova Estrutura</b> lá embaixo!", "success");
+
+                } catch (error) {
+                    console.error("Teste Gemini Erro:", error);
+                    app.ui.showAlert("Falha na Conexão 🔴", `A chave informada foi recusada pelo Google.<br><br><b>Motivo:</b> ${error.message}`, "error");
+                } finally {
+                    btnTest.disabled = false;
+                    btnTest.innerHTML = '<i class="fa-solid fa-plug-circle-check"></i> Testar Conexão';
                 }
             },
 
-            saveConfig() {
+                saveConfig() {
                     const baseEl = document.getElementById('cfg-base');
                     if(baseEl) app.config.baseValue = parseFloat(baseEl.value) || 400;
                     
