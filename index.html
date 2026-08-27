@@ -2333,6 +2333,9 @@
                   return app.ui.showAlert("Chave da API Ausente", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
               }
 
+              // CORREÇÃO: Montando o texto final que será enviado para a IA ler!
+              const promptFinal = (app.config.geminiPrompt || '') + "\n\nTexto Bruto da Reunião:\n" + textoBruto;
+
               // Voltamos para o modelo oficial atualizado
               const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
@@ -9784,9 +9787,9 @@
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
+                    document.body.removeChild(link);
                     }
-                }
-            }, // <--- CORRIGIDO: Trocamos o ponto e vírgula (;) por vírgula (,), pois o código continua abaixo!
+                }, // <--- CORRIGIDO: Apenas UMA chave para fechar 'calibragemAudio', mantendo o bloco 'admin' aberto!
 
             processarApresentacaoMonitorias(input) {
                 const file = input.files[0];
