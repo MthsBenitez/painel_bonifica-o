@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal de Resultados | Softmarketing</title>
 
-    <!-- SheetJS (Excel Export) -->
+    <!-- SheetJS (Excel Export) -->Exportar PDF (Adaptável)
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <!-- Tailwind CSS -->
@@ -9744,6 +9744,9 @@
                                     <i class="fa-solid fa-file-excel text-lg"></i> Importar Planilha Amil
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarApresentacaoMonitorias(this)" onclick="this.value = null">
                                 </label>
+                                <button onclick="app.admin.modoApresentacao()" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-expand text-lg"></i> Apresentar / Imprimir
+                                </button>
                                 <button onclick="app.admin.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF (Adaptável)
                                 </button>
@@ -10034,7 +10037,63 @@
                         // Restaura a posição original da tela do usuário
                         window.scrollTo(0, scrollAntigo);
                     });
-                }
+                },
+
+                modoApresentacao() {
+                    const header = document.querySelector('header');
+                    const topoActions = document.querySelector('.mb-8.flex.flex-col.md\\:flex-row');
+                    const wrapper = document.querySelector('.overflow-x-auto.w-full.border');
+                    
+                    // Esconde menus e formatações de fundo
+                    if (header) header.classList.add('hidden');
+                    if (topoActions) topoActions.classList.add('hidden');
+                    if (wrapper) wrapper.classList.remove('border', 'p-4', 'md:p-8', 'rounded-[2rem]', 'bg-slate-100', 'dark:bg-slate-900');
+
+                    // Injeta CSS Dinâmico (Perfeito para impressão nativa Ctrl+P)
+                    const style = document.createElement('style');
+                    style.id = 'print-style-apresentacao';
+                    style.innerHTML = `
+                        @media print {
+                            @page { size: A4 landscape; margin: 0mm; }
+                            body, html { margin: 0 !important; padding: 0 !important; background: white !important; }
+                            #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
+                            #view-app, main, #content-container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+                            .overflow-x-auto { overflow: visible !important; }
+                            #area-apresentacao { 
+                                transform: scale(0.66); 
+                                transform-origin: top left; 
+                                box-shadow: none !important; 
+                                border: none !important; 
+                                margin: 0 !important; 
+                            }
+                            /* Força a cor de fundo nas tabelas/cards no PDF */
+                            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                        }
+                    `;
+                    document.head.appendChild(style);
+
+                    // Botão flutuante para Sair do modo
+                    const btnSair = document.createElement('button');
+                    btnSair.id = 'btn-sair-apresentacao';
+                    btnSair.innerHTML = '<i class="fa-solid fa-xmark mr-2"></i> Sair do Modo Apresentação';
+                    btnSair.className = 'fixed top-6 right-6 bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-black shadow-2xl z-[99999] transition-transform hover:scale-105';
+                    btnSair.onclick = () => {
+                        if (header) header.classList.remove('hidden');
+                        if (topoActions) topoActions.classList.remove('hidden');
+                        if (wrapper) wrapper.classList.add('border', 'p-4', 'md:p-8', 'rounded-[2rem]', 'bg-slate-100', 'dark:bg-slate-900');
+                        btnSair.remove();
+                        const printStyle = document.getElementById('print-style-apresentacao');
+                        if (printStyle) printStyle.remove();
+                        
+                        if (document.fullscreenElement) document.exitFullscreen().catch(e => console.log(e));
+                    };
+                    document.body.appendChild(btnSair);
+
+                    // Tenta entrar em Tela Cheia (Alguns navegadores bloqueiam se não for evento direto)
+                    document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
+                    
+                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b> (ou Cmd + P no Mac). Como as cores de fundo estão ativadas, o PDF ficará perfeito.", "success");
+                }                
 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
