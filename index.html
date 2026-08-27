@@ -8977,9 +8977,9 @@
                 execDeleteUser(mat) {
                 app.users = app.users.filter(u => u.matricula !== mat);
                 app.storage.saveUsers().then(() => { app.ui.renderTab('gestao_equipe', true); app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); });
-            },
-
-            updateConfigPreview() {
+                },
+    
+                updateConfigPreview() {
                     try {
                         let wTotal = 0;
                         app.config.goals.forEach((g, i) => {
