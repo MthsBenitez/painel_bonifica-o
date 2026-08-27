@@ -2256,8 +2256,16 @@
               btn.disabled = true;
               btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando com IA...';
 
-              // Remove possíveis espaços em branco acidentais da chave API
-              const apiKey = app.config.geminiApiKey.trim();
+              // Valida e remove espaços em branco da chave API
+              const apiKey = (app.config.geminiApiKey || '').trim();
+
+              // Escudo Protetor: Impede que o sistema ligue pro Google sem a chave
+              if (!apiKey || apiKey === '') {
+                  btn.disabled = false;
+                  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
+                  return app.ui.showAlert("Chave da API Ausente ou Inválida", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
+              }
+
               const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
               const promptAdmin = app.config.geminiPrompt || 'Crie uma ata profissional objetiva para a reunião abaixo:';
