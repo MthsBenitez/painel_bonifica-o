@@ -9984,15 +9984,15 @@
                         return app.ui.showAlert("Aviso", "A biblioteca de conversão de imagem ainda está carregando no sistema. Aguarde uns segundos e clique novamente.", "info");
                     }
                     
-                    app.ui.showAlert("Exportando...", "Aguarde enquanto desenhamos o PDF em altíssima resolução. Isso pode levar alguns segundos dependendo da quantidade de meses e operações...", "info");
+                    app.ui.showAlert("Exportando...", "Aguarde enquanto preparamos o documento. Isso pode levar alguns segundos dependendo da quantidade de meses e operações...", "info");
                     
                     const area = document.getElementById('area-apresentacao');
                     
-                    // Tiramos uma foto "perfeita" da div do container gigante que criamos
-                    html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
-                        const imgData = canvas.toDataURL('image/png');
+                    // FIX: Reduzido o scale para 1 e mudado para JPEG para não estourar a memória RAM do navegador
+                    html2canvas(area, { scale: 1, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+                        const imgData = canvas.toDataURL('image/jpeg', 0.8);
                         
-                        // Captura a altura real da div que agora é elástica (pode ser maior que 1080)
+                        // Captura a altura real da div que agora é elástica
                         const realWidth = area.offsetWidth;
                         const realHeight = area.offsetHeight;
                         
@@ -10003,12 +10003,12 @@
                             format: [realWidth, realHeight]
                         });
                         
-                        pdf.addImage(imgData, 'PNG', 0, 0, realWidth, realHeight);
+                        pdf.addImage(imgData, 'JPEG', 0, 0, realWidth, realHeight);
                         pdf.save(`Apresentacao_Monitoria_${new Date().toISOString().split('T')[0]}.pdf`);
-                        app.ui.showAlert("Fantástico!", "PDF gerado com sucesso sem cortes! Agora é só importar no seu Canva ou enviar por e-mail.", "success");
+                        app.ui.showAlert("Fantástico!", "PDF gerado com sucesso! Agora é só importar no seu Canva ou enviar por e-mail.", "success");
                     }).catch(err => {
-                        console.error(err);
-                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar a imagem do PDF. Tente novamente.", "error");
+                        console.error("Erro no html2canvas:", err);
+                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar a imagem do PDF. Sua tela ou arquivo pode ser pesado demais.", "error");
                     });
                 }
 
