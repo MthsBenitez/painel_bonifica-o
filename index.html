@@ -9987,42 +9987,51 @@
                         return app.ui.showAlert("Aviso", "As ferramentas de PDF ainda estão carregando. Tente novamente em alguns segundos.", "info");
                     }
                     
-                    app.ui.showAlert("Exportando PDF...", "Preparando o arquivo de forma otimizada para o seu computador...", "info");
+                    // Oculta qualquer modal ativo para não interferir na captura da tela
+                    document.getElementById('global-modal').classList.add('hidden');
                     
                     const area = document.getElementById('area-apresentacao');
                     const scrollAntigo = window.scrollY;
+                    
+                    // Força o scroll para o topo para evitar cortes na renderização
                     window.scrollTo(0, 0);
-
-                    // Reduzimos levemente a escala para 0.75 para garantir que a memória do navegador não estoure
+                
+                    // allowTaint deve ser false. useCORS resolve as imagens externas de forma segura.
+                    // scale aumentado para 1.5 melhora a nitidez dos textos na apresentação.
                     html2canvas(area, { 
-                        scale: 0.75, 
+                        scale: 1.5, 
                         useCORS: true, 
-                        allowTaint: true,
+                        allowTaint: false, 
                         backgroundColor: '#ffffff',
                         logging: false 
                     }).then(canvas => {
                         try {
-                            const imgData = canvas.toDataURL('image/jpeg', 0.75);
-                            const larguraOriginal = area.offsetWidth;
-                            const alturaOriginal = area.offsetHeight;
+                            // Extrai a imagem com segurança (sem estourar o limite de URL)
+                            const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                            
+                            // Usa as dimensões exatas do canvas gerado, e não da div HTML
+                            const pdfWidth = canvas.width;
+                            const pdfHeight = canvas.height;
                             
                             const pdf = new window.jspdf.jsPDF({
-                                orientation: larguraOriginal > alturaOriginal ? 'landscape' : 'portrait',
+                                orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
                                 unit: 'px',
-                                format: [larguraOriginal, alturaOriginal]
+                                format: [pdfWidth, pdfHeight]
                             });
                             
-                            pdf.addImage(imgData, 'JPEG', 0, 0, larguraOriginal, alturaOriginal);
+                            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
                             pdf.save(`Media_Evolucao_Mensal_${new Date().toISOString().split('T')[0]}.pdf`);
+                            
                             app.ui.showAlert("Sucesso!", "O seu PDF foi gerado e baixado com sucesso.", "success");
                         } catch (e) {
-                            console.error(e);
-                            app.ui.showAlert("Erro no PDF", "Não foi possível estruturar o arquivo final.", "error");
+                            console.error("Erro na montagem do PDF:", e);
+                            app.ui.showAlert("Erro no PDF", "Não foi possível estruturar o arquivo final devido a um bloqueio de segurança das imagens.", "error");
                         }
                     }).catch(err => {
-                        console.error("Erro na captura:", err);
-                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar a imagem do PDF. Tente atualizar a página e exportar novamente.", "error");
+                        console.error("Erro na captura da tela:", err);
+                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar o PDF da apresentação.", "error");
                     }).finally(() => {
+                        // Restaura a posição original da tela do usuário
                         window.scrollTo(0, scrollAntigo);
                     });
                 }
