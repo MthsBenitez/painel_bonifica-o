@@ -2244,6 +2244,9 @@
               async gerarComIA() {
               const campoFortes = document.getElementById('ata-fortes');
               const btn = document.getElementById('btn-ia-gerar');
+              
+              /* CORREÇÃO: Declarando de onde vem o texto da IA */
+              const inputEl = document.getElementById('ata-ia-input');
               const textoBruto = inputEl ? inputEl.value.trim() : '';
 
               if (!textoBruto) {
