@@ -2266,7 +2266,8 @@
                   return app.ui.showAlert("Chave da API Ausente ou Inválida", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
               }
 
-              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+              // Trocamos o modelo de 'gemini-1.5-flash' para 'gemini-1.5-pro' (mais inteligente e amplamente disponível)
+              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
 
               const promptAdmin = app.config.geminiPrompt || 'Crie uma ata profissional objetiva para a reunião abaixo:';
               const promptFinal = `${promptAdmin}\n\n--- INÍCIO DO TEXTO DA REUNIÃO ---\n${textoBruto}\n--- FIM DO TEXTO DA REUNIÃO ---`;
