@@ -8736,9 +8736,9 @@
                             <div class="flex flex-wrap items-center gap-3">
                                 <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-file-excel text-lg"></i> Importar Planilha Amil
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.calibragemAudio.processarApresentacaoMonitorias(this)" onclick="this.value = null">
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarApresentacaoMonitorias(this)" onclick="this.value = null">
                                 </label>
-                                <button onclick="app.calibragemAudio.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                <button onclick="app.admin.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF (16:9)
                                 </button>
                             </div>
