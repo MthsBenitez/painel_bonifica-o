@@ -2917,6 +2917,9 @@
                 closeAddUserModal() { document.getElementById('add-user-modal').classList.add('hidden'); },
                 
                 init() {
+                    // CORREÇÃO: Cria um atalho para o Laboratório de Áudio funcionar corretamente
+                    app.calibragemAudio = app.admin.calibragemAudio;
+
                     // Solicita permissão para alertas do Windows/Mac
                     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
                         Notification.requestPermission();
@@ -9783,9 +9786,9 @@
                         document.body.removeChild(link);
                     }
                 }
-            };
+            }, // <--- CORRIGIDO: Trocamos o ponto e vírgula (;) por vírgula (,), pois o código continua abaixo!
 
-                processarApresentacaoMonitorias(input) {
+            processarApresentacaoMonitorias(input) {
                 const file = input.files[0];
                 if (!file) return;
                 app.ui.showAlert("Processando...", "Cruzando setores e calculando médias evolutivas...", "info");
@@ -9980,7 +9983,9 @@
                     });
                 }
 
-            }; // Feche o objeto app aqui com ponto e vírgula
+            } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
+
+        }; // Feche o objeto app aqui com ponto e vírgula
 
         // ==========================================
         // BOOT DO APLICATIVO E UX PREMIUM
