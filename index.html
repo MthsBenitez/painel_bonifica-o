@@ -9988,15 +9988,31 @@
                         return app.ui.showAlert("Aviso", "A biblioteca de conversão de imagem ainda está carregando no sistema. Aguarde uns segundos e clique novamente.", "info");
                     }
                     
-                    app.ui.showAlert("Exportando...", "Otimizando a imagem para evitar sobrecarga de memória. Isso pode levar alguns segundos...", "info");
+                    app.ui.showAlert("Exportando (Modo Extremo)...", "Ativando protocolo de economia de memória para tabelas gigantes. Isso pode levar alguns segundos...", "info");
                     
                     const area = document.getElementById('area-apresentacao');
                     const currentScroll = window.scrollY;
-                    window.scrollTo(0, 0); // Trava o scroll no topo por segurança
+                    window.scrollTo(0, 0); 
                     
-                    // ESCALA 0.6: É o "ponto doce" para manter leitura de texto perfeita e usar pouquíssima RAM
+                    // 1º TRUQUE MÁGICO: Remover sombras. 
+                    // O html2canvas gasta MUITO processador desenhando sombras em elementos gigantes.
+                    const originalShadow = area.style.boxShadow;
+                    const originalBorderRadius = area.style.borderRadius;
+                    area.style.boxShadow = 'none';
+                    area.style.borderRadius = '0';
+
+                    // 2º TRUQUE: Escala de Sobrevivência Dinâmica. 
+                    // Garante que a altura da foto gerada nunca passe de um tamanho que trave a placa de vídeo.
+                    const realHeight = area.offsetHeight;
+                    const realWidth = area.offsetWidth;
+                    
+                    let safeScale = 0.8;
+                    if (realHeight > 5000) {
+                        safeScale = 5000 / realHeight; // Achata a resolução matematicamente de forma proporcional
+                    }
+
                     html2canvas(area, { 
-                        scale: 0.6, 
+                        scale: safeScale, 
                         useCORS: true, 
                         allowTaint: true,
                         scrollY: 0,
@@ -10004,11 +10020,7 @@
                         logging: false
                     }).then(canvas => {
                         try {
-                            // Compressão JPEG agressiva (0.6) para o arquivo final ficar leve
-                            const imgData = canvas.toDataURL('image/jpeg', 0.6);
-                            
-                            const realWidth = area.offsetWidth;
-                            const realHeight = area.offsetHeight;
+                            const imgData = canvas.toDataURL('image/jpeg', 0.5); // Compressão no talo
                             
                             const pdf = new window.jspdf.jsPDF({
                                 orientation: realWidth > realHeight ? 'landscape' : 'portrait',
@@ -10018,15 +10030,18 @@
                             
                             pdf.addImage(imgData, 'JPEG', 0, 0, realWidth, realHeight);
                             pdf.save(`Apresentacao_Monitoria_${new Date().toISOString().split('T')[0]}.pdf`);
-                            app.ui.showAlert("Fantástico!", "PDF gerado com sucesso! Arquivo otimizado e leve para envio.", "success");
+                            app.ui.showAlert("Sobrevivemos!", "PDF gerado com sucesso no Modo Extremo de economia de memória.", "success");
                         } catch (pdfErr) {
                             console.error("Erro no jsPDF:", pdfErr);
-                            app.ui.showAlert("Erro de Tamanho", "A tabela possui centenas de linhas e o PDF ficou longo demais para ser montado de uma só vez.", "error");
+                            app.ui.showAlert("Quase lá...", "A imagem foi gerada, mas ainda é muito grande para o conversor de PDF.", "error");
                         }
                     }).catch(err => {
                         console.error("Erro no html2canvas:", err);
-                        app.ui.showAlert("Limite Atingido", "A quantidade de dados na tela ainda ultrapassa o limite de processamento gráfico do seu navegador. Considere reduzir o volume de dados importados.", "error");
+                        app.ui.showAlert("Limite Físico Atingido", "Sua tabela tem milhares de linhas e superou o limite de memória. A única forma de exportar agora é usando o comando 'Imprimir' (Ctrl+P) do seu navegador e salvar como PDF.", "error");
                     }).finally(() => {
+                        // Devolve a tela exatamente para onde o usuário estava olhando e restaura o design
+                        area.style.boxShadow = originalShadow;
+                        area.style.borderRadius = originalBorderRadius;
                         window.scrollTo(0, currentScroll);
                     });
                 }
