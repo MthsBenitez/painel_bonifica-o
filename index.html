@@ -1109,8 +1109,16 @@
                                 app.notifications.updateBadge();
                                 const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'campanha_mes'];
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
-                                    app.ui.renderTab(app.currentTab, true);
-                                }
+                                                     // CORREÇÃO: Atualiza os dados de forma fluida na mesma div,
+                                                     // evitando recriar a tela toda e causar a "piscada" em branco.
+                                                     const viewDiv = document.getElementById('view-container-' + app.currentTab);
+                                                     if (viewDiv) {
+                                                         if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
+                                                         else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
+                                                         else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
+                                                         else if (app.currentTab === 'campanha_mes') app.ui.renderView_CampanhaMes(viewDiv);
+                                                     }
+                                                 }
                             } else if (savedDate === todayStr && savedMat) {
                                 // Se deu F5 no mesmo dia, entra direto sem pedir senha!
                                 if (savedIsAdmin) {
@@ -1614,26 +1622,37 @@
                             this.tempFiles = []; 
                             document.getElementById('act-preview-gallery').innerHTML = '';
                             document.getElementById('act-edit-id').value = '';
-                            app.ui.renderTab('registrar_acao', true);
+                            
+                            // CORREÇÃO: Aguarda a animação visual "voar" antes de recarregar o formulário (1.5 segundos)
+                            setTimeout(() => {
+                                btn.disabled = false;
+                                btn.classList.remove('is-flying');
+                                app.ui.renderTab('registrar_acao', true);
+                            }, 1500);
+
                         }).catch(err => {
                             console.error("Falha ao salvar no banco:", err);
                             btn.disabled = false;
                             btn.classList.remove('is-flying');
-                            app.ui.showAlert("Erro de Conexão", "Houve uma falha ao enviar a ação. O arquivo pode ser muito grande ou a rede falhou.", "error");
+                            app.ui.showAlert("Erro de Conexão", "Houve uma falha ao enviar a ação. O arquivo pode ser muito pesado ou a rede falhou.", "error");
                         });
                     };
 
-                    if (this.tempFiles.length > 0) {
-                        const uploadPromises = this.tempFiles.map(file => this.compressImageAsync(file));
-                        this.tempFiles = [];
-                        document.getElementById('act-preview-gallery').innerHTML = '';
-                        Promise.all(uploadPromises).then(base64Images => {
-                            payload.photos = base64Images;
+                    // CORREÇÃO: Dá um leve fôlego (50ms) para o navegador conseguir desenhar a 
+                    // animação de "Processando..." na tela ANTES de engasgar processando as imagens.
+                    setTimeout(() => {
+                        if (this.tempFiles.length > 0) {
+                            const uploadPromises = this.tempFiles.map(file => this.compressImageAsync(file));
+                            this.tempFiles = [];
+                            document.getElementById('act-preview-gallery').innerHTML = '';
+                            Promise.all(uploadPromises).then(base64Images => {
+                                payload.photos = base64Images;
+                                finalizeSubmit();
+                            });
+                        } else {
                             finalizeSubmit();
-                        });
-                    } else {
-                        finalizeSubmit();
-                    }
+                        }
+                    }, 50);
                 },
 
                 approveAction(id) {
