@@ -1507,24 +1507,26 @@
                     if(!reason) return app.ui.showAlert("Aviso", "O motivo da recusa é obrigatório.", "error");
                     
                     const act = app.actionsList[id];
+                    let updates = {};
                     
-                    // Se já estava aprovado, precisamos remover o ponto do usuário
+                    // Se já estava aprovado, precisamos remover o ponto do usuário de forma atômica
                     if (act.status === 'aprovado') {
                         const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
                         if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
                             let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
                             app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
-                            app.storage.saveUsers();
+                            updates['users'] = app.users; // Prepara para envio em lote
                         }
                     }
 
                     act.status = 'reprovado';
                     act.comentario = reason;
+                    updates[`actions/${id}`] = act;
                     
-                    app.storage.saveActions().then(() => {
+                    // Envio blindado (Multi-path Update)
+                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         
-                        // NOTIFICAÇÃO DETALHADA E COM REDIRECIONAMENTO IMEDIATO
                         const notifMessage = `A ação <strong>${act.objetivo}</strong> foi devolvida.<br><br><strong>Motivo:</strong> ${reason}<br><br><button onclick="app.ui.renderTab('registrar_acao', true); setTimeout(()=>app.actions.editAction('${id}'), 500)" class="bg-red-100 text-red-700 px-3 py-2 rounded-xl text-[10px] font-black mt-2 shadow-sm hover:bg-red-200 transition-colors w-full uppercase tracking-widest"><i class="fa-solid fa-pen mr-1"></i> Corrigir Ação Agora</button>`;
 
                         app.notifications.notify(act.matricula, 'Ação Devolvida para Correção', notifMessage, 'error');
@@ -1674,34 +1676,35 @@
 
                 approveAction(id) {
                     if(!app.actionsList[id] || app.actionsList[id].status === 'aprovado') return; // Trava mágica
-                    app.actionsList[id].status = 'aprovado';
-                    const act = app.actionsList[id];
                     
-                    app.storage.saveActions().then(() => {
-                        try {
-                            const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
-                            if(userIdx > -1) {
-                                // Cria as estruturas se não existirem
-                                if(!app.users[userIdx].results) app.users[userIdx].results = {};
-                                if(!app.users[userIdx].results[act.month]) app.users[userIdx].results[act.month] = { status: 'pendente' }; // Preserva status
-                                if(!app.users[userIdx].results[act.month]['g4']) app.users[userIdx].results[act.month]['g4'] = { val: 0 };
-                                
-                                // Garante que é um número e soma com segurança
-                                let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
-                                app.users[userIdx].results[act.month]['g4'].val = (currentVal + 1).toString();
-                                
-                                // Atualiza a variável global do usuário caso seja ele o logado
-                                if(app.currentUser && app.currentUser.matricula === act.matricula) {
-                                    app.currentUser = app.users[userIdx];
-                                }
-                                
-                                app.storage.saveUsers();
-                                app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
+                    const act = app.actionsList[id];
+                    act.status = 'aprovado';
+                    let updates = {};
+                    updates[`actions/${id}`] = act;
+                    
+                    try {
+                        const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                        if(userIdx > -1) {
+                            if(!app.users[userIdx].results) app.users[userIdx].results = {};
+                            if(!app.users[userIdx].results[act.month]) app.users[userIdx].results[act.month] = { status: 'pendente' };
+                            if(!app.users[userIdx].results[act.month]['g4']) app.users[userIdx].results[act.month]['g4'] = { val: 0 };
+                            
+                            let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
+                            app.users[userIdx].results[act.month]['g4'].val = (currentVal + 1).toString();
+                            
+                            if(app.currentUser && app.currentUser.matricula === act.matricula) {
+                                app.currentUser = app.users[userIdx];
                             }
-                        } catch (err) {
-                            console.error("Erro ao creditar ação:", err);
+                            
+                            updates['users'] = app.users; // Prepara para envio em lote
                         }
-                        
+                    } catch (err) {
+                        console.error("Erro ao creditar ação:", err);
+                    }
+                    
+                    // Envio blindado (Multi-path Update)
+                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
                         app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
                         app.ui.renderTab('validar_acoes', true);
                     });
@@ -2102,21 +2105,17 @@
                     if(!reason) return app.ui.showAlert("Aviso", "O comentário é obrigatório.", "error");
                     
                     const ata = app.atasList[id];
+                    let updates = {};
 
-                    // SE JÁ ESTAVA APROVADO COM BÔNUS, REMOVE O BÔNUS ANTES DE REPROVAR!
                     if (ata.status === 'aprovado') {
                         const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
-                        
-                        // Encontra o cofre correto das Calibrações dinamicamente
                         const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                         const gId = goalCalib ? goalCalib.id : 'g3';
 
-                        // Agrupa os nomes de todos que participaram da Ata
                         let nomesAlvo = [];
                         if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
                         if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
                         
-                        // Encontra TODOS os usuários correspondentes (e não apenas o primeiro)
                         let usersEncontrados = app.users.filter(u => 
                             nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
                             u.matricula === ata.matricula
@@ -2128,7 +2127,6 @@
                                 let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
                                 userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
                                 
-                                // Mantém a tela atualizada se for o próprio usuário logado
                                 if (app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
                                     app.currentUser = userEncontrado;
                                 }
@@ -2136,19 +2134,19 @@
                             }
                         });
                         
-                        if (atualizouAlguem) app.storage.saveUsers();
+                        if (atualizouAlguem) updates['users'] = app.users;
                     }
 
                     ata.status = 'devolvido';
                     ata.comentario = reason;
+                    updates[`atas/${id}`] = ata;
                     
-                    app.storage.saveAtas().then(() => {
+                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.notifications.notify(ata.matricula, 'Ata Devolvida / Reprovada', `A ata "${ata.tema}" foi reprovada/devolvida. Motivo: ${reason}`, 'error');
                         app.ui.renderTab('gestao_atas', true);
                     });
                 },
-
                 aprovarSemBonus(id) {
                     const ata = app.atasList[id];
                     if(!ata || ata.status === 'aprovado_sem_bonus' || ata.status === 'aprovado') return;
@@ -2306,7 +2304,7 @@
 
                 validarComoCalibragem(id, btnElement) {
                     const ata = app.atasList[id];
-                    if(!ata || ata.status === 'aprovado') return; // Trava inteligente contra duplo clique na aprovação
+                    if(!ata || ata.status === 'aprovado') return;
                     
                     if(ata.status === 'devolvido') {
                         return app.ui.showAlert("Ação Inválida", "Não é possível contabilizar nos resultados uma ata que foi devolvida para correção.", "error");
@@ -2316,7 +2314,6 @@
                         return app.ui.showAlert("Aprovação Pendente", "Esta calibração não possui um Supervisor Operacional vinculado ou aprovando a ata. Por favor, edite a ata antes de contabilizar.", "error");
                     }
                     
-                    // CORREÇÃO CRÍTICA: Encontrar TODOS os usuários envolvidos na ata (Qualidade 1, Qualidade 2 e Autor)
                     let nomesAlvo = [];
                     if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
                     if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
@@ -2329,12 +2326,12 @@
                     if (usersEncontrados.length === 0) return app.ui.showAlert("Erro", "Nenhum colaborador da qualidade encontrado para creditar a calibragem. Verifique os nomes cadastrados na ata.", "error");
 
                     const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
-                    
-                    // Encontra o cofre correto das Calibrações dinamicamente
                     const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gId = goalCalib ? goalCalib.id : 'g3';
                     
-                    // Distribui a calibração para TODOS os envolvidos na ata
+                    let updates = {};
+                    let atualizouAlguem = false;
+                    
                     usersEncontrados.forEach(userEncontrado => {
                         if(!userEncontrado.results) userEncontrado.results = {};
                         if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
@@ -2346,15 +2343,17 @@
                         if(app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
                             app.currentUser = userEncontrado;
                         }
+                        atualizouAlguem = true;
                     });
                     
                     ata.status = 'aprovado';
-                    app.storage.saveAtas();
+                    updates[`atas/${id}`] = ata;
+                    if(atualizouAlguem) updates['users'] = app.users;
 
-                    app.storage.saveUsers().then(() => {
-                        // Exibe mensagem dinâmica com o nome de todos que receberam os pontos
+                    // Multi-path update previne tela de piscar e bugs de aba
+                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
                         const nomesGanhadores = usersEncontrados.map(u => u.nome.split(' ')[0]).join(', ');
-                        app.ui.showAlert("Aprovado!", `A ata foi aprovada pelo Gestor e contabilizada com sucesso!<br><strong>${nomesGanhadores}</strong> receberam +1 Calibração nos indicadores deste mês.`, "success");
+                        app.ui.showAlert("Aprovado!", `Ata foi aprovada pelo Gestor e contabilizada com sucesso!<br><strong>${nomesGanhadores}</strong> receberam +1 Calibração nos indicadores deste mês.`, "success");
                         app.ui.renderTab('gestao_atas', true);
                         
                         if(btnElement) {
