@@ -9180,11 +9180,11 @@
                                          </div>`;
                             }
                         } else if (g.type === 'calibracao') {
-                            html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Qtd. Sessões</label>
-                                     <input type="number" id="input-${g.id}-val" min="0" max="2" value="${v.val||'0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">`;
+                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qtd. Sessões <span class="text-blue-500">(Automático)</span></label>
+                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" disabled title="Este valor é somado automaticamente quando você aprova uma Ata." class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm font-bold text-slate-500 cursor-not-allowed">`;
                         } else if (g.type === 'actions') {
-                            html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Ações Validadas</label>
-                                     <input type="number" id="input-${g.id}-val" min="0" max="5" value="${v.val||'0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">`;
+                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Ações Validadas <span class="text-blue-500">(Automático)</span></label>
+                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" disabled title="Este valor é somado automaticamente quando você aprova uma Ação." class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm font-bold text-slate-500 cursor-not-allowed">`;
                         } else if (g.type === 'gestor') {
                             html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Impacto Final (%)</label>
                                      <select id="input-${g.id}-val" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
@@ -9252,13 +9252,17 @@
                     document.getElementById('adm-editor-area').classList.remove('hidden');
                 },
 
-                collectResultsFromDOM() {
+                collectResultsFromDOM(dadosAtuaisDoBanco = {}) {
                     const res = {};
                     app.config.goals.forEach(g => {
                         if (g.type === 'percent') {
                             const meta = g.id === 'g1' ? 400 : (document.getElementById(`input-${g.id}-meta`).value || 0);
                             const real = document.getElementById(`input-${g.id}-real`).value || 0;
                             res[g.id] = { meta, real };
+                        } else if (g.type === 'calibracao' || g.type === 'actions') {
+                            // PROTEÇÃO: Mantém o valor exato que já estava salvo no banco de dados!
+                            // Isso impede que a tela de "Lançar Notas" sobrescreva os pontos automáticos com "0"
+                            res[g.id] = dadosAtuaisDoBanco[g.id] || { val: 0 };
                         } else {
                             const val = document.getElementById(`input-${g.id}-val`).value || '';
                             res[g.id] = { val };
@@ -9281,7 +9285,7 @@
                     const oldTime = prevMonthData.fbTime;
                     
                     user.results[app.currentMonth] = {
-                        ...this.collectResultsFromDOM(),
+                        ...this.collectResultsFromDOM(prevMonthData),
                         status: oldStatus === 'agendado' ? 'agendado' : 'pendente'
                     };
                     
@@ -9308,8 +9312,10 @@
                     const user = app.users[idx];
                     if(!user.results) user.results = {};
                     
+                    const prevMonthData = user.results[app.currentMonth] || {};
+                    
                     user.results[app.currentMonth] = {
-                        ...this.collectResultsFromDOM(),
+                        ...this.collectResultsFromDOM(prevMonthData),
                         status: 'agendado',
                         fbDate: date,
                         fbTime: time
@@ -9374,9 +9380,25 @@
                 },
                 execClearAllUsersMonth() {
                     app.users.forEach(u => {
-                        if (u.results && u.results[app.currentMonth]) { delete u.results[app.currentMonth]; }
+                        if (u.results && u.results[app.currentMonth]) { 
+                            const monthData = u.results[app.currentMonth];
+                            // Zera apenas as métricas operacionais manuais, protegendo as métricas automáticas (Atas e Ações)
+                            app.config.goals.forEach(g => {
+                                if (g.type !== 'calibracao' && g.type !== 'actions') {
+                                    if (g.type === 'percent') {
+                                        if(monthData[g.id]) monthData[g.id].real = 0;
+                                    } else {
+                                        if(monthData[g.id]) monthData[g.id].val = g.type === 'gestor' ? '0' : 'Não';
+                                    }
+                                }
+                            });
+                            monthData.status = 'pendente';
+                        }
                     });
-                    app.storage.saveUsers().then(() => { app.ui.showAlert("Feito", "Lançamentos apagados.", "success"); this.loadUserEditor(); });
+                    app.storage.saveUsers().then(() => { 
+                        app.ui.showAlert("Feito", "Lançamentos operacionais apagados! As Calibrações e Ações foram preservadas com segurança.", "success"); 
+                        this.loadUserEditor(); 
+                    });
                 },
 
                 exportBonusReport() {
