@@ -1470,11 +1470,35 @@
                     if(el) el.remove();
                 },
                 deleteAction(id) {
-                    app.ui.showConfirm("Aviso", "Excluir esta ação enviada?", `app.actions.executeDelete('${id}')`, true);
+                    app.ui.showConfirm("Atenção", "Excluir permanentemente esta ação? Essa operação não pode ser desfeita.", `app.actions.executeDelete('${id}')`, true);
                 },
                 executeDelete(id) {
-                    delete app.actionsList[id];
-                    app.storage.saveActions().then(() => app.ui.renderTab('registrar_acao', true));
+                    const act = app.actionsList[id];
+                    if (!act) return;
+
+                    let updates = {};
+                    
+                    // SEGURANÇA: Se a ação já estava aprovada, removemos o ponto do painel do usuário para não dar bônus indevido
+                    if (act.status === 'aprovado') {
+                        const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                        if (userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
+                            let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
+                            app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
+                            updates['users'] = app.users; // Prepara o envio da remoção do ponto
+                        }
+                    }
+
+                    updates[`actions/${id}`] = null; // Apaga a ação inteira do Firebase
+                    
+                    // Faz as duas coisas ao mesmo tempo no banco de dados
+                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        delete app.actionsList[id]; // Limpa da memória local da tela
+                        app.ui.renderTab(app.currentTab, true); // Mantém a pessoa na aba em que ela estava (seja ADM ou Usuário)
+                        app.ui.showAlert("Ação Excluída", "O registro foi apagado permanentemente.", "success");
+                    }).catch(err => {
+                        console.error(err);
+                        app.ui.showAlert("Erro", "Falha ao tentar excluir a ação. Verifique sua conexão.", "error");
+                    });
                 },
                 editAction(id) {
                     const act = app.actionsList[id];
@@ -3673,6 +3697,9 @@
                                             ${act.status === 'pendente' ? `
                                                 <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors"><i class="fa-solid fa-check-double mr-1"></i> Aprovar (+1)</button>
                                             ` : ''}
+                                            <button onclick="app.actions.deleteAction('${act.id}')" class="flex-none py-3 px-4 bg-slate-100 hover:bg-red-500 text-slate-500 hover:text-white dark:bg-slate-800 dark:hover:bg-red-600 dark:text-slate-400 rounded-xl font-bold text-xs transition-colors shadow-sm" title="Excluir Ação Permanentemente">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
