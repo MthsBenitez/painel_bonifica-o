@@ -1616,14 +1616,18 @@
 
                     const finalizeSubmit = () => {
                         app.actionsList[payload.id] = payload;
-                        app.storage.saveActions().then(() => {
+                        
+                        // SALVAMENTO CIRÚRGICO: Salva apenas a ação específica para evitar estouro de limite (timeout) do Firebase
+                        firebase.database().ref('sistema_bonificacao/actions/' + payload.id).set(payload)
+                        .then(() => {
                             app.notifications.notify('ADM', 'Ação Registrada/Atualizada', `${app.currentUser.nome} enviou uma ação para validação.`, 'info');
                             app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação.", "success");
+                            
+                            // Só limpa as imagens temporárias DEPOIS de confirmar que salvou
                             this.tempFiles = []; 
                             document.getElementById('act-preview-gallery').innerHTML = '';
                             document.getElementById('act-edit-id').value = '';
                             
-                            // CORREÇÃO: Aguarda a animação visual "voar" antes de recarregar o formulário (1.5 segundos)
                             setTimeout(() => {
                                 btn.disabled = false;
                                 btn.classList.remove('is-flying');
@@ -1634,26 +1638,38 @@
                             console.error("Falha ao salvar no banco:", err);
                             btn.disabled = false;
                             btn.classList.remove('is-flying');
-                            app.ui.showAlert("Erro de Conexão", "Houve uma falha ao enviar a ação. O arquivo pode ser muito pesado ou a rede falhou.", "error");
+                            app.ui.showAlert("Erro de Conexão", "A ação falhou ao ser enviada. Suas imagens podem estar muito pesadas para a conexão atual. Tente enviar fotos menores.", "error");
                         });
                     };
 
-                    // CORREÇÃO: Dá um leve fôlego (50ms) para o navegador conseguir desenhar a 
-                    // animação de "Processando..." na tela ANTES de engasgar processando as imagens.
                     setTimeout(() => {
                         if (this.tempFiles.length > 0) {
+                            // Limite de segurança (Trava de 5MB somados para não travar o banco)
+                            const MAX_SIZE = 5 * 1024 * 1024;
+                            let totalSize = this.tempFiles.reduce((acc, file) => acc + file.size, 0);
+                            
+                            if (totalSize > MAX_SIZE) {
+                                btn.disabled = false;
+                                btn.classList.remove('is-flying');
+                                return app.ui.showAlert("Imagens muito pesadas", "As fotos selecionadas são muito grandes e travam o sistema. Tire um print da foto ou escolha arquivos mais leves.", "error");
+                            }
+
                             const uploadPromises = this.tempFiles.map(file => this.compressImageAsync(file));
-                            this.tempFiles = [];
-                            document.getElementById('act-preview-gallery').innerHTML = '';
+                            
                             Promise.all(uploadPromises).then(base64Images => {
-                                payload.photos = base64Images;
+                                const validImages = base64Images.filter(b => b);
+                                if(validImages.length === 0) throw new Error("Base64 Vazio");
+                                payload.photos = validImages;
                                 finalizeSubmit();
+                            }).catch(err => {
+                                btn.disabled = false;
+                                btn.classList.remove('is-flying');
+                                app.ui.showAlert("Erro no Anexo", "Falha ao processar as imagens antes do envio.", "error");
                             });
                         } else {
                             finalizeSubmit();
                         }
                     }, 50);
-                },
 
                 approveAction(id) {
                     if(!app.actionsList[id] || app.actionsList[id].status === 'aprovado') return; // Trava mágica contra duplo clique
@@ -2084,12 +2100,37 @@
                     const reason = document.getElementById('reject-reason-ata').value;
                     if(!reason) return app.ui.showAlert("Aviso", "O comentário é obrigatório.", "error");
                     
-                    app.atasList[id].status = 'devolvido';
-                    app.atasList[id].comentario = reason;
+                    const ata = app.atasList[id];
+
+                    // SE JÁ ESTAVA APROVADO COM BÔNUS, REMOVE O BÔNUS ANTES DE REPROVAR!
+                    if (ata.status === 'aprovado') {
+                        let userEncontrado = app.users.find(u => u.nome.toUpperCase() === (ata.qualidade || '').toUpperCase() || u.nome.toUpperCase() === (ata.qualidade2 || '').toUpperCase() || u.matricula === ata.matricula);
+                        const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+
+                        if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef]['g3']) {
+                            let atual = parseInt(userEncontrado.results[mesRef]['g3'].val) || 0;
+                            userEncontrado.results[mesRef]['g3'].val = Math.max(0, atual - 1).toString();
+                            app.storage.saveUsers();
+                        }
+                    }
+
+                    ata.status = 'devolvido';
+                    ata.comentario = reason;
                     
                     app.storage.saveAtas().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
-                        app.notifications.notify(app.atasList[id].matricula, 'Ata Devolvida', `Sua ata "${app.atasList[id].tema}" precisa de correções. Verifique o painel Minhas Atas.`, 'error');
+                        app.notifications.notify(ata.matricula, 'Ata Devolvida / Reprovada', `A ata "${ata.tema}" foi reprovada/devolvida. Motivo: ${reason}`, 'error');
+                        app.ui.renderTab('gestao_atas', true);
+                    });
+                },
+
+                aprovarSemBonus(id) {
+                    const ata = app.atasList[id];
+                    if(!ata || ata.status === 'aprovado_sem_bonus' || ata.status === 'aprovado') return;
+                    
+                    ata.status = 'aprovado_sem_bonus';
+                    app.storage.saveAtas().then(() => {
+                        app.ui.showAlert("Validada como Documento", "Ata aprovada no sistema, porém não contabilizou ponto de bonificação.", "success");
                         app.ui.renderTab('gestao_atas', true);
                     });
                 },
@@ -2917,6 +2958,12 @@
                 setActionFilter(status) { 
                     this.currentActionFilter = status; 
                     this.renderTab('validar_acoes', true); 
+                },
+                
+                atasAbaAtiva: 'pendentes',
+                setAtasAba(aba) {
+                    this.atasAbaAtiva = aba;
+                    this.renderTab('gestao_atas', true);
                 },
 
                 openAddUserModal() { 
@@ -5540,9 +5587,18 @@
                     if(this.atasFiltroTema) atas = atas.filter(a => a.tema === this.atasFiltroTema);
                     if(this.atasFiltroAutor) atas = atas.filter(a => (a.autor||'').toLowerCase().includes(this.atasFiltroAutor.toLowerCase()));
 
-                    const totais = atas.length;
-                    const devolvidas = atas.filter(a => a.status === 'devolvido').length;
-                    const concluidas = totais - devolvidas;
+                    const pendentes = atas.filter(a => a.status === 'concluido' || !a.status).length;
+                    const aprovadas = atas.filter(a => a.status === 'aprovado' || a.status === 'aprovado_sem_bonus').length;
+                    const reprovadas = atas.filter(a => a.status === 'devolvido' || a.status === 'reprovado').length;
+
+                    // Aplica o filtro da aba selecionada
+                    if (this.atasAbaAtiva === 'pendentes') {
+                        atas = atas.filter(a => a.status === 'concluido' || !a.status);
+                    } else if (this.atasAbaAtiva === 'aprovados') {
+                        atas = atas.filter(a => a.status === 'aprovado' || a.status === 'aprovado_sem_bonus');
+                    } else if (this.atasAbaAtiva === 'reprovados') {
+                        atas = atas.filter(a => a.status === 'devolvido' || a.status === 'reprovado');
+                    }
                     
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.atasFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
@@ -5558,18 +5614,24 @@
                         </div>
                         
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
-                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total Filtrado</div>
-                                <div class="text-3xl font-black text-blue-600">${totais}</div>
+                            <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                <div class="text-3xl text-orange-500"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                                <div><div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Aguardando Aprovação</div><div class="text-2xl font-black text-slate-800 dark:text-white">${pendentes}</div></div>
                             </div>
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
-                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Atas Concluídas</div>
-                                <div class="text-3xl font-black text-green-600">${concluidas}</div>
+                            <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                <div class="text-3xl text-green-500"><i class="fa-solid fa-check-double"></i></div>
+                                <div><div class="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest">Atas Aprovadas</div><div class="text-2xl font-black text-slate-800 dark:text-white">${aprovadas}</div></div>
                             </div>
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm">
-                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Devolvidas p/ Correção</div>
-                                <div class="text-3xl font-black text-red-500">${devolvidas}</div>
+                            <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                <div class="text-3xl text-red-500"><i class="fa-solid fa-ban"></i></div>
+                                <div><div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Reprovadas / Devolvidas</div><div class="text-2xl font-black text-slate-800 dark:text-white">${reprovadas}</div></div>
                             </div>
+                        </div>
+
+                        <div class="flex gap-2 mb-4 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-700">
+                            <button onclick="app.ui.setAtasAba('pendentes')" class="px-5 py-2.5 rounded-t-xl text-sm font-bold transition-colors ${this.atasAbaAtiva === 'pendentes' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Aguardando Avaliação</button>
+                            <button onclick="app.ui.setAtasAba('aprovados')" class="px-5 py-2.5 rounded-t-xl text-sm font-bold transition-colors ${this.atasAbaAtiva === 'aprovados' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Atas Aprovadas</button>
+                            <button onclick="app.ui.setAtasAba('reprovados')" class="px-5 py-2.5 rounded-t-xl text-sm font-bold transition-colors ${this.atasAbaAtiva === 'reprovados' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Reprovadas / Devolvidas</button>
                         </div>
 
                         <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -5587,20 +5649,20 @@
                     `;
 
                     if(atas.length === 0) {
-                        html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem atas encontradas.</div>`;
+                        html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem atas encontradas nesta aba.</div>`;
                     } else {
                         atas.forEach(ata => {
-                            // CORREÇÃO: Variáveis declaradas corretamente aqui!
-                            const isDevolvido = ata.status === 'devolvido';
-                            const isAprovado = ata.status === 'aprovado';
+                            const isDevolvido = ata.status === 'devolvido' || ata.status === 'reprovado';
+                            const isAprovadoBonus = ata.status === 'aprovado';
+                            const isAprovadoSemBonus = ata.status === 'aprovado_sem_bonus';
                             
-                            // CORREÇÃO: Lógica do Badge atualizada igual a tela do usuário
                             let badgeStatus = '';
-                            if (isDevolvido) badgeStatus = `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold">Devolvida (Correção)</span>`;
-                            else if (isAprovado) badgeStatus = `<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">Aprovada & Somada</span>`;
-                            else badgeStatus = `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[9px] font-bold">Aguardando Aprovação Gestor</span>`;
+                            if (isDevolvido) badgeStatus = `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold">Reprovada/Devolvida</span>`;
+                            else if (isAprovadoBonus) badgeStatus = `<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">Aprovada & Somada (Com Bônus)</span>`;
+                            else if (isAprovadoSemBonus) badgeStatus = `<span class="bg-teal-100 text-teal-700 px-2 py-0.5 rounded text-[9px] font-bold">Aprovada como Ata (Sem Bônus)</span>`;
+                            else badgeStatus = `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[9px] font-bold">Aguardando Avaliação Gestor</span>`;
                             
-                            const commentHtml = isDevolvido ? `<div class="mt-2 text-xs text-red-600 font-bold bg-red-50 p-2 rounded-lg border border-red-200"><i class="fa-solid fa-reply"></i> Motivo Reprovação: ${ata.comentario}</div>` : '';
+                            const commentHtml = isDevolvido ? `<div class="mt-2 text-xs text-red-600 font-bold bg-red-50 p-2 rounded-lg border border-red-200"><i class="fa-solid fa-reply"></i> Motivo da Reprovação: ${ata.comentario}</div>` : '';
 
                             const ataUser = app.users.find(u => u.matricula === ata.matricula);
                             const ataAvatar = (ataUser && ataUser.foto) ? ataUser.foto : `https://ui-avatars.com/api/?name=${encodeURIComponent(ata.autor || 'User')}&background=cbd5e1&color=ffffff`;
@@ -5626,7 +5688,7 @@
                             }
 
                             html += `
-                                <div class="glass-card rounded-2xl p-6 border-t-4 ${isDevolvido ? 'border-t-red-500' : (isAprovado ? 'border-t-emerald-500' : 'border-t-blue-500')} shadow-sm flex flex-col relative group">
+                                <div class="glass-card rounded-2xl p-6 border-t-4 ${isDevolvido ? 'border-t-red-500' : (isAprovadoBonus || isAprovadoSemBonus ? 'border-t-emerald-500' : 'border-t-blue-500')} shadow-sm flex flex-col relative group">
                                     <button type="button" onclick="app.ata.excluirAta('${ata.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors z-10"><i class="fa-solid fa-trash"></i></button>
                                     
                                     <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 flex flex-wrap items-center gap-2">
@@ -5655,14 +5717,17 @@
                                     ${commentHtml}
 
                                     <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                        <div class="col-span-2 flex gap-2">
-                                            <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualização</button>
-                                            ${(!isDevolvido && !isAprovado) ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-rotate-left"></i> Sugerir Correção</button>` : ''}
-                                            ${(!isDevolvido && !isAprovado) ? `<button type="button" onclick="app.ata.validarComoCalibragem('${ata.id}', this)" class="flex-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Aprovar e Contabilizar Calibração"><i class="fa-solid fa-check-double"></i> Aprovar Calibração</button>` : ''}
-                                            ${isAprovado ? `<button type="button" disabled class="flex-1 bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 font-bold py-2.5 rounded-xl text-xs shadow-sm cursor-not-allowed"><i class="fa-solid fa-check"></i> Já Aprovada & Somada</button>` : ''}
+                                        <div class="col-span-2 flex flex-wrap gap-2">
+                                            <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="flex-1 min-w-[120px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-eye"></i> Visualizar Ata</button>
+                                            
+                                            ${!isDevolvido ? `<button type="button" onclick="app.ata.promptDevolverAta('${ata.id}')" class="flex-1 min-w-[120px] bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-ban"></i> Reprovar / Devolver</button>` : ''}
+                                            
+                                            ${!isAprovadoSemBonus && !isAprovadoBonus ? `<button type="button" onclick="app.ata.aprovarSemBonus('${ata.id}')" class="flex-1 min-w-[120px] bg-teal-50 text-teal-600 hover:bg-teal-100 dark:bg-teal-900/20 dark:text-teal-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-check"></i> Aprovar (S/ Bônus)</button>` : ''}
+                                            
+                                            ${!isAprovadoBonus ? `<button type="button" onclick="app.ata.validarComoCalibragem('${ata.id}', this)" class="flex-1 min-w-[120px] bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Aprovar e Contabilizar Calibração"><i class="fa-solid fa-sack-dollar"></i> Aprovar (+ Bônus)</button>` : ''}
                                         </div>
-                                        <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
-                                        <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="col-span-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
+                                        <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
+                                        <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="col-span-1 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
                                     </div>
                                 </div>
                             `;
