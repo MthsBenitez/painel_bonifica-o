@@ -2105,14 +2105,38 @@
 
                     // SE JÁ ESTAVA APROVADO COM BÔNUS, REMOVE O BÔNUS ANTES DE REPROVAR!
                     if (ata.status === 'aprovado') {
-                        let userEncontrado = app.users.find(u => u.nome.toUpperCase() === (ata.qualidade || '').toUpperCase() || u.nome.toUpperCase() === (ata.qualidade2 || '').toUpperCase() || u.matricula === ata.matricula);
                         const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+                        
+                        // Encontra o cofre correto das Calibrações dinamicamente
+                        const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
+                        const gId = goalCalib ? goalCalib.id : 'g3';
 
-                        if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef]['g3']) {
-                            let atual = parseInt(userEncontrado.results[mesRef]['g3'].val) || 0;
-                            userEncontrado.results[mesRef]['g3'].val = Math.max(0, atual - 1).toString();
-                            app.storage.saveUsers();
-                        }
+                        // Agrupa os nomes de todos que participaram da Ata
+                        let nomesAlvo = [];
+                        if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
+                        if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
+                        
+                        // Encontra TODOS os usuários correspondentes (e não apenas o primeiro)
+                        let usersEncontrados = app.users.filter(u => 
+                            nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
+                            u.matricula === ata.matricula
+                        );
+
+                        let atualizouAlguem = false;
+                        usersEncontrados.forEach(userEncontrado => {
+                            if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef][gId]) {
+                                let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
+                                userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
+                                
+                                // Mantém a tela atualizada se for o próprio usuário logado
+                                if (app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
+                                    app.currentUser = userEncontrado;
+                                }
+                                atualizouAlguem = true;
+                            }
+                        });
+                        
+                        if (atualizouAlguem) app.storage.saveUsers();
                     }
 
                     ata.status = 'devolvido';
@@ -2284,40 +2308,55 @@
                     const ata = app.atasList[id];
                     if(!ata || ata.status === 'aprovado') return; // Trava inteligente contra duplo clique na aprovação
                     
-                    // NOVA TRAVA DE SEGURANÇA 1: Não permitir somar se a ata foi reprovada/devolvida
                     if(ata.status === 'devolvido') {
                         return app.ui.showAlert("Ação Inválida", "Não é possível contabilizar nos resultados uma ata que foi devolvida para correção.", "error");
                     }
 
-                    // TRAVA DE SEGURANÇA 2: Exigir validação/nome do supervisor
                     if(!ata.sup || ata.sup.trim() === '-' || ata.sup.trim() === '') {
-                        return app.ui.showAlert("Aprovação Pendente", "Esta calibração não possui um Supervisor Operacional vinculado ou aprovando a ata. Por favor, edite a ata e inclua o nome do supervisor antes de contabilizar nos resultados.", "error");
+                        return app.ui.showAlert("Aprovação Pendente", "Esta calibração não possui um Supervisor Operacional vinculado ou aprovando a ata. Por favor, edite a ata antes de contabilizar.", "error");
                     }
                     
-                    // Procura o usuário que fez a ata
-                    let userEncontrado = app.users.find(u => u.nome.toUpperCase() === (ata.qualidade || '').toUpperCase() || u.nome.toUpperCase() === (ata.qualidade2 || '').toUpperCase() || u.matricula === ata.matricula);
+                    // CORREÇÃO CRÍTICA: Encontrar TODOS os usuários envolvidos na ata (Qualidade 1, Qualidade 2 e Autor)
+                    let nomesAlvo = [];
+                    if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
+                    if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
                     
-                    if (!userEncontrado) return app.ui.showAlert("Erro", "Colaborador da qualidade não encontrado para creditar a calibragem. Verifique o nome escrito na ata.", "error");
+                    let usersEncontrados = app.users.filter(u => 
+                        nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
+                        u.matricula === ata.matricula
+                    );
+                    
+                    if (usersEncontrados.length === 0) return app.ui.showAlert("Erro", "Nenhum colaborador da qualidade encontrado para creditar a calibragem. Verifique os nomes cadastrados na ata.", "error");
 
-                    // Correção Fundamental: Busca o mês exato em que a ata ocorreu, não o mês atual de navegação
                     const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
                     
-                    if(!userEncontrado.results) userEncontrado.results = {};
-                    if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
-                    if(!userEncontrado.results[mesRef]['g3']) userEncontrado.results[mesRef]['g3'] = { val: 0 };
+                    // Encontra o cofre correto das Calibrações dinamicamente
+                    const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
+                    const gId = goalCalib ? goalCalib.id : 'g3';
                     
-                    let atual = parseInt(userEncontrado.results[mesRef]['g3'].val) || 0;
-                    userEncontrado.results[mesRef]['g3'].val = (atual + 1).toString();
+                    // Distribui a calibração para TODOS os envolvidos na ata
+                    usersEncontrados.forEach(userEncontrado => {
+                        if(!userEncontrado.results) userEncontrado.results = {};
+                        if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                        if(!userEncontrado.results[mesRef][gId]) userEncontrado.results[mesRef][gId] = { val: 0 };
+                        
+                        let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
+                        userEncontrado.results[mesRef][gId].val = (atual + 1).toString();
+                        
+                        if(app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
+                            app.currentUser = userEncontrado;
+                        }
+                    });
                     
-                    // Salva o status definitivo da ata como Aprovado pelo Gestor
                     ata.status = 'aprovado';
                     app.storage.saveAtas();
 
                     app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Aprovado!", `A ata foi aprovada pelo Gestor e contabilizada com sucesso!<br><strong>${userEncontrado.nome}</strong> recebeu +1 Calibração nos indicadores deste mês.`, "success");
-                        app.ui.renderTab('gestao_atas', true); // Recarrega a tela para ocultar os botões de ação e exibir a trava
+                        // Exibe mensagem dinâmica com o nome de todos que receberam os pontos
+                        const nomesGanhadores = usersEncontrados.map(u => u.nome.split(' ')[0]).join(', ');
+                        app.ui.showAlert("Aprovado!", `A ata foi aprovada pelo Gestor e contabilizada com sucesso!<br><strong>${nomesGanhadores}</strong> receberam +1 Calibração nos indicadores deste mês.`, "success");
+                        app.ui.renderTab('gestao_atas', true);
                         
-                        // Feedback Visual Imediato no Botão
                         if(btnElement) {
                             btnElement.innerHTML = '<i class="fa-solid fa-check"></i> Somado';
                             btnElement.classList.replace('bg-emerald-50', 'bg-slate-100');
