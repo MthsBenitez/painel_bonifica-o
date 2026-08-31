@@ -279,36 +279,12 @@
             transition: width 0.2s, height 0.2s, background-color 0.2s;
         }
 
-        /* O Círculo Externo (Aura que acompanha de forma fluída) */
-        .custom-cursor-outline {
-            width: 40px;
-            height: 40px;
-            border: 2px solid rgba(148, 163, 184, 0.4); /* tom cinza claro/translúcido */
-            border-radius: 50%;
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-            z-index: 999998;
-            transform: translate(-50%, -50%);
-            transition: transform 0.1s ease-out, width 0.2s, height 0.2s, background-color 0.2s, border-color 0.2s;
-        }
-        
-        /* Dark Mode suporte */
-        .dark .custom-cursor-outline { border-color: rgba(255,255,255,0.3); }
-
-        /* Interações Hover Mágicas! */
-        .cursor-hover .custom-cursor-dot {
-            width: 0px; 
-            height: 0px;
-            opacity: 0;
-        }
-        .cursor-hover .custom-cursor-outline {
-            width: 60px;
-            height: 60px;
-            background-color: color-mix(in srgb, var(--theme-color) 20%, transparent); /* Fundo preenchido suave */
-            border-color: var(--theme-color);
-        }
+        /* Interações Hover Mágicas (Bolinha cresce levemente) */
+      .cursor-hover .custom-cursor-dot {
+          transform: translate(-50%, -50%) scale(2.5);
+          background-color: var(--theme-color);
+          opacity: 0.8;
+      }
         
         /* CSS Obrigatório do Lenis (Scroll Suave) */
         html.lenis { height: auto; }
@@ -10479,8 +10455,6 @@
             // Inicialização do Cursor Moderno Personalizado
             const cursorDot = document.createElement('div');
             cursorDot.classList.add('custom-cursor-dot');
-            const cursorOutline = document.createElement('div');
-            cursorOutline.classList.add('custom-cursor-outline');
             document.body.appendChild(cursorDot);
             document.body.appendChild(cursorOutline);
 
@@ -10492,12 +10466,6 @@
                 // A bolinha segue instantaneamente
                 cursorDot.style.left = `${posX}px`;
                 cursorDot.style.top = `${posY}px`;
-
-                // A linha externa tem um pequeno delay via animação JS
-                cursorOutline.animate({
-                    left: `${posX}px`,
-                    top: `${posY}px`
-                }, { duration: 500, fill: "forwards" });
             });
 
             // Lógica de "Gostoso de mexer" ao focar elementos com mouse
