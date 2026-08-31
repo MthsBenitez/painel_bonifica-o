@@ -5000,10 +5000,11 @@
                         </div>
                     </div>
 
-                    <div class="mt-8 flex justify-end">
-                        <button onclick="app.admin.saveConfig()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
-                    </div>
-                    </div>`;
+                    <div class="mt-8 flex justify-end gap-4">
+                                        <button type="button" onclick="app.admin.reprocessarPontuacoes()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center gap-2"><i class="fa-solid fa-rotate"></i> Reprocessar Calibrações e Ações</button>
+                                        <button onclick="app.admin.saveConfig()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
+                                    </div>
+                                    </div>`;
                     container.innerHTML = html;
                     app.admin.updateConfigPreview();
                 },
@@ -10265,10 +10266,80 @@
                     document.body.appendChild(btnSair);
 
                     // Tenta entrar em Tela Cheia
-                    document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
-                    
-                    app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para criar um PDF de <b>página única e alta resolução</b> englobando toda a sua tabela.", "success");
-                }          
+                            document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
+                            
+                            app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para criar um PDF de <b>página única e alta resolução</b> englobando toda a sua tabela.", "success");
+                        },
+
+                reprocessarPontuacoes() {
+                    app.ui.showConfirm("Auditoria de Pontuação", "O sistema irá varrer toda a base de dados, identificar todas as Atas e Ações Aprovadas e recalcular do zero as pontuações de todos os colaboradores para todos os meses, removendo duplicidades. Continuar?", "app.admin.execReprocessarPontuacoes()", true);
+                },
+
+                execReprocessarPontuacoes() {
+                    // 1. Identifica os IDs das metas no banco
+                    const gCalib = app.config.goals.find(g => g.type === 'calibracao');
+                    const gAcoes = app.config.goals.find(g => g.type === 'actions');
+                    const g3Id = gCalib ? gCalib.id : 'g3';
+                    const g4Id = gAcoes ? gAcoes.id : 'g4';
+
+                    // 2. Zera todas as Atas e Ações na memória dos usuários para evitar sobra de duplicados
+                    app.users.forEach(u => {
+                        if(u.results) {
+                            Object.keys(u.results).forEach(mes => {
+                                if(u.results[mes][g3Id]) u.results[mes][g3Id].val = 0;
+                                if(u.results[mes][g4Id]) u.results[mes][g4Id].val = 0;
+                            });
+                        }
+                    });
+
+                    // 3. Reconstrói Calibrações (Atas Aprovadas)
+                    Object.values(app.atasList).forEach(ata => {
+                        if(ata.status === 'aprovado') {
+                            const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+                            let nomesAlvo = [];
+                            if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
+                            if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
+                            
+                            let usersEncontrados = app.users.filter(u => nomesAlvo.includes(u.nome.toUpperCase().trim()) || u.matricula === ata.matricula);
+
+                            usersEncontrados.forEach(userEncontrado => {
+                                if(!userEncontrado.results) userEncontrado.results = {};
+                                if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                                if(!userEncontrado.results[mesRef][g3Id]) userEncontrado.results[mesRef][g3Id] = { val: 0 };
+                                
+                                let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
+                                userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
+                            });
+                        }
+                    });
+
+                    // 4. Reconstrói Ações Presenciais Aprovadas
+                    Object.values(app.actionsList).forEach(act => {
+                        if(act.status === 'aprovado') {
+                            const mesRef = act.month || app.currentMonth;
+                            const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                            if(userIdx > -1) {
+                                const u = app.users[userIdx];
+                                if(!u.results) u.results = {};
+                                if(!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
+                                if(!u.results[mesRef][g4Id]) u.results[mesRef][g4Id] = { val: 0 };
+                                
+                                let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
+                                u.results[mesRef][g4Id].val = (atual + 1).toString();
+                            }
+                        }
+                    });
+
+                    // 5. Salva base limpa e avisa o admin
+                    firebase.database().ref('sistema_bonificacao/users').set(app.users).then(() => {
+                        if(app.currentUser) {
+                            const atualizado = app.users.find(u => u.matricula === app.currentUser.matricula);
+                            if(atualizado) app.currentUser = atualizado;
+                        }
+                        app.ui.showAlert("Reprocessamento Concluído", "Os indicadores foram reconstruídos com sucesso baseados unicamente no que está 100% aprovado. As duplicidades sumiram.", "success");
+                        app.ui.renderTab(app.currentTab, true);
+                    });
+                }
 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
