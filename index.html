@@ -2729,6 +2729,11 @@
                             else if (pct >= 0.70) mult = 0.25;
                             else mult = 0;
                             display = (pct * 100).toFixed(1) + '%';
+                        } else if (goalId === 'g2' && meta === 0) {
+                            // MÁGICA: Se o monitor não teve NENHUMA ligação ruim, a meta dele é 0.
+                            // Ele ganha 100% automático por excelência na amostragem!
+                            mult = 1.0;
+                            display = '100.0%';
                         } else {
                             display = '0%';
                         }
@@ -8299,7 +8304,9 @@
                         if (linha.isRegisteredMonitor && linha.matriculaMonitor) {
                             if (!rankingMap[linha.matriculaMonitor]) {
                                 rankingMap[linha.matriculaMonitor] = {
-                                    nome: linha.monitor, matricula: linha.matriculaMonitor, total: 0, falta: 400, pendenteFeedback: 0, operacao: linha.operacao || 'N/A'
+                                    nome: linha.monitor, matricula: linha.matriculaMonitor, total: 0, falta: 400, pendenteFeedback: 0, 
+                                    metaFb: 0, realFb: 0, // Injeção dos novos contadores de Feedback
+                                    operacao: linha.operacao || 'N/A'
                                 };
                             }
                             
@@ -8307,8 +8314,13 @@
                             rankingMap[linha.matriculaMonitor].falta = Math.max(0, 400 - rankingMap[linha.matriculaMonitor].total);
             
                             if (linha.nota !== 'N/A' && linha.nota < 85) {
+                                rankingMap[linha.matriculaMonitor].metaFb += 1; // +1 na Meta Pessoal de Feedback deste Monitor
                                 let isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
-                                if (!isAplicado) rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
+                                if (isAplicado) {
+                                    rankingMap[linha.matriculaMonitor].realFb += 1; // +1 no Feedback Realizado
+                                } else {
+                                    rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
+                                }
                             }
                         }
             
@@ -8342,8 +8354,14 @@
                         if(usr) {
                             if(!usr.results) usr.results = {};
                             if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
+                            
                             if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
                             usr.results[app.currentMonth]['g1'].real = r.total;
+                            
+                            // Automação: Injeta a Meta e o Realizado de Feedback (G2)
+                            if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
+                            usr.results[app.currentMonth]['g2'].meta = r.metaFb;
+                            usr.results[app.currentMonth]['g2'].real = r.realFb;
                         }
                     });
             
@@ -9173,6 +9191,11 @@
                                             <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="text" value="400" disabled class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500"></div>
                                             <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
                                          </div>`;
+                            } else if (g.id === 'g2') {
+                                html += `<div class="flex gap-3">
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta FB <span class="text-blue-500">(Auto)</span></label><input type="number" id="input-${g.id}-meta" value="${v.meta||'0'}" disabled title="Calculado automaticamente via Planilha" class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500 cursor-not-allowed"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Realizado FB <span class="text-blue-500">(Auto)</span></label><input type="number" id="input-${g.id}-real" value="${v.real||'0'}" disabled title="Calculado automaticamente via Planilha" class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500 cursor-not-allowed"></div>
+                                         </div>`;
                             } else {
                                 html += `<div class="flex gap-3">
                                             <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="number" id="input-${g.id}-meta" value="${v.meta||'100'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
@@ -9258,7 +9281,13 @@
                         if (g.type === 'percent') {
                             const meta = g.id === 'g1' ? 400 : (document.getElementById(`input-${g.id}-meta`).value || 0);
                             const real = document.getElementById(`input-${g.id}-real`).value || 0;
-                            res[g.id] = { meta, real };
+                            
+                            // NOVO: Protege a meta de Feedbacks (g2) para não ser resetada pelo botão Salvar do ADM
+                            if (g.id === 'g2') {
+                                res[g.id] = dadosAtuaisDoBanco[g.id] || { meta: 0, real: 0 };
+                            } else {
+                                res[g.id] = { meta, real };
+                            }
                         } else if (g.type === 'calibracao' || g.type === 'actions') {
                             // PROTEÇÃO: Mantém o valor exato que já estava salvo no banco de dados!
                             // Isso impede que a tela de "Lançar Notas" sobrescreva os pontos automáticos com "0"
