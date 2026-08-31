@@ -255,6 +255,60 @@
         
     /* Classe para os futuros botões magnéticos */
         .magnetic-btn { display: inline-block; transform-style: preserve-3d; }
+
+        /* ========================================================
+           CURSOR MODERNO E PERSONALIZADO
+           ======================================================== */
+        /* Oculta o mouse padrão nas tags base do layout inteiro */
+        body, a, button, input, select, textarea {
+            cursor: none !important;
+        }
+
+        /* A Bolinha (Ponto exato do clique) */
+        .custom-cursor-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--theme-color);
+            border-radius: 50%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 999999;
+            transform: translate(-50%, -50%);
+            transition: width 0.2s, height 0.2s, background-color 0.2s;
+        }
+
+        /* O Círculo Externo (Aura que acompanha de forma fluída) */
+        .custom-cursor-outline {
+            width: 40px;
+            height: 40px;
+            border: 2px solid rgba(148, 163, 184, 0.4); /* tom cinza claro/translúcido */
+            border-radius: 50%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 999998;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out, width 0.2s, height 0.2s, background-color 0.2s, border-color 0.2s;
+        }
+        
+        /* Dark Mode suporte */
+        .dark .custom-cursor-outline { border-color: rgba(255,255,255,0.3); }
+
+        /* Interações Hover Mágicas! */
+        .cursor-hover .custom-cursor-dot {
+            width: 0px; 
+            height: 0px;
+            opacity: 0;
+        }
+        .cursor-hover .custom-cursor-outline {
+            width: 60px;
+            height: 60px;
+            background-color: color-mix(in srgb, var(--theme-color) 20%, transparent); /* Fundo preenchido suave */
+            border-color: var(--theme-color);
+        }
         
         /* CSS Obrigatório do Lenis (Scroll Suave) */
         html.lenis { height: auto; }
@@ -10419,6 +10473,45 @@
                 }
                 if (e.key === 'Escape') {
                     app.ui.closeCommandPalette();
+                }
+            });
+
+            // Inicialização do Cursor Moderno Personalizado
+            const cursorDot = document.createElement('div');
+            cursorDot.classList.add('custom-cursor-dot');
+            const cursorOutline = document.createElement('div');
+            cursorOutline.classList.add('custom-cursor-outline');
+            document.body.appendChild(cursorDot);
+            document.body.appendChild(cursorOutline);
+
+            // Rastreador de movimento
+            window.addEventListener('mousemove', function(e) {
+                const posX = e.clientX;
+                const posY = e.clientY;
+
+                // A bolinha segue instantaneamente
+                cursorDot.style.left = `${posX}px`;
+                cursorDot.style.top = `${posY}px`;
+
+                // A linha externa tem um pequeno delay via animação JS
+                cursorOutline.animate({
+                    left: `${posX}px`,
+                    top: `${posY}px`
+                }, { duration: 500, fill: "forwards" });
+            });
+
+            // Lógica de "Gostoso de mexer" ao focar elementos com mouse
+            const hoverElements = 'a, button, select, input, textarea, [onclick], .cursor-pointer';
+            
+            // Adiciona classe na aura em todo elemento clicável
+            document.body.addEventListener('mouseover', (e) => {
+                if (e.target.closest(hoverElements)) {
+                    document.body.classList.add('cursor-hover');
+                }
+            });
+            document.body.addEventListener('mouseout', (e) => {
+                if (e.target.closest(hoverElements)) {
+                    document.body.classList.remove('cursor-hover');
                 }
             });
             
