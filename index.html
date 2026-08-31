@@ -8211,11 +8211,22 @@
                         ranking.push({ nome: usr.nome, matricula: matr, total: total, falta: Math.max(0, 400 - total), pendenteFeedback: fbs, operacao: (usr.operacoes && usr.operacoes[0]) || 'Manual' });
                     }
 
-                    // Automatiza para "Meus Resultados" (G1)
+                    // Automatiza para "Meus Resultados" (G1 e G2)
                     if(!usr.results) usr.results = {};
                     if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
+                    
                     if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
                     usr.results[app.currentMonth]['g1'].real = total;
+
+                    // Injeta a lógica corrigida para G2 (Feedback) subtraindo pendentes
+                    if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
+                    const rItem = ranking.find(r => r.matricula === matr);
+                    if (rItem) {
+                        let metaCalculada = Math.max(rItem.metaFb || 0, rItem.pendenteFeedback || 0);
+                        usr.results[app.currentMonth]['g2'].meta = metaCalculada;
+                        usr.results[app.currentMonth]['g2'].real = Math.max(0, metaCalculada - (rItem.pendenteFeedback || 0));
+                    }
+
                     app.monitoriasData.ranking = ranking; // Reatribui pro objeto principal
                     
                     // ATUALIZAÇÃO ATÔMICA
@@ -8360,8 +8371,13 @@
                             
                             // Automação: Injeta a Meta e o Realizado de Feedback (G2)
                             if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
-                            usr.results[app.currentMonth]['g2'].meta = r.metaFb;
-                            usr.results[app.currentMonth]['g2'].real = r.realFb;
+                            
+                            // A Meta é a quantidade de notas < 85. Se a pendência anotada for maior, a meta assume a pendência.
+                            let metaCalculada = Math.max(r.metaFb || 0, r.pendenteFeedback || 0);
+                            usr.results[app.currentMonth]['g2'].meta = metaCalculada;
+                            
+                            // O alcançado é calculado subtraindo os pendentes, exatamente conforme a regra de negócio
+                            usr.results[app.currentMonth]['g2'].real = Math.max(0, metaCalculada - (r.pendenteFeedback || 0));
                         }
                     });
             
