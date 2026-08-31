@@ -1599,11 +1599,12 @@
                     }
                     
                     if(existingAct && this.tempFiles.length === 0) {
-                        payload.photos = existingAct.photos || [existingAct.photo];
+                        // Correção: Evita array com [undefined] que quebra o Firebase secretamente
+                        payload.photos = existingAct.photos || (existingAct.photo ? [existingAct.photo] : []);
                     }
 
                     btn.disabled = true;
-                    btn.classList.add('is-flying'); // Ativa a animação do avião voando e o novo spinner
+                    btn.classList.add('is-flying');
 
                     const finalizeSubmit = () => {
                         app.actionsList[payload.id] = payload;
@@ -1614,6 +1615,11 @@
                             document.getElementById('act-preview-gallery').innerHTML = '';
                             document.getElementById('act-edit-id').value = '';
                             app.ui.renderTab('registrar_acao', true);
+                        }).catch(err => {
+                            console.error("Falha ao salvar no banco:", err);
+                            btn.disabled = false;
+                            btn.classList.remove('is-flying');
+                            app.ui.showAlert("Erro de Conexão", "Houve uma falha ao enviar a ação. O arquivo pode ser muito grande ou a rede falhou.", "error");
                         });
                     };
 
@@ -1631,7 +1637,7 @@
                 },
 
                 approveAction(id) {
-                    if(!app.actionsList[id]) return;
+                    if(!app.actionsList[id] || app.actionsList[id].status === 'aprovado') return; // Trava mágica contra duplo clique
                     app.actionsList[id].status = 'aprovado';
                     const act = app.actionsList[id];
                     
@@ -2215,7 +2221,7 @@
 
                 validarComoCalibragem(id, btnElement) {
                     const ata = app.atasList[id];
-                    if(!ata) return;
+                    if(!ata || ata.status === 'aprovado') return; // Trava inteligente contra duplo clique na aprovação
                     
                     // NOVA TRAVA DE SEGURANÇA 1: Não permitir somar se a ata foi reprovada/devolvida
                     if(ata.status === 'devolvido') {
@@ -2232,7 +2238,8 @@
                     
                     if (!userEncontrado) return app.ui.showAlert("Erro", "Colaborador da qualidade não encontrado para creditar a calibragem. Verifique o nome escrito na ata.", "error");
 
-                    const mesRef = app.currentMonth; 
+                    // Correção Fundamental: Busca o mês exato em que a ata ocorreu, não o mês atual de navegação
+                    const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
                     
                     if(!userEncontrado.results) userEncontrado.results = {};
                     if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
@@ -4808,8 +4815,7 @@
                                     <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar Reset de Senha (12345)"><i class="fa-solid fa-key"></i></button>
                                     <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Editar Perfil"><i class="fa-solid fa-pen"></i></button>
                                     <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar re-assinatura LGPD">LGPD</button>
-                                    <button type="button" onclick="document.getElementById('adm-user-select').value='${u.matricula}'; app.admin.deleteUser()" class="text-red-500 bg-red-50 dark:bg-red-900/30 dark:text-red-400 px-2 py-1.5 rounded text-xs font-bold transition-colors"><i class="fa-solid fa-trash"></i></button>
-                                </td>
+                                    <button type="button" onclick="app.admin.deleteUser('${u.matricula}')" class="text-red-500 bg-red-50 dark:bg-red-900/30 dark:text-red-400 px-2 py-1.5 rounded text-xs font-bold transition-colors"><i class="fa-solid fa-trash"></i></button>
                             </tr>
                         `;
                     });
@@ -8905,9 +8911,8 @@
                     }
                 },
 
-                deleteUser() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    if(!mat) return app.ui.showAlert("Aviso", "Selecione um usuário na tabela para excluir.", "error");
+                deleteUser(mat) {
+                    if(!mat) return app.ui.showAlert("Aviso", "Não foi possível identificar o usuário.", "error");
                     const user = app.users.find(u => u.matricula === mat);
                     app.ui.showConfirm("Cuidado!", `Você está prestes a excluir ${user.nome}. Esta ação não pode ser desfeita. Confirmar exclusão?`, `app.admin.execDeleteUser('${mat}')`, true);
                 },
