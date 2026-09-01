@@ -8133,7 +8133,7 @@
                 // ==========================================
                 // 2. RECALCULADOR MESTRE UNIFICADO
                 // ==========================================
-                recalcularPainelMonitorias() {
+                recalcularPainelMonitorias(isMatchZero = false) {
                     let linhasGlobais = [];
                     if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                         linhasGlobais = app.monitoriasData.detalhes.linhas;
@@ -8147,7 +8147,9 @@
                     // Pré-popula as monitoras cadastradas no sistema
                     app.users.forEach(u => {
                         rankingMap[u.matricula] = {
-                            nome: u.nome, matricula: u.matricula, total: 0, falta: 400, pendenteFeedback: 0, operacao: (u.operacoes && u.operacoes[0]) || 'N/A'
+                            nome: u.nome, matricula: u.matricula, total: 0, falta: 400, pendenteFeedback: 0, 
+                            metaFb: 0, realFb: 0, // <--- INICIALIZADO AQUI PARA PREVENIR ERRO SILENCIOSO DE CÁLCULO
+                            operacao: (u.operacoes && u.operacoes[0]) || 'N/A'
                         };
                     });
             
@@ -8227,7 +8229,11 @@
                         monitorias: app.monitoriasData
                     }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
-                        app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente.", "success");
+                        if (isMatchZero) {
+                            app.ui.showAlert("Importação Concluída com Alertas", "Os dados foram importados, porém <b>nenhum nome bateu com a equipe cadastrada</b>. Eles aparecerão na tabela como 'Outros Sup'. Use o botão 'Vincular Nomes' para corrigir.", "info");
+                        } else {
+                            app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente.", "success");
+                        }
                     });
                 },
             
@@ -8265,7 +8271,12 @@
                             };
             
                             jsonData.forEach(row => {
-                                let avaliadorRaw = getValByKeyword(row, 'AVALIADOR') || getValByKeyword(row, 'MONITOR');
+                                // Busca Inteligente de Colunas aprimorada
+                                let avaliadorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR');
+                                if (!avaliadorRaw) {
+                                    const keyNome = Object.keys(row).find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
+                                    if (keyNome) avaliadorRaw = row[keyNome];
+                                }
                                 if (!avaliadorRaw) return;
             
                                 let nomeFormatado = String(avaliadorRaw).trim();
@@ -8274,7 +8285,7 @@
                                     nomeFormatado = partes[1].trim() + ' ' + partes[0].trim();
                                 }
             
-                                let funcRaw = getValByKeyword(row, 'FUNCIONÁRIO') || getValByKeyword(row, 'FUNCIONARIO') || getValByKeyword(row, 'OPERADOR') || 'Não Identificado';
+                                let opNomlet funcRaw = getValByKeyword(row, 'FUNCIONÁRIO|FUNCIONARIO|OPERADOR|COLABORADOR') || 'Não Identificado';eDetalhe = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO') || 'Não Identificado')).trim();
                                 let operadorFmt = String(funcRaw).trim();
                                 if (operadorFmt.includes(',')) {
                                     let p = operadorFmt.split(',');
@@ -8314,16 +8325,12 @@
             
                             if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna de Avaliador/Monitor. Verifique o cabeçalho do arquivo.", "error");
                             
-                            if (matchCount === 0) {
-                                app.ui.showAlert("Planilha Importada", "Nenhum nome bateu exatamente com a equipe cadastrada. Eles aparecerão como 'Outros Sup'. Se precisar, use o botão 'Vincular Nomes'.", "info");
-                            }
-
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
                             
                             // Consolida
                             app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
-                            this.recalcularPainelMonitorias();
+                            this.recalcularPainelMonitorias(matchCount === 0);
             
                         } catch (err) {
                             console.error(err);
@@ -8370,8 +8377,13 @@
                             let periodoAnalisado = new Date().toLocaleDateString('pt-BR');
             
                             jsonData.forEach(row => {
-                                // Busca Inteligente de Colunas
-                                let monitorRaw = getValByKeyword(row, 'MONITOR|SUPERVISOR') || getValByKeyword(row, 'NOME') || getValByKeyword(row, 'AVALIADOR');
+                                // Busca Inteligente de Colunas aprimorada
+                                let monitorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR');
+                                if (!monitorRaw) {
+                                    // Fallback seguro: Tenta achar 'NOME', garantindo que NÃO é do Operador
+                                    const keyNome = Object.keys(row).find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
+                                    if (keyNome) monitorRaw = row[keyNome];
+                                }
                                 if (!monitorRaw) return;
             
                                 const monitorSupStr = String(monitorRaw).trim();
@@ -8407,7 +8419,7 @@
                                     notaFinalLida = parseFloat(notaRaw);
                                 }
             
-                                let opNomeDetalhe = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR') || getValByKeyword(row, 'COLABORADOR') || getValByKeyword(row, 'FUNCIONÁRIO') || 'Não Identificado')).trim();
+                                let opNomeDetalhe = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO') || 'Não Identificado')).trim();
                                 
                                 // Tratamento seguro de Data
                                 let dataRaw = getValByKeyword(row, 'DATA');
@@ -8434,17 +8446,13 @@
             
                             if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna de Avaliador/Monitor. Verifique o cabeçalho do arquivo.", "error");
                             
-                            if (matchCount === 0) {
-                                app.ui.showAlert("Planilha Importada", "Nenhum nome bateu exatamente com a equipe cadastrada. Eles aparecerão como 'Outros Sup'. Se precisar, use o botão 'Vincular Nomes'.", "info");
-                            }
-
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
                             
                             app.monitoriasData.periodo = periodoAnalisado;
                             app.monitoriasData.detalhes.linhas = [...linhasMantidas, ...linhasNovas];
                             
-                            this.recalcularPainelMonitorias();
+                            this.recalcularPainelMonitorias(matchCount === 0);
             
                         } catch (err) {
                             console.error(err);
