@@ -8285,8 +8285,9 @@
                                     nomeFormatado = partes[1].trim() + ' ' + partes[0].trim();
                                 }
             
-                                let opNomlet funcRaw = getValByKeyword(row, 'FUNCIONÁRIO|FUNCIONARIO|OPERADOR|COLABORADOR') || 'Não Identificado';eDetalhe = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO') || 'Não Identificado')).trim();
+                                let funcRaw = getValByKeyword(row, 'FUNCIONÁRIO|FUNCIONARIO|OPERADOR|COLABORADOR') || 'Não Identificado';
                                 let operadorFmt = String(funcRaw).trim();
+                                
                                 if (operadorFmt.includes(',')) {
                                     let p = operadorFmt.split(',');
                                     operadorFmt = p[1].trim() + ' ' + p[0].trim();
