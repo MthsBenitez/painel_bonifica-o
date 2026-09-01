@@ -3569,9 +3569,10 @@
                     if(!app.isAdmin) return;
                     
                     const allActs = Object.values(app.actionsList);
-                    const pendentes = allActs.filter(a => a.status === 'pendente').length;
-                    const aprovados = allActs.filter(a => a.status === 'aprovado').length;
-                    const reprovados = allActs.filter(a => a.status === 'reprovado').length;
+                    const monthActs = allActs.filter(a => a.month === app.currentMonth);
+                    const pendentes = monthActs.filter(a => a.status === 'pendente').length;
+                    const aprovados = monthActs.filter(a => a.status === 'aprovado').length;
+                    const reprovados = monthActs.filter(a => a.status === 'reprovado').length;
 
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -3623,7 +3624,7 @@
                     `;
 
                     // Ponto da Correção: Declara 'list' apenas UMA vez
-                    let list = allActs.filter(a => a.status === this.currentActionFilter);
+                    let list = monthActs.filter(a => a.status === this.currentActionFilter);
                     
                     // APLICAÇÃO DOS FILTROS PRIMEIRO!
                     if (this.actionFilterUser) list = list.filter(a => a.nome === this.actionFilterUser);
@@ -3949,7 +3950,7 @@
                             <div class="mt-12 pt-8 border-t border-slate-200">
                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-6">Histórico / Devolutivas</h3>
                     `;
-                    const myActions = Object.values(app.actionsList).filter(a => a.matricula === app.currentUser.matricula).sort((a,b) => b.timestamp - a.timestamp);
+                    const myActions = Object.values(app.actionsList).filter(a => a.matricula === app.currentUser.matricula && a.month === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
                     if(myActions.length === 0) {
                         html += `<div class="text-sm text-slate-500 text-center">Nenhum histórico encontrado.</div>`;
                     } else {
@@ -5465,7 +5466,7 @@
                 
                 renderView_GestaoAtas(container) {
                     if(!app.isAdmin) return;
-                    let atas = Object.values(app.atasList).sort((a,b) => b.timestamp - a.timestamp);
+                    let atas = Object.values(app.atasList).filter(a => a.data && a.data.substring(0, 7) === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
                     
                     if(this.atasFiltroOp) atas = atas.filter(a => a.op === this.atasFiltroOp);
                     if(this.atasFiltroTema) atas = atas.filter(a => a.tema === this.atasFiltroTema);
@@ -5623,7 +5624,7 @@
 
                 renderView_MinhasAtas(container) {
                     if(app.isAdmin) return;
-                    const atas = Object.values(app.atasList).filter(a => a.matricula === app.currentUser.matricula).sort((a,b) => b.timestamp - a.timestamp);
+                    const atas = Object.values(app.atasList).filter(a => a.matricula === app.currentUser.matricula && a.data && a.data.substring(0, 7) === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
                     
                     let html = `
                         <div class="mb-8">
@@ -8356,8 +8357,9 @@
                             let linhasNovas = [];
                             let matchCount = 0;
             
-                            const getValByKeyword = (row, keyword) => {
-                                const key = Object.keys(row).find(k => k.toUpperCase().includes(keyword));
+                            const getValByKeyword = (row, keywordStr) => {
+                                const keywords = keywordStr.split('|');
+                                const key = Object.keys(row).find(k => keywords.some(kw => k.toUpperCase().includes(kw)));
                                 return key ? row[key] : undefined;
                             };
             
