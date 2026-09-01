@@ -8312,8 +8312,12 @@
                                 });
                             });
             
-                            if (matchCount === 0) return app.ui.showAlert("Aviso", "Arquivo lido, mas nenhum nome bateu com os monitores cadastrados.", "error");
-            
+                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna de Avaliador/Monitor. Verifique o cabeçalho do arquivo.", "error");
+                            
+                            if (matchCount === 0) {
+                                app.ui.showAlert("Planilha Importada", "Nenhum nome bateu exatamente com a equipe cadastrada. Eles aparecerão como 'Outros Sup'. Se precisar, use o botão 'Vincular Nomes'.", "info");
+                            }
+
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
                             
@@ -8428,8 +8432,12 @@
                                 });
                             });
             
-                            if (matchCount === 0) return app.ui.showAlert("Aviso", "Arquivo lido, mas nenhum nome bateu com os monitores cadastrados.", "error");
-            
+                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna de Avaliador/Monitor. Verifique o cabeçalho do arquivo.", "error");
+                            
+                            if (matchCount === 0) {
+                                app.ui.showAlert("Planilha Importada", "Nenhum nome bateu exatamente com a equipe cadastrada. Eles aparecerão como 'Outros Sup'. Se precisar, use o botão 'Vincular Nomes'.", "info");
+                            }
+
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
                             
