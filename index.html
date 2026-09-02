@@ -3023,7 +3023,7 @@
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}, {id:'apresentacoes_monitorias', label:'Apresentações'}] },
-                    { group: 'Qualidade', icon: 'fa-shield-halved', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Auditoria Laudos'}, {id:'calibragem_audio', label:'Lab. de Áudio'}] },
+                    { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Operação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
@@ -5764,6 +5764,10 @@
                                 <i class="fa-solid fa-upload"></i> Relatório Padrão
                                 <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
                             </label>
+
+                            <button onclick="app.admin.openAliasModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Vincular nomes da planilha aos colaboradores">
+                                <i class="fa-solid fa-link"></i> Vincular Nomes
+                            </button>
                         </div>
                         `;
                     }
