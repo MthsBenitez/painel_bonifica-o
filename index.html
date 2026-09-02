@@ -1134,10 +1134,35 @@
                                 };
                             }
 
-                            if (data.monitorias) app.monitoriasData = data.monitorias; else app.monitoriasData = { ranking: [] };
+                            // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
+                            // Monitorias
+                            if (data.monitorias) {
+                                app.allMonitorias = data.monitorias;
+                                // Migração automática se a base antiga for global
+                                if (app.allMonitorias.ranking || app.allMonitorias.detalhes) {
+                                    const oldData = { ...app.allMonitorias };
+                                    app.allMonitorias = { [app.currentMonth]: oldData };
+                                }
+                                app.monitoriasData = app.allMonitorias[app.currentMonth] || { ranking: [] };
+                            } else {
+                                app.allMonitorias = {};
+                                app.monitoriasData = { ranking: [] };
+                            }
                             
-                            // NOVO: Memória da Anatel persistente
-                            if (data.anatel) app.anatelData = data.anatel; else app.anatelData = { registros: [], canceladasNovas: [] };
+                            // Anatel
+                            if (data.anatel) {
+                                app.allAnatel = data.anatel;
+                                // Migração automática
+                                if (app.allAnatel.registros || app.allAnatel.canceladasNovas) {
+                                    const oldAnatel = { ...app.allAnatel };
+                                    app.allAnatel = { [app.currentMonth]: oldAnatel };
+                                }
+                                app.anatelData = app.allAnatel[app.currentMonth] || { registros: [], canceladasNovas: [] };
+                            } else {
+                                app.allAnatel = {};
+                                app.anatelData = { registros: [], canceladasNovas: [] };
+                            }
+                            // ------------------------------------------------------------
                             
                             if (data.operacoes) {
                                 app.operacoesList = data.operacoes;
@@ -1219,8 +1244,14 @@
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
                 saveLaudos() { return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
                 saveCampanha() { return firebase.database().ref('sistema_bonificacao/campanha').set(app.campanhaData || {}); },
-                saveMonitorias() { return firebase.database().ref('sistema_bonificacao/monitorias').set(app.monitoriasData || { ranking: [] }); },
-                saveAnatel() { return firebase.database().ref('sistema_bonificacao/anatel').set(app.anatelData || { registros: [], canceladasNovas: [] }); }
+                saveMonitorias() { 
+                    app.allMonitorias[app.currentMonth] = app.monitoriasData; 
+                    return firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias || {}); 
+                },
+                saveAnatel() { 
+                    app.allAnatel[app.currentMonth] = app.anatelData; 
+                    return firebase.database().ref('sistema_bonificacao/anatel').set(app.allAnatel || {}); 
+                }
             },
 
             users: [],
@@ -1290,6 +1321,15 @@
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
                 this.currentMonth = newMonthStr;
+                
+                // MÁGICA DE ISOLAMENTO: Troca as planilhas exibidas para o mês selecionado
+                if (this.allMonitorias) {
+                    this.monitoriasData = this.allMonitorias[newMonthStr] || { ranking: [] };
+                }
+                if (this.allAnatel) {
+                    this.anatelData = this.allAnatel[newMonthStr] || { registros: [], canceladasNovas: [] };
+                }
+
                 // Quando troca de mês, resetar o cache inteiro
                 document.getElementById('content-container').innerHTML = ''; 
                 this.ui.renderTab(app.currentTab, true);
@@ -8079,11 +8119,12 @@
                     }
 
                     app.monitoriasData.ranking = ranking; // Reatribui pro objeto principal
+                    app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
                     
                     // ATUALIZAÇÃO ATÔMICA
                     firebase.database().ref('sistema_bonificacao').update({
                         users: app.users,
-                        monitorias: app.monitoriasData
+                        monitorias: app.allMonitorias
                     }).then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.showAlert("Sucesso", "Lançamento manual salvo e contabilizado nos resultados.", "success");
@@ -8099,10 +8140,11 @@
                         usr.results[app.currentMonth]['g1'].real = 0;
                     }
                     
+                    app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
                     // ATUALIZAÇÃO ATÔMICA
                     firebase.database().ref('sistema_bonificacao').update({
                         users: app.users,
-                        monitorias: app.monitoriasData
+                        monitorias: app.allMonitorias
                     }).then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.renderTab('import_monitorias', true);
@@ -8131,10 +8173,11 @@
                         }
                     });
                     
+                    app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
                     // ATUALIZAÇÃO ATÔMICA: Salva usuários e limpa monitorias ao mesmo tempo!
                     firebase.database().ref('sistema_bonificacao').update({
                         users: app.users,
-                        monitorias: app.monitoriasData
+                        monitorias: app.allMonitorias
                     }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         app.ui.showAlert("Reset Concluído", "Todos os relatórios do mês atual foram apagados com sucesso.", "success");
@@ -8234,10 +8277,11 @@
                         }
                     });
             
+                    app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
                     // ATUALIZAÇÃO ATÔMICA: Previne a corrida de dados do Firebase
                     firebase.database().ref('sistema_bonificacao').update({
                         users: app.users,
-                        monitorias: app.monitoriasData
+                        monitorias: app.allMonitorias
                     }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         if (isMatchZero) {
