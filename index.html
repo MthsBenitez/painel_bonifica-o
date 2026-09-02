@@ -8380,25 +8380,34 @@
                             let matchCount = 0;
             
                             // FUNÇÃO BLINDADA: Ignora Acentos e Maiúsculas/Minúsculas
-                            const getValByKeyword = (row, keywordStr) => {
+                            const getValByKeyword = (row, keywordStr, excludeStr = '') => {
                                 const keywords = keywordStr.split('|');
+                                const excludes = excludeStr ? excludeStr.split('|') : [];
                                 const normalize = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
-                                const key = Object.keys(row).find(k => keywords.some(kw => normalize(k).includes(normalize(kw))));
+                                const key = Object.keys(row).find(k => {
+                                    const normK = normalize(k);
+                                    if (excludes.length > 0 && excludes.some(ex => normK.includes(normalize(ex)))) return false;
+                                    return keywords.some(kw => normK.includes(normalize(kw)));
+                                });
                                 return key ? row[key] : undefined;
                             };
-            
+             
                             let periodoAnalisado = new Date().toLocaleDateString('pt-BR');
-            
+             
                             jsonData.forEach(row => {
-                                let monitorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR');
+                                // Ignora colunas que contenham NOTA ou STATUS no cabeçalho
+                                let monitorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR', 'NOTA|STATUS');
                                 if (!monitorRaw) {
                                     const keyNome = Object.keys(row).find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
                                     if (keyNome) monitorRaw = row[keyNome];
                                 }
                                 if (!monitorRaw) return;
-            
+             
                                 const monitorSupStr = String(monitorRaw).trim();
-                                let matricula = monitorSupStr.split('-')[0].trim();
+                                
+                                // Separa a matrícula e o nome caso venha no formato "36515 - GRAZIELLA DANIEL"
+                                let matricula = monitorSupStr.includes('-') ? monitorSupStr.split('-')[0].trim() : monitorSupStr;
+                                let nomeParte = monitorSupStr.includes('-') ? monitorSupStr.split('-')[1].trim() : monitorSupStr;
                                 
                                 const keyAliasCompleta = monitorSupStr.toUpperCase();
                                 const keyAliasParte = matricula.toUpperCase();
@@ -8408,7 +8417,13 @@
                                     else if (app.config.aliases[keyAliasParte]) matricula = app.config.aliases[keyAliasParte];
                                 }
                                 
-                                let userObj = app.users.find(u => u.matricula === matricula || u.nome.toUpperCase() === monitorSupStr.toUpperCase() || u.nome.toUpperCase().includes(monitorSupStr.split(' ')[0].toUpperCase()));
+                                // Procura o usuário cruzando a matrícula, nome completo ou primeiro nome
+                                let userObj = app.users.find(u => 
+                                    u.matricula === matricula || 
+                                    u.nome.toUpperCase() === nomeParte.toUpperCase() || 
+                                    u.nome.toUpperCase().includes(nomeParte.split(' ')[0].toUpperCase())
+                                );
+             
                                 if(userObj) {
                                     matricula = userObj.matricula;
                                     matchCount++;
