@@ -10392,6 +10392,8 @@
                 // --- NOVO GERADOR DE GRÁFICOS (EXPORT PNG) ---
                 graficoState: [],
                 
+                graficoType: 'horizontal', // Armazena o tipo de gráfico atual
+
                 addBarraGrafico() {
                     this.graficoState.push({ label: 'Nova Categoria', val: 50, color: '#3b82f6' });
                     this.renderBarrasControles();
@@ -10406,6 +10408,43 @@
                     this.graficoState[idx][field] = value;
                     this.updateGraficoPreview();
                 },
+                
+                // NOVA FUNÇÃO: Ordenação estilo Excel
+                sortGrafico(type) {
+                    if (type === 'az') this.graficoState.sort((a,b) => a.label.localeCompare(b.label));
+                    else if (type === 'za') this.graficoState.sort((a,b) => b.label.localeCompare(a.label));
+                    else if (type === '19') this.graficoState.sort((a,b) => parseFloat(a.val) - parseFloat(b.val));
+                    else if (type === '91') this.graficoState.sort((a,b) => parseFloat(b.val) - parseFloat(a.val));
+                    
+                    this.renderBarrasControles();
+                    this.updateGraficoPreview();
+                },
+
+                // NOVA FUNÇÃO: Degradê Inteligente
+                applyGradientToGrafico() {
+                    const baseHex = document.getElementById('graf-base-color').value;
+                    const hex2rgb = (hex) => {
+                        let v = parseInt(hex.replace('#', ''), 16);
+                        return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+                    };
+                    const rgb2hex = (r,g,b) => '#' + [r,g,b].map(x => x.toString(16).padStart(2,'0')).join('');
+                    
+                    const baseRgb = hex2rgb(baseHex);
+                    const len = this.graficoState.length;
+                    
+                    this.graficoState.forEach((b, i) => {
+                        // Clareia a cor progressivamente (até 70% mais claro no último item)
+                        let factor = len > 1 ? (i / (len - 1)) * 0.7 : 0; 
+                        let r = Math.round(baseRgb[0] + (255 - baseRgb[0]) * factor);
+                        let g = Math.round(baseRgb[1] + (255 - baseRgb[1]) * factor);
+                        let bl = Math.round(baseRgb[2] + (255 - baseRgb[2]) * factor);
+                        b.color = rgb2hex(r,g,bl);
+                    });
+                    
+                    this.renderBarrasControles();
+                    this.updateGraficoPreview();
+                },
+
                 renderBarrasControles() {
                     const container = document.getElementById('graf-barras-container');
                     if(!container) return;
@@ -10413,7 +10452,7 @@
                     let html = '';
                     this.graficoState.forEach((b, i) => {
                         html += `
-                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl flex items-center gap-2 shadow-sm">
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl flex items-center gap-2 shadow-sm animate-fade-in">
                                 <input type="color" value="${b.color}" onchange="app.admin.updateBarraValue(${i}, 'color', this.value)" class="w-8 h-8 rounded cursor-pointer border-0 p-0 shrink-0 bg-transparent" title="Cor da Barra">
                                 <input type="text" value="${b.label}" oninput="app.admin.updateBarraValue(${i}, 'label', this.value)" placeholder="Nome (Ex: Equipe A)" class="flex-1 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg outline-none text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white">
                                 <input type="number" step="0.1" value="${b.val}" oninput="app.admin.updateBarraValue(${i}, 'val', parseFloat(this.value)||0)" placeholder="Valor" class="w-20 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg outline-none text-xs font-black text-center border border-slate-200 dark:border-slate-700 text-blue-600">
@@ -10423,6 +10462,7 @@
                     });
                     container.innerHTML = html;
                 },
+
                 updateGraficoPreview() {
                     const titleEl = document.getElementById('graf-titulo');
                     const previewTitle = document.getElementById('graf-preview-title');
@@ -10441,27 +10481,80 @@
                         return;
                     }
 
-                    // Acha a nota mais alta para preencher corretamente os 100% visuais
-                    const maxVal = Math.max(...this.graficoState.map(b => b.val));
-
+                    const maxVal = Math.max(...this.graficoState.map(b => parseFloat(b.val) || 0));
+                    const totalVal = this.graficoState.reduce((acc, b) => acc + (parseFloat(b.val) || 0), 0);
                     let html = '';
-                    this.graficoState.forEach(b => {
-                        const pct = maxVal > 0 ? (b.val / maxVal) * 100 : 0;
-                        html += `
-                            <div class="flex items-center gap-3 md:gap-5">
-                                <div class="w-[140px] md:w-[220px] text-right font-bold text-xs md:text-sm text-slate-600 leading-tight shrink-0">
-                                    ${b.label}
-                                </div>
-                                <div class="flex-1 bg-slate-200 rounded-lg h-7 md:h-8 relative w-full overflow-hidden shadow-inner">
-                                    <div class="h-full rounded-lg flex items-center justify-end px-3 md:px-4 text-white font-bold text-xs md:text-sm transition-all" style="width: ${pct}%; background-color: ${b.color};">
-                                        ${b.val.toString().replace('.', ',')} pts
+
+                    // Lógica para renderizar de acordo com o TIPO escolhido
+                    if(this.graficoType === 'vertical') {
+                        html += `<div class="flex items-end justify-around h-[350px] gap-4 pt-8 w-full border-b-2 border-slate-200 dark:border-slate-700 pb-2">`;
+                        this.graficoState.forEach(b => {
+                            const pct = maxVal > 0 ? (parseFloat(b.val) / maxVal) * 100 : 0;
+                            html += `
+                                <div class="flex flex-col items-center justify-end h-full w-full group">
+                                    <div class="text-xs md:text-sm font-black text-slate-700 mb-2 transition-transform group-hover:-translate-y-1">${b.val.toString().replace('.', ',')}</div>
+                                    <div class="w-full max-w-[80px] rounded-t-lg transition-all shadow-sm" style="height: ${pct}%; background-color: ${b.color};"></div>
+                                    <div class="mt-4 text-[10px] md:text-xs font-bold text-slate-600 text-center w-full break-words leading-tight">${b.label}</div>
+                                </div>`;
+                        });
+                        html += `</div>`;
+
+                    } else if (this.graficoType === 'pie') {
+                        let gradientString = [];
+                        let currentPct = 0;
+                        let legendHtml = '<div class="flex flex-col gap-3 w-full md:w-auto mt-6 md:mt-0">';
+                        
+                        this.graficoState.forEach(b => {
+                            const val = parseFloat(b.val) || 0;
+                            const pct = totalVal > 0 ? (val / totalVal) * 100 : 0;
+                            gradientString.push(`${b.color} ${currentPct}% ${currentPct + pct}%`);
+                            currentPct += pct;
+                            
+                            legendHtml += `
+                                <div class="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
+                                    <div class="w-4 h-4 rounded-full shadow-sm" style="background-color: ${b.color};"></div>
+                                    <div class="flex-1">
+                                        <span class="text-xs md:text-sm font-bold text-slate-700">${b.label}</span>
+                                        <span class="text-xs text-slate-500 ml-1">(${val.toString().replace('.',',')})</span>
                                     </div>
+                                    <span class="text-xs font-black text-slate-800 ml-4">${pct.toFixed(1)}%</span>
                                 </div>
+                            `;
+                        });
+                        legendHtml += '</div>';
+
+                        html += `
+                            <div class="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16 pt-4">
+                                <div class="w-64 h-64 md:w-80 md:h-80 rounded-full shadow-lg border-[8px] border-white relative" style="background: conic-gradient(${gradientString.join(', ')});">
+                                    <div class="absolute inset-0 rounded-full shadow-inner pointer-events-none"></div>
+                                </div>
+                                ${legendHtml}
                             </div>
                         `;
-                    });
+
+                    } else {
+                        // Padrão: Barra Horizontal
+                        this.graficoState.forEach(b => {
+                            const pct = maxVal > 0 ? (parseFloat(b.val) / maxVal) * 100 : 0;
+                            // Alterado h-7 para h-8 e adicionado padding maior no valor para ficar igual ao anexo
+                            html += `
+                                <div class="flex items-center gap-3 md:gap-5 mb-5">
+                                    <div class="w-[140px] md:w-[220px] text-right font-bold text-xs md:text-[15px] text-slate-700 leading-tight shrink-0">
+                                        ${b.label}
+                                    </div>
+                                    <div class="flex-1 bg-slate-100/80 rounded-lg h-9 md:h-10 relative w-full overflow-hidden shadow-inner border border-slate-200/50">
+                                        <div class="h-full rounded-lg flex items-center justify-end px-4 md:px-5 text-white font-extrabold text-sm md:text-base transition-all" style="width: ${pct}%; background-color: ${b.color};">
+                                            <span class="drop-shadow-sm">${b.val.toString().replace('.', ',')} pts</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+
                     previewBars.innerHTML = html;
                 },
+
                 exportarGraficoPNG() {
                     const box = document.getElementById('grafico-preview-box');
                     if(!box) return;
@@ -10471,26 +10564,26 @@
 
                     setTimeout(() => {
                         html2canvas(box, {
-                            scale: 4, // 4x resolução para ficar perfeito e não embaçar no PPT!
+                            scale: 4, // 4x resolução para qualidade PPT
                             useCORS: true,
-                            backgroundColor: '#ffffff',
+                            backgroundColor: '#ffffff', // Força fundo sólido para evitar artefatos de transparência
                             logging: false
                         }).then(canvas => {
                             const link = document.createElement('a');
                             link.download = `Painel_Grafico_${Date.now()}.png`;
                             link.href = canvas.toDataURL('image/png');
                             link.click();
-                            app.ui.showAlert("Pronto!", "A imagem PNG em alta resolução foi salva. Basta arrastar para o seu slide!", "success");
+                            app.ui.showAlert("Pronto!", "A imagem PNG em alta resolução foi salva sem bordas indesejadas!", "success");
                         }).catch(err => {
                             console.error(err);
-                            app.ui.showAlert("Erro na Exportação", "Ocorreu um problema ao processar a imagem do gráfico.", "error");
+                            app.ui.showAlert("Erro na Exportação", "Ocorreu um problema ao processar a imagem.", "error");
                         });
                     }, 500);
                 },
+
                 renderView_GeradorGraficos(container) {
                     if(!app.isAdmin) return;
 
-                    // Garante que o gerador de imagem da tela anterior exista
                     if(!window.html2canvas) {
                         const script = document.createElement('script');
                         script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
@@ -10511,17 +10604,43 @@
                         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                             <!-- CONTROLES -->
                             <div class="lg:col-span-5 glass-card p-6 md:p-8 rounded-[2rem] h-fit">
-                                <h3 class="font-black text-slate-800 dark:text-white mb-6 flex items-center gap-2 uppercase tracking-widest text-sm"><i class="fa-solid fa-sliders text-blue-500"></i> Controles</h3>
+                                <h3 class="font-black text-slate-800 dark:text-white mb-6 flex items-center gap-2 uppercase tracking-widest text-sm"><i class="fa-solid fa-sliders text-blue-500"></i> Parâmetros</h3>
 
-                                <div class="mb-6">
+                                <div class="mb-5 border-b border-slate-100 dark:border-slate-700 pb-5">
                                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2">Título do Gráfico (Opcional)</label>
                                     <input type="text" id="graf-titulo" placeholder="Ex: Resultado do Trimestre" oninput="app.admin.updateGraficoPreview()" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 dark:text-white shadow-sm font-bold">
                                 </div>
-
-                                <div class="flex justify-between items-center mb-3 border-t border-slate-100 dark:border-slate-700 pt-5">
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase">Camadas do Gráfico</label>
-                                    <button onclick="app.admin.addBarraGrafico()" class="text-[10px] bg-green-100 text-green-700 hover:bg-green-200 font-bold px-3 py-1.5 rounded-lg transition-colors"><i class="fa-solid fa-plus mr-1"></i> Adicionar</button>
+                                
+                                <div class="grid grid-cols-2 gap-4 mb-5 border-b border-slate-100 dark:border-slate-700 pb-5">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2"><i class="fa-solid fa-chart-simple text-blue-500 mr-1"></i> Formato Visual</label>
+                                        <select onchange="app.admin.graficoType = this.value; app.admin.updateGraficoPreview()" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold outline-none cursor-pointer">
+                                            <option value="horizontal" selected>Barra Horizontal</option>
+                                            <option value="vertical">Barra Vertical</option>
+                                            <option value="pie">Gráfico de Pizza</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2"><i class="fa-solid fa-arrow-up-9-1 text-purple-500 mr-1"></i> Ordenação Rápida</label>
+                                        <div class="flex gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <button onclick="app.admin.sortGrafico('az')" class="flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-white shadow-sm text-slate-600 transition-colors" title="Nome: A a Z">A-Z</button>
+                                            <button onclick="app.admin.sortGrafico('91')" class="flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-white shadow-sm text-slate-600 transition-colors" title="Valores: Maior p/ Menor"><i class="fa-solid fa-arrow-down"></i></button>
+                                            <button onclick="app.admin.sortGrafico('19')" class="flex-1 text-[10px] font-bold py-1.5 rounded-lg hover:bg-white shadow-sm text-slate-600 transition-colors" title="Valores: Menor p/ Maior"><i class="fa-solid fa-arrow-up"></i></button>
+                                        </div>
+                                    </div>
                                 </div>
+
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-3">
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase flex-1">Dados & Categorias</label>
+                                    
+                                    <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+                                        <input type="color" id="graf-base-color" value="#3b82f6" class="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent" title="Cor Base">
+                                        <button onclick="app.admin.applyGradientToGrafico()" class="text-[10px] font-black text-slate-600 dark:text-slate-300 hover:text-blue-500 px-2 py-1 transition-colors uppercase"><i class="fa-solid fa-wand-magic-sparkles text-purple-500 mr-1"></i> Degradê</button>
+                                    </div>
+                                    
+                                    <button onclick="app.admin.addBarraGrafico()" class="text-[10px] bg-green-100 text-green-700 hover:bg-green-200 font-bold px-3 py-2 rounded-lg transition-colors shadow-sm shrink-0"><i class="fa-solid fa-plus mr-1"></i> Adicionar</button>
+                                </div>
+                                
                                 <div id="graf-barras-container" class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
                                 </div>
                             </div>
@@ -10530,9 +10649,10 @@
                             <div class="lg:col-span-7 bg-slate-200/50 dark:bg-slate-800 p-4 md:p-8 rounded-[2rem] flex flex-col items-center justify-center overflow-x-auto custom-scrollbar border-4 border-dashed border-slate-300 dark:border-slate-700 relative">
                                 <div class="absolute top-4 left-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><i class="fa-regular fa-eye"></i> Visualização Exata</div>
                                 
-                                <div id="grafico-preview-box" class="bg-white p-10 md:p-14 rounded-2xl shadow-sm w-full min-w-[700px] mt-8">
+                                <!-- Container Extra: Limpa sombras e garante o recorte sólido do HTML2Canvas -->
+                                <div id="grafico-preview-box" class="bg-white p-10 md:p-14 w-full min-w-[700px] mt-8">
                                     <h2 id="graf-preview-title" class="text-center font-black text-[26px] text-slate-800 mb-10 hidden uppercase tracking-tight"></h2>
-                                    <div id="graf-preview-bars" class="space-y-6">
+                                    <div id="graf-preview-bars" class="space-y-2">
                                         <!-- O CSS desenha as barras idênticas ao print aqui -->
                                     </div>
                                 </div>
@@ -10541,18 +10661,20 @@
                     `;
                     container.innerHTML = html;
 
-                    // Já abrimos a tela com as cores e dados do design que você enviou como base!
+                    // Já abrimos a tela com as cores e dados originais
                     app.admin.graficoState = [
                         { label: 'Equipe A - Suporte Técnico', val: 96.2, color: '#6366f1' },
                         { label: 'Equipe B - Retenção & SAC', val: 94.1, color: '#14b8a6' },
                         { label: 'Equipe C - Backoffice N2', val: 92.5, color: '#0ea5e9' },
                         { label: 'Equipe D - Vendas & Up-Sell', val: 88.4, color: '#f59e0b' }
                     ];
+                    // Aplica automaticamente na primeira entrada
+                    app.admin.graficoType = 'horizontal';
 
                     app.admin.renderBarrasControles();
                     app.admin.updateGraficoPreview();
                 },
-
+                
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
         }; // Feche o objeto app aqui com ponto e vírgula
