@@ -3070,7 +3070,7 @@
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}, {id:'apresentacoes_monitorias', label:'Apresentações'}] },
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}, {id:'apresentacoes_monitorias', label:'Apresentações'}, {id:'gerador_graficos', label:'Gerador Gráficos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
@@ -3600,6 +3600,7 @@
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
                             else if(tabId === 'apresentacoes_monitorias') app.admin.renderView_ApresentacoesMonitorias(viewDiv);
+                            else if(tabId === 'gerador_graficos') app.admin.renderView_GeradorGraficos(viewDiv);
                         }, 400); // Fim do atraso do Skeleton
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
@@ -10387,6 +10388,170 @@
                         app.ui.renderTab(app.currentTab, true);
                     });
                 }
+
+                // --- NOVO GERADOR DE GRÁFICOS (EXPORT PNG) ---
+                graficoState: [],
+                
+                addBarraGrafico() {
+                    this.graficoState.push({ label: 'Nova Categoria', val: 50, color: '#3b82f6' });
+                    this.renderBarrasControles();
+                    this.updateGraficoPreview();
+                },
+                removeBarraGrafico(idx) {
+                    this.graficoState.splice(idx, 1);
+                    this.renderBarrasControles();
+                    this.updateGraficoPreview();
+                },
+                updateBarraValue(idx, field, value) {
+                    this.graficoState[idx][field] = value;
+                    this.updateGraficoPreview();
+                },
+                renderBarrasControles() {
+                    const container = document.getElementById('graf-barras-container');
+                    if(!container) return;
+
+                    let html = '';
+                    this.graficoState.forEach((b, i) => {
+                        html += `
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl flex items-center gap-2 shadow-sm">
+                                <input type="color" value="${b.color}" onchange="app.admin.updateBarraValue(${i}, 'color', this.value)" class="w-8 h-8 rounded cursor-pointer border-0 p-0 shrink-0 bg-transparent" title="Cor da Barra">
+                                <input type="text" value="${b.label}" oninput="app.admin.updateBarraValue(${i}, 'label', this.value)" placeholder="Nome (Ex: Equipe A)" class="flex-1 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg outline-none text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white">
+                                <input type="number" step="0.1" value="${b.val}" oninput="app.admin.updateBarraValue(${i}, 'val', parseFloat(this.value)||0)" placeholder="Valor" class="w-20 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg outline-none text-xs font-black text-center border border-slate-200 dark:border-slate-700 text-blue-600">
+                                <button onclick="app.admin.removeBarraGrafico(${i})" class="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Remover"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                },
+                updateGraficoPreview() {
+                    const titleEl = document.getElementById('graf-titulo');
+                    const previewTitle = document.getElementById('graf-preview-title');
+                    const previewBars = document.getElementById('graf-preview-bars');
+                    if(!previewBars) return;
+
+                    if (titleEl && titleEl.value.trim()) {
+                        previewTitle.textContent = titleEl.value;
+                        previewTitle.classList.remove('hidden');
+                    } else {
+                        previewTitle.classList.add('hidden');
+                    }
+
+                    if(this.graficoState.length === 0) {
+                        previewBars.innerHTML = '<div class="text-center text-slate-400 py-8 italic">Nenhuma barra adicionada. Use os controles ao lado.</div>';
+                        return;
+                    }
+
+                    // Acha a nota mais alta para preencher corretamente os 100% visuais
+                    const maxVal = Math.max(...this.graficoState.map(b => b.val));
+
+                    let html = '';
+                    this.graficoState.forEach(b => {
+                        const pct = maxVal > 0 ? (b.val / maxVal) * 100 : 0;
+                        html += `
+                            <div class="flex items-center gap-3 md:gap-5">
+                                <div class="w-[140px] md:w-[220px] text-right font-bold text-xs md:text-sm text-slate-600 leading-tight shrink-0">
+                                    ${b.label}
+                                </div>
+                                <div class="flex-1 bg-slate-200 rounded-lg h-7 md:h-8 relative w-full overflow-hidden shadow-inner">
+                                    <div class="h-full rounded-lg flex items-center justify-end px-3 md:px-4 text-white font-bold text-xs md:text-sm transition-all" style="width: ${pct}%; background-color: ${b.color};">
+                                        ${b.val.toString().replace('.', ',')} pts
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    previewBars.innerHTML = html;
+                },
+                exportarGraficoPNG() {
+                    const box = document.getElementById('grafico-preview-box');
+                    if(!box) return;
+
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui.showAlert("Processando HD...", "Capturando os pixels perfeitos do seu gráfico. Aguarde o download...", "info");
+
+                    setTimeout(() => {
+                        html2canvas(box, {
+                            scale: 4, // 4x resolução para ficar perfeito e não embaçar no PPT!
+                            useCORS: true,
+                            backgroundColor: '#ffffff',
+                            logging: false
+                        }).then(canvas => {
+                            const link = document.createElement('a');
+                            link.download = `Painel_Grafico_${Date.now()}.png`;
+                            link.href = canvas.toDataURL('image/png');
+                            link.click();
+                            app.ui.showAlert("Pronto!", "A imagem PNG em alta resolução foi salva. Basta arrastar para o seu slide!", "success");
+                        }).catch(err => {
+                            console.error(err);
+                            app.ui.showAlert("Erro na Exportação", "Ocorreu um problema ao processar a imagem do gráfico.", "error");
+                        });
+                    }, 500);
+                },
+                renderView_GeradorGraficos(container) {
+                    if(!app.isAdmin) return;
+
+                    // Garante que o gerador de imagem da tela anterior exista
+                    if(!window.html2canvas) {
+                        const script = document.createElement('script');
+                        script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                        document.head.appendChild(script);
+                    }
+
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gerador Gráfico Customizado</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Crie barras fiéis às referências de UX, altere as cores e exporte como imagem para suas apresentações.</p>
+                            </div>
+                            <button onclick="app.admin.exportarGraficoPNG()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-1 flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-download text-lg"></i> Exportar PNG (HD)
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            <!-- CONTROLES -->
+                            <div class="lg:col-span-5 glass-card p-6 md:p-8 rounded-[2rem] h-fit">
+                                <h3 class="font-black text-slate-800 dark:text-white mb-6 flex items-center gap-2 uppercase tracking-widest text-sm"><i class="fa-solid fa-sliders text-blue-500"></i> Controles</h3>
+
+                                <div class="mb-6">
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2">Título do Gráfico (Opcional)</label>
+                                    <input type="text" id="graf-titulo" placeholder="Ex: Resultado do Trimestre" oninput="app.admin.updateGraficoPreview()" class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 dark:text-white shadow-sm font-bold">
+                                </div>
+
+                                <div class="flex justify-between items-center mb-3 border-t border-slate-100 dark:border-slate-700 pt-5">
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase">Camadas do Gráfico</label>
+                                    <button onclick="app.admin.addBarraGrafico()" class="text-[10px] bg-green-100 text-green-700 hover:bg-green-200 font-bold px-3 py-1.5 rounded-lg transition-colors"><i class="fa-solid fa-plus mr-1"></i> Adicionar</button>
+                                </div>
+                                <div id="graf-barras-container" class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
+                                </div>
+                            </div>
+
+                            <!-- PREVIEW VIVO -->
+                            <div class="lg:col-span-7 bg-slate-200/50 dark:bg-slate-800 p-4 md:p-8 rounded-[2rem] flex flex-col items-center justify-center overflow-x-auto custom-scrollbar border-4 border-dashed border-slate-300 dark:border-slate-700 relative">
+                                <div class="absolute top-4 left-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><i class="fa-regular fa-eye"></i> Visualização Exata</div>
+                                
+                                <div id="grafico-preview-box" class="bg-white p-10 md:p-14 rounded-2xl shadow-sm w-full min-w-[700px] mt-8">
+                                    <h2 id="graf-preview-title" class="text-center font-black text-[26px] text-slate-800 mb-10 hidden uppercase tracking-tight"></h2>
+                                    <div id="graf-preview-bars" class="space-y-6">
+                                        <!-- O CSS desenha as barras idênticas ao print aqui -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+
+                    // Já abrimos a tela com as cores e dados do design que você enviou como base!
+                    app.admin.graficoState = [
+                        { label: 'Equipe A - Suporte Técnico', val: 96.2, color: '#6366f1' },
+                        { label: 'Equipe B - Retenção & SAC', val: 94.1, color: '#14b8a6' },
+                        { label: 'Equipe C - Backoffice N2', val: 92.5, color: '#0ea5e9' },
+                        { label: 'Equipe D - Vendas & Up-Sell', val: 88.4, color: '#f59e0b' }
+                    ];
+
+                    app.admin.renderBarrasControles();
+                    app.admin.updateGraficoPreview();
+                },
 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
