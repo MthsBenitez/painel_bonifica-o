@@ -10551,24 +10551,25 @@
                         return;
 
                     } else {
-                        // BARRA HORIZONTAL CORRIGIDA (Ajuste html2canvas para textos e alinhamento centralizado)
+                        // BARRA HORIZONTAL CORRIGIDA (Alinhamento perfeito com Line-Height absoluto)
                         html += `<div class="flex flex-col gap-5 w-full py-2">`;
                         this.graficoState.forEach(b => {
                             const pct = maxVal > 0 ? (parseFloat(b.val) / maxVal) * 100 : 0;
                             const textCor = b.textColor || '#ffffff';
                             
                             html += `
-                                <div class="flex items-center gap-4 w-full">
-                                    <div class="w-[220px] text-right font-bold text-[15px] text-slate-700 dark:text-slate-300 shrink-0 py-1" title="${b.label}">
+                                <div class="flex items-center gap-4 w-full h-10">
+                                    <!-- Título alinhado forçadamente com line-height -->
+                                    <div class="w-[220px] text-right font-bold text-[15px] text-slate-700 dark:text-slate-300 shrink-0 overflow-visible" style="line-height: 40px;" title="${b.label}">
                                         ${b.label}
                                     </div>
                                     <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-lg h-10 relative w-full border border-slate-200/50 dark:border-slate-700">
-                                        <div class="h-full rounded-lg absolute left-0 top-0" style="width: ${pct}%; background-color: ${b.color}; min-width: 3rem;"></div>
-                                        ${globalShow ? `<div class="absolute left-0 top-0 h-full flex items-center justify-end px-4 pointer-events-none" style="width: ${pct}%; min-width: 3rem;">
-                                            <span class="font-extrabold text-base drop-shadow-sm whitespace-nowrap" style="color: ${textCor};">
+                                        <!-- Barra Colorida com texto embutido na mesma linha -->
+                                        <div class="absolute left-0 top-0 h-10 rounded-lg text-right pr-4 whitespace-nowrap" style="width: ${pct}%; background-color: ${b.color}; min-width: 3.5rem; line-height: 40px;">
+                                            ${globalShow ? `<span class="font-extrabold text-base drop-shadow-sm" style="color: ${textCor};">
                                                 ${b.val.toString().replace('.', ',')}
-                                            </span>
-                                        </div>` : ''}
+                                            </span>` : ''}
+                                        </div>
                                     </div>
                                 </div>
                             `;
