@@ -10551,22 +10551,23 @@
                         return;
 
                     } else {
-                        // BARRA HORIZONTAL CORRIGIDA (Alinhamento perfeito com Line-Height absoluto)
+                        // BARRA HORIZONTAL CORRIGIDA (Alinhamento Flexbox nativo para HTML2Canvas)
                         html += `<div class="flex flex-col gap-5 w-full py-2">`;
                         this.graficoState.forEach(b => {
                             const pct = maxVal > 0 ? (parseFloat(b.val) / maxVal) * 100 : 0;
                             const textCor = b.textColor || '#ffffff';
                             
                             html += `
-                                <div class="flex items-center gap-4 w-full h-10">
-                                    <!-- Título alinhado forçadamente com line-height -->
-                                    <div class="w-[220px] text-right font-bold text-[15px] text-slate-700 dark:text-slate-300 shrink-0 overflow-visible" style="line-height: 40px;" title="${b.label}">
+                                <div class="flex items-center gap-4 w-full">
+                                    <!-- Título do Setor -->
+                                    <div class="w-[220px] text-right font-bold text-[15px] text-slate-700 dark:text-slate-300 shrink-0 py-2" title="${b.label}">
                                         ${b.label}
                                     </div>
+                                    <!-- Fundo da Barra Cinza -->
                                     <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-lg h-10 relative w-full border border-slate-200/50 dark:border-slate-700">
-                                        <!-- Barra Colorida com texto embutido na mesma linha -->
-                                        <div class="absolute left-0 top-0 h-10 rounded-lg text-right pr-4 whitespace-nowrap" style="width: ${pct}%; background-color: ${b.color}; min-width: 3.5rem; line-height: 40px;">
-                                            ${globalShow ? `<span class="font-extrabold text-base drop-shadow-sm" style="color: ${textCor};">
+                                        <!-- Barra de Cor com Flexbox Nativo -->
+                                        <div class="absolute left-0 top-0 h-10 rounded-lg flex items-center justify-end px-4 overflow-visible" style="width: ${pct}%; background-color: ${b.color}; min-width: 3.5rem;">
+                                            ${globalShow ? `<span class="font-extrabold text-base pointer-events-none drop-shadow-sm leading-none" style="color: ${textCor};">
                                                 ${b.val.toString().replace('.', ',')}
                                             </span>` : ''}
                                         </div>
@@ -10585,21 +10586,28 @@
                     if(!box) return;
 
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Processando HD...", "Capturando os pixels perfeitos do seu gráfico. Aguarde o download...", "info");
+                    app.ui.showAlert("Processando HD...", "Capturando o gráfico em fundo transparente. Aguarde o download...", "info");
+
+                    // Truque Mágico: Remove temporariamente a classe que pinta o fundo de branco
+                    const hasBgWhite = box.classList.contains('bg-white');
+                    if (hasBgWhite) box.classList.remove('bg-white');
 
                     setTimeout(() => {
                         html2canvas(box, {
                             scale: 4, // 4x resolução para qualidade PPT
                             useCORS: true,
-                            backgroundColor: '#ffffff', // Força fundo sólido para evitar artefatos de transparência
+                            backgroundColor: null, // 'null' garante que o fundo seja 100% transparente
                             logging: false
                         }).then(canvas => {
+                            if (hasBgWhite) box.classList.add('bg-white'); // Devolve o fundo branco para a tela
+                            
                             const link = document.createElement('a');
                             link.download = `Painel_Grafico_${Date.now()}.png`;
-                            link.href = canvas.toDataURL('image/png');
+                            link.href = canvas.toDataURL('image/png'); // Exporta canal Alpha (transparência)
                             link.click();
-                            app.ui.showAlert("Pronto!", "A imagem PNG em alta resolução foi salva sem bordas indesejadas!", "success");
+                            app.ui.showAlert("Pronto!", "A imagem PNG transparente em alta resolução foi salva!", "success");
                         }).catch(err => {
+                            if (hasBgWhite) box.classList.add('bg-white'); // Devolve o fundo em caso de erro
                             console.error(err);
                             app.ui.showAlert("Erro na Exportação", "Ocorreu um problema ao processar a imagem.", "error");
                         });
