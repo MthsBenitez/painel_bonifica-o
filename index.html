@@ -10563,10 +10563,11 @@
                                         ${b.label}
                                     </div>
                                     <div class="flex-1 bg-slate-100 dark:bg-slate-800 rounded-lg h-10 relative w-full border border-slate-200/50 dark:border-slate-700">
-                                        <div class="h-full rounded-lg absolute left-0 top-0" style="width: ${pct}%; background-color: ${b.color};"></div>
-                                        ${globalShow ? `<div class="absolute inset-0 flex items-center justify-end px-5 font-extrabold text-base pointer-events-none drop-shadow-sm" style="color: ${textCor};">
-                                            ${b.val.toString().replace('.', ',')} pts
-                                        </div>` : ''}
+                                        <div class="h-full rounded-lg absolute left-0 top-0 flex items-center justify-end px-4" style="width: ${pct}%; background-color: ${b.color}; min-width: 3rem;">
+                                            ${globalShow ? `<span class="font-extrabold text-base pointer-events-none drop-shadow-sm whitespace-nowrap" style="color: ${textCor};">
+                                                ${b.val.toString().replace('.', ',')}
+                                            </span>` : ''}
+                                        </div>
                                     </div>
                                 </div>
                             `;
