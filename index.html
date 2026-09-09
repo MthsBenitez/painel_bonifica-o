@@ -8910,10 +8910,8 @@
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
                             
-                            // Busca Inteligente e Estrita para não capturar "Data de Nascimento" etc.
-                            let colDataScan = keys.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DT_MONITORIA', 'DATA DA AUDITORIA', 'DATA GRAVACAO', 'DATA GRAVAÇÃO'].includes(k.trim().toUpperCase()))
-                                || keys.find(k => k.trim().toUpperCase() === 'DATA')
-                                || keys.find(k => k.trim().toUpperCase().includes('MONITORIA') && k.trim().toUpperCase().includes('DATA'));
+                            // Busca EXATA e DITATORIAL APENAS pela coluna chamada "DATA"
+                            let colDataScan = keys.find(k => k.trim().toUpperCase() === 'DATA');
                             
                             let dataRaw = colDataScan ? row[colDataScan] : undefined;
                             
@@ -8958,9 +8956,8 @@
                         const colOperacao = chaves.find(k => ['OPERACAO', 'OPERAÇÃO', 'CAMPANHA', 'ILHA', 'SETOR'].includes(k.trim().toUpperCase())) 
                             || chaves.find(k => k.trim().toUpperCase().includes('OPERA'));
                             
-                        const colDataAudit = chaves.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DT_MONITORIA', 'DATA DA AUDITORIA', 'DATA GRAVACAO', 'DATA GRAVAÇÃO'].includes(k.trim().toUpperCase()))
-                            || chaves.find(k => k.trim().toUpperCase() === 'DATA')
-                            || chaves.find(k => k.trim().toUpperCase().includes('MONITORIA') && k.trim().toUpperCase().includes('DATA'));
+                        // Busca EXATA e DITATORIAL APENAS pela coluna chamada "DATA"
+                        const colDataAudit = chaves.find(k => k.trim().toUpperCase() === 'DATA');
                             
                         const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) 
                             || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) 
