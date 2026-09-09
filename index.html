@@ -8860,9 +8860,15 @@
                     
                     if(filtro) relatoriosAtivos = relatoriosAtivos.filter(r => r.nome === filtro);
 
-                    // HELPER ROBUSTO DE DATA (Corrige a inversão de dia/mês do Excel)
+                    // HELPER ROBUSTO DE DATA (Corrige a inversão de dia/mês do Excel e strings numéricas cruas)
                     const parseDateRobust = (dataRaw) => {
                         if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
+                        
+                        // Proteção extra: se a data vier como string "45321" diretamente do sheet_to_json
+                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 20000) {
+                            dataRaw = Number(dataRaw);
+                        }
+
                         if (typeof dataRaw === 'number' && dataRaw > 20000) {
                             const dt = new Date((dataRaw - 25569) * 86400 * 1000);
                             dt.setUTCHours(12);
@@ -8903,8 +8909,13 @@
                     relatoriosAtivos.forEach(rel => {
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
-                            const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
-                            let dataRaw = row[findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA', 'GRAVACAO', 'GRAVAÇÃO'])];
+                            
+                            // Busca Inteligente e Estrita para não capturar "Data de Nascimento" etc.
+                            let colDataScan = keys.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DT_MONITORIA', 'DATA DA AUDITORIA', 'DATA GRAVACAO', 'DATA GRAVAÇÃO'].includes(k.trim().toUpperCase()))
+                                || keys.find(k => k.trim().toUpperCase() === 'DATA')
+                                || keys.find(k => k.trim().toUpperCase().includes('MONITORIA') && k.trim().toUpperCase().includes('DATA'));
+                            
+                            let dataRaw = colDataScan ? row[colDataScan] : undefined;
                             
                             let dtObj = parseDateRobust(dataRaw);
                             if (dtObj && !isNaN(dtObj)) {
@@ -8935,20 +8946,25 @@
                         if (rows.length === 0) return;
 
                         const chaves = Object.keys(rows[0]);
-                        const colMonitor = chaves.find(k => k.toUpperCase() === 'MONITOR' || k.toUpperCase() === 'AVALIADOR') 
-                            || chaves.find(k => k.toUpperCase().includes('MONITOR') && !k.toUpperCase().includes('NOTA') && !k.toUpperCase().includes('STATUS'));
+                        
+                        // MAPEAMENTO INTELIGENTE E BLINDADO DE COLUNAS
+                        const colMonitor = chaves.find(k => ['MONITOR', 'AVALIADOR', 'AUDITOR', 'LOGIN', 'CRIADOR'].includes(k.trim().toUpperCase())) 
+                            || chaves.find(k => k.trim().toUpperCase().includes('MONITOR') && !k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('DATA') && !k.trim().toUpperCase().includes('STATUS'));
                             
-                        const colNome = chaves.find(k => k.toUpperCase() === 'NOME' || k.toUpperCase() === 'COLABORADOR') 
-                            || chaves.find(k => k.toUpperCase().includes('NOME') || k.toUpperCase().includes('CRACHA') || k.toUpperCase().includes('ATENDENTE')) || chaves[0];
+                        const colNome = chaves.find(k => ['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'FUNCIONARIO', 'FUNCIONÁRIO'].includes(k.trim().toUpperCase())) 
+                            || chaves.find(k => (k.trim().toUpperCase().includes('NOME') || k.trim().toUpperCase().includes('OPERADOR')) && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('SUPERVISOR')) 
+                            || chaves[0];
                             
-                        const colOperacao = chaves.find(k => k.toUpperCase() === 'OPERACAO' || k.toUpperCase() === 'OPERAÇÃO') 
-                            || chaves.find(k => k.toUpperCase().includes('OPERA'));
+                        const colOperacao = chaves.find(k => ['OPERACAO', 'OPERAÇÃO', 'CAMPANHA', 'ILHA', 'SETOR'].includes(k.trim().toUpperCase())) 
+                            || chaves.find(k => k.trim().toUpperCase().includes('OPERA'));
                             
-                        const colDataAudit = chaves.find(k => k.toUpperCase() === 'DATA') 
-                            || chaves.find(k => k.toUpperCase().includes('DATA DA AUDI') || k.toUpperCase().includes('DATA DA AVA'));
+                        const colDataAudit = chaves.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DT_MONITORIA', 'DATA DA AUDITORIA', 'DATA GRAVACAO', 'DATA GRAVAÇÃO'].includes(k.trim().toUpperCase()))
+                            || chaves.find(k => k.trim().toUpperCase() === 'DATA')
+                            || chaves.find(k => k.trim().toUpperCase().includes('MONITORIA') && k.trim().toUpperCase().includes('DATA'));
                             
-                        const colNota = chaves.find(k => k.toUpperCase().includes('NOTA')) || 'NOTA';
-                        const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
+                        const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) 
+                            || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) 
+                            || 'NOTA';
 
                         const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
                             
@@ -8962,7 +8978,11 @@
                         });
 
                         rows.forEach(row => {
-                            let dataRaw = row[colDataAudit] || row[colDataGrav];
+                            // BLOQUEIO DE LIXO: Ignora linhas vazias ou linhas de Total que quebram as estatísticas e criam "falsos operadores"
+                            let opNomeDetalhe = app.utils.fixEncoding(String(row[colNome] || 'Não Identificado')).trim();
+                            if (opNomeDetalhe.toUpperCase().includes('TOTAL') || opNomeDetalhe === 'Não Identificado') return;
+
+                            let dataRaw = row[colDataAudit];
                             let dtObj = parseDateRobust(dataRaw);
                             
                             if (dtObj && !isNaN(dtObj)) {
@@ -8976,7 +8996,7 @@
                             // Formatação final unificada e limpa para a tabela
                             let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
 
-                            const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
+                            const op = opNomeDetalhe;
                             let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
                             if (monitor.includes(' - ')) monitor = monitor.split(' - ').slice(1).join(' - ').trim();
                             
