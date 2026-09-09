@@ -7828,8 +7828,8 @@
 
                                 // 4. A Mágica Dinâmica das Colunas (Buscar a palavra PESO)
                                 Object.keys(row).forEach(key => {
-                                    // Regex procura "PESO: " seguido de números e vírgulas/pontos
-                                    let match = key.match(/=\s*PESO:([0-9.,]+)/i);
+                                    // Regex aprimorada para tolerar espaços antes do número
+                                    let match = key.match(/=\s*PESO:\s*([0-9.,]+)/i);
                                     if (match) {
                                         let pesoStr = match[1].replace(',', '.');
                                         let peso = parseFloat(pesoStr);
@@ -8868,19 +8868,31 @@
                             const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
                             let dataRaw = row[findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA', 'GRAVACAO', 'GRAVAÇÃO'])];
                             let dtObj = null;
-                            if (typeof dataRaw === 'number') {
+                            if (typeof dataRaw === 'number' && dataRaw > 20000) {
                                 dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
+                                dtObj.setUTCHours(12); // Previne que o fuso horário mude o dia/mês
                             } else if (dataRaw && typeof dataRaw === 'string') {
                                 let cleanStr = dataRaw.split(' ')[0].trim();
-                                if (cleanStr.includes('/')) {
-                                    let parts = cleanStr.split('/');
-                                    if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
-                                } else if (cleanStr.includes('-')) {
-                                    let parts = cleanStr.split('-');
-                                    if (parts.length === 3) {
-                                        if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
-                                        else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                                if (matchBR) {
+                                    let d = parseInt(matchBR[1]), m = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
+                                    if (y < 100) y += 2000;
+                                    if (m > 12 && d <= 12) { let temp = m; m = d; d = temp; } // Corrige se o Excel inverter mês e dia
+                                    dtObj = new Date(y, m - 1, d);
+                                    dtObj.setHours(12, 0, 0, 0);
+                                } else {
+                                    let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                                    if (matchISO) {
+                                        dtObj = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]));
+                                        dtObj.setHours(12, 0, 0, 0);
                                     }
+                                }
+                            }
+                            
+                            // Bloqueia datas absurdas "inventadas" (acima de +1 ano do atual ou antes de 2020)
+                            if (dtObj && !isNaN(dtObj)) {
+                                if (dtObj.getFullYear() > new Date().getFullYear() + 1 || dtObj.getFullYear() < 2020) {
+                                    dtObj = null;
                                 }
                             }
                             if(dtObj && !isNaN(dtObj)) mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
@@ -8923,44 +8935,58 @@
                         const colDataGrav = chaves.find(k => k.toUpperCase().includes('GRAVAÇÃO') || k.toUpperCase().includes('GRAVACAO'));
 
                         const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
-                        
+                            
                         const colunasCriticas = colunasAvaliacao.filter(k => {
-                            let match = k.match(/=\s*PESO:([0-9.,]+)/i);
+                            let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
                             return match && parseFloat(match[1].replace(',', '.')) === 0;
                         });
                         const colunasComuns = colunasAvaliacao.filter(k => {
-                            let match = k.match(/=\s*PESO:([0-9.,]+)/i);
+                            let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
                             return match && parseFloat(match[1].replace(',', '.')) > 0;
                         });
 
                         const formatarDataExcel = (val) => {
                             if (!val || val === 'S/D') return 'S/D';
-                            // Se for número de série do Excel, converte e devolve SÓ a data
                             if (!isNaN(val) && Number(val) > 20000) {
                                 const dt = new Date((Number(val) - 25569) * 86400 * 1000);
+                                dt.setUTCHours(12);
                                 return dt.toLocaleDateString('pt-BR');
                             }
-                            // Se for texto, corta nos espaços ou no "T" (padrão ISO) e pega só a primeira parte
-                            return String(val).split(' ')[0].split('T')[0].trim();
+                            let str = String(val).split(' ')[0].split('T')[0].trim();
+                            let matchISO = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                            if (matchISO) return `${matchISO[3].padStart(2,'0')}/${matchISO[2].padStart(2,'0')}/${matchISO[1]}`;
+                            return str;
                         };
 
                         rows.forEach(row => {
                             // Extração da data exata desta avaliação
                             let dataRaw = row[colDataAudit] || row[colDataGrav];
                             let dtObj = null;
-                            if (typeof dataRaw === 'number') dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
-                            else if (dataRaw && typeof dataRaw === 'string') {
+                            
+                            if (typeof dataRaw === 'number' && dataRaw > 20000) {
+                                dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
+                                dtObj.setUTCHours(12); // Previne mudança de mês pelo fuso horário
+                            } else if (dataRaw && typeof dataRaw === 'string') {
                                 let cleanStr = dataRaw.split(' ')[0].trim();
-                                if (cleanStr.includes('/')) {
-                                    let parts = cleanStr.split('/');
-                                    if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
-                                } else if (cleanStr.includes('-')) {
-                                    let parts = cleanStr.split('-');
-                                    if (parts.length === 3) {
-                                        if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
-                                        else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                                if (matchBR) {
+                                    let d = parseInt(matchBR[1]), m = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
+                                    if (y < 100) y += 2000;
+                                    if (m > 12 && d <= 12) { let temp = m; m = d; d = temp; }
+                                    dtObj = new Date(y, m - 1, d);
+                                    dtObj.setHours(12, 0, 0, 0);
+                                } else {
+                                    let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                                    if (matchISO) {
+                                        dtObj = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]));
+                                        dtObj.setHours(12, 0, 0, 0);
                                     }
                                 }
+                            }
+                            
+                            // Bloqueia datas absurdas
+                            if (dtObj && !isNaN(dtObj)) {
+                                if (dtObj.getFullYear() > new Date().getFullYear() + 1 || dtObj.getFullYear() < 2020) dtObj = null;
                             }
                             let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
 
@@ -9003,7 +9029,7 @@
 
                             let questionsArray = [];
                             colunasAvaliacao.forEach(col => {
-                                let pesoMatch = col.match(/=\s*PESO:([0-9.,]+)/i);
+                                let pesoMatch = col.match(/=\s*PESO:\s*([0-9.,]+)/i);
                                 let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
                                 let ans = (row[col] || '').toString().trim();
                                 let cleanQ = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
