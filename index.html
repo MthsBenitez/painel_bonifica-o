@@ -6961,13 +6961,13 @@
                     });
                     htmlList += `</div>`;
                 
-                    document.getElementById('modal-title').innerHTML = ``; // Esconde o título padrão para usarmos um gigante no corpo
+                    document.getElementById('modal-title').innerHTML = ``; // Esconde o título padrão
                     document.getElementById('modal-content').innerHTML = `
                         <div class="text-center mb-6">
                             <div class="inline-flex items-center justify-center w-16 h-16 rounded-full ${type === 'critica' ? 'bg-red-100 text-red-500' : 'bg-orange-100 text-orange-500'} mb-4 text-3xl shadow-inner">
-                                <i class="fa-solid ${type === 'critica' ? 'fa-skull-crossbones' : 'fa-layer-group'}"></i>
+                                <i class="fa-solid ${type === 'critica' ? 'fa-circle-exclamation' : 'fa-layer-group'}"></i>
                             </div>
-                            <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Quem cometeu essa falha?</h2>
+                            <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Ofensores:</h2>
                             <div class="text-base font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 inline-block shadow-sm w-full line-clamp-2" title="${falhaNome}">${falhaNome}</div>
                         </div>
                         <div class="text-xs uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2"><i class="fa-solid fa-users text-blue-500"></i> Operadores mapeados (${falhaObj.operadores.length}) - Clique para detalhar</div>
@@ -7051,7 +7051,7 @@
                             `;
                         }
                 
-                        const isOpen = idx === 0 ? 'open' : '';
+                        const isOpen = ''; // Modificado: Todas as listagens fecham por padrão para limpeza visual
                 
                         htmlList += `
                             <details class="group/eval bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4 transition-all" ${isOpen}>
@@ -7141,9 +7141,15 @@
                     XLSX.writeFile(workbook, `Analitico_${nome.replace(/\s+/g, '_')}.xlsx`);
                 },
 
+                toggleEditModeAnalise() {
+                    this.analiseEditMode = !this.analiseEditMode;
+                    this.renderTab('analise_csv_dinamico', true);
+                },
+
                 renderView_AnaliseCSVDinamico(container) {
                     let mainData = app.analiseCSVDinamicoData || null;
                     let data = mainData ? mainData.consolidado : null;
+                    let btnHideCode = this.analiseEditMode ? `<button onclick="this.closest('.hideable-box').classList.add('hidden')" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 bg-white dark:bg-slate-800 p-1.5 rounded-lg z-50 transition-colors shadow-sm" title="Ocultar na Apresentação"><i class="fa-solid fa-eye-slash"></i></button>` : '';
 
                     let html = `
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
@@ -7159,7 +7165,8 @@
                                         <option value="">Visão Consolidada (Todos)</option>
                                         ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio === r.nome ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
                                     </select>
-                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
+                                    <button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Edição' : 'Modo Apresentação'}</button>
+                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
                                 ` : ''}
                                 <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
@@ -7175,16 +7182,31 @@
                         return;
                     }
 
+                    // Se houver um filtro de monitor ativo, avisa o usuário visualmente
+                    if(app.ui.analiseFiltroMonitor) {
+                        html += `
+                            <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 flex justify-between items-center shadow-sm animate-fade-in">
+                                <div class="text-sm text-blue-800 dark:text-blue-300"><strong><i class="fa-solid fa-filter"></i> Filtro Ativo:</strong> Você está visualizando apenas os erros e notas aplicadas pelo monitor <strong>${app.ui.analiseFiltroMonitor}</strong>.</div>
+                                <button onclick="app.ui.analiseFiltroMonitor = ''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">Limpar Filtro</button>
+                            </div>
+                        `;
+                    }
+
                     // --- DASHBOARD CARDS MESTRES ---
                     html += `
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-8">
+                        <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
+                            ${btnHideCode}
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-blue-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Analisado</div>
                                 <div class="text-3xl font-black text-blue-600 dark:text-blue-400">${data.totalLinhas} <span class="text-sm font-medium text-slate-400 ml-1">Ligs.</span></div>
                             </div>
+                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-emerald-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação.">Conformidade (Nota Máx)</div>
+                                <div class="text-3xl font-black text-emerald-600 dark:text-emerald-400">${data.conformidadePct}%</div>
+                            </div>
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-green-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Média da Operação</div>
-                                <div class="text-3xl font-black text-green-600 dark:text-green-400">${(data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2)}</div>
+                                <div class="text-3xl font-black text-green-600 dark:text-green-400">${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}</div>
                             </div>
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-orange-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Comuns Totais</div>
@@ -7197,12 +7219,15 @@
                         </div>
 
                         <!-- MÉDIAS POR MONITOR -->
-                        <div class="glass-card p-6 rounded-3xl mb-8 border border-slate-200 dark:border-slate-700 overflow-x-auto shadow-sm">
+                        <div class="hideable-box relative glass-card p-6 rounded-3xl mb-8 border border-slate-200 dark:border-slate-700 overflow-x-auto shadow-sm">
+                            ${btnHideCode}
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-blue-500"></i> Calibragem (Média Geral por Monitor)</h3>
-                            <div class="flex gap-4">
+                            <p class="text-xs text-slate-500 mb-4">Dica: Clique em um monitor abaixo para filtrar os erros e as notas avaliadas apenas por ele.</p>
+                            <div class="flex gap-4 pb-2">
                                 ${data.rankMonitores.map((m, idx) => `
-                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 min-w-[200px] flex items-center gap-4">
-                                        <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-lg">${idx+1}º</div>
+                                    <div onclick="app.ui.analiseFiltroMonitor = app.ui.analiseFiltroMonitor === '${m.nome}' ? '' : '${m.nome}'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" 
+                                         class="cursor-pointer transition-transform hover:-translate-y-1 ${app.ui.analiseFiltroMonitor === m.nome ? 'ring-2 ring-blue-500 shadow-md' : 'hover:border-blue-300'} bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 min-w-[200px] flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full ${app.ui.analiseFiltroMonitor === m.nome ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'} flex items-center justify-center font-black text-lg transition-colors">${idx+1}º</div>
                                         <div>
                                             <div class="font-bold text-slate-700 dark:text-slate-300 text-sm truncate w-28" title="${m.nome}">${m.nome.split(' ')[0]}</div>
                                             <div class="text-xs text-slate-500">Média: <strong class="text-slate-800 dark:text-white">${m.mediaNota}</strong> <span class="ml-1 opacity-70">(${m.qtd} ligs)</span></div>
@@ -7216,52 +7241,61 @@
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                             
                             <!-- Falhas Críticas -->
-                            <div class="glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-red-600 shadow-sm relative overflow-hidden">
-                                <div class="absolute -right-4 -top-4 text-8xl text-red-500/10 pointer-events-none"><i class="fa-solid fa-radiation"></i></div>
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-skull-crossbones text-red-600"></i> Principais Falhas Críticas (Peso 0.00)</h3>
+                            <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-red-600 shadow-sm overflow-hidden">
+                                ${btnHideCode}
+                                <div class="absolute -right-4 -top-4 text-8xl text-red-500/10 pointer-events-none"><i class="fa-solid fa-circle-exclamation"></i></div>
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-circle-exclamation text-red-600"></i> Principais Falhas Críticas (Zera Nota)</h3>
                                 <div class="space-y-3 relative z-10">
-                                    ${data.falhasCriticasArray.map((f, idx) => `
+                                    ${data.falhasCriticasArray.map((f, idx) => {
+                                        const pctCritica = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
+                                        return `
                                         <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'critica')" class="bg-red-50 dark:bg-red-900/10 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 flex justify-between items-center hover:border-red-400 cursor-pointer transition-colors group">
                                             <div class="flex items-start gap-3">
-                                                <i class="fa-solid fa-triangle-exclamation text-red-500 mt-1"></i>
+                                                <i class="fa-solid fa-circle-exclamation text-red-500 mt-1"></i>
                                                 <div>
                                                     <div class="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
-                                                    <div class="text-[10px] text-red-500 mt-1 font-bold group-hover:underline">Ver operadores afetados</div>
+                                                    <div class="text-[10px] text-red-500 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
                                                 </div>
                                             </div>
-                                            <div class="text-right shrink-0 ml-4">
+                                            <div class="text-right shrink-0 ml-4 flex flex-col items-end">
                                                 <span class="bg-red-600 text-white font-black px-3 py-1 rounded-lg text-sm shadow-sm">${f.count}x</span>
+                                                <span class="text-[10px] font-bold text-red-500 mt-1">${pctCritica}% ref.</span>
                                             </div>
                                         </div>
-                                    `).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha crítica (peso 0) cometida. Parabéns!</div>'}
+                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha crítica cometida com os filtros atuais.</div>'}
                                 </div>
                             </div>
 
                             <!-- Falhas Normais / Comuns -->
-                            <div class="glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-sm relative overflow-hidden">
+                            <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-sm overflow-hidden">
+                                ${btnHideCode}
                                 <div class="absolute -right-4 -top-4 text-8xl text-orange-500/10 pointer-events-none"><i class="fa-solid fa-chart-bar"></i></div>
                                 <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-layer-group text-orange-500"></i> Principais Desvios Normais</h3>
                                 <div class="space-y-3 relative z-10 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
-                                    ${data.falhasComunsArray.map((f, idx) => `
+                                    ${data.falhasComunsArray.map((f, idx) => {
+                                        const pctComum = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
+                                        return `
                                         <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'comum')" class="bg-orange-50 dark:bg-orange-900/10 p-3.5 rounded-xl border border-orange-100 dark:border-orange-900/30 flex justify-between items-center hover:border-orange-400 cursor-pointer transition-colors group">
                                             <div class="flex items-start gap-3 pr-2">
                                                 <div class="font-black text-orange-400 mt-0.5">${idx+1}.</div>
                                                 <div>
                                                     <div class="font-semibold text-slate-700 dark:text-slate-300 text-[11px] leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
-                                                    <div class="text-[9px] text-orange-600 mt-1 font-bold group-hover:underline">Ver operadores afetados</div>
+                                                    <div class="text-[9px] text-orange-600 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
                                                 </div>
                                             </div>
-                                            <div class="text-right shrink-0">
+                                            <div class="text-right shrink-0 flex flex-col items-end">
                                                 <span class="bg-orange-500 text-white font-black px-2.5 py-1 rounded-lg text-xs shadow-sm">${f.count}x</span>
+                                                <span class="text-[10px] font-bold text-orange-500 mt-1">${pctComum}% ref.</span>
                                             </div>
                                         </div>
-                                    `).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha computada.</div>'}
+                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha computada com os filtros atuais.</div>'}
                                 </div>
                             </div>
                         </div>
 
                         <!-- TABELA DETALHADA -->
-                        <div class="glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            ${btnHideCode}
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
                             <div class="overflow-x-auto max-h-[600px] custom-scrollbar">
                                 <table class="w-full text-left whitespace-nowrap text-sm border-collapse">
@@ -7680,7 +7714,7 @@
                                 };
                                 let dataInicio = formataData(datasArray[datasArray.length - 1]);
                                 let dataFim = formataData(datasArray[0]);
-                                periodo = dataInicio === dataFim ? dataInicio : `${dataInicio} a ${dataFim}`;
+                                periodo = dataInicio === dataFim ? dataInicio : `De ${dataInicio} até ${dataFim}`;
                             }
 
                             // 2. Variáveis de Contagem
@@ -8741,6 +8775,7 @@
                     if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) return;
                     
                     let filtro = app.ui.analiseFiltroRelatorio || '';
+                    let monitorFiltro = app.ui.analiseFiltroMonitor || ''; // Novo filtro por monitor
                     let relatoriosAtivos = app.analiseCSVDinamicoData.relatorios;
                     
                     if(filtro) {
@@ -8753,7 +8788,7 @@
                         falhasComuns: {},
                         falhasCriticas: {},
                         monitorProdutividade: {},
-                        infoData: new Date().toLocaleDateString('pt-BR'),
+                        infoData: app.analiseCSVDinamicoData.periodo, // Usa o período calculado no processarCSVDinamico
                         infoOperacao: filtro ? `Formulário: ${filtro}` : 'Visão Consolidada (Geral)'
                     };
 
@@ -8762,10 +8797,8 @@
                         const formNameDisplay = relatorio.nome;
                         
                         if (rows.length === 0) return;
-                        data.totalLinhas += rows.length;
 
                         const chaves = Object.keys(rows[0]);
-                        
                         const colMonitor = chaves.find(k => k.toUpperCase() === 'MONITOR' || k.toUpperCase() === 'AVALIADOR') 
                             || chaves.find(k => k.toUpperCase().includes('MONITOR') && !k.toUpperCase().includes('NOTA') && !k.toUpperCase().includes('STATUS'));
                             
@@ -8814,6 +8847,19 @@
                                 nota = parseFloat(row[colNota].toString().replace(',', '.'));
                             }
 
+                            // Preenche os cards de produtividade do monitor INDEPENDENTE do filtro (para manter a barra superior sempre cheia)
+                            if (!data.monitorProdutividade[monitor]) {
+                                data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
+                            }
+                            data.monitorProdutividade[monitor].qtd += 1;
+                            data.monitorProdutividade[monitor].somaNotas += nota;
+
+                            // SE HOUVER FILTRO DE MONITOR E ESTA LINHA NÃO FOR DELE, PULA A CONTAGEM DE ERROS!
+                            if (monitorFiltro && monitor !== monitorFiltro) return;
+
+                            // Somamos a linha apenas se ela passar pelo filtro
+                            data.totalLinhas++;
+
                             if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
                             data.operadores[op].notas.push(nota);
                             if (nota < data.operadores[op].min) data.operadores[op].min = nota;
@@ -8825,7 +8871,6 @@
                                 let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
                                 let ans = (row[col] || '').toString().trim();
                                 
-                                // MÁGICA DE ISOLAMENTO AQUI: Carimba de qual formulário veio essa pergunta!
                                 let cleanQ = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                 questionsArray.push({ q: cleanQ, p: peso, a: ans });
                             });
@@ -8849,26 +8894,24 @@
 
                             colunasCriticas.forEach(col => {
                                 const val = (row[col] || '').toString().trim().toUpperCase();
-                                if (val === 'SIM') { // Regra padrão: SIM na coluna Peso 0 é a Falha.
+                                if (val === 'SIM') { 
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                     if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
                                     data.falhasCriticas[cleanGap].count += 1;
                                     data.falhasCriticas[cleanGap].operadores.add(op);
                                 }
                             });
-
-                            if (!data.monitorProdutividade[monitor]) {
-                                data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
-                            }
-                            data.monitorProdutividade[monitor].qtd += 1;
-                            data.monitorProdutividade[monitor].somaNotas += nota;
                         });
                     });
 
                     // Médias globais consolidadas
+                    let totalNotas100 = 0;
                     Object.values(data.operadores).forEach(op => {
                         op.media = op.notas.length > 0 ? (op.notas.reduce((a,b) => a+b, 0) / op.notas.length).toFixed(2) : 0;
+                        totalNotas100 += op.notas.filter(n => n >= 100).length; // Conta quantas avaliações tiveram 100
                     });
+                    
+                    data.conformidadePct = data.totalLinhas > 0 ? ((totalNotas100 / data.totalLinhas) * 100).toFixed(1) : 0;
                     
                     Object.values(data.monitorProdutividade).forEach(m => {
                         m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd).toFixed(2) : 0;
@@ -8877,12 +8920,12 @@
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
                         .sort((a,b) => b.count - a.count)
-                        .slice(0, 5); // TOP 5
+                        .slice(0, 5); 
 
                     data.falhasComunsArray = Object.entries(data.falhasComuns)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
                         .sort((a,b) => b.count - a.count)
-                        .slice(0, 10); // TOP 10
+                        .slice(0, 10); 
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => b.mediaNota - a.mediaNota);
