@@ -8935,11 +8935,13 @@
 
                         const formatarDataExcel = (val) => {
                             if (!val || val === 'S/D') return 'S/D';
+                            // Se for número de série do Excel, converte e devolve SÓ a data
                             if (!isNaN(val) && Number(val) > 20000) {
                                 const dt = new Date((Number(val) - 25569) * 86400 * 1000);
-                                return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+                                return dt.toLocaleDateString('pt-BR');
                             }
-                            return String(val);
+                            // Se for texto, corta nos espaços ou no "T" (padrão ISO) e pega só a primeira parte
+                            return String(val).split(' ')[0].split('T')[0].trim();
                         };
 
                         rows.forEach(row => {
