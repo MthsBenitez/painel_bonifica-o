@@ -8860,6 +8860,44 @@
                     
                     if(filtro) relatoriosAtivos = relatoriosAtivos.filter(r => r.nome === filtro);
 
+                    // HELPER ROBUSTO DE DATA (Corrige a inversão de dia/mês do Excel)
+                    const parseDateRobust = (dataRaw) => {
+                        if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
+                        if (typeof dataRaw === 'number' && dataRaw > 20000) {
+                            const dt = new Date((dataRaw - 25569) * 86400 * 1000);
+                            dt.setUTCHours(12);
+                            return dt;
+                        }
+                        if (typeof dataRaw === 'string') {
+                            let cleanStr = dataRaw.split(' ')[0].split('T')[0].trim();
+                            
+                            // Padrão YYYY-MM-DD
+                            let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                            if (matchISO) {
+                                let dt = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]));
+                                dt.setHours(12, 0, 0, 0);
+                                return dt;
+                            }
+                            
+                            // Padrão BR (DD/MM/YYYY) ou US (MM/DD/YYYY)
+                            let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                            if (matchBR) {
+                                let p1 = parseInt(matchBR[1]), p2 = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
+                                if (y < 100) y += 2000;
+                                let d = p1, m = p2;
+                                
+                                // Regra de ouro para não inverter meses:
+                                if (p2 > 12) { m = p1; d = p2; }
+                                else if (p1 > 12) { d = p1; m = p2; }
+                                
+                                let dt = new Date(y, m - 1, d);
+                                dt.setHours(12, 0, 0, 0);
+                                return dt;
+                            }
+                        }
+                        return null;
+                    };
+
                     // --- PRÉ-SCAN: DESCOBRIR MESES DISPONÍVEIS ---
                     const mesesDisp = new Set();
                     relatoriosAtivos.forEach(rel => {
@@ -8867,35 +8905,13 @@
                             const keys = Object.keys(row);
                             const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
                             let dataRaw = row[findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA', 'GRAVACAO', 'GRAVAÇÃO'])];
-                            let dtObj = null;
-                            if (typeof dataRaw === 'number' && dataRaw > 20000) {
-                                dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
-                                dtObj.setUTCHours(12); // Previne que o fuso horário mude o dia/mês
-                            } else if (dataRaw && typeof dataRaw === 'string') {
-                                let cleanStr = dataRaw.split(' ')[0].trim();
-                                let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-                                if (matchBR) {
-                                    let d = parseInt(matchBR[1]), m = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
-                                    if (y < 100) y += 2000;
-                                    if (m > 12 && d <= 12) { let temp = m; m = d; d = temp; } // Corrige se o Excel inverter mês e dia
-                                    dtObj = new Date(y, m - 1, d);
-                                    dtObj.setHours(12, 0, 0, 0);
-                                } else {
-                                    let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-                                    if (matchISO) {
-                                        dtObj = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]));
-                                        dtObj.setHours(12, 0, 0, 0);
-                                    }
-                                }
-                            }
                             
-                            // Bloqueia datas absurdas "inventadas" (acima de +1 ano do atual ou antes de 2020)
+                            let dtObj = parseDateRobust(dataRaw);
                             if (dtObj && !isNaN(dtObj)) {
-                                if (dtObj.getFullYear() > new Date().getFullYear() + 1 || dtObj.getFullYear() < 2020) {
-                                    dtObj = null;
+                                if (dtObj.getFullYear() <= new Date().getFullYear() + 1 && dtObj.getFullYear() >= 2020) {
+                                    mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
                                 }
                             }
-                            if(dtObj && !isNaN(dtObj)) mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
                         });
                     });
                     const mesesOrdenados = Array.from(mesesDisp).sort();
@@ -8945,46 +8961,10 @@
                             return match && parseFloat(match[1].replace(',', '.')) > 0;
                         });
 
-                        const formatarDataExcel = (val) => {
-                            if (!val || val === 'S/D') return 'S/D';
-                            if (!isNaN(val) && Number(val) > 20000) {
-                                const dt = new Date((Number(val) - 25569) * 86400 * 1000);
-                                dt.setUTCHours(12);
-                                return dt.toLocaleDateString('pt-BR');
-                            }
-                            let str = String(val).split(' ')[0].split('T')[0].trim();
-                            let matchISO = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-                            if (matchISO) return `${matchISO[3].padStart(2,'0')}/${matchISO[2].padStart(2,'0')}/${matchISO[1]}`;
-                            return str;
-                        };
-
                         rows.forEach(row => {
-                            // Extração da data exata desta avaliação
                             let dataRaw = row[colDataAudit] || row[colDataGrav];
-                            let dtObj = null;
+                            let dtObj = parseDateRobust(dataRaw);
                             
-                            if (typeof dataRaw === 'number' && dataRaw > 20000) {
-                                dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
-                                dtObj.setUTCHours(12); // Previne mudança de mês pelo fuso horário
-                            } else if (dataRaw && typeof dataRaw === 'string') {
-                                let cleanStr = dataRaw.split(' ')[0].trim();
-                                let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-                                if (matchBR) {
-                                    let d = parseInt(matchBR[1]), m = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
-                                    if (y < 100) y += 2000;
-                                    if (m > 12 && d <= 12) { let temp = m; m = d; d = temp; }
-                                    dtObj = new Date(y, m - 1, d);
-                                    dtObj.setHours(12, 0, 0, 0);
-                                } else {
-                                    let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-                                    if (matchISO) {
-                                        dtObj = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]));
-                                        dtObj.setHours(12, 0, 0, 0);
-                                    }
-                                }
-                            }
-                            
-                            // Bloqueia datas absurdas
                             if (dtObj && !isNaN(dtObj)) {
                                 if (dtObj.getFullYear() > new Date().getFullYear() + 1 || dtObj.getFullYear() < 2020) dtObj = null;
                             }
@@ -8992,6 +8972,9 @@
 
                             // FILTRO DE MÊS (SE ATIVADO, PULA TUDO QUE NÃO BATER)
                             if (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes !== mesRef) return;
+                            
+                            // Formatação final unificada e limpa para a tabela
+                            let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
 
                             const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
                             let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
@@ -9038,7 +9021,7 @@
                             
                             data.operadores[op].avaliacoes.push({
                                 monitor: monitor,
-                                data: formatarDataExcel(row[colDataAudit] || row[colDataGrav]),
+                                data: dataFmt,
                                 nota: nota,
                                 perguntas: questionsArray
                             });
@@ -9065,7 +9048,7 @@
                         });
                     });
 
-                    // CÁLCULO EVOLUTIVO FINAL (Se houver > 1 mês e não tiver filtro cravado em 1)
+                    // CÁLCULO EVOLUTIVO FINAL
                     if (data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
                         let mFirst = data.mesesDisponiveis[0];
                         let mLast = data.mesesDisponiveis[data.mesesDisponiveis.length - 1];
@@ -9073,16 +9056,14 @@
 
                         Object.keys(data.operadoresEvolutivo).forEach(op => {
                             const mOp = data.operadoresEvolutivo[op];
-                            if (mOp[mFirst] && mOp[mLast] && mOp[mFirst].count >= 2 && mOp[mLast].count >= 2) {
+                            if (mOp[mFirst] && mOp[mLast] && mOp[mFirst].count >= 1 && mOp[mLast].count >= 1) { 
                                 let nIni = mOp[mFirst].soma / mOp[mFirst].count;
                                 let nFim = mOp[mLast].soma / mOp[mLast].count;
                                 opsComparacao.push({ nome: op, inicio: nIni, fim: nFim, diff: nFim - nIni });
                             }
                         });
 
-                        // Top Piores Iniciais que melhoraram (ou como estão agora)
                         data.evolutivoPioresIniciais = [...opsComparacao].sort((a,b) => a.inicio - b.inicio).slice(0, 5);
-                        // Melhores que Caíram
                         data.evolutivoQuedas = [...opsComparacao].filter(o => o.inicio >= 80 && o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
                         
                         data.evolutivoChartLabels = data.mesesDisponiveis.map(m => app.ui.formatMonthLabel(m));
