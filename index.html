@@ -259,43 +259,29 @@
         /* ========================================================
            CURSOR MODERNO E PERSONALIZADO (BOLINHA DISCRETA)
            ======================================================== */
-        /* Oculta o mouse padrão nas tags base do layout */
-        body, a, button, select, .cursor-pointer, [onclick] {
+        body.custom-cursor, body.custom-cursor a, body.custom-cursor button, body.custom-cursor select, body.custom-cursor .cursor-pointer, body.custom-cursor [onclick] {
             cursor: none !important;
         }
-        input, textarea {
-            cursor: text !important; /* Mantém o cursor de texto para digitação */
+        body.custom-cursor input, body.custom-cursor textarea {
+            cursor: text !important; 
+        }
+        body:not(.custom-cursor) .curzr {
+            display: none !important; /* Desaparece se a opção estiver desativada */
         }
 
         /* A Bolinha Minimalista */
         .custom-cursor-dot {
-            width: 8px;
-            height: 8px;
-            background-color: var(--theme-color);
-            border-radius: 50%;
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: none; /* O clique passa direto pela bolinha e atinge o botão */
-            z-index: 999999;
+            width: 8px; height: 8px; background-color: var(--theme-color); border-radius: 50%;
+            position: fixed; top: 0; left: 0; pointer-events: none; z-index: 999999;
             transform: translate(-50%, -50%);
-            /* Animação suave focada apenas na expansão e cor */
             transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1), height 0.3s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.3s, opacity 0.3s;
             box-shadow: 0 2px 10px rgba(0,0,0,0.15);
         }
 
-        /* Interações: Bolinha cresce e fica translúcida ao focar em clicáveis */
         .cursor-hover .custom-cursor-dot {
-            width: 32px;
-            height: 32px;
-            background-color: var(--theme-color);
-            opacity: 0.25;
-            mix-blend-mode: multiply; /* Efeito moderno de mesclagem de cor */
+            width: 32px; height: 32px; background-color: var(--theme-color); opacity: 0.25; mix-blend-mode: multiply;
         }
-        .dark .cursor-hover .custom-cursor-dot {
-            mix-blend-mode: screen;
-            opacity: 0.4;
-        }
+        .dark .cursor-hover .custom-cursor-dot { mix-blend-mode: screen; opacity: 0.4; }
         
         /* CSS Obrigatório do Lenis (Scroll Suave) */
         html.lenis { height: auto; }
@@ -3072,7 +3058,7 @@
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}, {id:'apresentacoes_monitorias', label:'Apresentações'}, {id:'gerador_graficos', label:'Gerador Gráficos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -3116,6 +3102,18 @@
                     this.valuesHidden = !this.valuesHidden;
                     this.renderTab('meu_painel', true);
                 },
+
+                toggleCursor() {
+                    const body = document.body;
+                    if(body.classList.contains('custom-cursor')) {
+                        body.classList.remove('custom-cursor');
+                        localStorage.setItem('soft_cursor', 'disabled');
+                    } else {
+                        body.classList.add('custom-cursor');
+                        localStorage.setItem('soft_cursor', 'enabled');
+                    }
+                },
+                analiseFiltroMes: '', // Estado para o filtro de mês do CSV Dinâmico                
                 actionFilterUser: '',
                 actionFilterOp: '',
                 
@@ -3165,6 +3163,9 @@
                         Notification.requestPermission();
                     }
                     this.checkTheme();
+                    if(localStorage.getItem('soft_cursor') !== 'disabled') {
+                        document.body.classList.add('custom-cursor');
+                    }
                     this.initThemeColors(); 
                     
                     const savedMat = localStorage.getItem('soft_saved_mat');
@@ -4728,20 +4729,40 @@
                         const textColor = isDark ? '#94a3b8' : '#64748b';
                         const gridColor = isDark ? '#334155' : '#e2e8f0';
 
-                        if(window.myChartPct) window.myChartPct.destroy();
-                        window.myChartPct = new Chart(document.getElementById('chart-pct'), {
-                            type: 'bar',
-                            data: { labels: labels, datasets: [{ label: 'Aproveitamento (%)', data: dataPct, backgroundColor: '#3b82f6', borderRadius: 6 }] },
-                            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, plugins: { legend: { display: false } } }
-                        });
-
-                        if(window.myChartFin) window.myChartFin.destroy();
-                        window.myChartFin = new Chart(document.getElementById('chart-finance'), {
-                            type: 'bar',
-                            data: { labels: labels, datasets: [{ label: 'Valor Pago (R$)', data: dataVal, backgroundColor: '#10b981', borderRadius: 6 }] },
-                            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: {color: textColor}, grid: {color: gridColor} }, x: { ticks: {color: textColor}, grid: {display: false} } }, plugins: { legend: { display: false } } }
-                        });
-                    }, 50);
+                        // MÁGICA GRÁFICO EVOLUTIVO
+                        if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                            if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
+                            const ctxEvol = document.getElementById('chart-analise-evolutivo');
+                            if (ctxEvol) {
+                                window.myChartAnaliseEvol = new Chart(ctxEvol, {
+                                    type: 'line',
+                                    data: { 
+                                        labels: data.evolutivoChartLabels, 
+                                        datasets: [{ 
+                                            label: 'Média Consolidada', 
+                                            data: data.evolutivoChartData, 
+                                            borderColor: '#6366f1', 
+                                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                                            borderWidth: 4,
+                                            pointBackgroundColor: '#ffffff',
+                                            pointBorderColor: '#6366f1',
+                                            pointRadius: 6,
+                                            pointHoverRadius: 8,
+                                            fill: true,
+                                            tension: 0.4
+                                        }] 
+                                    },
+                                    options: { 
+                                        responsive: true, maintainAspectRatio: false, 
+                                        scales: { 
+                                            y: { beginAtZero: false, min: Math.max(0, Math.min(...data.evolutivoChartData) - 10), max: 100, ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, 
+                                            x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } 
+                                        }, 
+                                        plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } } 
+                                    }
+                                });
+                            }
+                        }
                 },
 
                 renderView_Cadastros(container) {
@@ -5501,6 +5522,9 @@
                                         <h3 class="text-[11px] font-bold text-slate-400 uppercase mb-2"><i class="fa-solid fa-palette text-purple-500"></i> Personalização</h3>
                                         <button onclick="app.ui.toggleTheme()" class="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm shadow-sm hover:shadow-md transition">
                                             <span>Alternar Modo Escuro</span> <i class="fa-solid fa-moon"></i>
+                                        </button>
+                                        <button onclick="app.ui.toggleCursor()" class="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm shadow-sm hover:shadow-md transition mt-3">
+                                            <span>Alternar Cursor (Mouse)</span> <i class="fa-solid fa-arrow-pointer text-indigo-500"></i>
                                         </button>
                                     </div>
                                 </div>
@@ -7161,12 +7185,16 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto">
                                 ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                    <select onchange="app.ui.analiseFiltroMes=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
+                                        <option value="">Evolutivo (Todos os Meses)</option>
+                                        ${data.mesesDisponiveis.map(m => `<option value="${m}" ${app.ui.analiseFiltroMes === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`).join('')}
+                                    </select>
                                     <select onchange="app.ui.analiseFiltroRelatorio=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
                                         <option value="">Visão Consolidada (Todos)</option>
                                         ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio === r.nome ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
                                     </select>
                                     <button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Edição' : 'Modo Apresentação'}</button>
-                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
+                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.analiseFiltroMes = \\'\\'; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
                                 ` : ''}
                                 <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
@@ -7182,13 +7210,64 @@
                         return;
                     }
 
-                    // Se houver um filtro de monitor ativo, avisa o usuário visualmente
                     if(app.ui.analiseFiltroMonitor) {
                         html += `
                             <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 flex justify-between items-center shadow-sm animate-fade-in">
-                                <div class="text-sm text-blue-800 dark:text-blue-300"><strong><i class="fa-solid fa-filter"></i> Filtro Ativo:</strong> Você está visualizando apenas os erros e notas aplicadas pelo monitor <strong>${app.ui.analiseFiltroMonitor}</strong>.</div>
+                                <div class="text-sm text-blue-800 dark:text-blue-300"><strong><i class="fa-solid fa-filter"></i> Filtro Ativo:</strong> Visualizando apenas <strong>${app.ui.analiseFiltroMonitor}</strong>.</div>
                                 <button onclick="app.ui.analiseFiltroMonitor = ''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">Limpar Filtro</button>
                             </div>
+                        `;
+                    }
+
+                    // --- EVOLUTIVO VISUAL ---
+                    if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                        html += `
+                        <div class="hideable-box glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-indigo-500 shadow-lg mb-8 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/10 dark:to-slate-900 relative">
+                            ${btnHideCode}
+                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-6 flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal da Operação</h3>
+                            
+                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
+                                <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
+                                    <h4 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Média Operacional no Período</h4>
+                                    <div class="flex-1 relative w-full h-full"><canvas id="chart-analise-evolutivo"></canvas></div>
+                                </div>
+                                
+                                <div class="space-y-4">
+                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[155px]">
+                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-100 dark:border-slate-700 pb-2 shrink-0"><i class="fa-solid fa-medal text-green-500 mr-1"></i> Top 5: Piores Que Melhoraram</h4>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
+                                                <div class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-24" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="text-slate-400">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[8px] text-slate-300"></i>
+                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'}">${op.fim.toFixed(1)}</span>
+                                                    </div>
+                                                </div>
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes (mín. 2 avaliações no primeiro e último mês)</div>'}
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[155px]">
+                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-100 dark:border-slate-700 pb-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500 mr-1"></i> Alerta: Destaques Que Caíram</h4>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
+                                                <div class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-24" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="text-slate-400">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[8px] text-slate-300"></i>
+                                                        <span class="font-black text-red-500">${op.fim.toFixed(1)}</span>
+                                                        <span class="text-[9px] text-red-600 bg-red-100 px-1 rounded ml-1 font-bold">${op.diff.toFixed(1)}</span>
+                                                    </div>
+                                                </div>
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada. Parabéns equipe!</div>'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         `;
                     }
 
@@ -8775,12 +8854,38 @@
                     if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) return;
                     
                     let filtro = app.ui.analiseFiltroRelatorio || '';
-                    let monitorFiltro = app.ui.analiseFiltroMonitor || ''; // Novo filtro por monitor
+                    let monitorFiltro = app.ui.analiseFiltroMonitor || ''; 
                     let relatoriosAtivos = app.analiseCSVDinamicoData.relatorios;
                     
-                    if(filtro) {
-                        relatoriosAtivos = relatoriosAtivos.filter(r => r.nome === filtro);
-                    }
+                    if(filtro) relatoriosAtivos = relatoriosAtivos.filter(r => r.nome === filtro);
+
+                    // --- PRÉ-SCAN: DESCOBRIR MESES DISPONÍVEIS ---
+                    const mesesDisp = new Set();
+                    relatoriosAtivos.forEach(rel => {
+                        rel.rows.forEach(row => {
+                            const keys = Object.keys(row);
+                            const findCol = (keywords) => keys.find(k => keywords.some(kw => k.trim().toUpperCase().includes(kw)));
+                            let dataRaw = row[findCol(['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA', 'GRAVACAO', 'GRAVAÇÃO'])];
+                            let dtObj = null;
+                            if (typeof dataRaw === 'number') {
+                                dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
+                            } else if (dataRaw && typeof dataRaw === 'string') {
+                                let cleanStr = dataRaw.split(' ')[0].trim();
+                                if (cleanStr.includes('/')) {
+                                    let parts = cleanStr.split('/');
+                                    if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                } else if (cleanStr.includes('-')) {
+                                    let parts = cleanStr.split('-');
+                                    if (parts.length === 3) {
+                                        if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
+                                        else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                    }
+                                }
+                            }
+                            if(dtObj && !isNaN(dtObj)) mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
+                        });
+                    });
+                    const mesesOrdenados = Array.from(mesesDisp).sort();
 
                     const data = {
                         totalLinhas: 0,
@@ -8788,14 +8893,16 @@
                         falhasComuns: {},
                         falhasCriticas: {},
                         monitorProdutividade: {},
-                        infoData: app.analiseCSVDinamicoData.periodo, // Usa o período calculado no processarCSVDinamico
+                        mesesDisponiveis: mesesOrdenados,
+                        mesesEvolutivo: {},
+                        operadoresEvolutivo: {},
+                        infoData: app.ui.analiseFiltroMes ? app.ui.formatMonthLabel(app.ui.analiseFiltroMes) : (mesesOrdenados.length > 1 ? 'Visão Evolutiva (Todos)' : app.analiseCSVDinamicoData.periodo),
                         infoOperacao: filtro ? `Formulário: ${filtro}` : 'Visão Consolidada (Geral)'
                     };
 
                     relatoriosAtivos.forEach(relatorio => {
                         const rows = relatorio.rows;
                         const formNameDisplay = relatorio.nome;
-                        
                         if (rows.length === 0) return;
 
                         const chaves = Object.keys(rows[0]);
@@ -8835,30 +8942,56 @@
                         };
 
                         rows.forEach(row => {
+                            // Extração da data exata desta avaliação
+                            let dataRaw = row[colDataAudit] || row[colDataGrav];
+                            let dtObj = null;
+                            if (typeof dataRaw === 'number') dtObj = new Date((dataRaw - 25569) * 86400 * 1000);
+                            else if (dataRaw && typeof dataRaw === 'string') {
+                                let cleanStr = dataRaw.split(' ')[0].trim();
+                                if (cleanStr.includes('/')) {
+                                    let parts = cleanStr.split('/');
+                                    if (parts.length === 3) dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                } else if (cleanStr.includes('-')) {
+                                    let parts = cleanStr.split('-');
+                                    if (parts.length === 3) {
+                                        if (parts[0].length === 4) dtObj = new Date(parts[0], parts[1]-1, parts[2]);
+                                        else dtObj = new Date(parts[2], parts[1]-1, parts[0]);
+                                    }
+                                }
+                            }
+                            let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
+
+                            // FILTRO DE MÊS (SE ATIVADO, PULA TUDO QUE NÃO BATER)
+                            if (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes !== mesRef) return;
+
                             const op = app.utils.fixEncoding((row[colNome] || 'Não Identificado').toString().trim());
                             let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
-                            
-                            if (monitor.includes(' - ')) {
-                                monitor = monitor.split(' - ').slice(1).join(' - ').trim();
-                            }
+                            if (monitor.includes(' - ')) monitor = monitor.split(' - ').slice(1).join(' - ').trim();
                             
                             let nota = 0;
                             if (row[colNota] !== undefined && row[colNota] !== '') {
                                 nota = parseFloat(row[colNota].toString().replace(',', '.'));
                             }
 
-                            // Preenche os cards de produtividade do monitor INDEPENDENTE do filtro (para manter a barra superior sempre cheia)
-                            if (!data.monitorProdutividade[monitor]) {
-                                data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
-                            }
+                            if (!data.monitorProdutividade[monitor]) data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
                             data.monitorProdutividade[monitor].qtd += 1;
                             data.monitorProdutividade[monitor].somaNotas += nota;
 
-                            // SE HOUVER FILTRO DE MONITOR E ESTA LINHA NÃO FOR DELE, PULA A CONTAGEM DE ERROS!
                             if (monitorFiltro && monitor !== monitorFiltro) return;
 
-                            // Somamos a linha apenas se ela passar pelo filtro
                             data.totalLinhas++;
+
+                            // ACÚMULO PARA EVOLUTIVO
+                            if (typeof nota === 'number' && !isNaN(nota) && mesRef) {
+                                if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0 };
+                                data.mesesEvolutivo[mesRef].soma += nota;
+                                data.mesesEvolutivo[mesRef].count++;
+
+                                if (!data.operadoresEvolutivo[op]) data.operadoresEvolutivo[op] = {};
+                                if (!data.operadoresEvolutivo[op][mesRef]) data.operadoresEvolutivo[op][mesRef] = { soma: 0, count: 0 };
+                                data.operadoresEvolutivo[op][mesRef].soma += nota;
+                                data.operadoresEvolutivo[op][mesRef].count++;
+                            }
 
                             if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
                             data.operadores[op].notas.push(nota);
@@ -8870,7 +9003,6 @@
                                 let pesoMatch = col.match(/=\s*PESO:([0-9.,]+)/i);
                                 let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
                                 let ans = (row[col] || '').toString().trim();
-                                
                                 let cleanQ = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                 questionsArray.push({ q: cleanQ, p: peso, a: ans });
                             });
@@ -8904,13 +9036,44 @@
                         });
                     });
 
+                    // CÁLCULO EVOLUTIVO FINAL (Se houver > 1 mês e não tiver filtro cravado em 1)
+                    if (data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                        let mFirst = data.mesesDisponiveis[0];
+                        let mLast = data.mesesDisponiveis[data.mesesDisponiveis.length - 1];
+                        let opsComparacao = [];
+
+                        Object.keys(data.operadoresEvolutivo).forEach(op => {
+                            const mOp = data.operadoresEvolutivo[op];
+                            if (mOp[mFirst] && mOp[mLast] && mOp[mFirst].count >= 2 && mOp[mLast].count >= 2) {
+                                let nIni = mOp[mFirst].soma / mOp[mFirst].count;
+                                let nFim = mOp[mLast].soma / mOp[mLast].count;
+                                opsComparacao.push({ nome: op, inicio: nIni, fim: nFim, diff: nFim - nIni });
+                            }
+                        });
+
+                        // Top Piores Iniciais que melhoraram (ou como estão agora)
+                        data.evolutivoPioresIniciais = [...opsComparacao].sort((a,b) => a.inicio - b.inicio).slice(0, 5);
+                        // Melhores que Caíram
+                        data.evolutivoQuedas = [...opsComparacao].filter(o => o.inicio >= 80 && o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
+                        
+                        data.evolutivoChartLabels = data.mesesDisponiveis.map(m => app.ui.formatMonthLabel(m));
+                        data.evolutivoChartData = data.mesesDisponiveis.map(m => {
+                            if (data.mesesEvolutivo[m] && data.mesesEvolutivo[m].count > 0) return (data.mesesEvolutivo[m].soma / data.mesesEvolutivo[m].count).toFixed(2);
+                            return 0;
+                        });
+                    }
+
                     // Médias globais consolidadas
                     let totalNotas100 = 0;
+                    let somaMediaTotal = 0; let ctdTotal = 0;
                     Object.values(data.operadores).forEach(op => {
                         op.media = op.notas.length > 0 ? (op.notas.reduce((a,b) => a+b, 0) / op.notas.length).toFixed(2) : 0;
-                        totalNotas100 += op.notas.filter(n => n >= 100).length; // Conta quantas avaliações tiveram 100
+                        somaMediaTotal += parseFloat(op.media) * op.notas.length;
+                        ctdTotal += op.notas.length;
+                        totalNotas100 += op.notas.filter(n => n >= 100).length;
                     });
                     
+                    data.mediaTotal = ctdTotal > 0 ? (somaMediaTotal / ctdTotal).toFixed(2) : 0;
                     data.conformidadePct = data.totalLinhas > 0 ? ((totalNotas100 / data.totalLinhas) * 100).toFixed(1) : 0;
                     
                     Object.values(data.monitorProdutividade).forEach(m => {
