@@ -7018,15 +7018,19 @@
                     opData.avaliacoes.forEach((aval, idx) => {
                         
                         const renderPergunta = (p, isCritica) => {
-                            let ansUpper = p.a.toUpperCase();
-                            let respHtml = p.a;
+                            let ansStr = p.a.toUpperCase().trim();
+                            let isSim = ansStr === 'SIM' || ansStr === 'S';
+                            let isNao = ansStr === 'NÃO' || ansStr === 'NAO' || ansStr === 'N' || ansStr === 'NÃO ';
+                            
+                            // Neutro por padrão (Para evitar falsos positivos com "Não Se Aplica")
+                            let respHtml = `<span class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 font-bold px-2 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 text-[10px]">${p.a}</span>`;
                             
                             if (isCritica) {
-                                if (ansUpper === 'SIM') respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> SIM (FALHA)</span>`;
-                                else if (ansUpper === 'NÃO' || ansUpper === 'NAO') respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> NÃO</span>`;
+                                if (isSim) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
+                                else if (isNao) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
                             } else {
-                                if (ansUpper === 'SIM') respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> SIM</span>`;
-                                else if (ansUpper === 'NÃO' || ansUpper === 'NAO') respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> NÃO (FALHA)</span>`;
+                                if (isSim) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
+                                else if (isNao) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
                             }
                             
                             return `
@@ -7239,36 +7243,38 @@
                                 </div>
                                 
                                 <div class="space-y-4">
-                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[155px]">
-                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-100 dark:border-slate-700 pb-2 shrink-0"><i class="fa-solid fa-medal text-green-500 mr-1"></i> Top 5: Piores Que Melhoraram</h4>
+                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 flex flex-col">
+                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-medal text-green-500"></i> Top 5: Ofensores Que Melhoraram</h4>
+                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
                                         <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
                                             ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
-                                                <div class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-24" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-slate-400">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[8px] text-slate-300"></i>
-                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'}">${op.fim.toFixed(1)}</span>
+                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-100 dark:border-slate-800 cursor-pointer hover:border-blue-400 transition-colors group">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-blue-600 transition-colors" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-3">
+                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'} text-sm">${op.fim.toFixed(1)}</span>
                                                     </div>
                                                 </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes (mín. 2 avaliações no primeiro e último mês)</div>'}
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes.</div>'}
                                         </div>
                                     </div>
-
-                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[155px]">
-                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 border-b border-slate-100 dark:border-slate-700 pb-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500 mr-1"></i> Alerta: Destaques Que Caíram</h4>
+                                
+                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 flex flex-col">
+                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Alerta: Destaques Que Caíram</h4>
+                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
                                         <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
                                             ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
-                                                <div class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-24" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-slate-400">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[8px] text-slate-300"></i>
-                                                        <span class="font-black text-red-500">${op.fim.toFixed(1)}</span>
-                                                        <span class="text-[9px] text-red-600 bg-red-100 px-1 rounded ml-1 font-bold">${op.diff.toFixed(1)}</span>
+                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-100 dark:border-slate-800 cursor-pointer hover:border-red-400 transition-colors group">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-red-600 transition-colors" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-3">
+                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                                                        <span class="font-black text-red-500 text-sm">${op.fim.toFixed(1)}</span>
+                                                        <span class="text-[9px] text-red-600 bg-red-100 px-1 rounded font-bold ml-1">${op.diff.toFixed(1)}</span>
                                                     </div>
                                                 </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada. Parabéns equipe!</div>'}
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada.</div>'}
                                         </div>
                                     </div>
                                 </div>
@@ -7294,7 +7300,7 @@
                                 <div class="text-3xl font-black text-green-600 dark:text-green-400">${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}</div>
                             </div>
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-orange-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Comuns Totais</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Totais</div>
                                 <div class="text-3xl font-black text-orange-600 dark:text-orange-400">${data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0)}</div>
                             </div>
                             <div class="glass-card p-5 rounded-2xl border-l-4 border-l-red-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
@@ -9168,7 +9174,7 @@
                         
                         data.evolutivoChartLabels = data.mesesDisponiveis.map(m => app.ui.formatMonthLabel(m));
                         data.evolutivoChartData = data.mesesDisponiveis.map(m => {
-                            if (data.mesesEvolutivo[m] && data.mesesEvolutivo[m].count > 0) return (data.mesesEvolutivo[m].soma / data.mesesEvolutivo[m].count).toFixed(2);
+                            if (data.mesesEvolutivo[m] && data.mesesEvolutivo[m].count > 0) return parseFloat((data.mesesEvolutivo[m].soma / data.mesesEvolutivo[m].count).toFixed(2));
                             return 0;
                         });
                     }
