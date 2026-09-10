@@ -8942,13 +8942,17 @@
                     // HELPER ROBUSTO DE DATA (Corrige a inversão de dia/mês do Excel e strings numéricas cruas)
                     const parseDateRobust = (dataRaw) => {
                         if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
-
-                        // 1. Defesa contra Timestamps Unix (Números na casa dos bilhões que vinham do seu arquivo)
-                        if (typeof dataRaw === 'number' && dataRaw > 1000000000) {
-                            return new Date(dataRaw > 1000000000000 ? dataRaw : dataRaw * 1000);
+                        
+                        // Proteção extra: se a data vier como string "45321" diretamente do sheet_to_json
+                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 20000) {
+                            dataRaw = Number(dataRaw);
                         }
-                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 1000000000) {
-                            return new Date(Number(dataRaw) > 1000000000000 ? Number(dataRaw) : Number(dataRaw) * 1000);
+
+                        if (typeof dataRaw === 'number' && dataRaw > 20000) {
+                            const diasPuros = Math.floor(dataRaw); // MÁGICA: Corta fora as horas quebradas (.999)
+                            const dt = new Date((diasPuros - 25569) * 86400 * 1000);
+                            dt.setUTCHours(12);
+                            return dt;
                         }
                         
                         // Proteção extra: se a data vier como string "45321" diretamente do sheet_to_json
@@ -9004,7 +9008,8 @@
                             
                             let dtObj = parseDateRobust(dataRaw);
                             if (dtObj && !isNaN(dtObj)) {
-                                if (dtObj.getFullYear() <= new Date().getFullYear() + 1 && dtObj.getFullYear() >= 2020) {
+                                // Expandimos o limite para 2030 para evitar quebra se a planilha vier com anos futuros acidentais
+                                if (dtObj.getFullYear() <= 2030 && dtObj.getFullYear() >= 2020) {
                                     mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
                                 }
                             }
@@ -9070,7 +9075,8 @@
                             let dtObj = parseDateRobust(dataRaw);
                             
                             if (dtObj && !isNaN(dtObj)) {
-                                if (dtObj.getFullYear() > new Date().getFullYear() + 1 || dtObj.getFullYear() < 2020) dtObj = null;
+                                // Removemos a trava do ano atual para aceitar dados vindos do Excel cru e não cuspir números inteiros na tela
+                                if (dtObj.getFullYear() > 2030 || dtObj.getFullYear() < 2020) dtObj = null;
                             }
                             let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
 
@@ -10348,7 +10354,8 @@
 
                                 if (d !== undefined && d !== null && d !== '') {
                                     if (typeof d === 'number') {
-                                        dtObj = new Date((d - 25569) * 86400 * 1000);
+                                        const diasPuros = Math.floor(d); // Corta fora os decimais (horas) que quebram a importação
+                                        dtObj = new Date((diasPuros - 25569) * 86400 * 1000);
                                         // FIX: Joga a hora para o meio-dia UTC para evitar que o fuso do Brasil (-3h) mude o dia
                                         dtObj.setUTCHours(12);
                                     } else if (typeof d === 'string') {
