@@ -9120,40 +9120,52 @@
                     window.tempCSVAnaliseData = null; // Limpa cache
                     
                     // Força a UI a mostrar "Visão Consolidada" quando entra algo novo
-                    app.ui.analiseFiltroRelatorio = ''; 
+                    app.ui.analiseFiltroRelatorio = []; 
+                    
+                    // MÁGICA DE PERSISTÊNCIA: Salva os dados no navegador
+                    try { 
+                        localStorage.setItem('soft_analise_data', JSON.stringify(app.analiseCSVDinamicoData)); 
+                    } catch(e) { 
+                        console.warn("Base muito grande para salvar no cache local, rodando apenas em memória."); 
+                    }
                     
                     // Reconstrói a Inteligência cruzando tudo que tem na Gaveta
                     this.gerarInteligenciaCSV();
                     
                     app.ui.renderTab('analise_csv_dinamico', true);
-                    app.ui.showAlert("Concluído!", "Dados importados. O sistema atualizou as médias de operadores e isolou as perguntas no consolidado geral.", "success");
+                    app.ui.showAlert("Concluído!", "Dados importados e salvos localmente. O sistema atualizou as médias de operadores e isolou as perguntas no consolidado geral.", "success");
                 },
 
                 gerarInteligenciaCSV() {
                     if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) return;
                     
-                    let filtro = app.ui.analiseFiltroRelatorio || '';
+                    // Adaptando para aceitar múltiplos filtros simultâneos
+                    let filtrosRelatorio = app.ui.analiseFiltroRelatorio || [];
+                    if (!Array.isArray(filtrosRelatorio)) filtrosRelatorio = [filtrosRelatorio];
+
+                    let filtrosMes = app.ui.analiseFiltroMes || [];
+                    if (!Array.isArray(filtrosMes)) filtrosMes = [filtrosMes];
+
                     let monitorFiltro = app.ui.analiseFiltroMonitor || ''; 
                     let relatoriosAtivos = app.analiseCSVDinamicoData.relatorios;
                     
-                    if(filtro) relatoriosAtivos = relatoriosAtivos.filter(r => r.nome === filtro);
+                    if(filtrosRelatorio.length > 0 && filtrosRelatorio[0] !== "") {
+                        relatoriosAtivos = relatoriosAtivos.filter(r => filtrosRelatorio.includes(r.nome));
+                    }
 
                     // HELPER ROBUSTO DE DATA (Corrige a inversão de dia/mês do Excel e strings numéricas cruas)
                     const parseDateRobust = (dataRaw) => {
                         if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
                         
-                        // Se a data for um número serial do Excel (ex: 45575.45) ou string numérica
                         if (!isNaN(dataRaw) && Number(dataRaw) > 20000) {
-                            const diasPuros = Math.floor(Number(dataRaw)); // MÁGICA: Tesoura que corta fora as horas quebradas do fuso (.45)
+                            const diasPuros = Math.floor(Number(dataRaw));
                             const dt = new Date((diasPuros - 25569) * 86400 * 1000);
-                            dt.setUTCHours(12, 0, 0, 0); // Força sempre o relógio para o Meio-Dia cravado
+                            dt.setUTCHours(12, 0, 0, 0); 
                             return dt;
                         }
 
                         if (typeof dataRaw === 'string') {
                             let cleanStr = dataRaw.split(' ')[0].split('T')[0].trim();
-                            
-                            // Padrão YYYY-MM-DD
                             let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
                             if (matchISO) {
                                 let dt = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]));
@@ -9161,17 +9173,13 @@
                                 return dt;
                             }
                             
-                            // Padrão BR (DD/MM/YYYY) ou US (MM/DD/YYYY)
                             let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
                             if (matchBR) {
                                 let p1 = parseInt(matchBR[1]), p2 = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
                                 if (y < 100) y += 2000;
                                 let d = p1, m = p2;
-                                
-                                // Regra de ouro para não inverter meses:
                                 if (p2 > 12) { m = p1; d = p2; }
                                 else if (p1 > 12) { d = p1; m = p2; }
-                                
                                 let dt = new Date(y, m - 1, d);
                                 dt.setHours(12, 0, 0, 0);
                                 return dt;
@@ -9180,20 +9188,14 @@
                         return null;
                     };
 
-                    // --- PRÉ-SCAN: DESCOBRIR MESES DISPONÍVEIS ---
                     const mesesDisp = new Set();
                     relatoriosAtivos.forEach(rel => {
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
-                            
-                            // Busca INTELIGENTE e PRIORIZADA de Data (Pré-Scan)
                             let colDataScan = keys.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || keys.find(k => k.trim().toUpperCase().includes('DATA'));
-                            
                             let dataRaw = colDataScan ? row[colDataScan] : undefined;
-                            
                             let dtObj = parseDateRobust(dataRaw);
                             if (dtObj && !isNaN(dtObj)) {
-                                // Expandimos o limite para 2030 para evitar quebra se a planilha vier com anos futuros acidentais
                                 if (dtObj.getFullYear() <= 2030 && dtObj.getFullYear() >= 2020) {
                                     mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
                                 }
@@ -9211,8 +9213,8 @@
                         mesesDisponiveis: mesesOrdenados,
                         mesesEvolutivo: {},
                         operadoresEvolutivo: {},
-                        infoData: app.ui.analiseFiltroMes ? app.ui.formatMonthLabel(app.ui.analiseFiltroMes) : (mesesOrdenados.length > 1 ? 'Visão Evolutiva (Todos)' : app.analiseCSVDinamicoData.periodo),
-                        infoOperacao: filtro ? `Formulário: ${filtro}` : 'Visão Consolidada (Geral)'
+                        infoData: filtrosMes.length > 0 && filtrosMes[0] !== "" ? filtrosMes.map(m => app.ui.formatMonthLabel(m)).join(', ') : (mesesOrdenados.length > 1 ? 'Visão Evolutiva (Todos)' : (mesesOrdenados[0] ? app.ui.formatMonthLabel(mesesOrdenados[0]) : 'Indefinido')),
+                        infoOperacao: filtrosRelatorio.length > 0 && filtrosRelatorio[0] !== "" ? `Filtro Ativo: ${filtrosRelatorio.join(', ')}` : 'Visão Consolidada (Geral)'
                     };
 
                     relatoriosAtivos.forEach(relatorio => {
@@ -9221,27 +9223,13 @@
                         if (rows.length === 0) return;
 
                         const chaves = Object.keys(rows[0]);
-                        
-                        // MAPEAMENTO INTELIGENTE E BLINDADO DE COLUNAS
-                        const colMonitor = chaves.find(k => ['MONITOR', 'AVALIADOR', 'AUDITOR', 'LOGIN', 'CRIADOR'].includes(k.trim().toUpperCase())) 
-                            || chaves.find(k => k.trim().toUpperCase().includes('MONITOR') && !k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('DATA') && !k.trim().toUpperCase().includes('STATUS'));
-                            
-                        const colNome = chaves.find(k => ['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'FUNCIONARIO', 'FUNCIONÁRIO'].includes(k.trim().toUpperCase())) 
-                            || chaves.find(k => (k.trim().toUpperCase().includes('NOME') || k.trim().toUpperCase().includes('OPERADOR')) && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('SUPERVISOR')) 
-                            || chaves[0];
-                            
-                        const colOperacao = chaves.find(k => ['OPERACAO', 'OPERAÇÃO', 'CAMPANHA', 'ILHA', 'SETOR'].includes(k.trim().toUpperCase())) 
-                            || chaves.find(k => k.trim().toUpperCase().includes('OPERA'));
-                            
-                        // Busca INTELIGENTE e PRIORIZADA de Data (Motor Oficial)
+                        const colMonitor = chaves.find(k => ['MONITOR', 'AVALIADOR', 'AUDITOR', 'LOGIN', 'CRIADOR'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('MONITOR') && !k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('DATA') && !k.trim().toUpperCase().includes('STATUS'));
+                        const colNome = chaves.find(k => ['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'FUNCIONARIO', 'FUNCIONÁRIO'].includes(k.trim().toUpperCase())) || chaves.find(k => (k.trim().toUpperCase().includes('NOME') || k.trim().toUpperCase().includes('OPERADOR')) && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('SUPERVISOR')) || chaves[0];
+                        const colOperacao = chaves.find(k => ['OPERACAO', 'OPERAÇÃO', 'CAMPANHA', 'ILHA', 'SETOR'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('OPERA'));
                         const colDataAudit = chaves.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
-                            
-                        const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) 
-                            || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) 
-                            || 'NOTA';
+                        const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) || 'NOTA';
 
                         const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
-                            
                         const colunasCriticas = colunasAvaliacao.filter(k => {
                             let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
                             return match && parseFloat(match[1].replace(',', '.')) === 100;
@@ -9252,7 +9240,6 @@
                         });
 
                         rows.forEach(row => {
-                            // BLOQUEIO DE LIXO: Ignora linhas vazias ou linhas de Total que quebram as estatísticas e criam "falsos operadores"
                             let opNomeDetalhe = app.utils.fixEncoding(String(row[colNome] || 'Não Identificado')).trim();
                             if (opNomeDetalhe.toUpperCase().includes('TOTAL') || opNomeDetalhe === 'Não Identificado') return;
 
@@ -9260,15 +9247,13 @@
                             let dtObj = parseDateRobust(dataRaw);
                             
                             if (dtObj && !isNaN(dtObj)) {
-                                // Removemos a trava do ano atual para aceitar dados vindos do Excel cru e não cuspir números inteiros na tela
                                 if (dtObj.getFullYear() > 2030 || dtObj.getFullYear() < 2020) dtObj = null;
                             }
                             let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
 
-                            // FILTRO DE MÊS (SE ATIVADO, PULA TUDO QUE NÃO BATER)
-                            if (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes !== mesRef) return;
+                            // FILTRO MULTIPLO DE MÊS
+                            if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
                             
-                            // Formatação final unificada e limpa para a tabela
                             let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
 
                             const op = opNomeDetalhe;
@@ -9288,7 +9273,6 @@
 
                             data.totalLinhas++;
 
-                            // ACÚMULO PARA EVOLUTIVO
                             if (typeof nota === 'number' && !isNaN(nota) && mesRef) {
                                 if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0 };
                                 data.mesesEvolutivo[mesRef].soma += nota;
@@ -9318,13 +9302,13 @@
                                 monitor: monitor,
                                 data: dataFmt,
                                 nota: nota,
+                                formName: formNameDisplay, // Guardando o nome do Formulário!
                                 perguntas: questionsArray
                             });
 
                             colunasComuns.forEach(col => {
                                 const valStr = (row[col] || '').toString().trim().toUpperCase();
                                 const isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
-                                // Peso > 0 (Comum): Se respondeu NÃO, é erro.
                                 if (isNao) {
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                     if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: new Set() };
@@ -9336,7 +9320,6 @@
                             colunasCriticas.forEach(col => {
                                 const valStr = (row[col] || '').toString().trim().toUpperCase();
                                 const isSim = valStr === 'SIM' || valStr === 'S';
-                                // Peso 100 (Crítica): Se respondeu SIM, é falha.
                                 if (isSim) { 
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                     if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
@@ -9348,7 +9331,7 @@
                     });
 
                     // CÁLCULO EVOLUTIVO FINAL
-                    if (data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                    if (data.mesesDisponiveis.length > 1 && (!filtrosMes || filtrosMes.length === 0 || filtrosMes[0] === "")) {
                         let mFirst = data.mesesDisponiveis[0];
                         let mLast = data.mesesDisponiveis[data.mesesDisponiveis.length - 1];
                         let opsComparacao = [];
@@ -9391,13 +9374,11 @@
 
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
-                        .sort((a,b) => b.count - a.count)
-                        .slice(0, 5); 
+                        .sort((a,b) => b.count - a.count).slice(0, 5); 
 
                     data.falhasComunsArray = Object.entries(data.falhasComuns)
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
-                        .sort((a,b) => b.count - a.count)
-                        .slice(0, 10); 
+                        .sort((a,b) => b.count - a.count).slice(0, 10); 
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => b.mediaNota - a.mediaNota);
