@@ -6997,11 +6997,12 @@
                 },
 
                 showOperatorsModal(falhaNome, type) {
+                    const decodedNome = decodeURIComponent(falhaNome);
                     const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data) return;
                     const falhaObj = type === 'critica' 
-                        ? data.falhasCriticasArray.find(f => f.nome === falhaNome)
-                        : data.falhasComunsArray.find(f => f.nome === falhaNome);
+                        ? data.falhasCriticasArray.find(f => f.nome === decodedNome)
+                        : data.falhasComunsArray.find(f => f.nome === decodedNome);
                     
                     if(!falhaObj) return;
                 
@@ -7338,11 +7339,14 @@
                     const pctErros = totalPerguntasGlobais > 0 ? ((somaTodosErros / totalPerguntasGlobais) * 100).toFixed(1) : 0;
                     const pctAcertos = totalPerguntasGlobais > 0 ? (100 - pctErros).toFixed(1) : 0;
 
+                    const pctErrosComuns = totalPerguntasGlobais > 0 ? ((totalFalhasNormais / totalPerguntasGlobais) * 100).toFixed(1) : 0;
+                    const pctErrosCriticos = totalPerguntasGlobais > 0 ? ((totalFalhasCriticas / totalPerguntasGlobais) * 100).toFixed(1) : 0;
+
                     let html = `
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative">
                             <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
                                 <!-- TÍTULO MUITO MAIOR -->
-                                <h2 contenteditable="true" class="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
+                                <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.infoOperacao = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
                                     <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
                                 </p>
@@ -7363,7 +7367,7 @@
                     `;
 
                     if (!data) {
-                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-900/10"><i class="fa-solid fa-magnifying-glass-chart text-6xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3><p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema irá ler automaticamente os pesos das perguntas, cruzar os acertos, mapear falhas e compilar os formulários.</p></div>`;
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10"><i class="fa-solid fa-magnifying-glass-chart text-6xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3><p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema irá ler automaticamente os pesos das perguntas, cruzar os acertos, mapear falhas e compilar os formulários.</p></div>`;
                         container.innerHTML = html;
                         return;
                     }
@@ -7371,7 +7375,7 @@
                     // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS (UX MODERNA)
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
                         html += `
-                        <div class="mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm ${this.analiseEditMode ? 'hidden' : ''}">
+                        <div class="mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
                                 <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
@@ -7437,15 +7441,16 @@
 
                             <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
                                 <div class="absolute right-0 top-0 w-16 h-16 bg-orange-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-layer-group text-orange-500 mr-1"></i> Desvios Normais (Total)</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-layer-group text-orange-500 mr-1"></i> Desvios Totais</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${totalFalhasNormais}</div>
-                                <div class="text-[10px] text-slate-400 font-medium leading-tight">Representa <strong class="text-orange-500">${pctErros}% de erro</strong> sobre os itens totais (Acerto Real: <strong class="text-green-500">${pctAcertos}%</strong>).</div>
+                                <div class="text-[10px] text-slate-400 font-medium leading-tight">Representa <strong class="text-orange-500">${pctErrosComuns}%</strong> dos erros na amostragem geral.</div>
                             </div>
 
                             <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
                                 <div class="absolute right-0 top-0 w-16 h-16 bg-red-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-circle-exclamation text-red-500 mr-1"></i> Críticas Totais (Zero)</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${totalFalhasCriticas}</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-circle-exclamation text-red-500 mr-1"></i> Falhas Críticas Totais</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${totalFalhasCriticas}</div>
+                                <div class="text-[10px] text-slate-400 font-medium leading-tight">Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.</div>
                             </div>
                         </div>
                     `;
@@ -7456,24 +7461,24 @@
                             ${btnHideCode}
                             
                             <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
-                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios (Oportunidades)</h3>
+                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios</h3>
                                 <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
                                     ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
                                         <div onclick="app.admin.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
-                                            <span class="font-bold text-slate-700 dark:text-slate-300 truncate pr-4 group-hover:text-orange-500 transition-colors" title="${f.nome}">${i+1}. ${f.nome}</span>
-                                            <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm">${f.count}x</span>
+                                            <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-orange-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                            <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm self-start mt-0.5">${f.count}x</span>
                                         </div>
                                     `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
                                 </div>
                             </div>
 
                             <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
-                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas (Zera Nota)</h3>
+                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas</h3>
                                 <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
                                     ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
                                         <div onclick="app.admin.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
-                                            <span class="font-bold text-slate-700 dark:text-slate-300 truncate pr-4 group-hover:text-red-500 transition-colors" title="${f.nome}">${i+1}. ${f.nome}</span>
-                                            <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm">${f.count}x</span>
+                                            <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-red-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                            <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm self-start mt-0.5">${f.count}x</span>
                                         </div>
                                     `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
                                 </div>
