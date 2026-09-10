@@ -7296,7 +7296,8 @@
 
                 renderView_AnaliseCSVDinamico(container) {
                     // Carregamento de Persistência Assíncrona do IndexedDB (Evita perder dados no F5)
-                    if (!app.analiseCSVDinamicoData && !this.isFetchingAnaliseData) {
+                    // ADICIONADA TRAVA DE SEGURANÇA (!this.hasTriedToFetchAnaliseData) PARA EVITAR LOOP INFINITO
+                    if (!app.analiseCSVDinamicoData && !this.isFetchingAnaliseData && !this.hasTriedToFetchAnaliseData) {
                         this.isFetchingAnaliseData = true;
                         container.innerHTML = `<div class="p-16 text-center text-slate-400 glass-card rounded-3xl mt-8 border-dashed border-2 border-slate-300">
                             <i class="fa-solid fa-spinner fa-spin text-5xl mb-4 text-blue-500"></i>
@@ -7305,6 +7306,7 @@
                         </div>`;
                         
                         localforage.getItem('soft_analise_data').then(savedData => {
+                            this.hasTriedToFetchAnaliseData = true; // Trava mágica: Só tenta buscar na memória 1x!
                             if (savedData) {
                                 app.analiseCSVDinamicoData = savedData;
                                 app.admin.gerarInteligenciaCSV(); 
@@ -7312,12 +7314,13 @@
                             this.isFetchingAnaliseData = false;
                             app.ui.renderTab('analise_csv_dinamico', true);
                         }).catch(e => {
+                            this.hasTriedToFetchAnaliseData = true; // Trava acionada também em caso de erro
                             this.isFetchingAnaliseData = false;
                             app.ui.renderTab('analise_csv_dinamico', true);
                         });
                         return; // Pausa a renderização até os dados voltarem do HD
                     }
-
+        
                     let mainData = app.analiseCSVDinamicoData || null;
                     let data = mainData ? mainData.consolidado : null;
                     let btnHideCode = this.analiseEditMode ? `<button onclick="this.closest('.hideable-box').classList.add('hidden')" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 bg-white dark:bg-slate-800 p-1.5 rounded-lg z-50 transition-colors shadow-sm" title="Ocultar na Apresentação"><i class="fa-solid fa-eye-slash"></i></button>` : '';
