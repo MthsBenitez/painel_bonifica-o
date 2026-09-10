@@ -7450,6 +7450,37 @@
                         </div>
                     `;
 
+                    // --- RANKING DE FALHAS E DESVIOS ---
+                    html += `
+                        <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
+                            ${btnHideCode}
+                            
+                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios (Oportunidades)</h3>
+                                <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
+                                    ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
+                                        <div onclick="app.admin.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
+                                            <span class="font-bold text-slate-700 dark:text-slate-300 truncate pr-4 group-hover:text-orange-500 transition-colors" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                            <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm">${f.count}x</span>
+                                        </div>
+                                    `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
+                                </div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas (Zera Nota)</h3>
+                                <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
+                                    ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
+                                        <div onclick="app.admin.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
+                                            <span class="font-bold text-slate-700 dark:text-slate-300 truncate pr-4 group-hover:text-red-500 transition-colors" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                            <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm">${f.count}x</span>
+                                        </div>
+                                    `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
                     // --- EVOLUTIVO VISUAL REORDENADO AQUI ---
                     const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && (!app.ui.analiseFiltroMes || app.ui.analiseFiltroMes.length === 0 || app.ui.analiseFiltroMes[0] === "");
                     if (showEvolutivo) {
