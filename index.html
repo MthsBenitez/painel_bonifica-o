@@ -7013,7 +7013,92 @@
                     if(!data || !data.operadores[nome]) return;
                 
                     const opData = data.operadores[nome];
-                    let htmlList = `<div class="space-y-4 mt-6 max-h-[65vh] overflow-y-auto custom-scrollbar pr-2 pb-4">`;
+                    
+                    // --- MÁGICA: Extraindo Histórico Mensal do Operador para o Gráfico ---
+                    let chartLabels = [];
+                    let chartData = [];
+                    if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado.operadoresEvolutivo && app.analiseCSVDinamicoData.consolidado.operadoresEvolutivo[nome]) {
+                        const histOp = app.analiseCSVDinamicoData.consolidado.operadoresEvolutivo[nome];
+                        const mesesOrdem = app.analiseCSVDinamicoData.consolidado.mesesDisponiveis || [];
+                        mesesOrdem.forEach(m => {
+                            if(histOp[m] && histOp[m].count > 0) {
+                                chartLabels.push(app.ui.formatMonthLabel(m).substring(0,3)); // "Jan", "Fev"
+                                chartData.push(parseFloat((histOp[m].soma / histOp[m].count).toFixed(2)));
+                            }
+                        });
+                    }
+                    
+                    // --- MÁGICA: Resumo dos maiores ofensores (Críticos e Comuns) do Operador ---
+                    let errosOpCount = {};
+                    let criticosOpCount = {};
+                    opData.avaliacoes.forEach(aval => {
+                        aval.perguntas.forEach(p => {
+                            const isSim = p.a.toUpperCase().includes('SIM') || p.a.toUpperCase() === 'S';
+                            const isNao = p.a.toUpperCase().includes('NÃO') || p.a.toUpperCase() === 'NAO' || p.a.toUpperCase() === 'N';
+                            
+                            // Peso zero (Crítico) -> erro é o SIM
+                            if (p.p === 0 && isSim) {
+                                criticosOpCount[p.q] = (criticosOpCount[p.q] || 0) + 1;
+                            } 
+                            // Peso > zero (Normal) -> erro é o NÃO
+                            else if (p.p > 0 && isNao) {
+                                errosOpCount[p.q] = (errosOpCount[p.q] || 0) + 1;
+                            }
+                        });
+                    });
+                    
+                    const topErros = Object.entries(errosOpCount).sort((a,b)=>b[1]-a[1]).slice(0,3);
+                    const topCriticos = Object.entries(criticosOpCount).sort((a,b)=>b[1]-a[1]).slice(0,2);
+                    
+                    let miniResumoHtml = '';
+                    if (chartData.length > 1 || topErros.length > 0 || topCriticos.length > 0) {
+                        miniResumoHtml = `
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 border-b border-slate-200 dark:border-slate-700 pb-6">
+                                ${chartData.length > 1 ? `
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                                        <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Curva de Aprendizagem</h4>
+                                        <div class="w-full h-32 relative"><canvas id="modal-chart-${nome.replace(/\s+/g, '')}"></canvas></div>
+                                    </div>
+                                ` : `
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center shadow-inner">
+                                        <i class="fa-solid fa-chart-line text-slate-300 text-3xl mb-2"></i>
+                                        <div class="text-xs text-slate-400 font-bold">Gráfico Indisponível</div>
+                                        <div class="text-[10px] text-slate-500">Avaliações insuficientes.</div>
+                                    </div>
+                                `}
+                                <div class="space-y-3">
+                                    <div class="bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-200 dark:border-red-900/30">
+                                        <h4 class="text-[10px] uppercase font-bold text-red-600 mb-1.5"><i class="fa-solid fa-circle-exclamation"></i> Recorrência Crítica</h4>
+                                        ${topCriticos.length > 0 
+                                            ? topCriticos.map(c => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-red-500 bg-red-100 px-1.5 rounded mr-1">${c[1]}x</span> ${c[0]}</div>`).join('')
+                                            : '<div class="text-[10px] text-slate-500 italic">Nenhuma falha crítica recorrente.</div>'}
+                                    </div>
+                                    <div class="bg-orange-50 dark:bg-orange-900/10 p-3 rounded-xl border border-orange-200 dark:border-orange-900/30">
+                                        <h4 class="text-[10px] uppercase font-bold text-orange-600 mb-1.5"><i class="fa-solid fa-layer-group"></i> Maior Oportunidade</h4>
+                                        ${topErros.length > 0 
+                                            ? topErros.map(e => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-orange-500 bg-orange-100 px-1.5 rounded mr-1">${e[1]}x</span> ${e[0]}</div>`).join('')
+                                            : '<div class="text-[10px] text-slate-500 italic">Sem desvios padrões registrados.</div>'}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // Agenda o desenho do gráfico para logo após a injeção do HTML no Modal
+                    if (chartData.length > 1) {
+                        setTimeout(() => {
+                            const ctxModal = document.getElementById(`modal-chart-${nome.replace(/\s+/g, '')}`);
+                            if (ctxModal) {
+                                new Chart(ctxModal, {
+                                    type: 'line',
+                                    data: { labels: chartLabels, datasets: [{ data: chartData, borderColor: '#3b82f6', borderWidth: 3, pointBackgroundColor: '#3b82f6', tension: 0.3 }] },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: Math.max(0, Math.min(...chartData)-10), max: 100, ticks: {font: {size: 9}} }, x: { ticks: {font: {size: 9}} } } }
+                                });
+                            }
+                        }, 250);
+                    }
+
+                    let htmlList = `${miniResumoHtml}<div class="space-y-4 max-h-[45vh] overflow-y-auto custom-scrollbar pr-2 pb-4">`;
                     
                     opData.avaliacoes.forEach((aval, idx) => {
                         
@@ -7172,6 +7257,23 @@
 
                 toggleEditModeAnalise() {
                     this.analiseEditMode = !this.analiseEditMode;
+                    const header = document.querySelector('header');
+                    
+                    if (this.analiseEditMode) {
+                        // Tenta colocar o navegador em tela cheia
+                        if (document.documentElement.requestFullscreen) {
+                            document.documentElement.requestFullscreen().catch(e => console.log("Bloqueado pelo navegador"));
+                        }
+                        // Esconde o cabeçalho e abas
+                        if(header) header.style.display = 'none';
+                    } else {
+                        // Sai da tela cheia
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen().catch(e => console.log(e));
+                        }
+                        // Devolve o cabeçalho
+                        if(header) header.style.display = '';
+                    }
                     this.renderTab('analise_csv_dinamico', true);
                 },
 
@@ -7283,34 +7385,182 @@
                         `;
                     }
 
-                    // --- DASHBOARD CARDS MESTRES ---
+                    <!-- DASHBOARD CARDS MESTRES (Cores Sóbrias) -->
                     html += `
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
                             ${btnHideCode}
-                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-blue-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Analisado</div>
-                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400">${data.totalLinhas} <span class="text-sm font-medium text-slate-400 ml-1">Ligs.</span></div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-headphones text-blue-500 mr-1"></i> Total Analisado</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.totalLinhas} <span class="text-sm font-medium text-slate-400 ml-1">Ligs.</span></div>
                             </div>
-                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-emerald-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação.">Conformidade (Nota Máx)</div>
-                                <div class="text-3xl font-black text-emerald-600 dark:text-emerald-400">${data.conformidadePct}%</div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação."><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Conformidade Abs.</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.conformidadePct}%</div>
                             </div>
-                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-green-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Média da Operação</div>
-                                <div class="text-3xl font-black text-green-600 dark:text-green-400">${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}</div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-pie text-green-500 mr-1"></i> Média da Operação</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}</div>
                             </div>
-                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-orange-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Totais</div>
-                                <div class="text-3xl font-black text-orange-600 dark:text-orange-400">${data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0)}</div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-layer-group text-orange-500 mr-1"></i> Falhas Totais</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0)}</div>
                             </div>
-                            <div class="glass-card p-5 rounded-2xl border-l-4 border-l-red-500 flex flex-col justify-center transform hover:-translate-y-1 transition-transform">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Falhas Críticas Totais</div>
-                                <div class="text-3xl font-black text-red-600 dark:text-red-400">${data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0)}</div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-circle-exclamation text-red-500 mr-1"></i> Críticas Totais</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0)}</div>
                             </div>
                         </div>
 
-                        <!-- MÉDIAS POR MONITOR -->
-                        <div class="hideable-box relative glass-card p-6 rounded-3xl mb-8 border border-slate-200 dark:border-slate-700 overflow-x-auto shadow-sm">
+                        <!-- LISTAS DE OFENSORES E FALHAS CRÍTICAS -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                            
+                            <!-- Falhas Críticas -->
+                            <div class="hideable-box relative bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border-t-4 border-t-red-500 shadow-md overflow-hidden">
+                                ${btnHideCode}
+                                <div class="absolute -right-4 -top-4 text-8xl text-red-500/5 pointer-events-none"><i class="fa-solid fa-circle-exclamation"></i></div>
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-circle-exclamation text-red-500"></i> Principais Falhas Críticas (Zera Nota)</h3>
+                                <div class="space-y-3 relative z-10">
+                                    ${data.falhasCriticasArray.map((f, idx) => {
+                                        const pctCritica = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
+                                        return `
+                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'critica')" class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center hover:border-red-400 cursor-pointer transition-colors group">
+                                            <div class="flex items-start gap-3">
+                                                <i class="fa-solid fa-circle-exclamation text-red-500 mt-1"></i>
+                                                <div>
+                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
+                                                    <div class="text-[10px] text-red-500 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-right shrink-0 ml-4 flex flex-col items-end">
+                                                <span class="bg-red-500 text-white font-black px-3 py-1 rounded-lg text-sm shadow-sm">${f.count}x</span>
+                                                <span class="text-[10px] font-bold text-red-500 mt-1">${pctCritica}% ref.</span>
+                                            </div>
+                                        </div>
+                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha crítica cometida com os filtros atuais.</div>'}
+                                </div>
+                            </div>
+
+                            <!-- Falhas Normais / Comuns -->
+                            <div class="hideable-box relative bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-md overflow-hidden">
+                                ${btnHideCode}
+                                <div class="absolute -right-4 -top-4 text-8xl text-orange-500/5 pointer-events-none"><i class="fa-solid fa-chart-bar"></i></div>
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-layer-group text-orange-500"></i> Principais Desvios Normais</h3>
+                                <div class="space-y-3 relative z-10 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
+                                    ${data.falhasComunsArray.map((f, idx) => {
+                                        const pctComum = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
+                                        return `
+                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'comum')" class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center hover:border-orange-400 cursor-pointer transition-colors group">
+                                            <div class="flex items-start gap-3 pr-2">
+                                                <div class="font-black text-orange-400 mt-0.5">${idx+1}.</div>
+                                                <div>
+                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-[11px] leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
+                                                    <div class="text-[9px] text-orange-500 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-right shrink-0 flex flex-col items-end">
+                                                <span class="bg-orange-500 text-white font-black px-2.5 py-1 rounded-lg text-xs shadow-sm">${f.count}x</span>
+                                                <span class="text-[10px] font-bold text-orange-500 mt-1">${pctComum}% ref.</span>
+                                            </div>
+                                        </div>
+                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha computada com os filtros atuais.</div>'}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // --- EVOLUTIVO VISUAL REPOSICIONADO ---
+                    if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                        html += `
+                        <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
+                            ${btnHideCode}
+                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-6 flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal da Operação</h3>
+                            
+                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
+                                <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
+                                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Média Operacional no Período</h4>
+                                    <div class="flex-1 relative w-full h-full"><canvas id="chart-analise-evolutivo"></canvas></div>
+                                </div>
+                                
+                                <div class="space-y-4">
+                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-medal text-green-500"></i> Top 5: Evolução Positiva</h4>
+                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
+                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-400 transition-colors group shadow-sm">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-blue-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-3">
+                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'} text-sm">${op.fim.toFixed(1)}</span>
+                                                    </div>
+                                                </div>
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes.</div>'}
+                                        </div>
+                                    </div>
+                                
+                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Alerta: Queda de Qualidade</h4>
+                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
+                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-red-400 transition-colors group shadow-sm">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-red-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-3">
+                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                                                        <span class="font-black text-red-500 text-sm">${op.fim.toFixed(1)}</span>
+                                                        <span class="text-[9px] text-red-600 bg-red-50 border border-red-100 px-1 rounded font-bold ml-1">${op.diff.toFixed(1)}</span>
+                                                    </div>
+                                                </div>
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada.</div>'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    }
+                    // Atraso seguro para o Chart.js desenhar a curva evolutiva perfeitamente
+                    setTimeout(() => {
+                        if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                            if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
+                            const ctxEvol = document.getElementById('chart-analise-evolutivo');
+                            if (ctxEvol) {
+                                window.myChartAnaliseEvol = new Chart(ctxEvol, {
+                                    type: 'line',
+                                    data: { 
+                                        labels: data.evolutivoChartLabels, 
+                                        datasets: [{ 
+                                            label: 'Média Consolidada', 
+                                            data: data.evolutivoChartData, 
+                                            borderColor: '#6366f1', 
+                                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                                            borderWidth: 4,
+                                            pointBackgroundColor: '#ffffff',
+                                            pointBorderColor: '#6366f1',
+                                            pointRadius: 6,
+                                            pointHoverRadius: 8,
+                                            fill: true,
+                                            tension: 0.4
+                                        }] 
+                                    },
+                                    options: { 
+                                        responsive: true, maintainAspectRatio: false, 
+                                        scales: { 
+                                            y: { beginAtZero: false, min: Math.max(0, Math.min(...data.evolutivoChartData) - 10), max: 100, ticks: {color: '#64748b', font:{weight:'bold'}}, grid: {color: '#e2e8f0'} }, 
+                                            x: { ticks: {color: '#64748b', font:{weight:'bold'}}, grid: {display: false} } 
+                                        }, 
+                                        plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } } 
+                                    }
+                                });
+                            }
+                        }
+                    }, 400);
+
+                    // --- MÉDIAS POR MONITOR ---
+                    html += `
+                        <div class="hideable-box relative bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl mb-8 border border-slate-200 dark:border-slate-700 overflow-x-auto shadow-md">
                             ${btnHideCode}
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-blue-500"></i> Calibragem (Média Geral por Monitor)</h3>
                             <p class="text-xs text-slate-500 mb-4">Dica: Clique em um monitor abaixo para filtrar os erros e as notas avaliadas apenas por ele.</p>
@@ -9133,8 +9383,10 @@
                             });
 
                             colunasComuns.forEach(col => {
-                                const val = (row[col] || '').toString().trim().toUpperCase();
-                                if (val === 'NÃO' || val === 'NAO') {
+                                const valStr = (row[col] || '').toString().trim().toUpperCase();
+                                const isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
+                                // Peso > 0 (Comum): Se respondeu NÃO, é erro.
+                                if (isNao) {
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                     if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: new Set() };
                                     data.falhasComuns[cleanGap].count += 1;
@@ -9143,8 +9395,10 @@
                             });
 
                             colunasCriticas.forEach(col => {
-                                const val = (row[col] || '').toString().trim().toUpperCase();
-                                if (val === 'SIM') { 
+                                const valStr = (row[col] || '').toString().trim().toUpperCase();
+                                const isSim = valStr === 'SIM' || valStr === 'S';
+                                // Peso 0 (Crítica): Se respondeu SIM, é erro grave.
+                                if (isSim) { 
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                     if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
                                     data.falhasCriticas[cleanGap].count += 1;
