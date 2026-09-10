@@ -9636,12 +9636,13 @@
                 },
     
                 resetTermos(mat) {
+                    app.ui.showConfirm("Atenção", "Isso exigirá que o colaborador aceite novamente os Termos de Uso (LGPD) no próximo login. Continuar?", `app.admin.execResetTermos('${mat}')`, true);
+                },
 
-                  execResetTermos(mat) {
+                execResetTermos(mat) {
                     const idx = app.users.findIndex(u => u.matricula === mat);
                     if(idx > -1) { app.users[idx].aceiteTermos = null; app.storage.saveUsers(); app.ui.showAlert("Feito", "Termos resetados.", "success"); }
                 },
-
                 forcePasswordReset(mat) {
                     app.ui.showConfirm("Atenção", "Isso forçará a senha deste colaborador a voltar para '12345' (Padrão). Continuar?", `app.admin.execForcePwd('${mat}')`, true);
                 },
