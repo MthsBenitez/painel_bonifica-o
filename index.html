@@ -7036,12 +7036,12 @@
                             const isSim = p.a.toUpperCase().includes('SIM') || p.a.toUpperCase() === 'S';
                             const isNao = p.a.toUpperCase().includes('NÃO') || p.a.toUpperCase() === 'NAO' || p.a.toUpperCase() === 'N';
                             
-                            // Peso zero (Crítico) -> erro é o NÃO (Padrão unificado)
-                            if (p.p === 0 && isNao) {
+                            // Peso 100 (Crítico) -> erro é o SIM
+                            if (p.p === 100 && isSim) { 
                                 criticosOpCount[p.q] = (criticosOpCount[p.q] || 0) + 1;
                             } 
-                            // Peso > zero (Normal) -> erro é o NÃO
-                            else if (p.p > 0 && isNao) {
+                            // Peso Normal (Diferente de 100) -> erro é o NÃO
+                            else if (p.p !== 100 && isNao) { 
                                 errosOpCount[p.q] = (errosOpCount[p.q] || 0) + 1;
                             }
                         });
@@ -7110,9 +7110,15 @@
                             // Neutro por padrão (Para evitar falsos positivos com "Não Se Aplica")
                             let respHtml = `<span class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 font-bold px-2 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 text-[10px]">${p.a}</span>`;
                             
-                            // Agora a lógica visual é idêntica para críticas e normais (SIM = Verde, NÃO = Vermelho)
-                            if (isSim) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
-                            else if (isNao) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
+                            if (isCritica) {
+                                // Crítica: SIM é falha (vermelho), NÃO é acerto (verde)
+                                if (isSim) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
+                                else if (isNao) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
+                            } else {
+                                // Normal: SIM é acerto (verde), NÃO é falha (vermelho)
+                                if (isSim) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
+                                else if (isNao) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
+                            }
                             
                             return `
                                 <tr class="hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors">
@@ -7123,8 +7129,8 @@
                             `;
                         };
                 
-                        const criticas = aval.perguntas.filter(p => p.p === 0);
-                        const normais = aval.perguntas.filter(p => p.p > 0);
+                        const criticas = aval.perguntas.filter(p => p.p === 100);
+                        const normais = aval.perguntas.filter(p => p.p !== 100);
                         let tabelasHtml = '';
                 
                         if(criticas.length > 0) {
@@ -7996,15 +8002,15 @@
                                         let falhaCritica = false;
 
                                         // Regra de Negócio Solicitada
-                                        if (peso === 0) {
-                                            // Se o peso é 0 e a pessoa respondeu SIM = Falha Crítica
-                                            if (resposta === 'sim') {
+                                        if (peso === 100) {
+                                            // Se o peso é 100 e a pessoa respondeu SIM = Falha Crítica
+                                            if (resposta === 'sim' || resposta === 's') {
                                                 teveErro = true;
                                                 falhaCritica = true;
                                             }
                                         } else {
-                                            // Se o peso é maior que zero e respondeu NÃO = Erro Padrão
-                                            if (resposta === 'não' || resposta === 'nao') {
+                                            // Se o peso é normal (diferente de 100) e respondeu NÃO = Erro Padrão
+                                            if (resposta === 'não' || resposta === 'nao' || resposta === 'n') {
                                                 teveErro = true;
                                             }
                                         }
@@ -9015,12 +9021,14 @@
                                 let classificacao = "Indefinido";
                                 let classColor = "bg-slate-100 text-slate-700 border-slate-300";
                                 let icone = "fa-circle-question";
+                                
+                                let isCritico = pesoNum === 100;
 
-                                if (pesoNum === 0) {
+                                if (isCritico) {
                                     classificacao = "FALHA CRÍTICA (Zera a Nota)";
                                     classColor = "bg-red-50 text-red-700 border-red-300";
                                     icone = "fa-circle-exclamation";
-                                } else if (pesoNum > 0) {
+                                } else if (pesoNum !== null) {
                                     classificacao = "DESVIO NORMAL (Falha Comum)";
                                     classColor = "bg-orange-50 text-orange-700 border-orange-300";
                                     icone = "fa-layer-group";
@@ -9031,10 +9039,19 @@
                                 // Testando como o sistema vê a resposta da Linha 1
                                 let valorLinha1 = rows[0][col];
                                 let valStr = (valorLinha1 || '').toString().trim().toUpperCase();
-                                let isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
-                                let interpretacaoResp = isNao 
-                                    ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
-                                    : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Sim ou N/A)</span>";
+                                
+                                let interpretacaoResp = "";
+                                if (isCritico) {
+                                    let isSim = valStr === 'SIM' || valStr === 'S';
+                                    interpretacaoResp = isSim 
+                                        ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
+                                        : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Não falhou)</span>";
+                                } else {
+                                    let isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
+                                    interpretacaoResp = isNao 
+                                        ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
+                                        : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Sim ou N/A)</span>";
+                                }
 
                                 htmlDebug += `
                                 <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm transition-hover hover:border-purple-300">
@@ -9227,11 +9244,11 @@
                             
                         const colunasCriticas = colunasAvaliacao.filter(k => {
                             let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                            return match && parseFloat(match[1].replace(',', '.')) === 0;
+                            return match && parseFloat(match[1].replace(',', '.')) === 100;
                         });
                         const colunasComuns = colunasAvaliacao.filter(k => {
                             let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                            return match && parseFloat(match[1].replace(',', '.')) > 0;
+                            return match && parseFloat(match[1].replace(',', '.')) !== 100;
                         });
 
                         rows.forEach(row => {
@@ -9318,9 +9335,9 @@
 
                             colunasCriticas.forEach(col => {
                                 const valStr = (row[col] || '').toString().trim().toUpperCase();
-                                const isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
-                                // Peso 0 (Crítica): Agora segue o padrão, respondeu NÃO é falha.
-                                if (isNao) { 
+                                const isSim = valStr === 'SIM' || valStr === 'S';
+                                // Peso 100 (Crítica): Se respondeu SIM, é falha.
+                                if (isSim) { 
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
                                     if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
                                     data.falhasCriticas[cleanGap].count += 1;
