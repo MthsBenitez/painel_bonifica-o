@@ -7201,6 +7201,11 @@
                                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                 </label>
+                                <!-- NOVO BOTÃO DE DIAGNÓSTICO -->
+                                <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap" title="Use este botão para ver como o arquivo envia a data por baixo dos panos">
+                                    <i class="fa-solid fa-bug text-lg text-orange-500"></i> Diagnóstico (Datas)
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                </label>
                             </div>
                         </div>
                     `;
@@ -7787,10 +7792,14 @@
                             let datasArray = jsonData.map(r => r["DATA GRAVACAO MONITORADA"] || r["DATA"]).filter(Boolean);
                             let periodo = "Indefinido";
                             if (datasArray.length > 0) {
-                                // Ajuste caso a data seja um número de série do Excel
+                                // Ajuste robusto para blindar datas bizarras
                                 const formataData = (d) => {
-                                    if(typeof d === 'number') return new Date((d - 25569) * 86400 * 1000).toLocaleDateString('pt-BR');
-                                    return String(d).split(' ')[0]; // Retira horas se houver
+                                    if (!d) return "Desconhecida";
+                                    if (typeof d === 'number') {
+                                        if (d > 1000000000) return new Date(d > 1000000000000 ? d : d * 1000).toLocaleDateString('pt-BR'); // Timestamp Milissegundos
+                                        if (d > 20000 && d < 100000) return new Date((d - 25569) * 86400 * 1000).toLocaleDateString('pt-BR'); // Serial Excel
+                                    }
+                                    return String(d).split(' ')[0].split('T')[0]; // Remove horas do texto
                                 };
                                 let dataInicio = formataData(datasArray[datasArray.length - 1]);
                                 let dataFim = formataData(datasArray[0]);
@@ -8821,6 +8830,76 @@
                     reader.readAsBinaryString(file);
                 },
 
+                // NOVA FUNÇÃO: RAIO-X DE DATAS DA PLANILHA
+                debugArquivoCSV(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    app.ui.showAlert("🔍 Lendo Raio-X...", "Abrindo a planilha para diagnosticar o formato da coluna de DATA...", "info");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = e.target.result;
+                            const workbook = XLSX.read(data, { type: 'binary' });
+                            const firstSheet = workbook.SheetNames[0];
+                            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+
+                            if (rows.length === 0) return app.ui.showAlert("Erro", "Planilha vazia.", "error");
+
+                            const chaves = Object.keys(rows[0]);
+                            const colData = chaves.find(k => k.trim().toUpperCase() === 'DATA') || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
+
+                            if(!colData) return app.ui.showAlert("Erro", "Nenhuma coluna com a palavra DATA encontrada no cabeçalho.", "error");
+
+                            let htmlDebug = `<div class="text-left text-sm space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                                <p class="font-bold text-slate-700">Achei a coluna: <span class="text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">${colData}</span></p>
+                                <p class="text-slate-500 text-xs leading-relaxed">Veja os 3 primeiros registros exatamente como o sistema recebe do arquivo (em vermelho) e como ele traduz agora com a nossa correção de IA (em verde):</p>
+                                <div class="space-y-3">`;
+
+                            for(let i=0; i < Math.min(3, rows.length); i++) {
+                                let valorBruto = rows[i][colData];
+                                let tipoBase = typeof valorBruto;
+                                let interprete = "Desconhecido";
+
+                                // Regra de tradução simulada para mostrar ao usuário
+                                if (tipoBase === 'number') {
+                                    if (valorBruto > 1000000000) interprete = new Date(valorBruto > 1000000000000 ? valorBruto : valorBruto * 1000).toLocaleString('pt-BR');
+                                    else if (valorBruto > 20000 && valorBruto < 100000) interprete = new Date((valorBruto - 25569) * 86400 * 1000).toLocaleString('pt-BR');
+                                    else interprete = "Número inválido/fora do padrão de data";
+                                } else if (tipoBase === 'string') {
+                                    interprete = "Lido como Texto/Hora: " + String(valorBruto).split(' ')[0].split('T')[0];
+                                }
+
+                                htmlDebug += `
+                                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div class="font-black text-red-500 text-[10px] uppercase tracking-widest mb-1"><i class="fa-solid fa-file-excel"></i> Valor Bruto da Planilha:</div>
+                                    <div class="text-lg font-mono mb-3 text-slate-800">${valorBruto || 'Vazio'} <span class="text-[10px] text-slate-400 font-sans font-bold bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">TIPO LIDO: ${tipoBase}</span></div>
+                                    <div class="font-black text-green-600 text-[10px] uppercase tracking-widest mb-1"><i class="fa-solid fa-check"></i> Tradução do Sistema:</div>
+                                    <div class="text-base font-mono text-slate-800 bg-green-50 p-2 rounded border border-green-200">${interprete}</div>
+                                </div>`;
+                            }
+
+                            htmlDebug += `</div></div>`;
+
+                            // Alterando a largura do modal temporariamente
+                            const modalBox = document.querySelector('#global-modal > div');
+                            modalBox.classList.remove('max-w-lg');
+                            modalBox.classList.add('max-w-3xl');
+
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-orange-500"></i> Raio-X de Datas`;
+                            document.getElementById('modal-content').innerHTML = htmlDebug;
+                            document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white rounded-lg font-bold text-sm shadow-md transition-all hover:-translate-y-0.5">Entendi e Fechar</button>`;
+                            document.getElementById('global-modal').classList.remove('hidden');
+
+                        } catch (error) {
+                            console.error(error);
+                            app.ui.showAlert("Erro", "Falha ao ler o arquivo no modo diagnóstico.", "error");
+                        }
+                    };
+                    reader.readAsBinaryString(file);
+                },
+
                 confirmarNomeCSV() {
                     const nomeForm = document.getElementById('csv-form-name').value.trim();
                     if(!nomeForm) return app.ui.showAlert("Aviso Obrigatório", "Você precisa definir um nome para que as perguntas não se misturem no consolidador global.", "error");
@@ -8863,13 +8942,21 @@
                     // HELPER ROBUSTO DE DATA (Corrige a inversão de dia/mês do Excel e strings numéricas cruas)
                     const parseDateRobust = (dataRaw) => {
                         if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
+
+                        // 1. Defesa contra Timestamps Unix (Números na casa dos bilhões que vinham do seu arquivo)
+                        if (typeof dataRaw === 'number' && dataRaw > 1000000000) {
+                            return new Date(dataRaw > 1000000000000 ? dataRaw : dataRaw * 1000);
+                        }
+                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 1000000000) {
+                            return new Date(Number(dataRaw) > 1000000000000 ? Number(dataRaw) : Number(dataRaw) * 1000);
+                        }
                         
                         // Proteção extra: se a data vier como string "45321" diretamente do sheet_to_json
-                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 20000) {
+                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 20000 && Number(dataRaw) < 100000) {
                             dataRaw = Number(dataRaw);
                         }
 
-                        if (typeof dataRaw === 'number' && dataRaw > 20000) {
+                        if (typeof dataRaw === 'number' && dataRaw > 20000 && dataRaw < 100000) {
                             const dt = new Date((dataRaw - 25569) * 86400 * 1000);
                             dt.setUTCHours(12);
                             return dt;
