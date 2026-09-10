@@ -8947,29 +8947,14 @@
                     const parseDateRobust = (dataRaw) => {
                         if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
                         
-                        // Proteção extra: se a data vier como string "45321" diretamente do sheet_to_json
-                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 20000) {
-                            dataRaw = Number(dataRaw);
-                        }
-
-                        if (typeof dataRaw === 'number' && dataRaw > 20000) {
-                            const diasPuros = Math.floor(dataRaw); // MÁGICA: Corta fora as horas quebradas (.999)
+                        // Se a data for um número serial do Excel (ex: 45575.45) ou string numérica
+                        if (!isNaN(dataRaw) && Number(dataRaw) > 20000) {
+                            const diasPuros = Math.floor(Number(dataRaw)); // MÁGICA: Tesoura que corta fora as horas quebradas do fuso (.45)
                             const dt = new Date((diasPuros - 25569) * 86400 * 1000);
-                            dt.setUTCHours(12);
+                            dt.setUTCHours(12, 0, 0, 0); // Força sempre o relógio para o Meio-Dia cravado
                             return dt;
                         }
-                        
-                        // Proteção extra: se a data vier como string "45321" diretamente do sheet_to_json
-                        if (typeof dataRaw === 'string' && !isNaN(dataRaw) && Number(dataRaw) > 20000 && Number(dataRaw) < 100000) {
-                            dataRaw = Number(dataRaw);
-                        }
 
-                        if (typeof dataRaw === 'number' && dataRaw > 20000 && dataRaw < 100000) {
-                            const diasPuros = Math.floor(dataRaw); // MÁGICA: Corta fora as horas/decimais
-                            const dt = new Date((diasPuros - 25569) * 86400 * 1000);
-                            dt.setUTCHours(12, 0, 0, 0); // Força meio-dia UTC cravado para blindar fuso horário
-                            return dt;
-                        }
                         if (typeof dataRaw === 'string') {
                             let cleanStr = dataRaw.split(' ')[0].split('T')[0].trim();
                             
@@ -9006,8 +8991,8 @@
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
                             
-                            // Busca INTELIGENTE: Tenta achar "DATA" exato, se não, pega a primeira que contenha "DATA"
-                            let colDataScan = keys.find(k => k.trim().toUpperCase() === 'DATA') || keys.find(k => k.trim().toUpperCase().includes('DATA'));
+                            // Busca INTELIGENTE e PRIORIZADA de Data (Pré-Scan)
+                            let colDataScan = keys.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || keys.find(k => k.trim().toUpperCase().includes('DATA'));
                             
                             let dataRaw = colDataScan ? row[colDataScan] : undefined;
                             
@@ -9053,8 +9038,8 @@
                         const colOperacao = chaves.find(k => ['OPERACAO', 'OPERAÇÃO', 'CAMPANHA', 'ILHA', 'SETOR'].includes(k.trim().toUpperCase())) 
                             || chaves.find(k => k.trim().toUpperCase().includes('OPERA'));
                             
-                        // Busca INTELIGENTE: Tenta achar "DATA" exato, se não, pega a primeira que contenha "DATA"
-                        const colDataAudit = chaves.find(k => k.trim().toUpperCase() === 'DATA') || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
+                        // Busca INTELIGENTE e PRIORIZADA de Data (Motor Oficial)
+                        const colDataAudit = chaves.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
                             
                         const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) 
                             || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) 
