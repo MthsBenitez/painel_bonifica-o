@@ -7777,8 +7777,8 @@
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array' });
-                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
                             
                             // Aqui extraímos todos os dados da aba 1
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
@@ -7993,8 +7993,8 @@
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array' });
-                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
 
                             let count = 0;
@@ -8103,8 +8103,8 @@
                         reader.onload = (e) => {
                             try {
                                 const data = new Uint8Array(e.target.result);
-                                const workbook = XLSX.read(data, { type: 'array' });
-                                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                                const workbook = XLSX.read(data, { type: 'array', raw: true });
+                                const firstSheet = workbook.SheetNames[0];
                                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
                                 
                                 jsonData.forEach(row => {
@@ -8428,8 +8428,8 @@
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array' });
-                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "O arquivo da Amil está vazio.", "error");
@@ -8531,9 +8531,9 @@
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
-                            const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array' });
-                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            cconst data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
@@ -8797,7 +8797,7 @@
                     reader.onload = (e) => {
                         try {
                             const data = e.target.result;
-                            const workbook = XLSX.read(data, { type: 'binary' });
+                            const workbook = XLSX.read(data, { type: 'binary', raw: true });
                             const firstSheet = workbook.SheetNames[0];
                             const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
 
@@ -10318,8 +10318,8 @@
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array' });
-                            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
                             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
