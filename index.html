@@ -9633,12 +9633,9 @@
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => parseFloat(b.mediaNota) - parseFloat(a.mediaNota));
 
                     app.analiseCSVDinamicoData.consolidado = data;
-                  }
-              },
+                },
     
-              resetTermos(mat) {
-                  app.ui.showConfirm("Aviso", "Isso fará o usuário ter que ler e assinar os Termos da LGPD novamente no próximo login. Continuar?", `app.admin.execResetTermos('${mat}')`);
-              },
+                resetTermos(mat) {
 
                   execResetTermos(mat) {
                     const idx = app.users.findIndex(u => u.matricula === mat);
