@@ -9604,7 +9604,7 @@
                         data.evolutivoChartData = [];
                     }
 
-                    // Médias globais consolidadas
+                // Médias globais consolidadas
                     let totalNotas100 = 0;
                     let somaMediaTotal = 0; let ctdTotal = 0;
                     Object.values(data.operadores).forEach(op => {
@@ -9613,10 +9613,10 @@
                         ctdTotal += op.notas.length;
                         totalNotas100 += op.notas.filter(n => n >= 100).length;
                     });
-                    
+
                     data.mediaTotal = ctdTotal > 0 ? (somaMediaTotal / ctdTotal).toFixed(2) : 0;
                     data.conformidadePct = data.totalLinhas > 0 ? ((totalNotas100 / data.totalLinhas) * 100).toFixed(1) : 0;
-                    
+
                     Object.values(data.monitorProdutividade).forEach(m => {
                         m.mediaNota = m.qtd > 0 ? (m.somaNotas / m.qtd).toFixed(2) : 0;
                     });
@@ -9631,14 +9631,16 @@
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => parseFloat(b.mediaNota) - parseFloat(a.mediaNota));
-                    
-                    app.analiseCSVDinamicoData.consolidado = data;
-                },
 
-                resetTermos(mat) {
-                    app.ui.showConfirm("Aviso", "Isso fará o usuário ter que ler e assinar os Termos da LGPD novamente no próximo login. Continuar?", `app.admin.execResetTermos('${mat}')`);
-                },
-                execResetTermos(mat) {
+                    app.analiseCSVDinamicoData.consolidado = data;
+                  }
+              },
+    
+              resetTermos(mat) {
+                  app.ui.showConfirm("Aviso", "Isso fará o usuário ter que ler e assinar os Termos da LGPD novamente no próximo login. Continuar?", `app.admin.execResetTermos('${mat}')`);
+              },
+
+                  execResetTermos(mat) {
                     const idx = app.users.findIndex(u => u.matricula === mat);
                     if(idx > -1) { app.users[idx].aceiteTermos = null; app.storage.saveUsers(); app.ui.showAlert("Feito", "Termos resetados.", "success"); }
                 },
