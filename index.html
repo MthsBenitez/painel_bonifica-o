@@ -9629,8 +9629,8 @@
                         .map(([nome, info]) => ({ nome, count: info.count, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
                         .sort((a,b) => b.count - a.count).slice(0, 10);
 
-                    data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
-                    data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => b.mediaNota - a.mediaNota);
+                    data.rankOperadores = Object.values(data.operadores).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
+                    data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => parseFloat(b.mediaNota) - parseFloat(a.mediaNota));
                     
                     app.analiseCSVDinamicoData.consolidado = data;
                 },
