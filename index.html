@@ -7279,35 +7279,38 @@
                     let btnHideCode = this.analiseEditMode ? `<button onclick="this.closest('.hideable-box').classList.add('hidden')" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 bg-white dark:bg-slate-800 p-1.5 rounded-lg z-50 transition-colors shadow-sm" title="Ocultar na Apresentação"><i class="fa-solid fa-eye-slash"></i></button>` : '';
 
                     let html = `
-                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
-                            <div class="w-full xl:w-auto">
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">${data ? data.infoOperacao : 'Analítico Operação (Smart CSV)'}</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative">
+                            <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
+                                <h2 contenteditable="true" class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">${data ? data.infoOperacao : 'Analítico Operação (Smart CSV)'}</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1 ${this.analiseEditMode ? 'hidden' : ''}">
                                     <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
                                 </p>
                             </div>
-                            <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-                                ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                    <select onchange="app.ui.analiseFiltroMes=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
-                                        <option value="">Evolutivo (Todos os Meses)</option>
-                                        ${data.mesesDisponiveis.map(m => `<option value="${m}" ${app.ui.analiseFiltroMes === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`).join('')}
-                                    </select>
-                                    <select onchange="app.ui.analiseFiltroRelatorio=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
-                                        <option value="">Visão Consolidada (Todos)</option>
-                                        ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio === r.nome ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
-                                    </select>
-                                    <button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Edição' : 'Modo Apresentação'}</button>
-                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.analiseFiltroMes = \\'\\'; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
-                                ` : ''}
-                                <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
-                                </label>
-                                <!-- NOVO BOTÃO DE DIAGNÓSTICO -->
-                                <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap" title="Use este botão para ver como o arquivo envia a data por baixo dos panos">
-                                    <i class="fa-solid fa-bug text-lg text-orange-500"></i> Diagnóstico (Datas)
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
-                                </label>
+                            
+                            <div class="flex flex-wrap items-center justify-center gap-3 w-full xl:w-auto">
+                                <div class="flex flex-wrap items-center gap-3 ${this.analiseEditMode ? 'hidden' : ''}">
+                                    ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                        <select onchange="app.ui.analiseFiltroMes=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
+                                            <option value="">Evolutivo (Todos os Meses)</option>
+                                            ${data.mesesDisponiveis.map(m => `<option value="${m}" ${app.ui.analiseFiltroMes === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`).join('')}
+                                        </select>
+                                        <select onchange="app.ui.analiseFiltroRelatorio=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
+                                            <option value="">Visão Consolidada (Todos)</option>
+                                            ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio === r.nome ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
+                                        </select>
+                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.analiseFiltroMes = \\'\\'; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
+                                    ` : ''}
+                                    <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                        <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
+                                    </label>
+                                    <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap" title="Use este botão para ver como o arquivo envia a data por baixo dos panos">
+                                        <i class="fa-solid fa-bug text-lg text-orange-500"></i> Diagnóstico (Datas)
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                    </label>
+                                </div>
+                                <!-- O botão de Modo Apresentação fica sempre visível -->
+                                ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `<button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>` : ''}
                             </div>
                         </div>
                     `;
@@ -7327,61 +7330,7 @@
                         `;
                     }
 
-                    // --- EVOLUTIVO VISUAL ---
-                    if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
-                        html += `
-                        <div class="hideable-box glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-indigo-500 shadow-lg mb-8 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/10 dark:to-slate-900 relative">
-                            ${btnHideCode}
-                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-6 flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal da Operação</h3>
-                            
-                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
-                                <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
-                                    <h4 class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Média Operacional no Período</h4>
-                                    <div class="flex-1 relative w-full h-full"><canvas id="chart-analise-evolutivo"></canvas></div>
-                                </div>
-                                
-                                <div class="space-y-4">
-                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 flex flex-col">
-                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-medal text-green-500"></i> Top 5: Ofensores Que Melhoraram</h4>
-                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
-                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                                            ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
-                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-100 dark:border-slate-800 cursor-pointer hover:border-blue-400 transition-colors group">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-blue-600 transition-colors" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-3">
-                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
-                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'} text-sm">${op.fim.toFixed(1)}</span>
-                                                    </div>
-                                                </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes.</div>'}
-                                        </div>
-                                    </div>
-                                
-                                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-700 flex flex-col">
-                                        <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Alerta: Destaques Que Caíram</h4>
-                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
-                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                                            ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
-                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-100 dark:border-slate-800 cursor-pointer hover:border-red-400 transition-colors group">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-red-600 transition-colors" title="${op.nome}">${i+1}. ${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-3">
-                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
-                                                        <span class="font-black text-red-500 text-sm">${op.fim.toFixed(1)}</span>
-                                                        <span class="text-[9px] text-red-600 bg-red-100 px-1 rounded font-bold ml-1">${op.diff.toFixed(1)}</span>
-                                                    </div>
-                                                </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada.</div>'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        `;
-                    }
-
-                    <!-- DASHBOARD CARDS MESTRES (Cores Sóbrias) -->
+                    // --- DASHBOARD CARDS MESTRES ---
                     html += `
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
                             ${btnHideCode}
@@ -7406,65 +7355,9 @@
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0)}</div>
                             </div>
                         </div>
-
-                        <!-- LISTAS DE OFENSORES E FALHAS CRÍTICAS -->
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                            
-                            <!-- Falhas Críticas -->
-                            <div class="hideable-box relative bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border-t-4 border-t-red-500 shadow-md overflow-hidden">
-                                ${btnHideCode}
-                                <div class="absolute -right-4 -top-4 text-8xl text-red-500/5 pointer-events-none"><i class="fa-solid fa-circle-exclamation"></i></div>
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-circle-exclamation text-red-500"></i> Principais Falhas Críticas (Zera Nota)</h3>
-                                <div class="space-y-3 relative z-10">
-                                    ${data.falhasCriticasArray.map((f, idx) => {
-                                        const pctCritica = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
-                                        return `
-                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'critica')" class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center hover:border-red-400 cursor-pointer transition-colors group">
-                                            <div class="flex items-start gap-3">
-                                                <i class="fa-solid fa-circle-exclamation text-red-500 mt-1"></i>
-                                                <div>
-                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
-                                                    <div class="text-[10px] text-red-500 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
-                                                </div>
-                                            </div>
-                                            <div class="text-right shrink-0 ml-4 flex flex-col items-end">
-                                                <span class="bg-red-500 text-white font-black px-3 py-1 rounded-lg text-sm shadow-sm">${f.count}x</span>
-                                                <span class="text-[10px] font-bold text-red-500 mt-1">${pctCritica}% ref.</span>
-                                            </div>
-                                        </div>
-                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha crítica cometida com os filtros atuais.</div>'}
-                                </div>
-                            </div>
-
-                            <!-- Falhas Normais / Comuns -->
-                            <div class="hideable-box relative bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-md overflow-hidden">
-                                ${btnHideCode}
-                                <div class="absolute -right-4 -top-4 text-8xl text-orange-500/5 pointer-events-none"><i class="fa-solid fa-chart-bar"></i></div>
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-layer-group text-orange-500"></i> Principais Desvios Normais</h3>
-                                <div class="space-y-3 relative z-10 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
-                                    ${data.falhasComunsArray.map((f, idx) => {
-                                        const pctComum = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
-                                        return `
-                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'comum')" class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center hover:border-orange-400 cursor-pointer transition-colors group">
-                                            <div class="flex items-start gap-3 pr-2">
-                                                <div class="font-black text-orange-400 mt-0.5">${idx+1}.</div>
-                                                <div>
-                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-[11px] leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
-                                                    <div class="text-[9px] text-orange-500 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
-                                                </div>
-                                            </div>
-                                            <div class="text-right shrink-0 flex flex-col items-end">
-                                                <span class="bg-orange-500 text-white font-black px-2.5 py-1 rounded-lg text-xs shadow-sm">${f.count}x</span>
-                                                <span class="text-[10px] font-bold text-orange-500 mt-1">${pctComum}% ref.</span>
-                                            </div>
-                                        </div>
-                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha computada com os filtros atuais.</div>'}
-                                </div>
-                            </div>
-                        </div>
                     `;
 
-                    // --- EVOLUTIVO VISUAL REPOSICIONADO ---
+                    // --- EVOLUTIVO VISUAL ---
                     if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
                         html += `
                         <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
@@ -7517,42 +7410,6 @@
                         </div>
                         `;
                     }
-                    // Atraso seguro para o Chart.js desenhar a curva evolutiva perfeitamente
-                    setTimeout(() => {
-                        if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
-                            if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
-                            const ctxEvol = document.getElementById('chart-analise-evolutivo');
-                            if (ctxEvol) {
-                                window.myChartAnaliseEvol = new Chart(ctxEvol, {
-                                    type: 'line',
-                                    data: { 
-                                        labels: data.evolutivoChartLabels, 
-                                        datasets: [{ 
-                                            label: 'Média Consolidada', 
-                                            data: data.evolutivoChartData, 
-                                            borderColor: '#6366f1', 
-                                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                                            borderWidth: 4,
-                                            pointBackgroundColor: '#ffffff',
-                                            pointBorderColor: '#6366f1',
-                                            pointRadius: 6,
-                                            pointHoverRadius: 8,
-                                            fill: true,
-                                            tension: 0.4
-                                        }] 
-                                    },
-                                    options: { 
-                                        responsive: true, maintainAspectRatio: false, 
-                                        scales: { 
-                                            y: { beginAtZero: false, min: Math.max(0, Math.min(...data.evolutivoChartData) - 10), max: 100, ticks: {color: '#64748b', font:{weight:'bold'}}, grid: {color: '#e2e8f0'} }, 
-                                            x: { ticks: {color: '#64748b', font:{weight:'bold'}}, grid: {display: false} } 
-                                        }, 
-                                        plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } } 
-                                    }
-                                });
-                            }
-                        }
-                    }, 400);
 
                     // --- MÉDIAS POR MONITOR ---
                     html += `
@@ -7687,6 +7544,43 @@
                         </div>
                     `;
                     container.innerHTML = html;
+
+                    // Atraso seguro para o Chart.js desenhar a curva evolutiva perfeitamente
+                    setTimeout(() => {
+                        if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                            if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
+                            const ctxEvol = document.getElementById('chart-analise-evolutivo');
+                            if (ctxEvol) {
+                                window.myChartAnaliseEvol = new Chart(ctxEvol, {
+                                    type: 'line',
+                                    data: { 
+                                        labels: data.evolutivoChartLabels, 
+                                        datasets: [{ 
+                                            label: 'Média Consolidada', 
+                                            data: data.evolutivoChartData, 
+                                            borderColor: '#6366f1', 
+                                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                                            borderWidth: 4,
+                                            pointBackgroundColor: '#ffffff',
+                                            pointBorderColor: '#6366f1',
+                                            pointRadius: 6,
+                                            pointHoverRadius: 8,
+                                            fill: true,
+                                            tension: 0.4
+                                        }] 
+                                    },
+                                    options: { 
+                                        responsive: true, maintainAspectRatio: false, 
+                                        scales: { 
+                                            y: { beginAtZero: false, min: Math.max(0, Math.min(...data.evolutivoChartData) - 10), max: 100, ticks: {color: '#64748b', font:{weight:'bold'}}, grid: {color: '#e2e8f0'} }, 
+                                            x: { ticks: {color: '#64748b', font:{weight:'bold'}}, grid: {display: false} } 
+                                        }, 
+                                        plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } } 
+                                    }
+                                });
+                            }
+                        }
+                    }, 400);
                 },
 
                 renderView_PesquisasAnatel(container) {
