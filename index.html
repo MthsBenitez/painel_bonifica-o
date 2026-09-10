@@ -3269,6 +3269,100 @@
                 openPwdModal() { document.getElementById('new-password-input').value = ''; document.getElementById('pwd-modal').classList.remove('hidden'); },
                 closePwdModal() { document.getElementById('pwd-modal').classList.add('hidden'); },
 
+                openCardCommentModal(cardId) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if(!data) return;
+                    if(!data.comments) data.comments = {};
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-comment-dots text-blue-500"></i> Adicionar Comentário ao Card`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-2">Este comentário aparecerá magicamente ao passar o mouse sobre o cartão durante o <b>Modo Apresentação</b>.</p>
+                        <textarea id="card-comment-input" rows="4" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 shadow-inner" placeholder="Pode digitar seu comentário livremente aqui...">${data.comments[cardId] || ''}</textarea>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="app.ui.saveCardComment('${cardId}')" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-md transition-all">Salvar Comentário</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+                saveCardComment(cardId) {
+                    const data = app.analiseCSVDinamicoData.consolidado;
+                    const txt = document.getElementById('card-comment-input').value;
+                    data.comments[cardId] = txt;
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui.renderTab('analise_csv_dinamico', true);
+                },
+                openCardChartModal(cardId, title) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if(!data || !data.mesesEvolutivo || Object.keys(data.mesesEvolutivo).length <= 1) {
+                        return app.ui.showAlert("Sem Dados Evolutivos", "Para visualizar o gráfico comparativo deste indicador, você precisa ter importado dados de mais de um mês e não ter os meses filtrados a ponto de restar apenas um.", "info");
+                    }
+
+                    // Pega os meses ativos baseados no filtro
+                    let activeMonthsForEvol = (this.analiseFiltroMes && this.analiseFiltroMes.length > 0 && this.analiseFiltroMes[0] !== "") ? data.mesesDisponiveis.filter(m => this.analiseFiltroMes.includes(m)) : data.mesesDisponiveis;
+                    
+                    if (activeMonthsForEvol.length <= 1) return app.ui.showAlert("Filtro Restrito", "Remova o filtro de meses para poder visualizar a evolução completa deste indicador.", "info");
+
+                    const labels = activeMonthsForEvol.map(m => this.formatMonthLabel(m));
+                    const chartData = activeMonthsForEvol.map(m => {
+                        const mObj = data.mesesEvolutivo[m] || { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0 };
+                        if(cardId === 'totalLinhas') return mObj.totalLinhas;
+                        if(cardId === 'conformidadePct') return mObj.totalLinhas > 0 ? parseFloat(((mObj.totalNotas100 / mObj.totalLinhas) * 100).toFixed(1)) : 0;
+                        if(cardId === 'mediaTotal') return mObj.count > 0 ? parseFloat((mObj.soma / mObj.count).toFixed(2)) : 0;
+                        if(cardId === 'desviosTotais') return mObj.falhasNormais;
+                        if(cardId === 'falhasCriticas') return mObj.falhasCriticas;
+                        return 0;
+                    });
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-area text-blue-500"></i> Evolução: ${title}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="w-full h-64 relative mt-4">
+                            <canvas id="card-chart-canvas"></canvas>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-3xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-sm shadow-sm transition-all w-full md:w-auto">Fechar</button>
+                    `;
+                    
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-5xl', 'max-w-4xl');
+                    modalBox.classList.add('max-w-3xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+
+                    setTimeout(() => {
+                        const ctx = document.getElementById('card-chart-canvas');
+                        if (window.cardModalChart) window.cardModalChart.destroy();
+                        
+                        let color = '#3b82f6'; // Azul
+                        if(cardId === 'conformidadePct') color = '#10b981'; // Verde
+                        if(cardId === 'mediaTotal') color = '#22c55e'; // Verde claro
+                        if(cardId === 'desviosTotais') color = '#f97316'; // Laranja
+                        if(cardId === 'falhasCriticas') color = '#ef4444'; // Vermelho
+
+                        window.cardModalChart = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    label: title,
+                                    data: chartData,
+                                    backgroundColor: color + 'CC', // 80% opacity
+                                    borderColor: color,
+                                    borderWidth: 2,
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { display: false }, tooltip: { padding: 10, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } },
+                                scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+                            }
+                        });
+                    }, 100);
+                },
+
                 // --- COMMAND PALETTE (BUSCA RÁPIDA) ---
                 openCommandPalette() {
                     const modal = document.getElementById('command-palette-modal');
@@ -7008,7 +7102,11 @@
                 
                     let htmlList = `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 max-h-[50vh] overflow-y-auto custom-scrollbar p-2">`;
                     falhaObj.operadores.forEach(op => {
-                        htmlList += `<div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op)}')" class="cursor-pointer bg-white dark:bg-slate-800 p-3 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3 hover:border-blue-500 hover:shadow-md hover:-translate-y-0.5 transition-all"><i class="fa-solid fa-user-circle text-blue-500 text-2xl"></i> <span class="truncate">${op}</span></div>`;
+                        htmlList += `<div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="cursor-pointer bg-white dark:bg-slate-800 p-3 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3 hover:border-blue-500 hover:shadow-md hover:-translate-y-0.5 transition-all group">
+                            <i class="fa-solid fa-user-circle text-blue-500 text-2xl shrink-0"></i> 
+                            <span class="truncate flex-1" title="${op.nome}">${op.nome}</span>
+                            <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-2 py-1 rounded text-[10px] shrink-0 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">${op.qtd}x</span>
+                        </div>`;
                     });
                     htmlList += `</div>`;
                 
@@ -7345,8 +7443,11 @@
                     let html = `
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative">
                             <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
-                                <!-- TÍTULO MUITO MAIOR -->
-                                <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.infoOperacao = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
+                                <!-- TÍTULO MUITO MAIOR COM COR -->
+                                <div class="flex items-center justify-center xl:justify-start gap-3">
+                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.infoOperacao = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="text-4xl md:text-5xl font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style="color: ${data?.titleColor || ''}">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
+                                    ${!this.analiseEditMode && data ? `<input type="color" value="${data.titleColor || '#1e293b'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0" title="Cor do Título">` : ''}
+                                </div>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
                                     <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
                                 </p>
@@ -7415,43 +7516,39 @@
                         `;
                     }
 
-                    // --- DASHBOARD CARDS MESTRES ---
+                    // Helper para os cards de dashboard interativos
+                    const renderDashCard = (id, iconClass, title, mainValue, subText, colorClass, commentText) => {
+                        const hasComment = commentText && commentText.trim() !== '';
+                        return `
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-visible cursor-pointer group" onclick="app.ui.openCardChartModal('${id}', '${title}')">
+                                <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
+                                
+                                <!-- Botão Comentar -->
+                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute top-2 right-2 text-slate-300 hover:text-blue-500 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-lg z-20 transition-colors shadow-sm" title="Adicionar Comentário"><i class="fa-solid fa-comment-dots"></i></button>` : ''}
+                                
+                                <!-- Tooltip de Apresentação -->
+                                ${this.analiseEditMode && hasComment ? `<div class="absolute -top-4 right-2 text-blue-500 animate-bounce"><i class="fa-solid fa-comment-dots"></i></div><div class="absolute bottom-full left-1/2 transform -translate-x-1/2 -translate-y-2 bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-800 text-xs p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-max max-w-[250px] z-50 whitespace-pre-wrap">${commentText}</div>` : ''}
+
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1 relative z-10">${mainValue}</div>
+                                <div class="text-[10px] text-slate-400 font-medium leading-tight relative z-10">${subText}</div>
+                            </div>
+                        `;
+                    };
+
                     html += `
+                        <!-- DASHBOARD CARDS MESTRES -->
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
                             ${btnHideCode}
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
-                                <div class="absolute right-0 top-0 w-16 h-16 bg-blue-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-headphones text-blue-500 mr-1"></i> Total Analisado</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span></div>
-                                <div class="text-[10px] text-slate-400 font-medium">Universo de ${totalPerguntasGlobais} perguntas validadas na amostragem geral.</div>
-                            </div>
+                            ${renderDashCard('totalLinhas', 'fa-headphones text-blue-500', 'Total Analisado', `${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span>`, `Universo de ${totalPerguntasGlobais} perguntas validadas.`, 'bg-blue-500', data.comments?.totalLinhas)}
                             
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
-                                <div class="absolute right-0 top-0 w-16 h-16 bg-emerald-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação."><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Conformidade Absoluta</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${data.conformidadePct}%</div>
-                                <div class="text-[10px] text-slate-400 font-medium">Ligs em que o operador gabaritou com nota máxima (100).</div>
-                            </div>
+                            ${renderDashCard('conformidadePct', 'fa-shield-halved text-emerald-500', 'Conformidade Absoluta', `${data.conformidadePct}%`, 'Ligs em que o operador gabaritou com nota máxima (100).', 'bg-emerald-500', data.comments?.conformidadePct)}
 
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
-                                <div class="absolute right-0 top-0 w-16 h-16 bg-green-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-pie text-green-500 mr-1"></i> Média da Operação</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}</div>
-                            </div>
+                            ${renderDashCard('mediaTotal', 'fa-chart-pie text-green-500', 'Média da Operação', `${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}`, 'Média geral dos colaboradores avaliados.', 'bg-green-500', data.comments?.mediaTotal)}
 
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
-                                <div class="absolute right-0 top-0 w-16 h-16 bg-orange-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-layer-group text-orange-500 mr-1"></i> Desvios Totais</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${totalFalhasNormais}</div>
-                                <div class="text-[10px] text-slate-400 font-medium leading-tight">Representa <strong class="text-orange-500">${pctErrosComuns}%</strong> dos erros na amostragem geral.</div>
-                            </div>
+                            ${renderDashCard('desviosTotais', 'fa-layer-group text-orange-500', 'Desvios Totais', `${totalFalhasNormais}`, `Representa <strong class="text-orange-500">${pctErrosComuns}%</strong> dos erros na amostragem geral.`, 'bg-orange-500', data.comments?.desviosTotais)}
 
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
-                                <div class="absolute right-0 top-0 w-16 h-16 bg-red-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-circle-exclamation text-red-500 mr-1"></i> Falhas Críticas Totais</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${totalFalhasCriticas}</div>
-                                <div class="text-[10px] text-slate-400 font-medium leading-tight">Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.</div>
-                            </div>
+                            ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
                     `;
 
@@ -9071,7 +9168,7 @@
                                 let classColor = "bg-slate-100 text-slate-700 border-slate-300";
                                 let icone = "fa-circle-question";
                                 
-                                let isCritico = pesoNum === 100;
+                                let isCritico = pesoNum === 100 || pesoNum === 0;
 
                                 if (isCritico) {
                                     classificacao = "FALHA CRÍTICA (Zera a Nota)";
@@ -9364,23 +9461,125 @@
                                 }
                             });
 
+                            const colunasCriticas = colunasAvaliacao.filter(k => {
+                            let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
+                            let p = match ? parseFloat(match[1].replace(',', '.')) : -1;
+                            return p === 100 || p === 0;
+                        });
+                        const colunasComuns = colunasAvaliacao.filter(k => {
+                            let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
+                            let p = match ? parseFloat(match[1].replace(',', '.')) : -1;
+                            return p !== 100 && p !== 0 && p !== -1;
+                        });
+
+                        rows.forEach(row => {
+                            let opNomeDetalhe = app.utils.fixEncoding(String(row[colNome] || 'Não Identificado')).trim();
+                            if (opNomeDetalhe.toUpperCase().includes('TOTAL') || opNomeDetalhe === 'Não Identificado') return;
+
+                            let dataRaw = row[colDataAudit];
+                            let dtObj = parseDateRobust(dataRaw);
+                            
+                            if (dtObj && !isNaN(dtObj)) {
+                                if (dtObj.getFullYear() > 2030 || dtObj.getFullYear() < 2020) dtObj = null;
+                            }
+                            let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
+
+                            // FILTRO MULTIPLO DE MÊS
+                            if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
+                            
+                            let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
+
+                            const op = opNomeDetalhe;
+                            let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
+                            if (monitor.includes(' - ')) monitor = monitor.split(' - ').slice(1).join(' - ').trim();
+                            
+                            let nota = 0;
+                            if (row[colNota] !== undefined && row[colNota] !== '') {
+                                nota = parseFloat(row[colNota].toString().replace(',', '.'));
+                            }
+
+                            if (!data.monitorProdutividade[monitor]) data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
+                            data.monitorProdutividade[monitor].qtd += 1;
+                            data.monitorProdutividade[monitor].somaNotas += nota;
+
+                            if (monitorFiltro && monitor !== monitorFiltro) return;
+
+                            data.totalLinhas++;
+
+                            if (typeof nota === 'number' && !isNaN(nota) && mesRef) {
+                                if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0 };
+                                data.mesesEvolutivo[mesRef].soma += nota;
+                                data.mesesEvolutivo[mesRef].count++;
+                                data.mesesEvolutivo[mesRef].totalLinhas++;
+
+                                if (!data.operadoresEvolutivo[op]) data.operadoresEvolutivo[op] = {};
+                                if (!data.operadoresEvolutivo[op][mesRef]) data.operadoresEvolutivo[op][mesRef] = { soma: 0, count: 0 };
+                                data.operadoresEvolutivo[op][mesRef].soma += nota;
+                                data.operadoresEvolutivo[op][mesRef].count++;
+                            }
+
+                            if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
+                            data.operadores[op].notas.push(nota);
+                            if (nota < data.operadores[op].min) data.operadores[op].min = nota;
+                            if (nota > data.operadores[op].max) data.operadores[op].max = nota;
+
+                            let questionsArray = [];
+                            colunasAvaliacao.forEach(col => {
+                                let pesoMatch = col.match(/=\s*PESO:\s*([0-9.,]+)/i);
+                                let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
+                                let ans = (row[col] || '').toString().trim();
+                                let cleanQ = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
+                                questionsArray.push({ q: cleanQ, p: peso, a: ans });
+                            });
+                            
+                            data.operadores[op].avaliacoes.push({
+                                monitor: monitor,
+                                data: dataFmt,
+                                nota: nota,
+                                formName: formNameDisplay, // Guardando o nome do Formulário!
+                                perguntas: questionsArray
+                            });
+
+                            let acertouTudo = true;
+
+                            colunasComuns.forEach(col => {
+                                const valStr = (row[col] || '').toString().trim().toUpperCase();
+                                const isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
+                                if (isNao) {
+                                    acertouTudo = false;
+                                    const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
+                                    if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: {} };
+                                    data.falhasComuns[cleanGap].count += 1;
+                                    data.falhasComuns[cleanGap].operadores[op] = (data.falhasComuns[cleanGap].operadores[op] || 0) + 1;
+                                    if (mesRef && data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasNormais++;
+                                }
+                            });
+
                             colunasCriticas.forEach(col => {
                                 const valStr = (row[col] || '').toString().trim().toUpperCase();
                                 const isSim = valStr === 'SIM' || valStr === 'S';
                                 if (isSim) { 
+                                    acertouTudo = false;
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
-                                    if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: new Set() };
+                                    if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: {} };
                                     data.falhasCriticas[cleanGap].count += 1;
-                                    data.falhasCriticas[cleanGap].operadores.add(op);
+                                    data.falhasCriticas[cleanGap].operadores[op] = (data.falhasCriticas[cleanGap].operadores[op] || 0) + 1;
+                                    if (mesRef && data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasCriticas++;
                                 }
                             });
+
+                            if (acertouTudo && mesRef && data.mesesEvolutivo[mesRef]) {
+                                data.mesesEvolutivo[mesRef].totalNotas100++;
+                            }
                         });
                     });
 
                     // CÁLCULO EVOLUTIVO FINAL
-                    if (data.mesesDisponiveis.length > 1 && (!filtrosMes || filtrosMes.length === 0 || filtrosMes[0] === "")) {
-                        let mFirst = data.mesesDisponiveis[0];
-                        let mLast = data.mesesDisponiveis[data.mesesDisponiveis.length - 1];
+                    let activeMonthsForEvol = (filtrosMes && filtrosMes.length > 0 && filtrosMes[0] !== "") ? data.mesesDisponiveis.filter(m => filtrosMes.includes(m)) : data.mesesDisponiveis;
+                    
+                    if (activeMonthsForEvol.length > 1) {
+                        let mFirst = activeMonthsForEvol[0];
+                        let mLast = activeMonthsForEvol[activeMonthsForEvol.length - 1];
                         let opsComparacao = [];
 
                         Object.keys(data.operadoresEvolutivo).forEach(op => {
@@ -9395,11 +9594,14 @@
                         data.evolutivoPioresIniciais = [...opsComparacao].sort((a,b) => a.inicio - b.inicio).slice(0, 5);
                         data.evolutivoQuedas = [...opsComparacao].filter(o => o.inicio >= 80 && o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
                         
-                        data.evolutivoChartLabels = data.mesesDisponiveis.map(m => app.ui.formatMonthLabel(m));
-                        data.evolutivoChartData = data.mesesDisponiveis.map(m => {
+                        data.evolutivoChartLabels = activeMonthsForEvol.map(m => app.ui.formatMonthLabel(m));
+                        data.evolutivoChartData = activeMonthsForEvol.map(m => {
                             if (data.mesesEvolutivo[m] && data.mesesEvolutivo[m].count > 0) return parseFloat((data.mesesEvolutivo[m].soma / data.mesesEvolutivo[m].count).toFixed(2));
                             return 0;
                         });
+                    } else {
+                        data.evolutivoChartLabels = [];
+                        data.evolutivoChartData = [];
                     }
 
                     // Médias globais consolidadas
@@ -9420,12 +9622,12 @@
                     });
 
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
-                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
+                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
                         .sort((a,b) => b.count - a.count).slice(0, 5); 
 
                     data.falhasComunsArray = Object.entries(data.falhasComuns)
-                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Array.from(info.operadores) }))
-                        .sort((a,b) => b.count - a.count).slice(0, 10); 
+                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
+                        .sort((a,b) => b.count - a.count).slice(0, 10);
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => b.media - a.media);
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => b.mediaNota - a.mediaNota);
