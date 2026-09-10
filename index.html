@@ -377,6 +377,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <!-- Lottie Files Player -->
     <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+    <!-- LocalForage (Banco de Dados Navegador Anti-Limite de 5MB) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
 </head>
     
 <body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
@@ -6959,6 +6961,29 @@
                 },
 
                 analiseSortCol: 'media', analiseSortDir: 'desc', analiseFiltroRelatorio: '',
+                isFetchingAnaliseData: false, // Trava do banco de dados
+
+                toggleMesFiltro(mes) {
+                    if (!this.analiseFiltroMes) this.analiseFiltroMes = [];
+                    if (this.analiseFiltroMes.includes(mes)) {
+                        this.analiseFiltroMes = this.analiseFiltroMes.filter(m => m !== mes);
+                    } else {
+                        this.analiseFiltroMes.push(mes);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this.renderTab('analise_csv_dinamico', true);
+                },
+
+                toggleRelatorioFiltro(rel) {
+                    if (!this.analiseFiltroRelatorio) this.analiseFiltroRelatorio = [];
+                    if (this.analiseFiltroRelatorio.includes(rel)) {
+                        this.analiseFiltroRelatorio = this.analiseFiltroRelatorio.filter(r => r !== rel);
+                    } else {
+                        this.analiseFiltroRelatorio.push(rel);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this.renderTab('analise_csv_dinamico', true);
+                },
                 sortAnaliseTable(col) {
                     if(this.analiseSortCol === col) {
                         this.analiseSortDir = this.analiseSortDir === 'asc' ? 'desc' : 'asc';
@@ -7270,52 +7295,65 @@
                 },
 
                 renderView_AnaliseCSVDinamico(container) {
-                    // Carregamento de Persistência caso o usuário tenha dado F5
-                    if (!app.analiseCSVDinamicoData) {
-                        try {
-                            const savedData = localStorage.getItem('soft_analise_data');
+                    // Carregamento de Persistência Assíncrona do IndexedDB (Evita perder dados no F5)
+                    if (!app.analiseCSVDinamicoData && !this.isFetchingAnaliseData) {
+                        this.isFetchingAnaliseData = true;
+                        container.innerHTML = `<div class="p-16 text-center text-slate-400 glass-card rounded-3xl mt-8 border-dashed border-2 border-slate-300">
+                            <i class="fa-solid fa-spinner fa-spin text-5xl mb-4 text-blue-500"></i>
+                            <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Restaurando Memória...</h3>
+                            <p class="text-sm max-w-md mx-auto">Buscando os relatórios processados anteriormente no banco de dados local do seu navegador.</p>
+                        </div>`;
+                        
+                        localforage.getItem('soft_analise_data').then(savedData => {
                             if (savedData) {
-                                app.analiseCSVDinamicoData = JSON.parse(savedData);
+                                app.analiseCSVDinamicoData = savedData;
                                 app.admin.gerarInteligenciaCSV(); 
                             }
-                        } catch(e) {}
+                            this.isFetchingAnaliseData = false;
+                            app.ui.renderTab('analise_csv_dinamico', true);
+                        }).catch(e => {
+                            this.isFetchingAnaliseData = false;
+                            app.ui.renderTab('analise_csv_dinamico', true);
+                        });
+                        return; // Pausa a renderização até os dados voltarem do HD
                     }
 
                     let mainData = app.analiseCSVDinamicoData || null;
                     let data = mainData ? mainData.consolidado : null;
                     let btnHideCode = this.analiseEditMode ? `<button onclick="this.closest('.hideable-box').classList.add('hidden')" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 bg-white dark:bg-slate-800 p-1.5 rounded-lg z-50 transition-colors shadow-sm" title="Ocultar na Apresentação"><i class="fa-solid fa-eye-slash"></i></button>` : '';
 
+                    // CÁLCULO DE PORCENTAGEM EXATA DE FALHAS TOTAIS
+                    let totalPerguntasGlobais = 0;
+                    if (data && data.operadores) {
+                        Object.values(data.operadores).forEach(op => {
+                            op.avaliacoes.forEach(av => totalPerguntasGlobais += av.perguntas.length);
+                        });
+                    }
+                    const totalFalhasNormais = data ? data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0) : 0;
+                    const totalFalhasCriticas = data ? data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0) : 0;
+                    const somaTodosErros = totalFalhasNormais + totalFalhasCriticas;
+                    const pctErros = totalPerguntasGlobais > 0 ? ((somaTodosErros / totalPerguntasGlobais) * 100).toFixed(1) : 0;
+                    const pctAcertos = totalPerguntasGlobais > 0 ? (100 - pctErros).toFixed(1) : 0;
+
                     let html = `
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative">
                             <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
-                                <h2 contenteditable="true" class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">${data ? data.infoOperacao : 'Analítico Operação (Smart CSV)'}</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1 ${this.analiseEditMode ? 'hidden' : ''}">
+                                <!-- TÍTULO MUITO MAIOR -->
+                                <h2 contenteditable="true" class="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
                                     <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
                                 </p>
                             </div>
                             
                             <div class="flex flex-wrap items-center justify-center gap-3 w-full xl:w-auto">
-                                <div class="flex flex-wrap items-center gap-3">
-                                    ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                        <select multiple onchange="app.ui.analiseFiltroMes=Array.from(this.selectedOptions).map(o=>o.value); app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-2 h-20 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer custom-scrollbar" title="Segure CTRL/CMD para selecionar vários">
-                                            <option value="">Todos os Meses</option>
-                                            ${data.mesesDisponiveis.map(m => `<option value="${m}" ${app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.includes(m) ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`).join('')}
-                                        </select>
-                                        <select multiple onchange="app.ui.analiseFiltroRelatorio=Array.from(this.selectedOptions).map(o=>o.value); app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-2 h-20 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer custom-scrollbar" title="Segure CTRL/CMD para selecionar vários">
-                                            <option value="">Todos Formulários</option>
-                                            ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.includes(r.nome) ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
-                                        </select>
-                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; localStorage.removeItem(\\'soft_analise_data\\'); app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
-                                    ` : ''}
-                                    <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
-                                        <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
-                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
-                                    </label>
-                                    <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Use este botão para fazer um Raio-X de como a planilha envia as falhas e os pesos.">
-                                        <i class="fa-solid fa-microscope text-lg text-purple-400"></i> Raio-X (Pesos e Falhas)
-                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
-                                    </label>
-                                </div>
+                                <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
+                                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
+                                </label>
+                                <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Use este botão para fazer um Raio-X de como a planilha envia as falhas e os pesos.">
+                                    <i class="fa-solid fa-microscope text-lg text-purple-400"></i> Raio-X (Pesos e Falhas)
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                </label>
                                 ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `<button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>` : ''}
                             </div>
                         </div>
@@ -7327,11 +7365,45 @@
                         return;
                     }
 
+                    // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS (UX MODERNA)
+                    if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
+                        html += `
+                        <div class="mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm ${this.analiseEditMode ? 'hidden' : ''}">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
+                                <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div>
+                                    <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Meses:</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        ${data.mesesDisponiveis.map(m => {
+                                            const isActive = app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.includes(m);
+                                            const btnClass = isActive ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600';
+                                            return `<button onclick="app.ui.toggleMesFiltro('${m}')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m)}</button>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Formulários / Setores:</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        ${mainData.relatorios.map(r => {
+                                            const isActive = app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.includes(r.nome);
+                                            const btnClass = isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600';
+                                            return `<button onclick="app.ui.toggleRelatorioFiltro('${r.nome}')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${btnClass}">${r.nome}</button>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+
                     if(app.ui.analiseFiltroMonitor) {
                         html += `
-                            <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 flex justify-between items-center shadow-sm animate-fade-in">
-                                <div class="text-sm text-blue-800 dark:text-blue-300"><strong><i class="fa-solid fa-filter"></i> Filtro Ativo:</strong> Visualizando apenas <strong>${app.ui.analiseFiltroMonitor}</strong>.</div>
-                                <button onclick="app.ui.analiseFiltroMonitor = ''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">Limpar Filtro</button>
+                            <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex justify-between items-center shadow-sm animate-fade-in">
+                                <div class="text-sm text-blue-800 dark:text-blue-300"><strong><i class="fa-solid fa-filter"></i> Lente Focada Ativa:</strong> Exibindo exclusivamente as tratativas de <strong>${app.ui.analiseFiltroMonitor}</strong>.</div>
+                                <button onclick="app.ui.analiseFiltroMonitor = ''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm">Limpar Foco</button>
                             </div>
                         `;
                     }
@@ -7340,101 +7412,37 @@
                     html += `
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
                             ${btnHideCode}
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
+                                <div class="absolute right-0 top-0 w-16 h-16 bg-blue-500/10 rounded-bl-full pointer-events-none"></div>
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-headphones text-blue-500 mr-1"></i> Total Analisado</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.totalLinhas} <span class="text-sm font-medium text-slate-400 ml-1">Ligs.</span></div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span></div>
+                                <div class="text-[10px] text-slate-400 font-medium">Universo de ${totalPerguntasGlobais} perguntas validadas na amostragem geral.</div>
                             </div>
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação."><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Conformidade</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.conformidadePct}%</div>
+                            
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
+                                <div class="absolute right-0 top-0 w-16 h-16 bg-emerald-500/10 rounded-bl-full pointer-events-none"></div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação."><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Conformidade Absoluta</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${data.conformidadePct}%</div>
+                                <div class="text-[10px] text-slate-400 font-medium">Ligs em que o operador gabaritou com nota máxima (100).</div>
                             </div>
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
+
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
+                                <div class="absolute right-0 top-0 w-16 h-16 bg-green-500/10 rounded-bl-full pointer-events-none"></div>
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-pie text-green-500 mr-1"></i> Média da Operação</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}</div>
                             </div>
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-layer-group text-orange-500 mr-1"></i> Falhas Totais</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0)}</div>
-                            </div>
-                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-circle-exclamation text-red-500 mr-1"></i> Críticas Totais</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0)}</div>
-                            </div>
-                        </div>
-                    `;
 
-                    // --- MÉDIAS POR MONITOR ---
-                    html += `
-                        <div class="hideable-box relative bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl mb-8 border border-slate-200 dark:border-slate-700 overflow-x-auto shadow-md">
-                            ${btnHideCode}
-                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-blue-500"></i> Calibragem (Média Geral por Monitor)</h3>
-                            <p class="text-xs text-slate-500 mb-4">Dica: Clique em um monitor abaixo para filtrar os erros e as notas avaliadas apenas por ele.</p>
-                            <div class="flex gap-4 pb-2">
-                                ${data.rankMonitores.map((m, idx) => `
-                                    <div onclick="app.ui.analiseFiltroMonitor = app.ui.analiseFiltroMonitor === '${m.nome}' ? '' : '${m.nome}'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" 
-                                         class="cursor-pointer transition-transform hover:-translate-y-1 ${app.ui.analiseFiltroMonitor === m.nome ? 'ring-2 ring-blue-500 shadow-md' : 'hover:border-blue-300'} bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 min-w-[200px] flex items-center gap-4">
-                                        <div class="w-10 h-10 rounded-full ${app.ui.analiseFiltroMonitor === m.nome ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'} flex items-center justify-center font-black text-lg transition-colors">${idx+1}º</div>
-                                        <div>
-                                            <div class="font-bold text-slate-700 dark:text-slate-300 text-sm truncate w-28" title="${m.nome}">${m.nome.split(' ')[0]}</div>
-                                            <div class="text-xs text-slate-500">Média: <strong class="text-slate-800 dark:text-white">${m.mediaNota}</strong> <span class="ml-1 opacity-70">(${m.qtd} ligs)</span></div>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <!-- LISTAS DE OFENSORES E FALHAS CRÍTICAS -->
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                            <!-- Falhas Críticas -->
-                            <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-red-600 shadow-sm overflow-hidden">
-                                ${btnHideCode}
-                                <div class="absolute -right-4 -top-4 text-8xl text-red-500/10 pointer-events-none"><i class="fa-solid fa-circle-exclamation"></i></div>
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-circle-exclamation text-red-600"></i> Principais Falhas Críticas (Zera Nota)</h3>
-                                <div class="space-y-3 relative z-10">
-                                    ${data.falhasCriticasArray.map((f, idx) => {
-                                        const pctCritica = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
-                                        return `
-                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'critica')" class="bg-red-50 dark:bg-red-900/10 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 flex justify-between items-center hover:border-red-400 cursor-pointer transition-colors group">
-                                            <div class="flex items-start gap-3">
-                                                <i class="fa-solid fa-circle-exclamation text-red-500 mt-1"></i>
-                                                <div>
-                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
-                                                    <div class="text-[10px] text-red-500 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
-                                                </div>
-                                            </div>
-                                            <div class="text-right shrink-0 ml-4 flex flex-col items-end">
-                                                <span class="bg-red-600 text-white font-black px-3 py-1 rounded-lg text-sm shadow-sm">${f.count}x</span>
-                                                <span class="text-[10px] font-bold text-red-500 mt-1">${pctCritica}% ref.</span>
-                                            </div>
-                                        </div>
-                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha crítica cometida com os filtros atuais.</div>'}
-                                </div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
+                                <div class="absolute right-0 top-0 w-16 h-16 bg-orange-500/10 rounded-bl-full pointer-events-none"></div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-layer-group text-orange-500 mr-1"></i> Desvios Normais (Total)</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white mb-1">${totalFalhasNormais}</div>
+                                <div class="text-[10px] text-slate-400 font-medium leading-tight">Representa <strong class="text-orange-500">${pctErros}% de erro</strong> sobre os itens totais (Acerto Real: <strong class="text-green-500">${pctAcertos}%</strong>).</div>
                             </div>
 
-                            <!-- Falhas Normais / Comuns -->
-                            <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-orange-500 shadow-sm overflow-hidden">
-                                ${btnHideCode}
-                                <div class="absolute -right-4 -top-4 text-8xl text-orange-500/10 pointer-events-none"><i class="fa-solid fa-chart-bar"></i></div>
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-layer-group text-orange-500"></i> Principais Desvios Normais</h3>
-                                <div class="space-y-3 relative z-10 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
-                                    ${data.falhasComunsArray.map((f, idx) => {
-                                        const pctComum = data.totalLinhas > 0 ? ((f.count / data.totalLinhas) * 100).toFixed(1) : 0;
-                                        return `
-                                        <div onclick="app.ui.showOperatorsModal('${f.nome.replace(/'/g, "\\'")}', 'comum')" class="bg-orange-50 dark:bg-orange-900/10 p-3.5 rounded-xl border border-orange-100 dark:border-orange-900/30 flex justify-between items-center hover:border-orange-400 cursor-pointer transition-colors group">
-                                            <div class="flex items-start gap-3 pr-2">
-                                                <div class="font-black text-orange-400 mt-0.5">${idx+1}.</div>
-                                                <div>
-                                                    <div class="font-semibold text-slate-700 dark:text-slate-300 text-[11px] leading-tight line-clamp-2" title="${f.nome}">${f.nome}</div>
-                                                    <div class="text-[9px] text-orange-600 mt-1 font-bold group-hover:underline">Ver ofensores afetados</div>
-                                                </div>
-                                            </div>
-                                            <div class="text-right shrink-0 flex flex-col items-end">
-                                                <span class="bg-orange-500 text-white font-black px-2.5 py-1 rounded-lg text-xs shadow-sm">${f.count}x</span>
-                                                <span class="text-[10px] font-bold text-orange-500 mt-1">${pctComum}% ref.</span>
-                                            </div>
-                                        </div>
-                                    `}).join('') || '<div class="text-sm text-slate-500 italic py-4">Nenhuma falha computada com os filtros atuais.</div>'}
-                                </div>
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm relative overflow-hidden">
+                                <div class="absolute right-0 top-0 w-16 h-16 bg-red-500/10 rounded-bl-full pointer-events-none"></div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-circle-exclamation text-red-500 mr-1"></i> Críticas Totais (Zero)</div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white">${totalFalhasCriticas}</div>
                             </div>
                         </div>
                     `;
@@ -9124,12 +9132,10 @@
                     // Força a UI a mostrar "Visão Consolidada" quando entra algo novo
                     app.ui.analiseFiltroRelatorio = []; 
                     
-                    // MÁGICA DE PERSISTÊNCIA: Salva os dados no navegador
-                    try { 
-                        localStorage.setItem('soft_analise_data', JSON.stringify(app.analiseCSVDinamicoData)); 
-                    } catch(e) { 
-                        console.warn("Base muito grande para salvar no cache local, rodando apenas em memória."); 
-                    }
+                    // MÁGICA DE PERSISTÊNCIA: Salva usando IndexedDB (Sem limites de 5MB)
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => {
+                        console.error("Erro ao salvar no cache local HD:", err);
+                    });
                     
                     // Reconstrói a Inteligência cruzando tudo que tem na Gaveta
                     this.gerarInteligenciaCSV();
