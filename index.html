@@ -7304,8 +7304,8 @@
                                         <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
                                         <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                     </label>
-                                    <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap" title="Use este botão para ver como o arquivo envia a data por baixo dos panos">
-                                        <i class="fa-solid fa-bug text-lg text-orange-500"></i> Diagnóstico (Datas)
+                                    <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap" title="Use este botão para fazer um Raio-X de como a planilha envia as falhas e os pesos.">
+                                        <i class="fa-solid fa-microscope text-lg text-purple-400"></i> Raio-X (Pesos e Falhas)
                                         <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
                                     </label>
                                 </div>
@@ -8976,12 +8976,12 @@
                     reader.readAsBinaryString(file);
                 },
 
-                // NOVA FUNÇÃO: RAIO-X DE DATAS DA PLANILHA
+                // NOVA FUNÇÃO: RAIO-X DE PESOS E FALHAS DA PLANILHA
                 debugArquivoCSV(input) {
                     const file = input.files[0];
                     if (!file) return;
 
-                    app.ui.showAlert("🔍 Lendo Raio-X...", "Abrindo a planilha para diagnosticar o formato da coluna de DATA...", "info");
+                    app.ui.showAlert("🔍 Escaneando Pesos...", "Abrindo a planilha para diagnosticar o formato das colunas de avaliação...", "info");
 
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -8994,57 +8994,89 @@
                             if (rows.length === 0) return app.ui.showAlert("Erro", "Planilha vazia.", "error");
 
                             const chaves = Object.keys(rows[0]);
-                            const colData = chaves.find(k => k.trim().toUpperCase() === 'DATA') || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
+                            // Procura colunas que tenham a palavra PESO no título
+                            const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
 
-                            if(!colData) return app.ui.showAlert("Erro", "Nenhuma coluna com a palavra DATA encontrada no cabeçalho.", "error");
+                            if(colunasAvaliacao.length === 0) {
+                                return app.ui.showAlert("Erro de Estrutura", "Nenhuma coluna com a palavra 'PESO' encontrada no cabeçalho. O sistema não tem como classificar as falhas.", "error");
+                            }
 
                             let htmlDebug = `<div class="text-left text-sm space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                                <p class="font-bold text-slate-700">Achei a coluna: <span class="text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">${colData}</span></p>
-                                <p class="text-slate-500 text-xs leading-relaxed">Veja os 3 primeiros registros exatamente como o sistema recebe do arquivo (em vermelho) e como ele traduz agora com a nossa correção de IA (em verde):</p>
-                                <div class="space-y-3">`;
+                                <p class="font-bold text-slate-700">Encontrei <span class="text-purple-600 bg-purple-50 px-2 py-1 rounded border border-purple-200">${colunasAvaliacao.length} colunas</span> de avaliação.</p>
+                                <p class="text-slate-500 text-xs leading-relaxed">Veja abaixo como o sistema separou essas colunas lendo o valor do "PESO" e como ele interpretou a resposta que está na 1ª linha da planilha:</p>
+                                <div class="space-y-4">`;
 
-                            for(let i=0; i < Math.min(3, rows.length); i++) {
-                                let valorBruto = rows[i][colData];
-                                let tipoBase = typeof valorBruto;
-                                let interprete = "Desconhecido";
+                            colunasAvaliacao.forEach(col => {
+                                // A mesma lente que o sistema principal usa:
+                                let match = col.match(/=\s*PESO:\s*([0-9.,]+)/i);
+                                let pesoExtraido = match ? match[1] : 'NÃO ENCONTRADO';
+                                let pesoNum = match ? parseFloat(match[1].replace(',', '.')) : null;
+                                
+                                let classificacao = "Indefinido";
+                                let classColor = "bg-slate-100 text-slate-700 border-slate-300";
+                                let icone = "fa-circle-question";
 
-                                // Regra de tradução simulada para mostrar ao usuário
-                                if (tipoBase === 'number') {
-                                    if (valorBruto > 1000000000) interprete = new Date(valorBruto > 1000000000000 ? valorBruto : valorBruto * 1000).toLocaleString('pt-BR');
-                                    else if (valorBruto > 20000 && valorBruto < 100000) {
-                                        const dtDiag = new Date((Math.floor(valorBruto) - 25569) * 86400 * 1000);
-                                        dtDiag.setUTCHours(12, 0, 0, 0);
-                                        interprete = dtDiag.toLocaleDateString('pt-BR');
-                                    }
-                                    else interprete = "Número inválido/fora do padrão de data";
-                                } else if (tipoBase === 'string') {
-                                    interprete = "Lido como Texto/Hora: " + String(valorBruto).split(' ')[0].split('T')[0];
+                                if (pesoNum === 0) {
+                                    classificacao = "FALHA CRÍTICA (Zera a Nota)";
+                                    classColor = "bg-red-50 text-red-700 border-red-300";
+                                    icone = "fa-circle-exclamation";
+                                } else if (pesoNum > 0) {
+                                    classificacao = "DESVIO NORMAL (Falha Comum)";
+                                    classColor = "bg-orange-50 text-orange-700 border-orange-300";
+                                    icone = "fa-layer-group";
+                                } else {
+                                    classificacao = "FALHA NA LEITURA (Padrão Incorreto)";
                                 }
 
+                                // Testando como o sistema vê a resposta da Linha 1
+                                let valorLinha1 = rows[0][col];
+                                let valStr = (valorLinha1 || '').toString().trim().toUpperCase();
+                                let isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
+                                let interpretacaoResp = isNao 
+                                    ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
+                                    : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Sim ou N/A)</span>";
+
                                 htmlDebug += `
-                                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                    <div class="font-black text-red-500 text-[10px] uppercase tracking-widest mb-1"><i class="fa-solid fa-file-excel"></i> Valor Bruto da Planilha:</div>
-                                    <div class="text-lg font-mono mb-3 text-slate-800">${valorBruto || 'Vazio'} <span class="text-[10px] text-slate-400 font-sans font-bold bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">TIPO LIDO: ${tipoBase}</span></div>
-                                    <div class="font-black text-green-600 text-[10px] uppercase tracking-widest mb-1"><i class="fa-solid fa-check"></i> Tradução do Sistema:</div>
-                                    <div class="text-base font-mono text-slate-800 bg-green-50 p-2 rounded border border-green-200">${interprete}</div>
+                                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm transition-hover hover:border-purple-300">
+                                    <div class="font-black text-slate-500 text-[10px] uppercase tracking-widest mb-1">Nome exato da Coluna:</div>
+                                    <div class="text-xs font-mono mb-4 text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100 break-words leading-relaxed">${col}</div>
+                                    
+                                    <div class="grid grid-cols-2 gap-3 mb-4">
+                                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col justify-center items-center text-center">
+                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Peso Extraído da Coluna:</div>
+                                            <div class="text-lg font-black text-slate-800">${pesoExtraido}</div>
+                                        </div>
+                                        <div class="${classColor} p-3 rounded-xl border flex flex-col justify-center items-center text-center">
+                                            <div class="text-[9px] uppercase font-bold opacity-70 mb-1">Classificação do Sistema:</div>
+                                            <div class="text-xs font-black"><i class="fa-solid ${icone} mb-1 block text-lg opacity-80"></i> ${classificacao}</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="border-t border-slate-100 pt-3">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase mb-2">Simulação de Leitura (1ª Linha):</div>
+                                        <div class="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                            Valor detectado na célula: <b class="font-mono bg-white px-1 border border-slate-200 rounded">"${valorLinha1}"</b><br>
+                                            <div class="mt-2 pt-2 border-t border-slate-200 border-dashed">${interpretacaoResp}</div>
+                                        </div>
+                                    </div>
                                 </div>`;
-                            }
+                            });
 
                             htmlDebug += `</div></div>`;
 
-                            // Alterando a largura do modal temporariamente
+                            // Ajuste do Modal para caber a análise
                             const modalBox = document.querySelector('#global-modal > div');
-                            modalBox.classList.remove('max-w-lg');
+                            modalBox.classList.remove('max-w-lg', 'max-w-5xl');
                             modalBox.classList.add('max-w-3xl');
 
-                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-orange-500"></i> Raio-X de Datas`;
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-microscope text-purple-500"></i> Raio-X de Pesos e Falhas`;
                             document.getElementById('modal-content').innerHTML = htmlDebug;
-                            document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white rounded-lg font-bold text-sm shadow-md transition-all hover:-translate-y-0.5">Entendi e Fechar</button>`;
+                            document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-slate-800 hover:bg-black text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5 w-full md:w-auto">Entendi e Fechar</button>`;
                             document.getElementById('global-modal').classList.remove('hidden');
 
                         } catch (error) {
                             console.error(error);
-                            app.ui.showAlert("Erro", "Falha ao ler o arquivo no modo diagnóstico.", "error");
+                            app.ui.showAlert("Erro", "Falha ao analisar a estrutura de pesos da planilha. Certifique-se que é um formato válido.", "error");
                         }
                     };
                     reader.readAsBinaryString(file);
