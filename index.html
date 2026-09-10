@@ -8865,7 +8865,11 @@
                                 // Regra de tradução simulada para mostrar ao usuário
                                 if (tipoBase === 'number') {
                                     if (valorBruto > 1000000000) interprete = new Date(valorBruto > 1000000000000 ? valorBruto : valorBruto * 1000).toLocaleString('pt-BR');
-                                    else if (valorBruto > 20000 && valorBruto < 100000) interprete = new Date((valorBruto - 25569) * 86400 * 1000).toLocaleString('pt-BR');
+                                    else if (valorBruto > 20000 && valorBruto < 100000) {
+                                        const dtDiag = new Date((Math.floor(valorBruto) - 25569) * 86400 * 1000);
+                                        dtDiag.setUTCHours(12, 0, 0, 0);
+                                        interprete = dtDiag.toLocaleDateString('pt-BR');
+                                    }
                                     else interprete = "Número inválido/fora do padrão de data";
                                 } else if (tipoBase === 'string') {
                                     interprete = "Lido como Texto/Hora: " + String(valorBruto).split(' ')[0].split('T')[0];
@@ -8961,8 +8965,9 @@
                         }
 
                         if (typeof dataRaw === 'number' && dataRaw > 20000 && dataRaw < 100000) {
-                            const dt = new Date((dataRaw - 25569) * 86400 * 1000);
-                            dt.setUTCHours(12);
+                            const diasPuros = Math.floor(dataRaw); // MÁGICA: Corta fora as horas/decimais
+                            const dt = new Date((diasPuros - 25569) * 86400 * 1000);
+                            dt.setUTCHours(12, 0, 0, 0); // Força meio-dia UTC cravado para blindar fuso horário
                             return dt;
                         }
                         if (typeof dataRaw === 'string') {
@@ -9001,8 +9006,8 @@
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
                             
-                            // Busca EXATA e DITATORIAL APENAS pela coluna chamada "DATA"
-                            let colDataScan = keys.find(k => k.trim().toUpperCase() === 'DATA');
+                            // Busca INTELIGENTE: Tenta achar "DATA" exato, se não, pega a primeira que contenha "DATA"
+                            let colDataScan = keys.find(k => k.trim().toUpperCase() === 'DATA') || keys.find(k => k.trim().toUpperCase().includes('DATA'));
                             
                             let dataRaw = colDataScan ? row[colDataScan] : undefined;
                             
@@ -9048,8 +9053,8 @@
                         const colOperacao = chaves.find(k => ['OPERACAO', 'OPERAÇÃO', 'CAMPANHA', 'ILHA', 'SETOR'].includes(k.trim().toUpperCase())) 
                             || chaves.find(k => k.trim().toUpperCase().includes('OPERA'));
                             
-                        // Busca EXATA e DITATORIAL APENAS pela coluna chamada "DATA"
-                        const colDataAudit = chaves.find(k => k.trim().toUpperCase() === 'DATA');
+                        // Busca INTELIGENTE: Tenta achar "DATA" exato, se não, pega a primeira que contenha "DATA"
+                        const colDataAudit = chaves.find(k => k.trim().toUpperCase() === 'DATA') || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
                             
                         const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) 
                             || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) 
