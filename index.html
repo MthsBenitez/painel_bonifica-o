@@ -9374,94 +9374,9 @@
                         const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) || 'NOTA';
 
                         const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
+                        
+                        // Bloco de Pesos Mantido: Lógica Avançada (com tratativa para -1)
                         const colunasCriticas = colunasAvaliacao.filter(k => {
-                            let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                            return match && parseFloat(match[1].replace(',', '.')) === 100;
-                        });
-                        const colunasComuns = colunasAvaliacao.filter(k => {
-                            let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                            return match && parseFloat(match[1].replace(',', '.')) !== 100;
-                        });
-
-                        rows.forEach(row => {
-                            let opNomeDetalhe = app.utils.fixEncoding(String(row[colNome] || 'Não Identificado')).trim();
-                            if (opNomeDetalhe.toUpperCase().includes('TOTAL') || opNomeDetalhe === 'Não Identificado') return;
-
-                            let dataRaw = row[colDataAudit];
-                            let dtObj = parseDateRobust(dataRaw);
-                            
-                            if (dtObj && !isNaN(dtObj)) {
-                                if (dtObj.getFullYear() > 2030 || dtObj.getFullYear() < 2020) dtObj = null;
-                            }
-                            let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
-
-                            // FILTRO MULTIPLO DE MÊS
-                            if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
-                            
-                            let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
-
-                            const op = opNomeDetalhe;
-                            let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
-                            if (monitor.includes(' - ')) monitor = monitor.split(' - ').slice(1).join(' - ').trim();
-                            
-                            let nota = 0;
-                            if (row[colNota] !== undefined && row[colNota] !== '') {
-                                nota = parseFloat(row[colNota].toString().replace(',', '.'));
-                            }
-
-                            if (!data.monitorProdutividade[monitor]) data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
-                            data.monitorProdutividade[monitor].qtd += 1;
-                            data.monitorProdutividade[monitor].somaNotas += nota;
-
-                            if (monitorFiltro && monitor !== monitorFiltro) return;
-
-                            data.totalLinhas++;
-
-                            if (typeof nota === 'number' && !isNaN(nota) && mesRef) {
-                                if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0 };
-                                data.mesesEvolutivo[mesRef].soma += nota;
-                                data.mesesEvolutivo[mesRef].count++;
-
-                                if (!data.operadoresEvolutivo[op]) data.operadoresEvolutivo[op] = {};
-                                if (!data.operadoresEvolutivo[op][mesRef]) data.operadoresEvolutivo[op][mesRef] = { soma: 0, count: 0 };
-                                data.operadoresEvolutivo[op][mesRef].soma += nota;
-                                data.operadoresEvolutivo[op][mesRef].count++;
-                            }
-
-                            if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
-                            data.operadores[op].notas.push(nota);
-                            if (nota < data.operadores[op].min) data.operadores[op].min = nota;
-                            if (nota > data.operadores[op].max) data.operadores[op].max = nota;
-
-                            let questionsArray = [];
-                            colunasAvaliacao.forEach(col => {
-                                let pesoMatch = col.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                                let peso = pesoMatch ? parseFloat(pesoMatch[1].replace(',','.')) : 0;
-                                let ans = (row[col] || '').toString().trim();
-                                let cleanQ = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
-                                questionsArray.push({ q: cleanQ, p: peso, a: ans });
-                            });
-                            
-                            data.operadores[op].avaliacoes.push({
-                                monitor: monitor,
-                                data: dataFmt,
-                                nota: nota,
-                                formName: formNameDisplay, // Guardando o nome do Formulário!
-                                perguntas: questionsArray
-                            });
-
-                            colunasComuns.forEach(col => {
-                                const valStr = (row[col] || '').toString().trim().toUpperCase();
-                                const isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
-                                if (isNao) {
-                                    const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
-                                    if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: new Set() };
-                                    data.falhasComuns[cleanGap].count += 1;
-                                    data.falhasComuns[cleanGap].operadores.add(op);
-                                }
-                            });
-
-                            const colunasCriticas = colunasAvaliacao.filter(k => {
                             let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
                             let p = match ? parseFloat(match[1].replace(',', '.')) : -1;
                             return p === 100 || p === 0;
@@ -9536,7 +9451,7 @@
                                 monitor: monitor,
                                 data: dataFmt,
                                 nota: nota,
-                                formName: formNameDisplay, // Guardando o nome do Formulário!
+                                formName: formNameDisplay,
                                 perguntas: questionsArray
                             });
 
@@ -9604,7 +9519,7 @@
                         data.evolutivoChartData = [];
                     }
 
-                // Médias globais consolidadas
+                    // Médias globais consolidadas
                     let totalNotas100 = 0;
                     let somaMediaTotal = 0; let ctdTotal = 0;
                     Object.values(data.operadores).forEach(op => {
