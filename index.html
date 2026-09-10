@@ -8841,7 +8841,7 @@
                     reader.onload = (e) => {
                         try {
                             const data = e.target.result;
-                            const workbook = XLSX.read(data, { type: 'binary' });
+                            const workbook = XLSX.read(data, { type: 'binary', raw: true });
                             const firstSheet = workbook.SheetNames[0];
                             const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
 
