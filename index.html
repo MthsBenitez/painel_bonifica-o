@@ -7014,7 +7014,6 @@
                 
                     const opData = data.operadores[nome];
                     
-                    // --- MÁGICA: Extraindo Histórico Mensal do Operador para o Gráfico ---
                     let chartLabels = [];
                     let chartData = [];
                     if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado.operadoresEvolutivo && app.analiseCSVDinamicoData.consolidado.operadoresEvolutivo[nome]) {
@@ -7022,13 +7021,12 @@
                         const mesesOrdem = app.analiseCSVDinamicoData.consolidado.mesesDisponiveis || [];
                         mesesOrdem.forEach(m => {
                             if(histOp[m] && histOp[m].count > 0) {
-                                chartLabels.push(app.ui.formatMonthLabel(m).substring(0,3)); // "Jan", "Fev"
+                                chartLabels.push(app.ui.formatMonthLabel(m).substring(0,3)); 
                                 chartData.push(parseFloat((histOp[m].soma / histOp[m].count).toFixed(2)));
                             }
                         });
                     }
                     
-                    // --- MÁGICA: Resumo dos maiores ofensores (Críticos e Comuns) do Operador ---
                     let errosOpCount = {};
                     let criticosOpCount = {};
                     opData.avaliacoes.forEach(aval => {
@@ -7036,11 +7034,9 @@
                             const isSim = p.a.toUpperCase().includes('SIM') || p.a.toUpperCase() === 'S';
                             const isNao = p.a.toUpperCase().includes('NÃO') || p.a.toUpperCase() === 'NAO' || p.a.toUpperCase() === 'N';
                             
-                            // Peso 100 (Crítico) -> erro é o SIM
                             if (p.p === 100 && isSim) { 
                                 criticosOpCount[p.q] = (criticosOpCount[p.q] || 0) + 1;
                             } 
-                            // Peso Normal (Diferente de 100) -> erro é o NÃO
                             else if (p.p !== 100 && isNao) { 
                                 errosOpCount[p.q] = (errosOpCount[p.q] || 0) + 1;
                             }
@@ -7084,9 +7080,8 @@
                         `;
                     }
 
-                    // Agenda o desenho do gráfico para logo após a injeção do HTML no Modal
-                    if (chartData.length > 1) {
-                        setTimeout(() => {
+                    setTimeout(() => {
+                        if (chartData.length > 1) {
                             const ctxModal = document.getElementById(`modal-chart-${nome.replace(/\s+/g, '')}`);
                             if (ctxModal) {
                                 new Chart(ctxModal, {
@@ -7095,8 +7090,8 @@
                                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: Math.max(0, Math.min(...chartData)-10), max: 100, ticks: {font: {size: 9}} }, x: { ticks: {font: {size: 9}} } } }
                                 });
                             }
-                        }, 250);
-                    }
+                        }
+                    }, 250);
 
                     let htmlList = `${miniResumoHtml}<div class="space-y-4 max-h-[45vh] overflow-y-auto custom-scrollbar pr-2 pb-4">`;
                     
@@ -7107,15 +7102,12 @@
                             let isSim = ansStr === 'SIM' || ansStr === 'S';
                             let isNao = ansStr === 'NÃO' || ansStr === 'NAO' || ansStr === 'N' || ansStr === 'NÃO ';
                             
-                            // Neutro por padrão (Para evitar falsos positivos com "Não Se Aplica")
                             let respHtml = `<span class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 font-bold px-2 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 text-[10px]">${p.a}</span>`;
                             
                             if (isCritica) {
-                                // Crítica: SIM é falha (vermelho), NÃO é acerto (verde)
                                 if (isSim) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
                                 else if (isNao) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
                             } else {
-                                // Normal: SIM é acerto (verde), NÃO é falha (vermelho)
                                 if (isSim) respHtml = `<span class="bg-green-100 text-green-700 font-bold px-2 py-1 rounded shadow-sm border border-green-200 text-[10px]"><i class="fa-solid fa-check mr-1"></i> ${p.a}</span>`;
                                 else if (isNao) respHtml = `<span class="bg-red-100 text-red-600 font-bold px-2 py-1 rounded shadow-sm border border-red-200 text-[10px]"><i class="fa-solid fa-xmark mr-1"></i> ${p.a} (FALHA)</span>`;
                             }
@@ -7167,15 +7159,13 @@
                             `;
                         }
                 
-                        const isOpen = ''; // Modificado: Todas as listagens fecham por padrão para limpeza visual
-                
                         htmlList += `
-                            <details class="group/eval bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4 transition-all" ${isOpen}>
+                            <details class="group/eval bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4 transition-all">
                                 <summary class="bg-white dark:bg-slate-900 p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center cursor-pointer select-none hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                     <div>
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex flex-wrap items-center gap-2">
                                             <span class="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-2 py-0.5 rounded-md">Auditoria ${idx+1}</span> 
-                                            Aplicada por:
+                                            <span class="text-slate-600 dark:text-slate-300"><i class="fa-solid fa-file-lines"></i> ${aval.formName}</span>
                                         </div>
                                         <div class="font-black text-slate-800 dark:text-white text-base"><i class="fa-solid fa-headset mr-1 text-slate-400"></i> ${aval.monitor}</div>
                                         <div class="text-[10px] text-slate-500 mt-1 font-mono"><i class="fa-regular fa-calendar text-blue-400"></i> ${aval.data}</div>
@@ -7201,7 +7191,7 @@
                 
                     document.getElementById('modal-title').innerHTML = ``;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="flex justify-between items-center mb-2 border-b border-slate-200 dark:border-slate-700 pb-4 pt-2">
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 border-b border-slate-200 dark:border-slate-700 pb-4 pt-2 gap-4">
                             <div class="flex items-center gap-4">
                                 <div class="w-14 h-14 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-2xl shadow-inner border border-purple-200"><i class="fa-solid fa-id-card"></i></div>
                                 <div>
@@ -7209,9 +7199,9 @@
                                     <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${nome}</span>
                                 </div>
                             </div>
-                            <div class="text-right">
+                            <div class="md:text-right shrink-0">
                                 <span class="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-0.5">Resumo de Qualidade</span>
-                                <span class="text-sm font-black text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">${opData.qtd} Avaliações | Média Final: <span class="${opData.media < 85 ? 'text-red-500' : 'text-green-500'}">${opData.media}</span></span>
+                                <span class="text-sm font-black text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm block w-max ml-auto md:ml-auto md:mr-0">${opData.notas.length} Avaliações | Média Final: <span class="${opData.media < 85 ? 'text-red-500' : 'text-green-500'}">${opData.media}</span></span>
                             </div>
                         </div>
                         ${htmlList}
@@ -7280,6 +7270,17 @@
                 },
 
                 renderView_AnaliseCSVDinamico(container) {
+                    // Carregamento de Persistência caso o usuário tenha dado F5
+                    if (!app.analiseCSVDinamicoData) {
+                        try {
+                            const savedData = localStorage.getItem('soft_analise_data');
+                            if (savedData) {
+                                app.analiseCSVDinamicoData = JSON.parse(savedData);
+                                app.admin.gerarInteligenciaCSV(); 
+                            }
+                        } catch(e) {}
+                    }
+
                     let mainData = app.analiseCSVDinamicoData || null;
                     let data = mainData ? mainData.consolidado : null;
                     let btnHideCode = this.analiseEditMode ? `<button onclick="this.closest('.hideable-box').classList.add('hidden')" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 bg-white dark:bg-slate-800 p-1.5 rounded-lg z-50 transition-colors shadow-sm" title="Ocultar na Apresentação"><i class="fa-solid fa-eye-slash"></i></button>` : '';
@@ -7294,28 +7295,27 @@
                             </div>
                             
                             <div class="flex flex-wrap items-center justify-center gap-3 w-full xl:w-auto">
-                                <div class="flex flex-wrap items-center gap-3 ${this.analiseEditMode ? 'hidden' : ''}">
+                                <div class="flex flex-wrap items-center gap-3">
                                     ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                        <select onchange="app.ui.analiseFiltroMes=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
-                                            <option value="">Evolutivo (Todos os Meses)</option>
-                                            ${data.mesesDisponiveis.map(m => `<option value="${m}" ${app.ui.analiseFiltroMes === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`).join('')}
+                                        <select multiple onchange="app.ui.analiseFiltroMes=Array.from(this.selectedOptions).map(o=>o.value); app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-2 h-20 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer custom-scrollbar" title="Segure CTRL/CMD para selecionar vários">
+                                            <option value="">Todos os Meses</option>
+                                            ${data.mesesDisponiveis.map(m => `<option value="${m}" ${app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.includes(m) ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`).join('')}
                                         </select>
-                                        <select onchange="app.ui.analiseFiltroRelatorio=this.value; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer">
-                                            <option value="">Visão Consolidada (Todos)</option>
-                                            ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio === r.nome ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
+                                        <select multiple onchange="app.ui.analiseFiltroRelatorio=Array.from(this.selectedOptions).map(o=>o.value); app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="p-2 h-20 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none focus:border-blue-500 shadow-sm cursor-pointer custom-scrollbar" title="Segure CTRL/CMD para selecionar vários">
+                                            <option value="">Todos Formulários</option>
+                                            ${mainData.relatorios.map(r => `<option value="${r.nome}" ${app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.includes(r.nome) ? 'selected' : ''}>Form: ${r.nome}</option>`).join('')}
                                         </select>
-                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = \\'\\'; app.ui.analiseFiltroMes = \\'\\'; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
+                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'app.analiseCSVDinamicoData = null; localStorage.removeItem(\\'soft_analise_data\\'); app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Zerar Tudo</button>
                                     ` : ''}
-                                    <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
                                         <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
                                         <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                     </label>
-                                    <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap" title="Use este botão para fazer um Raio-X de como a planilha envia as falhas e os pesos.">
+                                    <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Use este botão para fazer um Raio-X de como a planilha envia as falhas e os pesos.">
                                         <i class="fa-solid fa-microscope text-lg text-purple-400"></i> Raio-X (Pesos e Falhas)
                                         <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
                                     </label>
                                 </div>
-                                <!-- O botão de Modo Apresentação fica sempre visível -->
                                 ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `<button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>` : ''}
                             </div>
                         </div>
@@ -7345,7 +7345,7 @@
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${data.totalLinhas} <span class="text-sm font-medium text-slate-400 ml-1">Ligs.</span></div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação."><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Conformidade Abs.</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1" title="Percentual de avaliações que não sofreram despontuação."><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Conformidade</div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white">${data.conformidadePct}%</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform hover:-translate-y-1 transition-transform shadow-sm">
@@ -7362,60 +7362,6 @@
                             </div>
                         </div>
                     `;
-
-                    // --- EVOLUTIVO VISUAL ---
-                    if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
-                        html += `
-                        <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
-                            ${btnHideCode}
-                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-6 flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal da Operação</h3>
-                            
-                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
-                                <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
-                                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Média Operacional no Período</h4>
-                                    <div class="flex-1 relative w-full h-full"><canvas id="chart-analise-evolutivo"></canvas></div>
-                                </div>
-                                
-                                <div class="space-y-4">
-                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
-                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-medal text-green-500"></i> Top 5: Evolução Positiva</h4>
-                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
-                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                                            ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
-                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-400 transition-colors group shadow-sm">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-blue-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-3">
-                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
-                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'} text-sm">${op.fim.toFixed(1)}</span>
-                                                    </div>
-                                                </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes.</div>'}
-                                        </div>
-                                    </div>
-                                
-                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
-                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Alerta: Queda de Qualidade</h4>
-                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
-                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                                            ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
-                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-red-400 transition-colors group shadow-sm">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-red-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-3">
-                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
-                                                        <span class="font-black text-red-500 text-sm">${op.fim.toFixed(1)}</span>
-                                                        <span class="text-[9px] text-red-600 bg-red-50 border border-red-100 px-1 rounded font-bold ml-1">${op.diff.toFixed(1)}</span>
-                                                    </div>
-                                                </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada.</div>'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        `;
-                    }
 
                     // --- MÉDIAS POR MONITOR ---
                     html += `
@@ -7439,7 +7385,6 @@
 
                         <!-- LISTAS DE OFENSORES E FALHAS CRÍTICAS -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                            
                             <!-- Falhas Críticas -->
                             <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-red-600 shadow-sm overflow-hidden">
                                 ${btnHideCode}
@@ -7492,8 +7437,65 @@
                                 </div>
                             </div>
                         </div>
+                    `;
 
-                        <!-- TABELA DETALHADA -->
+                    // --- EVOLUTIVO VISUAL REORDENADO AQUI ---
+                    const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && (!app.ui.analiseFiltroMes || app.ui.analiseFiltroMes.length === 0 || app.ui.analiseFiltroMes[0] === "");
+                    if (showEvolutivo) {
+                        html += `
+                        <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
+                            ${btnHideCode}
+                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-6 flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal da Operação</h3>
+                            
+                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
+                                <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
+                                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Média Operacional no Período</h4>
+                                    <div class="flex-1 relative w-full h-full"><canvas id="chart-analise-evolutivo"></canvas></div>
+                                </div>
+                                
+                                <div class="space-y-4">
+                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-medal text-green-500"></i> Top 5: Evolução Positiva</h4>
+                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
+                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-400 transition-colors group shadow-sm">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-blue-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-3">
+                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'} text-sm">${op.fim.toFixed(1)}</span>
+                                                    </div>
+                                                </div>
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes.</div>'}
+                                        </div>
+                                    </div>
+                                
+                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Alerta: Queda de Qualidade</h4>
+                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
+                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                            ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
+                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-red-400 transition-colors group shadow-sm">
+                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-red-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
+                                                    <div class="flex items-center gap-3">
+                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
+                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                                                        <span class="font-black text-red-500 text-sm">${op.fim.toFixed(1)}</span>
+                                                        <span class="text-[9px] text-red-600 bg-red-50 border border-red-100 px-1 rounded font-bold ml-1">${op.diff.toFixed(1)}</span>
+                                                    </div>
+                                                </div>
+                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada.</div>'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    }
+
+                    // TABELA DETALHADA
+                    html += `
                         <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                             ${btnHideCode}
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
@@ -7553,7 +7555,7 @@
 
                     // Atraso seguro para o Chart.js desenhar a curva evolutiva perfeitamente
                     setTimeout(() => {
-                        if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
+                        if (showEvolutivo) {
                             if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
                             const ctxEvol = document.getElementById('chart-analise-evolutivo');
                             if (ctxEvol) {
