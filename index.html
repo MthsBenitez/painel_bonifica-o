@@ -9898,12 +9898,35 @@
                                 </div>
                             </div>
                             <div class="flex flex-col gap-2 mt-4 md:mt-0">
-                                <button onclick="app.admin.saveResultsOnly()" class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-floppy-disk"></i> Salvar Lançamentos Apenas</button>
-                                <button onclick="app.admin.saveAndSchedule()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-paper-plane"></i> Salvar Lançamentos e Agendar Feedback</button>
+                                <button onclick="app.admin.checkEditsAndSave(false)" class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-floppy-disk"></i> Salvar Lançamentos Apenas</button>
+                                <button onclick="app.admin.checkEditsAndSave(true)" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-paper-plane"></i> Salvar Lançamentos e Agendar Feedback</button>
                             </div>
                         `;
                     }
                     html += `</div>`;
+
+                    // ADICIONA O HISTÓRICO DE EDIÇÕES AUDITADAS
+                    if (r.editHistory && r.editHistory.length > 0) {
+                        html += `
+                            <div class="mt-6">
+                                <h4 class="font-bold text-slate-700 dark:text-slate-300 text-sm mb-4"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico de Alterações Manuais</h4>
+                                <div class="space-y-3">
+                                    ${r.editHistory.map(h => `
+                                        <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm text-xs">
+                                            <div class="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+                                                <span class="font-bold text-slate-800 dark:text-white"><i class="fa-solid fa-user-pen text-purple-500 mr-1"></i> ${h.admin}</span>
+                                                <span class="text-[9px] text-slate-400 uppercase tracking-widest">${h.date}</span>
+                                            </div>
+                                            <div class="mb-3 text-slate-600 dark:text-slate-400"><strong>Motivo:</strong> ${h.reason}</div>
+                                            <ul class="space-y-1.5">
+                                                ${h.changes.map(c => `<li><span class="text-slate-500 font-bold">${c.goalTitle}:</span> <span class="line-through text-red-400 mx-1">${c.old}</span> <i class="fa-solid fa-arrow-right text-[9px] text-slate-300"></i> <span class="text-green-600 font-black ml-1">${c.new}</span></li>`).join('')}
+                                            </ul>
+                                        </div>
+                                    `).reverse().join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
                     
                     document.getElementById('adm-editor-area').innerHTML = html;
                     document.getElementById('adm-editor-area').classList.remove('hidden');
@@ -9934,58 +9957,126 @@
                     return res;
                 },
 
-                saveResultsOnly() {
+                checkEditsAndSave(isScheduling) {
                     const mat = document.getElementById('adm-user-select').value;
                     const idx = app.users.findIndex(u => u.matricula === mat);
                     if(idx === -1) return;
 
+                    let scheduleData = null;
+                    if (isScheduling) {
+                        const date = document.getElementById('schedule-date').value;
+                        const time = document.getElementById('schedule-time').value;
+                        if(!date || !time) return app.ui.showAlert("Aviso", "Preencha a data e o horário para agendar o feedback.", "error");
+                        scheduleData = { date, time };
+                    }
+
                     const user = app.users[idx];
-                    if(!user.results) user.results = {};
+                    const prevMonthData = (user.results && user.results[app.currentMonth]) || {};
+                    const newData = this.collectResultsFromDOM(prevMonthData);
+
+                    let changes = [];
+                    app.config.goals.forEach(g => {
+                        // Ignora campos automáticos pois eles têm fluxos de auditoria próprios nas Atas
+                        if (g.type === 'calibracao' || g.type === 'actions') return;
+
+                        if (g.type === 'percent') {
+                            const oldReal = prevMonthData[g.id] ? prevMonthData[g.id].real : null;
+                            const newReal = newData[g.id].real;
+                            // Registra apenas se já existia um valor prévio e ele foi alterado
+                            if (oldReal !== null && String(oldReal) !== String(newReal)) {
+                                changes.push({ goalTitle: g.title, old: oldReal, new: newReal });
+                            }
+                        } else {
+                            const oldVal = prevMonthData[g.id] ? prevMonthData[g.id].val : null;
+                            const newVal = newData[g.id].val;
+                            if (oldVal !== null && String(oldVal) !== String(newVal)) {
+                                changes.push({ goalTitle: g.title, old: oldVal, new: newVal });
+                            }
+                        }
+                    });
+
+                    // É considerado "Edição" apenas se o usuário já possuía dados salvos e houve mudanças
+                    const isEditing = Object.keys(prevMonthData).length > 0 && changes.length > 0;
+
+                    if (isEditing) {
+                        this.pendingSaveData = { user, idx, newData, changes, isScheduling, scheduleData };
+                        this.showEditReasonModal(changes);
+                    } else {
+                        this.executeFinalSave(user, idx, newData, isScheduling, scheduleData, null);
+                    }
+                },
+
+                showEditReasonModal(changes) {
+                    let changesHtml = changes.map(c => `
+                        <div class="text-xs bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-center shadow-sm">
+                            <span class="font-bold text-slate-700 dark:text-slate-300">${c.goalTitle}</span>
+                            <div>
+                                <span class="line-through text-red-500 mr-2">${c.old}</span>
+                                <i class="fa-solid fa-arrow-right text-slate-400 text-[10px]"></i>
+                                <span class="text-green-600 font-black ml-2">${c.new}</span>
+                            </div>
+                        </div>
+                    `).join('');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-pen-to-square text-orange-500"></i> Justificar Alteração de Notas`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Você está alterando notas que já haviam sido lançadas neste mês. Para manter a transparência e auditoria do sistema, descreva o motivo da mudança abaixo:</p>
+                        <div class="space-y-2 mb-5">${changesHtml}</div>
+                        <textarea id="edit-reason-input" rows="3" class="w-full p-4 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500 shadow-inner" placeholder="Ex: Ajuste solicitado pela diretoria após reavaliação de monitoria contestada..."></textarea>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="app.admin.confirmEditSave()" class="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-sm shadow-md transition-all">Salvar Alterações</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                    setTimeout(() => document.getElementById('edit-reason-input').focus(), 100);
+                },
+
+                confirmEditSave() {
+                    const reason = document.getElementById('edit-reason-input').value.trim();
+                    if (!reason) return app.ui.showAlert("Aviso", "A justificativa para a alteração da nota é obrigatória.", "error");
+
+                    document.getElementById('global-modal').classList.add('hidden');
+                    const { user, idx, newData, changes, isScheduling, scheduleData } = this.pendingSaveData;
                     
+                    const reasonObj = {
+                        admin: app.currentUser ? app.currentUser.nome : 'Administração',
+                        date: new Date().toLocaleString('pt-BR'),
+                        reason: reason,
+                        changes: changes
+                    };
+
+                    this.executeFinalSave(user, idx, newData, isScheduling, scheduleData, reasonObj);
+                },
+
+                executeFinalSave(user, idx, newData, isScheduling, scheduleData, reasonObj) {
+                    if(!user.results) user.results = {};
                     const prevMonthData = user.results[app.currentMonth] || {};
                     const oldStatus = prevMonthData.status || 'pendente';
                     const oldDate = prevMonthData.fbDate;
                     const oldTime = prevMonthData.fbTime;
-                    
+
+                    // Preserva o histórico de edições passadas
+                    const editHistory = prevMonthData.editHistory || [];
+                    if (reasonObj) editHistory.push(reasonObj);
+
                     user.results[app.currentMonth] = {
-                        ...this.collectResultsFromDOM(prevMonthData),
-                        status: oldStatus === 'agendado' ? 'agendado' : 'pendente'
+                        ...newData,
+                        status: isScheduling ? 'agendado' : (oldStatus === 'agendado' ? 'agendado' : 'pendente'),
+                        editHistory: editHistory
                     };
-                    
-                    if(oldStatus === 'agendado') {
+
+                    // Restaura ou aplica datas de feedback
+                    if (isScheduling) {
+                        user.results[app.currentMonth].fbDate = scheduleData.date;
+                        user.results[app.currentMonth].fbTime = scheduleData.time;
+                    } else if (oldStatus === 'agendado') {
                         user.results[app.currentMonth].fbDate = oldDate;
                         user.results[app.currentMonth].fbTime = oldTime;
                     }
 
                     app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Rascunho Salvo", "As notas foram salvas no sistema, mas ainda estão pendentes de agendamento de feedback.", "success");
-                    });
-                },
-
-                saveAndSchedule() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    const idx = app.users.findIndex(u => u.matricula === mat);
-                    if(idx === -1) return;
-
-                    const date = document.getElementById('schedule-date').value;
-                    const time = document.getElementById('schedule-time').value;
-
-                    if(!date || !time) return app.ui.showAlert("Aviso", "Preencha a data e o horário para agendar o feedback.", "error");
-
-                    const user = app.users[idx];
-                    if(!user.results) user.results = {};
-                    
-                    const prevMonthData = user.results[app.currentMonth] || {};
-                    
-                    user.results[app.currentMonth] = {
-                        ...this.collectResultsFromDOM(prevMonthData),
-                        status: 'agendado',
-                        fbDate: date,
-                        fbTime: time
-                    };
-
-                    app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Processo Completo", "Notas salvas e feedback agendado no sistema do colaborador.", "success");
+                        app.ui.showAlert("Sucesso", isScheduling ? "Notas salvas e feedback agendado na plataforma." : "Notas salvas com sucesso.", "success");
                         this.loadUserEditor();
                     });
                 },
