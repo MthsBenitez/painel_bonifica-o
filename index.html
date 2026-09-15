@@ -4817,50 +4817,37 @@
                         `;
                     });
 
-                    html += `</div></div>`;
-                    container.innerHTML = html;
+                            html += `</div></div>`;
+                            container.innerHTML = html;
 
-                    setTimeout(() => {
-                        const isDark = document.documentElement.classList.contains('dark');
-                        const textColor = isDark ? '#94a3b8' : '#64748b';
-                        const gridColor = isDark ? '#334155' : '#e2e8f0';
+                            setTimeout(() => {
+                                const isDark = document.documentElement.classList.contains('dark');
+                                const textColor = isDark ? '#94a3b8' : '#64748b';
+                                const gridColor = isDark ? '#334155' : '#e2e8f0';
 
-                        // MÁGICA GRÁFICO EVOLUTIVO
-                        if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && !app.ui.analiseFiltroMes) {
-                            if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
-                            const ctxEvol = document.getElementById('chart-analise-evolutivo');
-                            if (ctxEvol) {
-                                window.myChartAnaliseEvol = new Chart(ctxEvol, {
-                                    type: 'line',
-                                    data: { 
-                                        labels: data.evolutivoChartLabels, 
-                                        datasets: [{ 
-                                            label: 'Média Consolidada', 
-                                            data: data.evolutivoChartData, 
-                                            borderColor: '#6366f1', 
-                                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                                            borderWidth: 4,
-                                            pointBackgroundColor: '#ffffff',
-                                            pointBorderColor: '#6366f1',
-                                            pointRadius: 6,
-                                            pointHoverRadius: 8,
-                                            fill: true,
-                                            tension: 0.4
-                                        }] 
-                                    },
-                                    options: { 
-                                        responsive: true, maintainAspectRatio: false, 
-                                        scales: { 
-                                            y: { beginAtZero: false, min: Math.max(0, Math.min(...data.evolutivoChartData) - 10), max: 100, ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, 
-                                            x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } 
-                                        }, 
-                                        plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } } 
-                                    }
-                                });
-                            }
-                        }
-                    }, 150); // <--- CORREÇÃO: Fechando o setTimeout com 150ms de atraso!
-                },
+                                // GRÁFICOS DO DASHBOARD EXECUTIVO
+                                if(window.dashChartPct) window.dashChartPct.destroy();
+                                if(window.dashChartFin) window.dashChartFin.destroy();
+                                
+                                const ctxPct = document.getElementById('chart-pct');
+                                const ctxFin = document.getElementById('chart-finance');
+
+                                if(ctxPct) {
+                                    window.dashChartPct = new Chart(ctxPct, {
+                                        type: 'bar',
+                                        data: { labels: labels, datasets: [{ label: 'Aproveitamento (%)', data: dataPct, backgroundColor: '#3b82f6', borderRadius: 6 }] },
+                                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } } }
+                                    });
+                                }
+                                if(ctxFin) {
+                                    window.dashChartFin = new Chart(ctxFin, {
+                                        type: 'bar',
+                                        data: { labels: labels, datasets: [{ label: 'Valor (R$)', data: dataVal, backgroundColor: '#10b981', borderRadius: 6 }] },
+                                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } } }
+                                    });
+                                }
+                            }, 150); 
+                        },
 
                 renderView_Cadastros(container) {
                     if(!app.isAdmin) return;
@@ -8728,7 +8715,8 @@
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
                             const firstSheet = workbook.SheetNames[0];
-                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                            // CORREÇÃO: Lê os dados usando a referência correta do arquivo
+                            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "O arquivo da Amil está vazio.", "error");
             
@@ -8832,7 +8820,8 @@
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
                             const firstSheet = workbook.SheetNames[0];
-                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                            // CORREÇÃO: Lê os dados usando a referência correta do arquivo
+                            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
             
@@ -9837,11 +9826,11 @@
                                          </div>`;
                             }
                         } else if (g.type === 'calibracao') {
-                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qtd. Sessões <span class="text-blue-500">(Automático)</span></label>
-                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" disabled title="Este valor é somado automaticamente quando você aprova uma Ata." class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm font-bold text-slate-500 cursor-not-allowed">`;
+                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qtd. Sessões <span class="text-blue-500">(Editável)</span></label>
+                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
                         } else if (g.type === 'actions') {
-                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Ações Validadas <span class="text-blue-500">(Automático)</span></label>
-                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" disabled title="Este valor é somado automaticamente quando você aprova uma Ação." class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm font-bold text-slate-500 cursor-not-allowed">`;
+                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Ações Validadas <span class="text-blue-500">(Editável)</span></label>
+                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
                         } else if (g.type === 'gestor') {
                             html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Impacto Final (%)</label>
                                      <select id="input-${g.id}-val" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
@@ -9940,20 +9929,17 @@
                             const real = document.getElementById(`input-${g.id}-real`).value || 0;
                             
                             // NOVO: Protege a meta de Feedbacks (g2) para não ser resetada pelo botão Salvar do ADM
-                            if (g.id === 'g2') {
-                                res[g.id] = dadosAtuaisDoBanco[g.id] || { meta: 0, real: 0 };
-                            } else {
-                                res[g.id] = { meta, real };
-                            }
-                        } else if (g.type === 'calibracao' || g.type === 'actions') {
-                            // PROTEÇÃO: Mantém o valor exato que já estava salvo no banco de dados!
-                            // Isso impede que a tela de "Lançar Notas" sobrescreva os pontos automáticos com "0"
-                            res[g.id] = dadosAtuaisDoBanco[g.id] || { val: 0 };
-                        } else {
-                            const val = document.getElementById(`input-${g.id}-val`).value || '';
-                            res[g.id] = { val };
-                        }
-                    });
+                                    if (g.id === 'g2') {
+                                        res[g.id] = dadosAtuaisDoBanco[g.id] || { meta: 0, real: 0 };
+                                    } else {
+                                        res[g.id] = { meta, real };
+                                    }
+                                } else {
+                                    // Agora coleta livremente os dados das calibrações e ações também!
+                                    const val = document.getElementById(`input-${g.id}-val`).value || '';
+                                    res[g.id] = { val };
+                                }
+                            });
                     return res;
                 },
 
