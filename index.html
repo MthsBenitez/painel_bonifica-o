@@ -7572,7 +7572,7 @@
                     const renderDashCard = (id, iconClass, title, mainValue, subText, colorClass, commentText) => {
                         const hasComment = commentText && commentText.trim() !== '';
                         return `
-                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative" onmouseenter="if(window['chart_'+'${id}']) window['chart_'+'${id}'].resize();">
+                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative" onmouseenter="setTimeout(() => { if(window['chart_${id}']) { window['chart_${id}'].resize(); window['chart_${id}'].update(); } }, 300);">
                                 <!-- Botão Flutuante de Adicionar Comentário -->
                                 ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute -top-3 -right-2 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center" title="Adicionar Comentário"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
 
