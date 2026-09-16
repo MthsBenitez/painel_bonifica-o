@@ -7103,14 +7103,26 @@
                     this.renderTab('analise_csv_dinamico', true);
                 },
 
-                toggleRelatorioFiltro(rel) {
-                    if (!this.analiseFiltroRelatorio) this.analiseFiltroRelatorio = [];
-                    if (this.analiseFiltroRelatorio.includes(rel)) {
-                        this.analiseFiltroRelatorio = this.analiseFiltroRelatorio.filter(r => r !== rel);
+                evolutivoFiltroMes: [], // Variável para o filtro exclusivo do gráfico de evolução
+
+                toggleMesFiltro(mes) {
+                    if (!this.analiseFiltroMes) this.analiseFiltroMes = [];
+                    if (this.analiseFiltroMes.includes(mes)) {
+                        this.analiseFiltroMes = this.analiseFiltroMes.filter(m => m !== mes);
                     } else {
-                        this.analiseFiltroRelatorio.push(rel);
+                        this.analiseFiltroMes.push(mes);
                     }
                     app.admin.gerarInteligenciaCSV();
+                    this.renderTab('analise_csv_dinamico', true);
+                },
+
+                toggleEvolutivoFiltroMes(mes) {
+                    if (!this.evolutivoFiltroMes) this.evolutivoFiltroMes = [];
+                    if (this.evolutivoFiltroMes.includes(mes)) {
+                        this.evolutivoFiltroMes = this.evolutivoFiltroMes.filter(m => m !== mes);
+                    } else {
+                        this.evolutivoFiltroMes.push(mes);
+                    }
                     this.renderTab('analise_csv_dinamico', true);
                 },
                 sortAnaliseTable(col) {
@@ -7560,16 +7572,26 @@
                     const renderDashCard = (id, iconClass, title, mainValue, subText, colorClass, commentText) => {
                         const hasComment = commentText && commentText.trim() !== '';
                         return `
-                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative">
-                                <!-- Botão Flutuante Seguro fora da rotação 3D -->
+                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative" onmouseenter="if(window['chart_'+'${id}']) window['chart_'+'${id}'].resize();">
+                                <!-- Botão Flutuante de Adicionar Comentário -->
                                 ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute -top-3 -right-2 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center" title="Adicionar Comentário"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
 
                                 <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] cursor-pointer">
                                     <!-- Lado da Frente (Informações) -->
                                     <div class="absolute inset-0 [backface-visibility:hidden] bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center overflow-visible">
                                         <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
-                                        ${hasComment ? `<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-300 text-yellow-900 text-[10px] font-black px-4 py-1.5 rounded-full shadow-lg z-[50] border border-yellow-400 max-w-[90%] flex items-center gap-1.5 whitespace-pre-wrap leading-tight" style="min-width: max-content;"><i class="fa-solid fa-comment-dots"></i> ${commentText}</div>` : ''}
-                                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
+                                        
+                                        <!-- NOVO COMENTÁRIO ELEGANTE E OCULTO -->
+                                        ${hasComment ? `
+                                        <div class="absolute top-3 right-3 z-50 group/tooltip">
+                                            <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[10px]"></i></div>
+                                            <div class="absolute bottom-full right-0 mb-2 w-48 p-3 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none">
+                                                <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                                <div class="text-xs text-slate-700 dark:text-slate-300 leading-tight whitespace-pre-wrap">${commentText}</div>
+                                            </div>
+                                        </div>` : ''}
+
+                                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10 pr-6"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
                                         <div class="text-3xl font-black text-slate-800 dark:text-white mb-1 relative z-10">${mainValue}</div>
                                         <div class="text-[10px] text-slate-400 font-medium leading-tight relative z-10 line-clamp-2">${subText}</div>
                                     </div>
@@ -7637,7 +7659,17 @@
                         html += `
                         <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
                             ${btnHideCode}
-                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-6 flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal da Operação</h3>
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                                <h3 class="font-extrabold text-xl text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal</h3>
+                                <!-- Botoes do Filtro Independente -->
+                                <div class="flex flex-wrap gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
+                                    ${data.mesesDisponiveis.map(m => {
+                                        const isActive = app.ui.evolutivoFiltroMes && app.ui.evolutivoFiltroMes.includes(m);
+                                        const btnClass = isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-indigo-400';
+                                        return `<button onclick="app.ui.toggleEvolutivoFiltroMes('${m}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m).substring(0,3)}</button>`;
+                                    }).join('')}
+                                </div>
+                            </div>
                             
                             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
                                 <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
@@ -9593,8 +9625,8 @@
                         });
                     });
 
-                    // CÁLCULO EVOLUTIVO FINAL
-                    let activeMonthsForEvol = (filtrosMes && filtrosMes.length > 0 && filtrosMes[0] !== "") ? data.mesesDisponiveis.filter(m => filtrosMes.includes(m)) : data.mesesDisponiveis;
+                    // CÁLCULO EVOLUTIVO FINAL (Usando o filtro independente novo)
+                    let activeMonthsForEvol = (app.ui.evolutivoFiltroMes && app.ui.evolutivoFiltroMes.length > 0) ? data.mesesDisponiveis.filter(m => app.ui.evolutivoFiltroMes.includes(m)) : data.mesesDisponiveis;
                     
                     if (activeMonthsForEvol.length > 1) {
                         let mFirst = activeMonthsForEvol[0];
