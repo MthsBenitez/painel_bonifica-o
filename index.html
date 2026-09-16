@@ -4858,7 +4858,7 @@
                                             datasets: [{ data: cData, borderColor: colorHex, borderWidth: 2, pointBackgroundColor: colorHex, pointRadius: 2, tension: 0.3 }]
                                         },
                                         options: {
-                                            responsive: true, maintainAspectRatio: false,
+                                            animation: false, responsive: true, maintainAspectRatio: false,
                                             plugins: { legend: { display: false }, tooltip: {titleFont:{size:9}, bodyFont:{size:10, weight:'bold'}, padding: 6} },
                                             scales: { x: { display: false }, y: { display: false, min: Math.max(0, Math.min(...cData) - 5) } }
                                         }
@@ -7152,7 +7152,7 @@
                                 <i class="fa-solid ${type === 'critica' ? 'fa-circle-exclamation' : 'fa-layer-group'}"></i>
                             </div>
                             <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Ofensores:</h2>
-                            <div class="text-base font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 inline-block shadow-sm w-full line-clamp-2" title="${falhaNome}">${falhaNome}</div>
+<div class="text-base font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 inline-block shadow-sm w-full line-clamp-2" title="${decodedNome}">${decodedNome}</div>
                         </div>
                         <div class="text-xs uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2"><i class="fa-solid fa-users text-blue-500"></i> Operadores mapeados (${falhaObj.operadores.length}) - Clique para detalhar</div>
                         ${htmlList}
@@ -7556,29 +7556,29 @@
                             </div>
                         `;
                     }
-                    // Helper para os cards de dashboard interativos (EFEITO FLIP 3D)
+                    
                     const renderDashCard = (id, iconClass, title, mainValue, subText, colorClass, commentText) => {
                         const hasComment = commentText && commentText.trim() !== '';
                         return `
-                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] cursor-pointer">
-                                <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-                                    
+                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative">
+                                <!-- Botão Flutuante Seguro fora da rotação 3D -->
+                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute -top-3 -right-2 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center" title="Adicionar Comentário"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+
+                                <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] cursor-pointer">
                                     <!-- Lado da Frente (Informações) -->
                                     <div class="absolute inset-0 [backface-visibility:hidden] bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center overflow-visible">
                                         <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
-                                        ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute top-2 right-2 text-slate-300 hover:text-blue-500 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-lg z-20 transition-colors shadow-sm" title="Adicionar Comentário"><i class="fa-solid fa-comment-dots"></i></button>` : ''}
-                                        ${hasComment ? `<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-300 text-yellow-900 text-[10px] font-black px-4 py-1.5 rounded-full shadow-lg z-[60] border border-yellow-400 max-w-[90%] flex items-center gap-1.5 whitespace-pre-wrap leading-tight pointer-events-none" style="min-width: max-content;"><i class="fa-solid fa-comment-dots"></i> ${commentText}</div>` : ''}
+                                        ${hasComment ? `<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-300 text-yellow-900 text-[10px] font-black px-4 py-1.5 rounded-full shadow-lg z-[50] border border-yellow-400 max-w-[90%] flex items-center gap-1.5 whitespace-pre-wrap leading-tight" style="min-width: max-content;"><i class="fa-solid fa-comment-dots"></i> ${commentText}</div>` : ''}
                                         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
                                         <div class="text-3xl font-black text-slate-800 dark:text-white mb-1 relative z-10">${mainValue}</div>
                                         <div class="text-[10px] text-slate-400 font-medium leading-tight relative z-10 line-clamp-2">${subText}</div>
                                     </div>
 
                                     <!-- Lado de Trás (Gráfico de Linha) -->
-                                    <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white dark:bg-slate-900 p-3 rounded-2xl border border-blue-300 dark:border-blue-700 shadow-lg flex flex-col">
+                                    <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white dark:bg-slate-900 p-3 rounded-2xl border border-blue-300 dark:border-blue-700 shadow-lg flex flex-col items-center justify-center">
                                         <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center mb-1"><i class="fa-solid fa-arrow-trend-up text-blue-500"></i> ${title}</div>
-                                        <div class="relative flex-1 w-full"><canvas id="flip-chart-${id}"></canvas></div>
+                                        <div class="relative w-full h-[80px] flex-1"><canvas id="flip-chart-${id}"></canvas></div>
                                     </div>
-
                                 </div>
                             </div>
                         `;
@@ -7632,7 +7632,7 @@
                     `;
 
                     // --- EVOLUTIVO VISUAL REORDENADO AQUI ---
-                    const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 0 && (!app.ui.analiseFiltroMes || app.ui.analiseFiltroMes.length === 0 || app.ui.analiseFiltroMes[0] === "");
+                    const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 0;
                     if (showEvolutivo) {
                         html += `
                         <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
