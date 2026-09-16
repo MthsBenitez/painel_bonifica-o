@@ -9245,7 +9245,6 @@
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui.showAlert("Gerando PDF...", "Capturando a tela atual da apresentação. Isso pode levar alguns segundos.", "info");
 
-                    const area = document.getElementById('view-container-analise_csv_dinamico');
                     const oldMode = app.ui.analiseEditMode;
                     
                     // Entra no modo apresentação rapidamente (invisível para o usuário) para tirar a foto limpa
@@ -9253,6 +9252,10 @@
 
                     setTimeout(() => {
                         window.scrollTo(0, 0);
+                        
+                        // A GRANDE CORREÇÃO: Pegamos a tela NOVA que acabou de ser desenhada, e não a antiga!
+                        const area = document.getElementById('view-container-analise_csv_dinamico');
+                        
                         html2canvas(area, { 
                             scale: 1.5, 
                             useCORS: true, 
@@ -9264,6 +9267,9 @@
                                 const imgData = canvas.toDataURL('image/jpeg', 0.85);
                                 const pdfWidth = canvas.width;
                                 const pdfHeight = canvas.height;
+                                
+                                // Trava de segurança: Se a largura for 0, bloqueia o erro do PDF
+                                if (pdfWidth === 0 || pdfHeight === 0) throw new Error("Tela fantasma detectada.");
                                 
                                 const pdf = new window.jspdf.jsPDF({
                                     orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
@@ -9282,7 +9288,7 @@
                         }).finally(() => {
                             if (!oldMode) app.ui.toggleEditModeAnalise(); // Devolve a tela ao normal
                         });
-                    }, 800);
+                    }, 1000); // Aumentamos de 800 para 1000 para o navegador ter tempo de respirar
                 },
 
                 confirmarNomeCSV() {
