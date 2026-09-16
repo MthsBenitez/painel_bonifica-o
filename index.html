@@ -3360,7 +3360,7 @@
                                 scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
                             }
                         });
-                    }, 100);
+                    }, 800);
                 },
 
                 // --- COMMAND PALETTE (BUSCA RÁPIDA) ---
@@ -7240,7 +7240,9 @@
                     }
 
                     setTimeout(() => {
-                        if (chartData.length > 1) {
+                        setTimeout(() => {
+                        if (chartData.length > 0) {
+                            if(chartData.length === 1) { chartData.push(chartData[0]); chartLabels.push(chartLabels[0]); }
                             const ctxModal = document.getElementById(`modal-chart-${nome.replace(/\s+/g, '')}`);
                             if (ctxModal) {
                                 new Chart(ctxModal, {
@@ -7564,7 +7566,7 @@
                                     <div class="absolute inset-0 [backface-visibility:hidden] bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center overflow-visible">
                                         <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
                                         ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute top-2 right-2 text-slate-300 hover:text-blue-500 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-lg z-20 transition-colors shadow-sm" title="Adicionar Comentário"><i class="fa-solid fa-comment-dots"></i></button>` : ''}
-                                        ${this.analiseEditMode && hasComment ? `<div class="absolute -top-4 right-2 text-blue-500 animate-bounce z-50"><i class="fa-solid fa-comment-dots"></i></div><div class="absolute bottom-full left-1/2 transform -translate-x-1/2 -translate-y-2 bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-800 text-xs p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-max max-w-[250px] z-[60] whitespace-pre-wrap">${commentText}</div>` : ''}
+                                        ${hasComment ? `<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-300 text-yellow-900 text-[10px] font-black px-4 py-1.5 rounded-full shadow-lg z-[60] border border-yellow-400 max-w-[90%] flex items-center gap-1.5 whitespace-pre-wrap leading-tight pointer-events-none" style="min-width: max-content;"><i class="fa-solid fa-comment-dots"></i> ${commentText}</div>` : ''}
                                         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
                                         <div class="text-3xl font-black text-slate-800 dark:text-white mb-1 relative z-10">${mainValue}</div>
                                         <div class="text-[10px] text-slate-400 font-medium leading-tight relative z-10 line-clamp-2">${subText}</div>
@@ -7606,7 +7608,7 @@
                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios</h3>
                                 <div class="space-y-3 pr-2 flex-1 custom-scrollbar ${this.analiseEditMode ? '' : 'overflow-y-auto max-h-64'}">
                                     ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
-                                        <div onclick="app.admin.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
+                                        <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
                                             <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-orange-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
                                             <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm flex items-center justify-center">${f.count}x</span>
                                         </div>
@@ -7618,7 +7620,7 @@
                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas</h3>
                                 <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
                                     ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
-                                        <div onclick="app.admin.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
+                                        <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
                                             <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-red-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
                                             <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm self-start mt-0.5">${f.count}x</span>
                                         </div>
@@ -7629,7 +7631,7 @@
                     `;
 
                     // --- EVOLUTIVO VISUAL REORDENADO AQUI ---
-                    const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 1 && (!app.ui.analiseFiltroMes || app.ui.analiseFiltroMes.length === 0 || app.ui.analiseFiltroMes[0] === "");
+                    const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 0 && (!app.ui.analiseFiltroMes || app.ui.analiseFiltroMes.length === 0 || app.ui.analiseFiltroMes[0] === "");
                     if (showEvolutivo) {
                         html += `
                         <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
@@ -9607,7 +9609,7 @@
                             }
                         });
 
-                        data.evolutivoPioresIniciais = [...opsComparacao].sort((a,b) => a.inicio - b.inicio).slice(0, 5);
+                        data.evolutivoPioresIniciais = [...opsComparacao].filter(o => o.diff > 0).sort((a,b) => b.diff - a.diff).slice(0, 5);
                         data.evolutivoQuedas = [...opsComparacao].filter(o => o.inicio >= 80 && o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
                         
                         data.evolutivoChartLabels = activeMonthsForEvol.map(m => app.ui.formatMonthLabel(m));
