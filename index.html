@@ -3059,7 +3059,7 @@
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}, {id:'apresentacoes_monitorias', label:'Apresentações'}, {id:'gerador_graficos', label:'Gerador Gráficos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Importar Planilhas'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -7449,7 +7449,10 @@
                                     <i class="fa-solid fa-microscope text-lg text-purple-400"></i> Raio-X (Pesos e Falhas)
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
                                 </label>
-                                ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `<button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>` : ''}
+                                ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                <button onclick="app.admin.exportarAnalisePDF()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-pdf mr-1"></i> Exportar PDF</button>
+                                <button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>
+                                ` : ''}
                             </div>
                         </div>
                     `;
@@ -9234,6 +9237,54 @@
                     reader.readAsBinaryString(file);
                 },
 
+                exportarAnalisePDF() {
+                    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
+                        return app.ui.showAlert("Aviso", "As ferramentas de PDF ainda estão carregando. Tente novamente em alguns segundos.", "info");
+                    }
+                    
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui.showAlert("Gerando PDF...", "Capturando a tela atual da apresentação. Isso pode levar alguns segundos.", "info");
+
+                    const area = document.getElementById('view-container-analise_csv_dinamico');
+                    const oldMode = app.ui.analiseEditMode;
+                    
+                    // Entra no modo apresentação rapidamente (invisível para o usuário) para tirar a foto limpa
+                    if (!oldMode) app.ui.toggleEditModeAnalise();
+
+                    setTimeout(() => {
+                        window.scrollTo(0, 0);
+                        html2canvas(area, { 
+                            scale: 1.5, 
+                            useCORS: true, 
+                            allowTaint: false, 
+                            backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+                            logging: false 
+                        }).then(canvas => {
+                            try {
+                                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                                const pdfWidth = canvas.width;
+                                const pdfHeight = canvas.height;
+                                
+                                const pdf = new window.jspdf.jsPDF({
+                                    orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
+                                    unit: 'px',
+                                    format: [pdfWidth, pdfHeight]
+                                });
+                                
+                                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                                pdf.save(`Analitico_Operacao_${new Date().toISOString().split('T')[0]}.pdf`);
+                                
+                                app.ui.showAlert("Sucesso!", "O seu PDF do Analítico foi gerado e baixado.", "success");
+                            } catch (e) {
+                                console.error("Erro PDF Analítico:", e);
+                                app.ui.showAlert("Erro no PDF", "Não foi possível estruturar o arquivo final.", "error");
+                            }
+                        }).finally(() => {
+                            if (!oldMode) app.ui.toggleEditModeAnalise(); // Devolve a tela ao normal
+                        });
+                    }, 800);
+                },
+
                 confirmarNomeCSV() {
                     const nomeForm = document.getElementById('csv-form-name').value.trim();
                     if(!nomeForm) return app.ui.showAlert("Aviso Obrigatório", "Você precisa definir um nome para que as perguntas não se misturem no consolidador global.", "error");
@@ -9816,8 +9867,8 @@
                                          </div>`;
                             } else if (g.id === 'g2') {
                                 html += `<div class="flex gap-3">
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta FB <span class="text-blue-500">(Auto)</span></label><input type="number" id="input-${g.id}-meta" value="${v.meta||'0'}" disabled title="Calculado automaticamente via Planilha" class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500 cursor-not-allowed"></div>
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Realizado FB <span class="text-blue-500">(Auto)</span></label><input type="number" id="input-${g.id}-real" value="${v.real||'0'}" disabled title="Calculado automaticamente via Planilha" class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500 cursor-not-allowed"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta FB <span class="text-blue-500">(Auto/Editável)</span></label><input type="number" id="input-${g.id}-meta" value="${v.meta\vert{}\vert{}'0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado FB <span class="text-blue-500">(Auto/Editável)</span></label><input type="number" id="input-${g.id}-real" value="${v.real\vert{}\vert{}'0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
                                          </div>`;
                             } else {
                                 html += `<div class="flex gap-3">
@@ -9928,12 +9979,8 @@
                             const meta = g.id === 'g1' ? 400 : (document.getElementById(`input-${g.id}-meta`).value || 0);
                             const real = document.getElementById(`input-${g.id}-real`).value || 0;
                             
-                            // NOVO: Protege a meta de Feedbacks (g2) para não ser resetada pelo botão Salvar do ADM
-                                    if (g.id === 'g2') {
-                                        res[g.id] = dadosAtuaisDoBanco[g.id] || { meta: 0, real: 0 };
-                                    } else {
-                                        res[g.id] = { meta, real };
-                                    }
+                            // A meta de Feedbacks (g2) agora é editável e salva junto com as demais
+                            res[g.id] = { meta, real };
                                 } else {
                                     // Agora coleta livremente os dados das calibrações e ações também!
                                     const val = document.getElementById(`input-${g.id}-val`).value || '';
