@@ -1110,6 +1110,7 @@
                             if (data.events) app.eventsList = data.events; else app.eventsList = {};
                             if (data.atas) app.atasList = data.atas; else app.atasList = {};
                             if (data.laudos) app.laudos.list = Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean); else app.laudos.list = [];
+                            if (data.apresentacoes) app.apresentacoesList = data.apresentacoes; else app.apresentacoesList = {};
 
                             if (data.campanha) {
                                 app.campanhaData = data.campanha;
@@ -1231,6 +1232,7 @@
                 saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
                 saveLaudos() { return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
+                saveApresentacoes() { return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
                 saveCampanha() { return firebase.database().ref('sistema_bonificacao/campanha').set(app.campanhaData || {}); },
                 saveMonitorias() { 
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
@@ -7170,7 +7172,6 @@
                         let contagemNoMesGlobal = 0;
                         if(data.detalhes && data.detalhes.linhas) {
                             data.detalhes.linhas.forEach(aval => {
-                                // O campo Data no formato D/M/A ou ISO
                                 let avalMesRef = null;
                                 if(typeof aval.data === 'string' && aval.data.includes('/')) {
                                     const dtParts = aval.data.split('/');
@@ -7205,7 +7206,7 @@
                     falhaObj.operadores.forEach((op, opIndex) => {
                         htmlList += `
                             <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group">
-                                <span class="font-bold text-slate-700 dark:text-slate-300 text-xs truncate pr-2 group-hover:text-blue-500 transition-colors" title="${op.nome}">${opIndex + 1}.${op.nome}</span>
+                                <span class="font-bold text-slate-700 dark:text-slate-300 text-xs truncate pr-2 group-hover:text-blue-500 transition-colors" title="${op.nome}">${opIndex + 1}. ${op.nome}</span>
                                 <span class="bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-black shadow-inner border border-slate-100 dark:border-slate-700 shrink-0">${op.qtd}x Falhas</span>
                             </div>
                         `;
@@ -7226,7 +7227,7 @@
                                 <canvas id="canvas-falha-global"></canvas>
                             </div>
                         </div>
-                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores que cometeraram esta falha (${falhaObj.operadores.length})</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores que cometeram esta falha (${falhaObj.operadores.length})</div>
                         ${htmlList}
                     `;
                     document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all w-full md:w-auto mt-2">Fechar Histórico</button>`;
@@ -7609,7 +7610,21 @@
                     `;
 
                     if (!data) {
-                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10"><i class="fa-solid fa-magnifying-glass-chart text-6xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3><p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema irá ler automaticamente os pesos das perguntas, cruzar os acertos, mapear falhas e compilar os formulários.</p></div>`;
+                        html += `
+                        <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10 mb-10">
+                            <i class="fa-solid fa-magnifying-glass-chart text-5xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i>
+                            <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema lerá os pesos, mapeará falhas e compilará os formulários.</p>
+                        </div>
+                        
+                        <div class="mb-4 flex items-center gap-3 mt-8">
+                            <i class="fa-solid fa-folder-tree text-2xl text-slate-400"></i>
+                            <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Apresentações Salvas (Nuvem)</h2>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="pastas-apresentacoes-grid">
+                            ${app.admin.renderPastasApresentacoes()}
+                        </div>
+                        `;
                         container.innerHTML = html;
                         return;
                     }
@@ -7693,6 +7708,7 @@
                             </div>
                         `;
                     };
+                    
                     html += `
                         <!-- DASHBOARD CARDS MESTRES -->
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
@@ -9536,6 +9552,174 @@
                         }
                     };
                     reader.readAsBinaryString(file);
+                },
+
+                // --- ITENS 5 E 6: MÓDULO DE PASTAS E SELEÇÃO DE AÇÕES ---
+                openSaveApresentacaoModal() {
+                    const data = app.analiseCSVDinamicoData;
+                    if(!data) return;
+                    
+                    const pastasExistentes = [...new Set(Object.values(app.apresentacoesList || {}).map(a => a.pasta))];
+                    const pastasDatalist = pastasExistentes.map(p => `<option value="${p}">`).join('');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> Arquivar Apresentação`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Apresentação *</label>
+                                <input type="text" id="save-apres-nome" value="${data.consolidado.infoOperacao.replace('Filtro Ativo: ', '')} - ${app.ui.formatMonthLabel(app.currentMonth)}" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-300 dark:bg-slate-800 dark:border-slate-600 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Pasta de Destino *</label>
+                                <input type="text" id="save-apres-pasta" list="pastas-list" placeholder="Ex: Resultados SAC, Fechamentos 2026..." class="w-full p-3 rounded-xl bg-slate-50 border border-slate-300 dark:bg-slate-800 dark:border-slate-600 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white">
+                                <datalist id="pastas-list">${pastasDatalist}</datalist>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
+                        <button onclick="app.admin.executeSaveApresentacao()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm shadow-md transition-all"><i class="fa-solid fa-check mr-1"></i> Salvar Agora</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                executeSaveApresentacao() {
+                    const nome = document.getElementById('save-apres-nome').value.trim();
+                    const pasta = document.getElementById('save-apres-pasta').value.trim();
+                    if(!nome || !pasta) return app.ui.showAlert("Atenção", "Preencha o Nome e a Pasta para salvar.", "error");
+
+                    const id = 'apr_' + Date.now();
+                    const payload = {
+                        id: id,
+                        nome: nome,
+                        pasta: pasta,
+                        dataStr: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                        timestamp: Date.now(),
+                        // Salva uma cópia EXATA do estado atual da análise
+                        payloadData: JSON.stringify(app.analiseCSVDinamicoData)
+                    };
+
+                    if(!app.apresentacoesList) app.apresentacoesList = {};
+                    app.apresentacoesList[id] = payload;
+
+                    app.storage.saveApresentacoes().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.showAlert("Salvo na Nuvem", "Sua apresentação foi arquivada com sucesso!", "success");
+                    });
+                },
+
+                renderPastasApresentacoes() {
+                    const lista = Object.values(app.apresentacoesList || {}).sort((a,b) => b.timestamp - a.timestamp);
+                    if(lista.length === 0) {
+                        return `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-8 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação salva no banco de dados.</div>`;
+                    }
+
+                    const pastas = {};
+                    lista.forEach(a => {
+                        if(!pastas[a.pasta]) pastas[a.pasta] = [];
+                        pastas[a.pasta].push(a);
+                    });
+
+                    let html = '';
+                    Object.keys(pastas).sort().forEach(nomePasta => {
+                        html += `
+                            <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                                    <i class="fa-solid fa-folder-open text-blue-500 text-xl"></i>
+                                    <h3 class="font-bold text-slate-800 dark:text-white truncate">${nomePasta}</h3>
+                                    <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2 py-0.5 rounded-full font-black">${pastas[nomePasta].length}</span>
+                                </div>
+                                <div class="p-4 space-y-2 flex-1 overflow-y-auto max-h-64 custom-scrollbar">
+                                    ${pastas[nomePasta].map(apr => `
+                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group transition-colors hover:border-blue-300">
+                                            <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${apr.id}')">
+                                                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors">${apr.nome}</div>
+                                                <div class="text-[10px] text-slate-400 mt-0.5"><i class="fa-regular fa-clock"></i> ${apr.dataStr}</div>
+                                            </div>
+                                            <button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shrink-0"><i class="fa-solid fa-trash text-xs"></i></button>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    return html;
+                },
+
+                loadApresentacaoFromDB(id) {
+                    const apr = app.apresentacoesList[id];
+                    if(!apr) return;
+                    try {
+                        app.analiseCSVDinamicoData = JSON.parse(apr.payloadData);
+                        localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); // Salva no local HD
+                        app.ui.renderTab('analise_csv_dinamico', true);
+                        app.ui.showAlert("Restaurado", "Apresentação carregada com sucesso do banco de dados!", "success");
+                    } catch(e) {
+                        app.ui.showAlert("Erro de Corrupção", "Não foi possível carregar os dados desta apresentação.", "error");
+                    }
+                },
+
+                deleteApresentacao(id) {
+                    delete app.apresentacoesList[id];
+                    app.storage.saveApresentacoes().then(() => app.ui.renderTab('analise_csv_dinamico', true));
+                },
+
+                openAcoesSelectorModal() {
+                    if(!app.analiseCSVDinamicoData) return;
+                    if(!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
+                    
+                    const acoesAprovadas = Object.values(app.actionsList || {}).filter(a => a.status === 'aprovado').sort((a,b) => b.timestamp - a.timestamp);
+                    
+                    let htmlList = '';
+                    if(acoesAprovadas.length === 0) {
+                        htmlList = '<div class="text-center text-sm text-slate-400 py-8 border-dashed border-2 rounded-2xl">Não há ações presenciais aprovadas no sistema.</div>';
+                    } else {
+                        htmlList = '<div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar p-2">';
+                        acoesAprovadas.forEach(act => {
+                            const isSelected = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.includes(act.id);
+                            const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
+                            htmlList += `
+                                <div onclick="app.admin.toggleAcaoApresentacao('${act.id}')" class="relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm cursor-pointer transition-all flex gap-3 group">
+                                    <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
+                                    <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
+                                        ${photoThumb ? `<img src="${photoThumb}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}
+                                    </div>
+                                    <div class="flex-1 min-w-0 flex flex-col justify-center">
+                                        <div class="text-[9px] font-black uppercase text-teal-600 mb-0.5">${act.dataAcao.split('-').reverse().join('/')} | ${act.codigoOpe}</div>
+                                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate leading-tight mb-1" title="${act.objetivo}">${act.objetivo}</div>
+                                        <div class="text-[10px] text-slate-500 truncate"><i class="fa-solid fa-user text-slate-400"></i> ${act.nome}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        htmlList += '</div>';
+                    }
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-camera-retro text-teal-500"></i> Galeria de Ações de Qualidade`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Clique nas ações que você deseja exibir no final do relatório analítico.</p>
+                        ${htmlList}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all">Pronto</button>
+                    `;
+                    
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-5xl');
+                    modalBox.classList.add('max-w-4xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                toggleAcaoApresentacao(id) {
+                    let acoes = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas;
+                    if(acoes.includes(id)) {
+                        app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = acoes.filter(x => x !== id);
+                    } else {
+                        app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.push(id);
+                    }
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);
+                    app.ui._refreshComMemoriaDeScroll(); // Atualiza tela atrás do modal
+                    this.openAcoesSelectorModal(); // Atualiza cores do modal
                 },
 
                 exportarAnalisePDF() {
