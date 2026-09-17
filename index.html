@@ -7180,15 +7180,23 @@
                     const mesesOrdem = data.mesesDisponiveis || [];
                     const labelsMeses = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0,3));
                 
-                    // CÁLCULO BLINDADO COM NFD (Remove acentos para cruzar certo)
+                    // --- NOVO MOTOR DE CÁLCULO UNIFICADO E BLINDADO ---
                     let chartDataValuesGlobal = [];
-                    const normalizeText = (s) => s.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
-                    
-                    // O nome que chega aqui não tem os metadados da pergunta, então focamos na busca flexível
+                    const normalizeText = (s) => s ? String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim() : '';
                     const cleanTarget = normalizeText(decodedNome);
 
+                    // Prepara a memória para os mini-gráficos dos operadores
+                    let historicoIndivMap = {};
+                    falhaObj.operadores.forEach(op => {
+                        historicoIndivMap[op.nome] = [];
+                    });
+
+                    // Varre cada mês disponível
                     mesesOrdem.forEach(mesRef => {
                         let contagemNoMesGlobal = 0;
+                        let contagemPorOpNoMes = {};
+                        falhaObj.operadores.forEach(op => contagemPorOpNoMes[op.nome] = 0);
+
                         if(data.detalhes && data.detalhes.linhas) {
                             data.detalhes.linhas.forEach(aval => {
                                 let avalMesRef = null;
@@ -7201,76 +7209,67 @@
                                 
                                 if (avalMesRef === mesRef && aval.perguntas) {
                                     aval.perguntas.forEach(p => {
-                                        // Busca a pergunta que contém o nome da falha
+                                        // Se achou a pergunta que estamos analisando
                                         if (normalizeText(p.q).includes(cleanTarget)) {
                                             const ansStr = normalizeText(p.a);
-                                            const isSim = ansStr === 'SIM' || ansStr === 'S';
-                                            const isNao = ansStr === 'NAO' || ansStr === 'N' || ansStr.includes('NÃO');
-                                            if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) contagemNoMesGlobal++;
-                                            if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) contagemNoMesGlobal++;
+                                            // Lógica flexível: Aceita "SIM", "S", "SIM - RESOLVIDO", "NÃO", "NAO", "N", "NÃO - ERRO"
+                                            const isSim = ansStr === 'S' || ansStr.includes('SIM');
+                                            const isNao = ansStr === 'N' || ansStr.includes('NAO');
+                                            
+                                            let isErro = false;
+                                            // Se for Crítica, peso 100 ou 0 e respondeu SIM = Erro
+                                            if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) isErro = true;
+                                            // Se for Comum, peso diferente de 100/0 e respondeu NÃO = Erro
+                                            if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) isErro = true;
+
+                                            if (isErro) {
+                                                contagemNoMesGlobal++;
+                                                if (contagemPorOpNoMes[aval.operador] !== undefined) {
+                                                    contagemPorOpNoMes[aval.operador]++;
+                                                }
+                                            }
                                         }
                                     });
                                 }
                             });
                         }
+                        // Salva os dados do mês atual
                         chartDataValuesGlobal.push(contagemNoMesGlobal);
+                        Object.keys(contagemPorOpNoMes).forEach(opNome => {
+                            historicoIndivMap[opNome].push(contagemPorOpNoMes[opNome]);
+                        });
                     });
 
+                    // Se tiver só 1 mês, duplica o ponto para o gráfico desenhar uma linha reta
                     if (chartDataValuesGlobal.length === 1) {
                         chartDataValuesGlobal.push(chartDataValuesGlobal[0]);
                         if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
+                        Object.keys(historicoIndivMap).forEach(opNome => {
+                            historicoIndivMap[opNome].push(historicoIndivMap[opNome][0]);
+                        });
                     }
 
-                    // Montagem de Sparklines Lineares via SVG (Ultra leve e performático!)
+                    // --- GERADOR DOS MINI-GRÁFICOS (SPARKLINES) ---
                     let htmlList = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 max-h-[40vh] overflow-y-auto custom-scrollbar p-2">`;
-                    const maxErroGeral = Math.max(...falhaObj.operadores.map(o => o.qtd));
                     const linhaCor = type === 'critica' ? '#ef4444' : '#f97316';
                     
                     falhaObj.operadores.forEach((op, opIndex) => {
-                        // Calcula o histórico individual para este operador
-                        let historicoIndividual = [];
-                        mesesOrdem.forEach(mesRef => {
-                            let errosNoMes = 0;
-                            if(data.detalhes && data.detalhes.linhas) {
-                                data.detalhes.linhas.forEach(aval => {
-                                    if(aval.operador === op.nome) {
-                                        let avalMesRef = null;
-                                        if(typeof aval.data === 'string' && aval.data.includes('/')) {
-                                            const dtParts = aval.data.split('/');
-                                            if(dtParts.length === 3) avalMesRef = dtParts[2] + '-' + dtParts[1].padStart(2, '0');
-                                        } else if (typeof aval.data === 'string' && aval.data.includes('-')) {
-                                            avalMesRef = aval.data.substring(0, 7);
-                                        }
-                                        if (avalMesRef === mesRef && aval.perguntas) {
-                                            aval.perguntas.forEach(p => {
-                                                if (normalizeText(p.q).includes(cleanTarget)) {
-                                                    const ansStr = normalizeText(p.a);
-                                                    if (type === 'critica' && (p.p === 100 || p.p === 0) && (ansStr === 'SIM' || ansStr === 'S')) errosNoMes++;
-                                                    if (type === 'comum' && p.p !== 100 && p.p !== 0 && (ansStr === 'NAO' || ansStr === 'N' || ansStr.includes('NÃO'))) errosNoMes++;
-                                                }
-                                            });
-                                        }
-                                    }
-                                });
-                            }
-                            historicoIndividual.push(errosNoMes);
-                        });
-
-                        // Desenha a mini-linha vetorial (Sparkline SVG)
+                        let historicoIndividual = historicoIndivMap[op.nome] || [];
                         let svgSparkline = '';
+                        
                         if (historicoIndividual.length > 1) {
                             let maxOpErro = Math.max(...historicoIndividual, 1);
                             let stepX = 100 / (historicoIndividual.length - 1);
                             let coords = historicoIndividual.map((val, i) => {
-                                let x = i * stepX;
-                                let y = 30 - ((val / maxOpErro) * 26); // Altura máxima de 30px
+                                let x = (i * stepX).toFixed(1);
+                                let y = (30 - ((val / maxOpErro) * 26)).toFixed(1); // Altura máxima de 30px, margem de 4px
                                 return `${x},${y}`;
                             });
                             svgSparkline = `<svg width="100%" height="30" viewBox="0 0 100 30" preserveAspectRatio="none" class="overflow-visible mt-1 drop-shadow-sm">
                                 <polyline fill="none" stroke="${linhaCor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(' ')}" />
                             </svg>`;
                         } else {
-                            svgSparkline = `<div class="h-[30px] flex items-center text-[9px] text-slate-400 italic mt-1">Dados insuficientes p/ curva</div>`;
+                            svgSparkline = `<div class="h-[30px] flex items-center text-[9px] text-slate-400 italic mt-1">Dados insuficientes</div>`;
                         }
 
                         htmlList += `
@@ -7285,7 +7284,7 @@
                     });
                     htmlList += `</div>`;
                 
-                    // Geração de Identificador Único para o Canvas
+                    // Geração de Identificador Único para o Canvas Principal
                     const uniqueCanvasId = 'canvas-falha-global-' + Date.now();
 
                     document.getElementById('modal-title').innerHTML = ``;
