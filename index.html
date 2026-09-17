@@ -7283,6 +7283,9 @@
                     });
                     htmlList += `</div>`;
                 
+                    // Geração de Identificador Único para o Canvas
+                    const uniqueCanvasId = 'canvas-falha-global-' + Date.now();
+
                     document.getElementById('modal-title').innerHTML = ``;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="text-center mb-6 bg-slate-50 dark:bg-slate-800/30 p-6 rounded-3xl border border-slate-200 dark:border-slate-700">
@@ -7293,7 +7296,7 @@
                             <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4 mb-4" title="${decodedNome}">"${decodedNome}"</div>
                             
                             <div class="w-full h-40 relative bg-white dark:bg-slate-900 rounded-xl p-2 border border-slate-200 dark:border-slate-700 shadow-sm mt-4">
-                                <canvas id="canvas-falha-global"></canvas>
+                                <canvas id="${uniqueCanvasId}"></canvas>
                             </div>
                         </div>
                         <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores Mapeados (${falhaObj.operadores.length})</div>
@@ -7307,7 +7310,7 @@
                     document.getElementById('global-modal').classList.remove('hidden');
 
                     setTimeout(() => {
-                        const ctxGlobal = document.getElementById('canvas-falha-global');
+                        const ctxGlobal = document.getElementById(uniqueCanvasId);
                         if (ctxGlobal) {
                             if (window.chartFalhaGlobal) window.chartFalhaGlobal.destroy();
                             let cColor = type === 'critica' ? '#ef4444' : '#f97316';
@@ -7980,7 +7983,7 @@
                                 <i class="fa-solid fa-camera-retro text-4xl text-blue-400 mb-3"></i>
                                 <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Galeria de Ações Validadas</h3>
                                 <p class="text-xs text-slate-500 mb-4 max-w-sm">Adicione as fotos das ações e intervenções presenciais para exibi-las lindamente na apresentação final.</p>
-                                <button onclick="app.ui.openAcoesSelectorModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Inserir Ação Presencial</button>
+                                <button onclick="app.admin.openAcoesSelectorModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Inserir Ação Presencial</button>
                             </div>
                             
                             <!-- Painel Salvar Apresentação -->
@@ -7988,7 +7991,7 @@
                                 <i class="fa-solid fa-floppy-disk text-4xl text-emerald-400 mb-3"></i>
                                 <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Salvar no Banco de Dados</h3>
                                 <p class="text-xs text-slate-500 mb-4 max-w-sm">Grave esta análise com seus comentários em uma pasta segura para acessar a qualquer momento no futuro.</p>
-                                <button onclick="app.ui.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-cloud-arrow-up"></i> Arquivar Apresentação</button>
+                                <button onclick="app.admin.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-cloud-arrow-up"></i> Arquivar Apresentação</button>
                             </div>
                         </div>
 
