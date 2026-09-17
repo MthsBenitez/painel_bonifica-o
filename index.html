@@ -7100,20 +7100,15 @@
 
                 analiseSortCol: 'media', analiseSortDir: 'desc', analiseFiltroRelatorio: '',
                 isFetchingAnaliseData: false, // Trava do banco de dados
-
-                toggleMesFiltro(mes) {
-                    if (!this.analiseFiltroMes) this.analiseFiltroMes = [];
-                    if (this.analiseFiltroMes.includes(mes)) {
-                        this.analiseFiltroMes = this.analiseFiltroMes.filter(m => m !== mes);
-                    } else {
-                        this.analiseFiltroMes.push(mes);
-                    }
-                    app.admin.gerarInteligenciaCSV();
-                    this.renderTab('analise_csv_dinamico', true);
-                },
-
                 evolutivoFiltroMes: [], // Variável para o filtro exclusivo do gráfico de evolução
 
+                // MEMÓRIA DE ROLAGEM: Preserva o Scroll após o Loading
+                _refreshComMemoriaDeScroll() {
+                    const scrollY = window.scrollY;
+                    this.renderTab('analise_csv_dinamico', true);
+                    setTimeout(() => window.scrollTo({ top: scrollY, behavior: 'instant' }), 450); // Aguarda o skeleton loader passar
+                },
+
                 toggleMesFiltro(mes) {
                     if (!this.analiseFiltroMes) this.analiseFiltroMes = [];
                     if (this.analiseFiltroMes.includes(mes)) {
@@ -7122,7 +7117,18 @@
                         this.analiseFiltroMes.push(mes);
                     }
                     app.admin.gerarInteligenciaCSV();
-                    this.renderTab('analise_csv_dinamico', true);
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                toggleRelatorioFiltro(relatorio) {
+                    if (!this.analiseFiltroRelatorio) this.analiseFiltroRelatorio = [];
+                    if (this.analiseFiltroRelatorio.includes(relatorio)) {
+                        this.analiseFiltroRelatorio = this.analiseFiltroRelatorio.filter(r => r !== relatorio);
+                    } else {
+                        this.analiseFiltroRelatorio.push(relatorio);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this._refreshComMemoriaDeScroll();
                 },
 
                 toggleEvolutivoFiltroMes(mes) {
@@ -7132,8 +7138,9 @@
                     } else {
                         this.evolutivoFiltroMes.push(mes);
                     }
-                    this.renderTab('analise_csv_dinamico', true);
+                    this._refreshComMemoriaDeScroll();
                 },
+
                 sortAnaliseTable(col) {
                     if(this.analiseSortCol === col) {
                         this.analiseSortDir = this.analiseSortDir === 'asc' ? 'desc' : 'asc';
@@ -7141,9 +7148,7 @@
                         this.analiseSortCol = col;
                         this.analiseSortDir = 'desc';
                     }
-                    const currentScroll = window.scrollY;
-                    this.renderTab('analise_csv_dinamico', true);
-                    window.scrollTo({ top: currentScroll, behavior: 'instant' });
+                    this._refreshComMemoriaDeScroll();
                 },
 
                 showOperatorsModal(falhaNome, type) {
@@ -7155,30 +7160,113 @@
                         : data.falhasComunsArray.find(f => f.nome === decodedNome);
                     
                     if(!falhaObj) return;
+
+                    // Mapeamento de Meses para Evolutivo Individual da Falha
+                    const mesesOrdem = data.mesesDisponiveis || [];
+                    const labelsMeses = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0,3));
                 
-                    let htmlList = `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 max-h-[50vh] overflow-y-auto custom-scrollbar p-2">`;
-                    falhaObj.operadores.forEach(op => {
-                        htmlList += `<div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="cursor-pointer bg-white dark:bg-slate-800 p-3 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3 hover:border-blue-500 hover:shadow-md hover:-translate-y-0.5 transition-all group">
-                            <i class="fa-solid fa-user-circle text-blue-500 text-2xl shrink-0"></i> 
-                            <span class="truncate flex-1" title="${op.nome}">${op.nome}</span>
-                            <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-2 py-1 rounded text-[10px] shrink-0 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">${op.qtd}x</span>
+                    let htmlList = `<div class="grid grid-cols-1 gap-4 mt-6 max-h-[55vh] overflow-y-auto custom-scrollbar p-2">`;
+                    
+                    falhaObj.operadores.forEach((op, opIndex) => {
+                        
+                        // Máquina de Cálculo Dinâmico (Lê mês a mês)
+                        let chartDataValues = [];
+                        mesesOrdem.forEach(mesRef => {
+                            let contagemNoMes = 0;
+                            if (data.operadores[op.nome]) {
+                                data.operadores[op.nome].avaliacoes.forEach(aval => {
+                                    // Valida o mês da avaliação
+                                    const dtParts = String(aval.data).split('/'); // Padrão DD/MM/YYYY
+                                    if (dtParts.length === 3) {
+                                        const avalMesRef = dtParts[2] + '-' + String(dtParts[1]).padStart(2, '0');
+                                        if (avalMesRef === mesRef) {
+                                            // Procura a pergunta que originou a falha
+                                            aval.perguntas.forEach(p => {
+                                                if (p.q === decodedNome) {
+                                                    const ansStr = p.a.toUpperCase().trim();
+                                                    const isSim = ansStr === 'SIM' || ansStr === 'S';
+                                                    const isNao = ansStr === 'NÃO' || ansStr === 'NAO' || ansStr === 'N';
+                                                    if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) contagemNoMes++;
+                                                    if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) contagemNoMes++;
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+                            chartDataValues.push(contagemNoMes);
+                        });
+
+                        // Trava para Gráfico de um Único Mês (Cria reta)
+                        if (chartDataValues.length === 1) {
+                            chartDataValues.push(chartDataValues[0]);
+                            if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
+                        }
+
+                        htmlList += `
+                        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row gap-5 hover:shadow-md transition-shadow group">
+                            <div class="flex-1">
+                                <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-3 mb-4">
+                                    <span class="font-black text-slate-700 dark:text-slate-200 text-sm cursor-pointer hover:text-blue-500 transition-colors truncate pr-4" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">
+                                        ${opIndex + 1}. ${op.nome}
+                                    </span>
+                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-3 py-1.5 rounded-lg text-xs font-black shrink-0 shadow-inner">${op.qtd}x Total</span>
+                                </div>
+                                <div class="w-full h-28 relative">
+                                    <canvas id="canvas-op-falha-${opIndex}"></canvas>
+                                </div>
+                            </div>
                         </div>`;
+
+                        // Injeção Reativa do Gráfico após o DOM carregar a lista
+                        setTimeout(() => {
+                            const ctx = document.getElementById(`canvas-op-falha-${opIndex}`);
+                            if (ctx) {
+                                let cColor = type === 'critica' ? '#ef4444' : '#f97316';
+                                new Chart(ctx, {
+                                    type: 'line',
+                                    data: {
+                                        labels: labelsMeses,
+                                        datasets: [{
+                                            data: chartDataValues, 
+                                            borderColor: cColor, 
+                                            backgroundColor: cColor + '1A', 
+                                            fill: true, 
+                                            borderWidth: 2, 
+                                            tension: 0.4, 
+                                            pointRadius: 4,
+                                            pointBackgroundColor: '#fff',
+                                            pointBorderColor: cColor
+                                        }]
+                                    },
+                                    options: { 
+                                        responsive: true, 
+                                        maintainAspectRatio: false, 
+                                        plugins: { legend: { display: false }, tooltip: {titleFont:{size:10}, bodyFont:{size:11, weight:'bold'}, padding: 8} }, 
+                                        scales: { 
+                                            x: { display: true, grid: { display: false }, ticks: { font: { size: 9, weight: 'bold' } } }, 
+                                            y: { display: false, min: 0, suggestedMax: Math.max(...chartDataValues) + 1 } 
+                                        } 
+                                    }
+                                });
+                            }
+                        }, 500);
                     });
                     htmlList += `</div>`;
                 
-                    document.getElementById('modal-title').innerHTML = ``; // Esconde o título padrão
+                    document.getElementById('modal-title').innerHTML = ``;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="text-center mb-6">
+                        <div class="text-center mb-6 bg-slate-50 dark:bg-slate-800/30 p-6 rounded-3xl border border-slate-200 dark:border-slate-700">
                             <div class="inline-flex items-center justify-center w-16 h-16 rounded-full ${type === 'critica' ? 'bg-red-100 text-red-500' : 'bg-orange-100 text-orange-500'} mb-4 text-3xl shadow-inner">
                                 <i class="fa-solid ${type === 'critica' ? 'fa-circle-exclamation' : 'fa-layer-group'}"></i>
                             </div>
-                            <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Ofensores:</h2>
-<div class="text-base font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 inline-block shadow-sm w-full line-clamp-2" title="${decodedNome}">${decodedNome}</div>
+                            <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Mensal da Falha:</h2>
+                            <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4" title="${decodedNome}">"${decodedNome}"</div>
                         </div>
-                        <div class="text-xs uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2"><i class="fa-solid fa-users text-blue-500"></i> Operadores mapeados (${falhaObj.operadores.length}) - Clique para detalhar</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores mapeados (${falhaObj.operadores.length})</div>
                         ${htmlList}
                     `;
-                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-sm transition-all w-full md:w-auto">Fechar Lista</button>`;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all w-full md:w-auto mt-2">Fechar Histórico</button>`;
                     
                     const modalBox = document.querySelector('#global-modal > div');
                     modalBox.classList.remove('max-w-lg', 'max-w-5xl'); 
@@ -7551,7 +7639,7 @@
                                         ${data.mesesDisponiveis.map(m => {
                                             const isActive = app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.includes(m);
                                             const btnClass = isActive ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600';
-                                            return `<button onclick="app.ui.toggleMesFiltro('${m}')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m)}</button>`;
+                                            return `<button onclick="app.ui.toggleMesFiltro('${m}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m).substring(0,3)}</button>`;
                                         }).join('')}
                                     </div>
                                 </div>
@@ -7561,7 +7649,7 @@
                                         ${mainData.relatorios.map(r => {
                                             const isActive = app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.includes(r.nome);
                                             const btnClass = isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600';
-                                            return `<button onclick="app.ui.toggleRelatorioFiltro('${r.nome}')" class="px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${btnClass}">${r.nome}</button>`;
+                                            return `<button onclick="app.ui.toggleRelatorioFiltro('${r.nome}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${r.nome}</button>`;
                                         }).join('')}
                                     </div>
                                 </div>
@@ -7636,7 +7724,16 @@
                         <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
                             ${btnHideCode}
                             
-                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full relative group">
+                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxDesvios')" class="absolute top-4 right-4 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+                                ${data.comments?.boxDesvios ? `
+                                <div class="absolute top-4 right-14 z-50 group/tooltip">
+                                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
+                                    <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                        <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxDesvios}</div>
+                                    </div>
+                                </div>` : ''}
                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios</h3>
                                 <div class="space-y-3 pr-2 flex-1 custom-scrollbar ${this.analiseEditMode ? '' : 'overflow-y-auto max-h-64'}">
                                     ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
@@ -7648,7 +7745,16 @@
                                 </div>
                             </div>
 
-                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full relative group">
+                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxCriticas')" class="absolute top-4 right-4 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+                                ${data.comments?.boxCriticas ? `
+                                <div class="absolute top-4 right-14 z-50 group/tooltip">
+                                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
+                                    <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                        <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxCriticas}</div>
+                                    </div>
+                                </div>` : ''}
                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas</h3>
                                 <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
                                     ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
@@ -7666,8 +7772,17 @@
                     const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 0;
                     if (showEvolutivo) {
                         html += `
-                        <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative">
+                        <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative group">
                             ${btnHideCode}
+                            ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxEvolucao')" class="absolute top-4 right-14 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+                            ${data.comments?.boxEvolucao ? `
+                            <div class="absolute top-4 right-24 z-50 group/tooltip">
+                                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
+                                <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                    <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxEvolucao}</div>
+                                </div>
+                            </div>` : ''}
                             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                                 <h3 class="font-extrabold text-xl text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal</h3>
                                 <!-- Botoes do Filtro Independente -->
