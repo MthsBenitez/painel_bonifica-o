@@ -3301,10 +3301,10 @@
                         return app.ui.showAlert("Sem Dados Evolutivos", "Para visualizar o gráfico comparativo deste indicador, você precisa ter importado dados de mais de um mês e não ter os meses filtrados a ponto de restar apenas um.", "info");
                     }
 
-                    // Pega os meses ativos baseados no filtro
-                    let activeMonthsForEvol = (this.analiseFiltroMes && this.analiseFiltroMes.length > 0 && this.analiseFiltroMes[0] !== "") ? data.mesesDisponiveis.filter(m => this.analiseFiltroMes.includes(m)) : data.mesesDisponiveis;
+                    // Pega os meses ativos baseados no filtro EXCLUSIVO DO EVOLUTIVO
+                    let activeMonthsForEvol = (this.evolutivoFiltroMes && this.evolutivoFiltroMes.length > 0) ? data.mesesDisponiveis.filter(m => this.evolutivoFiltroMes.includes(m)) : data.mesesDisponiveis;
                     
-                    if (activeMonthsForEvol.length <= 1) return app.ui.showAlert("Filtro Restrito", "Remova o filtro de meses para poder visualizar a evolução completa deste indicador.", "info");
+                    if (activeMonthsForEvol.length <= 1) return app.ui.showAlert("Filtro Restrito", "Remova o filtro de meses na área de Evolução Mensal para poder visualizar o gráfico.", "info");
 
                     const labels = activeMonthsForEvol.map(m => this.formatMonthLabel(m));
                     const chartData = activeMonthsForEvol.map(m => {
@@ -3317,7 +3317,7 @@
                         return 0;
                     });
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-area text-blue-500"></i> Evolução: ${title}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-line text-blue-500"></i> Evolução: ${title}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="w-full h-64 relative mt-4">
                             <canvas id="card-chart-canvas"></canvas>
@@ -3342,27 +3342,38 @@
                         if(cardId === 'desviosTotais') color = '#f97316'; // Laranja
                         if(cardId === 'falhasCriticas') color = '#ef4444'; // Vermelho
 
+                        const isDark = document.documentElement.classList.contains('dark');
+
                         window.cardModalChart = new Chart(ctx, {
-                            type: 'bar',
+                            type: 'line',
                             data: {
                                 labels: labels,
                                 datasets: [{
                                     label: title,
                                     data: chartData,
-                                    backgroundColor: color + 'CC', // 80% opacity
+                                    backgroundColor: color + '1A', // Fundo bem translúcido
                                     borderColor: color,
-                                    borderWidth: 2,
-                                    borderRadius: 6
+                                    borderWidth: 3,
+                                    fill: true,
+                                    tension: 0.4, // Deixa a linha curvilínea e elegante
+                                    pointBackgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                    pointBorderColor: color,
+                                    pointRadius: 5,
+                                    pointHoverRadius: 7,
+                                    pointBorderWidth: 2
                                 }]
                             },
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
                                 plugins: { legend: { display: false }, tooltip: { padding: 10, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } },
-                                scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+                                scales: { 
+                                    y: { beginAtZero: false, min: Math.max(0, Math.min(...chartData) - 5), grid: { color: isDark ? '#334155' : '#e2e8f0' } }, 
+                                    x: { grid: { display: false } } 
+                                }
                             }
                         });
-                    }, 800);
+                    }, 500);
                 },
 
                 // --- COMMAND PALETTE (BUSCA RÁPIDA) ---
@@ -7166,8 +7177,11 @@
                     const mesesOrdem = data.mesesDisponiveis || [];
                     const labelsMeses = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0,3));
                 
-                    // ITEM 3: Cálculo do Gráfico GERAL da Falha (Otimizado)
+                    // CÁLCULO BLINDADO COM NFD (Remove acentos)
                     let chartDataValuesGlobal = [];
+                    const normalizeText = (s) => s.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                    const cleanTarget = normalizeText(decodedNome);
+
                     mesesOrdem.forEach(mesRef => {
                         let contagemNoMesGlobal = 0;
                         if(data.detalhes && data.detalhes.linhas) {
@@ -7182,10 +7196,10 @@
                                 
                                 if (avalMesRef === mesRef && aval.perguntas) {
                                     aval.perguntas.forEach(p => {
-                                        if (p.q === decodedNome) {
-                                            const ansStr = p.a.toUpperCase().trim();
+                                        if (normalizeText(p.q) === cleanTarget) {
+                                            const ansStr = normalizeText(p.a);
                                             const isSim = ansStr === 'SIM' || ansStr === 'S';
-                                            const isNao = ansStr === 'NÃO' || ansStr === 'NAO' || ansStr === 'N';
+                                            const isNao = ansStr === 'NAO' || ansStr === 'N';
                                             if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) contagemNoMesGlobal++;
                                             if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) contagemNoMesGlobal++;
                                         }
@@ -7201,13 +7215,22 @@
                         if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
                     }
 
-                    // Montagem da Lista Limpa de Operadores (Sem Canvas em Loop)
-                    let htmlList = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 max-h-[35vh] overflow-y-auto custom-scrollbar p-2">`;
+                    // Montagem de Sparklines via CSS (Ultra leve, não trava a tela!)
+                    let htmlList = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 max-h-[40vh] overflow-y-auto custom-scrollbar p-2">`;
+                    const maxErroGeral = Math.max(...falhaObj.operadores.map(o => o.qtd));
+                    
                     falhaObj.operadores.forEach((op, opIndex) => {
+                        const sparkColor = type === 'critica' ? 'bg-red-500' : 'bg-orange-500';
+                        const pctError = (op.qtd / maxErroGeral) * 100;
                         htmlList += `
-                            <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group">
-                                <span class="font-bold text-slate-700 dark:text-slate-300 text-xs truncate pr-2 group-hover:text-blue-500 transition-colors" title="${op.nome}">${opIndex + 1}. ${op.nome}</span>
-                                <span class="bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-black shadow-inner border border-slate-100 dark:border-slate-700 shrink-0">${op.qtd}x Falhas</span>
+                            <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group flex flex-col justify-between h-[70px]">
+                                <div class="flex justify-between items-start w-full">
+                                    <span class="font-bold text-slate-700 dark:text-slate-300 text-[11px] truncate pr-2 group-hover:text-blue-500 transition-colors" title="${op.nome}">${opIndex + 1}.${op.nome}</span>
+                                    <span class="text-slate-500 dark:text-slate-400 text-[10px] font-black shrink-0">${op.qtd}x</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-900 rounded-full mt-2 overflow-hidden shadow-inner flex">
+                                    <div class="h-full ${sparkColor} rounded-full transition-all duration-1000" style="width: ${pctError}%"></div>
+                                </div>
                             </div>
                         `;
                     });
@@ -7222,12 +7245,11 @@
                             <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Global da Falha:</h2>
                             <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4 mb-4" title="${decodedNome}">"${decodedNome}"</div>
                             
-                            <!-- ITEM 3: GRÁFICO GERAL DA FALHA -->
                             <div class="w-full h-40 relative bg-white dark:bg-slate-900 rounded-xl p-2 border border-slate-200 dark:border-slate-700 shadow-sm mt-4">
                                 <canvas id="canvas-falha-global"></canvas>
                             </div>
                         </div>
-                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores que cometeram esta falha (${falhaObj.operadores.length})</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores Mapeados (${falhaObj.operadores.length})</div>
                         ${htmlList}
                     `;
                     document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all w-full md:w-auto mt-2">Fechar Histórico</button>`;
@@ -7237,7 +7259,6 @@
                     modalBox.classList.add('max-w-4xl');
                     document.getElementById('global-modal').classList.remove('hidden');
 
-                    // Injeta Gráfico Otimizado Único
                     setTimeout(() => {
                         const ctxGlobal = document.getElementById('canvas-falha-global');
                         if (ctxGlobal) {
@@ -7259,7 +7280,7 @@
                                     plugins: { legend: { display: false }, tooltip: {titleFont:{size:11}, bodyFont:{size:12, weight:'bold'}, padding: 8} }, 
                                     scales: { 
                                         x: { display: true, grid: { display: false }, ticks: { font: { size: 10, weight: 'bold' } } }, 
-                                        y: { display: true, min: 0, suggestedMax: Math.max(...chartDataValuesGlobal) + 1 } 
+                                        y: { display: true, min: 0, suggestedMax: Math.max(...chartDataValuesGlobal) + 1, grid: { color: document.documentElement.classList.contains('dark') ? '#334155' : '#e2e8f0' } } 
                                     } 
                                 }
                             });
