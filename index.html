@@ -7151,6 +7151,7 @@
                     } else {
                         this.evolutivoFiltroMes.push(mes);
                     }
+                    app.admin.gerarInteligenciaCSV(); // Re-calcula os dados do gráfico
                     this._refreshComMemoriaDeScroll();
                 },
 
@@ -7177,9 +7178,11 @@
                     const mesesOrdem = data.mesesDisponiveis || [];
                     const labelsMeses = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0,3));
                 
-                    // CÁLCULO BLINDADO COM NFD (Remove acentos)
+                    // CÁLCULO BLINDADO COM NFD (Remove acentos para cruzar certo)
                     let chartDataValuesGlobal = [];
                     const normalizeText = (s) => s.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                    
+                    // O nome que chega aqui não tem os metadados da pergunta, então focamos na busca flexível
                     const cleanTarget = normalizeText(decodedNome);
 
                     mesesOrdem.forEach(mesRef => {
@@ -7196,10 +7199,11 @@
                                 
                                 if (avalMesRef === mesRef && aval.perguntas) {
                                     aval.perguntas.forEach(p => {
-                                        if (normalizeText(p.q) === cleanTarget) {
+                                        // Busca a pergunta que contém o nome da falha
+                                        if (normalizeText(p.q).includes(cleanTarget)) {
                                             const ansStr = normalizeText(p.a);
                                             const isSim = ansStr === 'SIM' || ansStr === 'S';
-                                            const isNao = ansStr === 'NAO' || ansStr === 'N';
+                                            const isNao = ansStr === 'NAO' || ansStr === 'N' || ansStr.includes('NÃO');
                                             if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) contagemNoMesGlobal++;
                                             if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) contagemNoMesGlobal++;
                                         }
@@ -7215,22 +7219,65 @@
                         if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
                     }
 
-                    // Montagem de Sparklines via CSS (Ultra leve, não trava a tela!)
+                    // Montagem de Sparklines Lineares via SVG (Ultra leve e performático!)
                     let htmlList = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 max-h-[40vh] overflow-y-auto custom-scrollbar p-2">`;
                     const maxErroGeral = Math.max(...falhaObj.operadores.map(o => o.qtd));
+                    const linhaCor = type === 'critica' ? '#ef4444' : '#f97316';
                     
                     falhaObj.operadores.forEach((op, opIndex) => {
-                        const sparkColor = type === 'critica' ? 'bg-red-500' : 'bg-orange-500';
-                        const pctError = (op.qtd / maxErroGeral) * 100;
+                        // Calcula o histórico individual para este operador
+                        let historicoIndividual = [];
+                        mesesOrdem.forEach(mesRef => {
+                            let errosNoMes = 0;
+                            if(data.detalhes && data.detalhes.linhas) {
+                                data.detalhes.linhas.forEach(aval => {
+                                    if(aval.operador === op.nome) {
+                                        let avalMesRef = null;
+                                        if(typeof aval.data === 'string' && aval.data.includes('/')) {
+                                            const dtParts = aval.data.split('/');
+                                            if(dtParts.length === 3) avalMesRef = dtParts[2] + '-' + dtParts[1].padStart(2, '0');
+                                        } else if (typeof aval.data === 'string' && aval.data.includes('-')) {
+                                            avalMesRef = aval.data.substring(0, 7);
+                                        }
+                                        if (avalMesRef === mesRef && aval.perguntas) {
+                                            aval.perguntas.forEach(p => {
+                                                if (normalizeText(p.q).includes(cleanTarget)) {
+                                                    const ansStr = normalizeText(p.a);
+                                                    if (type === 'critica' && (p.p === 100 || p.p === 0) && (ansStr === 'SIM' || ansStr === 'S')) errosNoMes++;
+                                                    if (type === 'comum' && p.p !== 100 && p.p !== 0 && (ansStr === 'NAO' || ansStr === 'N' || ansStr.includes('NÃO'))) errosNoMes++;
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+                            historicoIndividual.push(errosNoMes);
+                        });
+
+                        // Desenha a mini-linha vetorial (Sparkline SVG)
+                        let svgSparkline = '';
+                        if (historicoIndividual.length > 1) {
+                            let maxOpErro = Math.max(...historicoIndividual, 1);
+                            let stepX = 100 / (historicoIndividual.length - 1);
+                            let coords = historicoIndividual.map((val, i) => {
+                                let x = i * stepX;
+                                let y = 30 - ((val / maxOpErro) * 26); // Altura máxima de 30px
+                                return `${x},${y}`;
+                            });
+                            svgSparkline = `<svg width="100%" height="30" viewBox="0 0 100 30" preserveAspectRatio="none" class="overflow-visible mt-1 drop-shadow-sm">
+                                <polyline fill="none" stroke="${linhaCor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(' ')}" />
+                            </svg>`;
+                        } else {
+                            svgSparkline = `<div class="h-[30px] flex items-center text-[9px] text-slate-400 italic mt-1">Dados insuficientes p/ curva</div>`;
+                        }
+
                         htmlList += `
-                            <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group flex flex-col justify-between h-[70px]">
+                            <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group flex flex-col justify-between h-[80px]">
                                 <div class="flex justify-between items-start w-full">
                                     <span class="font-bold text-slate-700 dark:text-slate-300 text-[11px] truncate pr-2 group-hover:text-blue-500 transition-colors" title="${op.nome}">${opIndex + 1}.${op.nome}</span>
                                     <span class="text-slate-500 dark:text-slate-400 text-[10px] font-black shrink-0">${op.qtd}x</span>
                                 </div>
-                                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-900 rounded-full mt-2 overflow-hidden shadow-inner flex">
-                                    <div class="h-full ${sparkColor} rounded-full transition-all duration-1000" style="width: ${pctError}%"></div>
-                                </div>
+                                ${svgSparkline}
                             </div>
                         `;
                     });
@@ -7933,7 +7980,7 @@
                                 <i class="fa-solid fa-camera-retro text-4xl text-blue-400 mb-3"></i>
                                 <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Galeria de Ações Validadas</h3>
                                 <p class="text-xs text-slate-500 mb-4 max-w-sm">Adicione as fotos das ações e intervenções presenciais para exibi-las lindamente na apresentação final.</p>
-                                <button onclick="app.ui.showAlert('Em Construção', 'O módulo dinâmico de Grid de Ações será implementado no próximo pacote de código via Firebase!', 'info')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Inserir Ação Presencial</button>
+                                <button onclick="app.ui.openAcoesSelectorModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Inserir Ação Presencial</button>
                             </div>
                             
                             <!-- Painel Salvar Apresentação -->
@@ -7941,9 +7988,42 @@
                                 <i class="fa-solid fa-floppy-disk text-4xl text-emerald-400 mb-3"></i>
                                 <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Salvar no Banco de Dados</h3>
                                 <p class="text-xs text-slate-500 mb-4 max-w-sm">Grave esta análise com seus comentários em uma pasta segura para acessar a qualquer momento no futuro.</p>
-                                <button onclick="app.ui.showAlert('Em Construção', 'A estrutura de Pastas e Salvamento Persistente exige modificação no menu lateral. Ela chegará no próximo passo!', 'info')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-cloud-arrow-up"></i> Arquivar Apresentação</button>
+                                <button onclick="app.ui.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-cloud-arrow-up"></i> Arquivar Apresentação</button>
                             </div>
                         </div>
+
+                        <!-- GRID RENDERIZADA DAS AÇÕES (APARECE SE ALGO FOI SELECIONADO) -->
+                        ${(data.acoesSelecionadas && data.acoesSelecionadas.length > 0) ? `
+                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-teal-500 shadow-lg animate-fade-in">
+                                ${btnHideCode}
+                                <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3"><i class="fa-solid fa-camera-retro text-teal-500"></i> Ações & Intervenções em Qualidade</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    ${data.acoesSelecionadas.map(idAct => {
+                                        const act = app.actionsList ? app.actionsList[idAct] : null;
+                                        if(!act) return '';
+                                        const foto = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
+                                        return \`
+                                            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
+                                                <div class="h-48 bg-slate-100 dark:bg-slate-900 relative overflow-hidden">
+                                                    \${foto ? \`<img src="\${foto}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">\` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>'}
+                                                </div>
+                                                <div class="p-5 flex flex-col flex-1">
+                                                    <div class="flex justify-between items-start mb-2">
+                                                        <h4 class="font-extrabold text-slate-800 dark:text-white leading-tight">\${act.objetivo}</h4>
+                                                    </div>
+                                                    <div class="text-[10px] uppercase font-black text-teal-600 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">\${act.dataAcao.split('-').reverse().join('/')} | \${act.codigoOpe}</div>
+                                                    <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-3 line-clamp-3">\${act.acaoRealizada}</div>
+                                                    <div class="mt-auto flex justify-between items-end pt-3 border-t border-slate-100 dark:border-slate-700 text-[10px] text-slate-500 font-medium">
+                                                        <span><i class="fa-solid fa-user text-slate-300"></i> \${act.nome}</span>
+                                                        <span>\${act.operadores} Impactados</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        \`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
                     `;
                     container.innerHTML = html;
 
