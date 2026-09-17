@@ -8002,24 +8002,24 @@
                                         const act = app.actionsList ? app.actionsList[idAct] : null;
                                         if(!act) return '';
                                         const foto = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
-                                        return \`
+                                        return `
                                             <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
                                                 <div class="h-48 bg-slate-100 dark:bg-slate-900 relative overflow-hidden">
-                                                    \${foto ? \`<img src="\${foto}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">\` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>'}
+                                                    ${foto ? `<img src="${foto}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>'}
                                                 </div>
                                                 <div class="p-5 flex flex-col flex-1">
                                                     <div class="flex justify-between items-start mb-2">
-                                                        <h4 class="font-extrabold text-slate-800 dark:text-white leading-tight">\${act.objetivo}</h4>
+                                                        <h4 class="font-extrabold text-slate-800 dark:text-white leading-tight">${act.objetivo}</h4>
                                                     </div>
-                                                    <div class="text-[10px] uppercase font-black text-teal-600 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">\${act.dataAcao.split('-').reverse().join('/')} | \${act.codigoOpe}</div>
-                                                    <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-3 line-clamp-3">\${act.acaoRealizada}</div>
+                                                    <div class="text-[10px] uppercase font-black text-teal-600 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">${act.dataAcao.split('-').reverse().join('/')} \vert{}${act.codigoOpe}</div>
+                                                    <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-3 line-clamp-3">${act.acaoRealizada}</div>
                                                     <div class="mt-auto flex justify-between items-end pt-3 border-t border-slate-100 dark:border-slate-700 text-[10px] text-slate-500 font-medium">
-                                                        <span><i class="fa-solid fa-user text-slate-300"></i> \${act.nome}</span>
-                                                        <span>\${act.operadores} Impactados</span>
+                                                        <span><i class="fa-solid fa-user text-slate-300"></i> ${act.nome}</span>
+                                                        <span>${act.operadores} Impactados</span>
                                                     </div>
                                                 </div>
                                             </div>
-                                        \`;
+                                        `;
                                     }).join('')}
                                 </div>
                             </div>
