@@ -1268,11 +1268,13 @@
 
                 fixEncoding(str) {
                     if (typeof str !== 'string') return str;
-                    return str.replace(/Ã©/g, 'é').replace(/Ã£/g, 'ã').replace(/Ã§/g, 'ç')
+                    let s = str.replace(/Ã©/g, 'é').replace(/Ã£/g, 'ã').replace(/Ã§/g, 'ç')
                               .replace(/Ã¡/g, 'á').replace(/Ã³/g, 'ó').replace(/Ãº/g, 'ú')
                               .replace(/Ãª/g, 'ê').replace(/Ãµ/g, 'õ').replace(/Ã¢/g, 'â')
                               .replace(/Ã­/g, 'í').replace(/Ã‰/g, 'É').replace(/Ã‡/g, 'Ç')
                               .replace(/Ãƒ/g, 'Ã').replace(/Ã /g, 'À');
+                    // Remove lixo invisível do Excel e artefatos de cópia colada
+                    return s.replace(/[\x00-\x1F\x7F-\x9F\u200B]/g, "").replace(/ert\{\}/gi, "").trim();
                 },
                 
                 getWorkingDays(yearMonthStr) {
@@ -7921,7 +7923,7 @@
 
                     // TABELA DETALHADA
                     html += `
-                        <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mt-8">
                             ${btnHideCode}
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
                             <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[600px]'}">
@@ -7951,9 +7953,11 @@
                         return this.analiseSortDir === 'asc' ? vA - vB : vB - vA;
                     });
 
-                    arrSort.forEach(op => {
+                    arrSort.forEach((op, index) => {
+                        // Limita visão a 5 linhas caso não esteja expandido
+                        const rowClass = (!app.ui.tabelaAnaliticaExpandida && index > 4 && !this.analiseEditMode) ? 'hidden' : '';
                         html += `
-                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                            <tr class="${rowClass} hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                                 <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">
                                     <div class="flex items-center gap-3">
                                         <i class="fa-solid fa-headset text-slate-300 dark:text-slate-600 text-lg"></i>
@@ -7974,7 +7978,12 @@
                                     </tbody>
                                 </table>
                             </div>
+                            ${(!this.analiseEditMode && arrSort.length > 5) ? `
+                            <button onclick="app.ui.tabelaAnaliticaExpandida = !app.ui.tabelaAnaliticaExpandida; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-700">
+                                ${app.ui.tabelaAnaliticaExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Tabela Completa'}
+                            </button>` : ''}
                         </div>
+                    `;
                         
                         <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
                         <div class="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
@@ -9768,6 +9777,14 @@
                     app.storage.saveApresentacoes().then(() => app.ui.renderTab('analise_csv_dinamico', true));
                 },
 
+                filtrarGaleriaAcoes(term) {
+                    const t = term.toLowerCase();
+                    document.querySelectorAll('.card-acao-galeria').forEach(el => {
+                        if (el.innerText.toLowerCase().includes(t)) el.style.display = '';
+                        else el.style.display = 'none';
+                    });
+                },
+
                 openAcoesSelectorModal() {
                     if(!app.analiseCSVDinamicoData) return;
                     if(!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
@@ -9778,20 +9795,32 @@
                     if(acoesAprovadas.length === 0) {
                         htmlList = '<div class="text-center text-sm text-slate-400 py-8 border-dashed border-2 rounded-2xl">Não há ações presenciais aprovadas no sistema.</div>';
                     } else {
-                        htmlList = '<div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar p-2">';
+                        htmlList = `
+                            <div class="mb-4 relative">
+                                <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input type="text" onkeyup="app.admin.filtrarGaleriaAcoes(this.value)" placeholder="Pesquise por tema, responsável ou operação..." class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 outline-none focus:border-teal-500 shadow-sm text-sm dark:text-white transition-colors">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar p-2">
+                        `;
                         acoesAprovadas.forEach(act => {
                             const isSelected = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.includes(act.id);
                             const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
                             htmlList += `
-                                <div onclick="app.admin.toggleAcaoApresentacao('${act.id}')" class="relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm cursor-pointer transition-all flex gap-3 group">
-                                    <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
-                                    <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
-                                        ${photoThumb ? `<img src="${photoThumb}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}
+                                <div class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
+                                    <div class="flex gap-3 cursor-pointer" onclick="app.admin.toggleAcaoApresentacao('${act.id}')">
+                                        <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
+                                        <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
+                                            ${photoThumb ? `<img src="${photoThumb}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}
+                                        </div>
+                                        <div class="flex-1 min-w-0 flex flex-col justify-center">
+                                            <div class="text-[9px] font-black uppercase text-teal-600 mb-0.5">${act.dataAcao.split('-').reverse().join('/')} | ${act.codigoOpe}</div>
+                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate leading-tight mb-1" title="${act.objetivo}">${act.objetivo}</div>
+                                            <div class="text-[10px] text-slate-500 truncate"><i class="fa-solid fa-user text-slate-400"></i> ${act.nome}</div>
+                                        </div>
                                     </div>
-                                    <div class="flex-1 min-w-0 flex flex-col justify-center">
-                                        <div class="text-[9px] font-black uppercase text-teal-600 mb-0.5">${act.dataAcao.split('-').reverse().join('/')} | ${act.codigoOpe}</div>
-                                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate leading-tight mb-1" title="${act.objetivo}">${act.objetivo}</div>
-                                        <div class="text-[10px] text-slate-500 truncate"><i class="fa-solid fa-user text-slate-400"></i> ${act.nome}</div>
+                                    <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between gap-2">
+                                        <button onclick="app.actions.showImageFull('${act.id}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 py-1.5 rounded-lg text-[10px] font-bold transition-colors"><i class="fa-solid fa-images"></i> Ver Todas as Fotos</button>
+                                        <button onclick="app.ui.showConfirm('Excluir Ação?', 'Remover permanentemente esta ação do sistema?', 'app.actions.executeDelete(\\'${act.id}\\')', true)" class="flex-none bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/30 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-colors" title="Deletar Ação"><i class="fa-solid fa-trash"></i></button>
                                     </div>
                                 </div>
                             `;
@@ -9801,11 +9830,11 @@
 
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-camera-retro text-teal-500"></i> Galeria de Ações de Qualidade`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Clique nas ações que você deseja exibir no final do relatório analítico.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Clique na ação ou utilize os botões para visualizar/editar as imagens.</p>
                         ${htmlList}
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all">Pronto</button>
+                        <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all">Concluir Seleção</button>
                     `;
                     
                     const modalBox = document.querySelector('#global-modal > div');
