@@ -7191,48 +7191,56 @@
                         historicoIndivMap[op.nome] = [];
                     });
 
+                    // [!] CORREÇÃO CIRÚRGICA: Mapeamento de todas as avaliações espalhadas por operador
+                    let todasAsAvaliacoes = [];
+                    Object.values(data.operadores).forEach(op => {
+                        if(op.avaliacoes) {
+                            op.avaliacoes.forEach(a => todasAsAvaliacoes.push({...a, operador: op.nome}));
+                        }
+                    });
+
                     // Varre cada mês disponível
                     mesesOrdem.forEach(mesRef => {
                         let contagemNoMesGlobal = 0;
                         let contagemPorOpNoMes = {};
                         falhaObj.operadores.forEach(op => contagemPorOpNoMes[op.nome] = 0);
 
-                        if(data.detalhes && data.detalhes.linhas) {
-                            data.detalhes.linhas.forEach(aval => {
-                                let avalMesRef = null;
-                                if(typeof aval.data === 'string' && aval.data.includes('/')) {
-                                    const dtParts = aval.data.split('/');
-                                    if(dtParts.length === 3) avalMesRef = dtParts[2] + '-' + dtParts[1].padStart(2, '0');
-                                } else if (typeof aval.data === 'string' && aval.data.includes('-')) {
-                                    avalMesRef = aval.data.substring(0, 7);
-                                }
-                                
-                                if (avalMesRef === mesRef && aval.perguntas) {
-                                    aval.perguntas.forEach(p => {
-                                        // Se achou a pergunta que estamos analisando
-                                        if (normalizeText(p.q).includes(cleanTarget)) {
-                                            const ansStr = normalizeText(p.a);
-                                            // Lógica flexível: Aceita "SIM", "S", "SIM - RESOLVIDO", "NÃO", "NAO", "N", "NÃO - ERRO"
-                                            const isSim = ansStr === 'S' || ansStr.includes('SIM');
-                                            const isNao = ansStr === 'N' || ansStr.includes('NAO');
-                                            
-                                            let isErro = false;
-                                            // Se for Crítica, peso 100 ou 0 e respondeu SIM = Erro
-                                            if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) isErro = true;
-                                            // Se for Comum, peso diferente de 100/0 e respondeu NÃO = Erro
-                                            if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) isErro = true;
+                        todasAsAvaliacoes.forEach(aval => {
+                            let avalMesRef = null;
+                            if(typeof aval.data === 'string' && aval.data.includes('/')) {
+                                const dtParts = aval.data.split('/');
+                                if(dtParts.length === 3) avalMesRef = dtParts[2] + '-' + dtParts[1].padStart(2, '0');
+                            } else if (typeof aval.data === 'string' && aval.data.includes('-')) {
+                                avalMesRef = aval.data.substring(0, 7);
+                            }
+                            
+                            if (avalMesRef === mesRef && aval.perguntas) {
+                                aval.perguntas.forEach(p => {
+                                    // Se achou a pergunta que estamos analisando
+                                    if (normalizeText(p.q).includes(cleanTarget)) {
+                                        const ansStr = normalizeText(p.a);
+                                        
+                                        // CORREÇÃO: Match estrito para evitar falsos positivos com "NÃO SE APLICA"
+                                        const isSim = ansStr === 'S' || ansStr === 'SIM' || ansStr.includes('SIM -');
+                                        const isNao = ansStr === 'N' || ansStr === 'NAO' || ansStr === 'NÃO' || ansStr.includes('NAO -') || ansStr.includes('NÃO -');
+                                        
+                                        let isErro = false;
+                                        // Se for Crítica, peso 100 ou 0 e respondeu SIM = Erro
+                                        if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) isErro = true;
+                                        // Se for Comum, peso diferente de 100/0 e respondeu NÃO = Erro
+                                        if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) isErro = true;
 
-                                            if (isErro) {
-                                                contagemNoMesGlobal++;
-                                                if (contagemPorOpNoMes[aval.operador] !== undefined) {
-                                                    contagemPorOpNoMes[aval.operador]++;
-                                                }
+                                        if (isErro) {
+                                            contagemNoMesGlobal++;
+                                            if (contagemPorOpNoMes[aval.operador] !== undefined) {
+                                                contagemPorOpNoMes[aval.operador]++;
                                             }
                                         }
-                                    });
-                                }
-                            });
-                        }
+                                    }
+                                });
+                            }
+                        });
+
                         // Salva os dados do mês atual
                         chartDataValuesGlobal.push(contagemNoMesGlobal);
                         Object.keys(contagemPorOpNoMes).forEach(opNome => {
