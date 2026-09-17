@@ -7161,96 +7161,54 @@
                     
                     if(!falhaObj) return;
 
-                    // Mapeamento de Meses para Evolutivo Individual da Falha
                     const mesesOrdem = data.mesesDisponiveis || [];
                     const labelsMeses = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0,3));
                 
-                    let htmlList = `<div class="grid grid-cols-1 gap-4 mt-6 max-h-[55vh] overflow-y-auto custom-scrollbar p-2">`;
-                    
-                    falhaObj.operadores.forEach((op, opIndex) => {
-                        
-                        // Máquina de Cálculo Dinâmico (Lê mês a mês)
-                        let chartDataValues = [];
-                        mesesOrdem.forEach(mesRef => {
-                            let contagemNoMes = 0;
-                            if (data.operadores[op.nome]) {
-                                data.operadores[op.nome].avaliacoes.forEach(aval => {
-                                    // Valida o mês da avaliação
-                                    const dtParts = String(aval.data).split('/'); // Padrão DD/MM/YYYY
-                                    if (dtParts.length === 3) {
-                                        const avalMesRef = dtParts[2] + '-' + String(dtParts[1]).padStart(2, '0');
-                                        if (avalMesRef === mesRef) {
-                                            // Procura a pergunta que originou a falha
-                                            aval.perguntas.forEach(p => {
-                                                if (p.q === decodedNome) {
-                                                    const ansStr = p.a.toUpperCase().trim();
-                                                    const isSim = ansStr === 'SIM' || ansStr === 'S';
-                                                    const isNao = ansStr === 'NÃO' || ansStr === 'NAO' || ansStr === 'N';
-                                                    if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) contagemNoMes++;
-                                                    if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) contagemNoMes++;
-                                                }
-                                            });
+                    // ITEM 3: Cálculo do Gráfico GERAL da Falha (Otimizado)
+                    let chartDataValuesGlobal = [];
+                    mesesOrdem.forEach(mesRef => {
+                        let contagemNoMesGlobal = 0;
+                        if(data.detalhes && data.detalhes.linhas) {
+                            data.detalhes.linhas.forEach(aval => {
+                                // O campo Data no formato D/M/A ou ISO
+                                let avalMesRef = null;
+                                if(typeof aval.data === 'string' && aval.data.includes('/')) {
+                                    const dtParts = aval.data.split('/');
+                                    if(dtParts.length === 3) avalMesRef = dtParts[2] + '-' + dtParts[1].padStart(2, '0');
+                                } else if (typeof aval.data === 'string' && aval.data.includes('-')) {
+                                    avalMesRef = aval.data.substring(0, 7);
+                                }
+                                
+                                if (avalMesRef === mesRef && aval.perguntas) {
+                                    aval.perguntas.forEach(p => {
+                                        if (p.q === decodedNome) {
+                                            const ansStr = p.a.toUpperCase().trim();
+                                            const isSim = ansStr === 'SIM' || ansStr === 'S';
+                                            const isNao = ansStr === 'NÃO' || ansStr === 'NAO' || ansStr === 'N';
+                                            if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) contagemNoMesGlobal++;
+                                            if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) contagemNoMesGlobal++;
                                         }
-                                    }
-                                });
-                            }
-                            chartDataValues.push(contagemNoMes);
-                        });
-
-                        // Trava para Gráfico de um Único Mês (Cria reta)
-                        if (chartDataValues.length === 1) {
-                            chartDataValues.push(chartDataValues[0]);
-                            if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
+                                    });
+                                }
+                            });
                         }
+                        chartDataValuesGlobal.push(contagemNoMesGlobal);
+                    });
 
+                    if (chartDataValuesGlobal.length === 1) {
+                        chartDataValuesGlobal.push(chartDataValuesGlobal[0]);
+                        if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
+                    }
+
+                    // Montagem da Lista Limpa de Operadores (Sem Canvas em Loop)
+                    let htmlList = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 max-h-[35vh] overflow-y-auto custom-scrollbar p-2">`;
+                    falhaObj.operadores.forEach((op, opIndex) => {
                         htmlList += `
-                        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row gap-5 hover:shadow-md transition-shadow group">
-                            <div class="flex-1">
-                                <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-3 mb-4">
-                                    <span class="font-black text-slate-700 dark:text-slate-200 text-sm cursor-pointer hover:text-blue-500 transition-colors truncate pr-4" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">
-                                        ${opIndex + 1}. ${op.nome}
-                                    </span>
-                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-3 py-1.5 rounded-lg text-xs font-black shrink-0 shadow-inner">${op.qtd}x Total</span>
-                                </div>
-                                <div class="w-full h-28 relative">
-                                    <canvas id="canvas-op-falha-${opIndex}"></canvas>
-                                </div>
+                            <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group">
+                                <span class="font-bold text-slate-700 dark:text-slate-300 text-xs truncate pr-2 group-hover:text-blue-500 transition-colors" title="${op.nome}">${opIndex + 1}.${op.nome}</span>
+                                <span class="bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-black shadow-inner border border-slate-100 dark:border-slate-700 shrink-0">${op.qtd}x Falhas</span>
                             </div>
-                        </div>`;
-
-                        // Injeção Reativa do Gráfico após o DOM carregar a lista
-                        setTimeout(() => {
-                            const ctx = document.getElementById(`canvas-op-falha-${opIndex}`);
-                            if (ctx) {
-                                let cColor = type === 'critica' ? '#ef4444' : '#f97316';
-                                new Chart(ctx, {
-                                    type: 'line',
-                                    data: {
-                                        labels: labelsMeses,
-                                        datasets: [{
-                                            data: chartDataValues, 
-                                            borderColor: cColor, 
-                                            backgroundColor: cColor + '1A', 
-                                            fill: true, 
-                                            borderWidth: 2, 
-                                            tension: 0.4, 
-                                            pointRadius: 4,
-                                            pointBackgroundColor: '#fff',
-                                            pointBorderColor: cColor
-                                        }]
-                                    },
-                                    options: { 
-                                        responsive: true, 
-                                        maintainAspectRatio: false, 
-                                        plugins: { legend: { display: false }, tooltip: {titleFont:{size:10}, bodyFont:{size:11, weight:'bold'}, padding: 8} }, 
-                                        scales: { 
-                                            x: { display: true, grid: { display: false }, ticks: { font: { size: 9, weight: 'bold' } } }, 
-                                            y: { display: false, min: 0, suggestedMax: Math.max(...chartDataValues) + 1 } 
-                                        } 
-                                    }
-                                });
-                            }
-                        }, 500);
+                        `;
                     });
                     htmlList += `</div>`;
                 
@@ -7260,10 +7218,15 @@
                             <div class="inline-flex items-center justify-center w-16 h-16 rounded-full ${type === 'critica' ? 'bg-red-100 text-red-500' : 'bg-orange-100 text-orange-500'} mb-4 text-3xl shadow-inner">
                                 <i class="fa-solid ${type === 'critica' ? 'fa-circle-exclamation' : 'fa-layer-group'}"></i>
                             </div>
-                            <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Mensal da Falha:</h2>
-                            <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4" title="${decodedNome}">"${decodedNome}"</div>
+                            <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Global da Falha:</h2>
+                            <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4 mb-4" title="${decodedNome}">"${decodedNome}"</div>
+                            
+                            <!-- ITEM 3: GRÁFICO GERAL DA FALHA -->
+                            <div class="w-full h-40 relative bg-white dark:bg-slate-900 rounded-xl p-2 border border-slate-200 dark:border-slate-700 shadow-sm mt-4">
+                                <canvas id="canvas-falha-global"></canvas>
+                            </div>
                         </div>
-                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores mapeados (${falhaObj.operadores.length})</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores que cometeraram esta falha (${falhaObj.operadores.length})</div>
                         ${htmlList}
                     `;
                     document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all w-full md:w-auto mt-2">Fechar Histórico</button>`;
@@ -7271,8 +7234,36 @@
                     const modalBox = document.querySelector('#global-modal > div');
                     modalBox.classList.remove('max-w-lg', 'max-w-5xl'); 
                     modalBox.classList.add('max-w-4xl');
-                    
                     document.getElementById('global-modal').classList.remove('hidden');
+
+                    // Injeta Gráfico Otimizado Único
+                    setTimeout(() => {
+                        const ctxGlobal = document.getElementById('canvas-falha-global');
+                        if (ctxGlobal) {
+                            if (window.chartFalhaGlobal) window.chartFalhaGlobal.destroy();
+                            let cColor = type === 'critica' ? '#ef4444' : '#f97316';
+                            window.chartFalhaGlobal = new Chart(ctxGlobal, {
+                                type: 'line',
+                                data: {
+                                    labels: labelsMeses,
+                                    datasets: [{
+                                        data: chartDataValuesGlobal, 
+                                        borderColor: cColor, 
+                                        backgroundColor: cColor + '1A', 
+                                        fill: true, borderWidth: 3, tension: 0.4, pointRadius: 5, pointBackgroundColor: '#fff', pointBorderColor: cColor
+                                    }]
+                                },
+                                options: { 
+                                    responsive: true, maintainAspectRatio: false, 
+                                    plugins: { legend: { display: false }, tooltip: {titleFont:{size:11}, bodyFont:{size:12, weight:'bold'}, padding: 8} }, 
+                                    scales: { 
+                                        x: { display: true, grid: { display: false }, ticks: { font: { size: 10, weight: 'bold' } } }, 
+                                        y: { display: true, min: 0, suggestedMax: Math.max(...chartDataValuesGlobal) + 1 } 
+                                    } 
+                                }
+                            });
+                        }
+                    }, 300);
                 },
                 
                 openOperadorAnaliseModal(nomeEncoded) {
@@ -7592,7 +7583,7 @@
                             <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
                                 <!-- TÍTULO MUITO MAIOR COM COR -->
                                 <div class="flex items-center justify-center xl:justify-start gap-3">
-                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.infoOperacao = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="text-4xl md:text-5xl font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style="color: ${data?.titleColor || ''}">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
+                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.infoOperacao = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block' : 'text-4xl md:text-5xl'} font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" style="color: ${data?.titleColor \vert{}\vert{} ''}">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
                                     ${!this.analiseEditMode && data ? `<input type="color" value="${data.titleColor || '#1e293b'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0" title="Cor do Título">` : ''}
                                 </div>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
@@ -7600,13 +7591,13 @@
                                 </p>
                             </div>
                             
-                            <div class="flex flex-wrap items-center justify-center gap-3 w-full xl:w-auto">
-                                <label class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV / XLSX
+                            <div class="flex flex-wrap items-center justify-center gap-2 w-full xl:w-auto">
+                                <label class="bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Importar Dados
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                 </label>
-                                <label class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Use este botão para fazer um Raio-X de como a planilha envia as falhas e os pesos.">
-                                    <i class="fa-solid fa-microscope text-lg text-purple-400"></i> Raio-X (Pesos e Falhas)
+                                <label class="bg-purple-50 text-purple-600 hover:bg-purple-100 border border-purple-200 dark:bg-purple-900/30 dark:border-purple-800 dark:text-purple-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Raio-X de Pesos e Falhas.">
+                                    <i class="fa-solid fa-microscope"></i> Raio-X
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
                                 </label>
                                 ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
@@ -7626,10 +7617,11 @@
                     // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS (UX MODERNA)
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
                         html += `
-                        <div class="mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm ${this.analiseEditMode ? 'hidden' : ''}">
+                        <div class="mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative">
+                            ${btnHideCode}
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
-                                <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                                <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
                             </div>
                             
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -7670,15 +7662,14 @@
                         const hasComment = commentText && commentText.trim() !== '';
                         return `
                             <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative" onmouseenter="try { if(window['chart_${id}']) { window['chart_${id}'].resize(); window['chart_${id}'].update(); } } catch(e){}">
-                                <!-- Botão Flutuante de Adicionar Comentário -->
-                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute -top-3 -right-2 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center" title="Adicionar Comentário"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+                                <!-- Botão Flutuante de Comentário Isolado (Item 8) -->
+                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute -top-3 -right-2 z-[99] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-auto" title="Adicionar Comentário"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
 
-                                <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] cursor-pointer rounded-2xl shadow-sm">
-                                    <!-- Lado da Frente (Informações) -->
-                                    <div class="absolute inset-0 [backface-visibility:hidden] bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center overflow-hidden">
+                                <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] rounded-2xl shadow-sm cursor-pointer" onclick="app.ui.openCardChartModal('${id}', '${title}')">
+                                    <!-- Lado da Frente (Item 7: Expandir ao clicar) -->
+                                    <div class="absolute inset-0 [backface-visibility:hidden] bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center overflow-hidden hover:border-blue-400 transition-colors">
                                         <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
                                         
-                                        <!-- NOVO COMENTÁRIO ELEGANTE E OCULTO -->
                                         ${hasComment ? `
                                         <div class="absolute top-3 right-3 z-50 group/tooltip">
                                             <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[10px]"></i></div>
@@ -7695,14 +7686,13 @@
 
                                     <!-- Lado de Trás (Gráfico de Linha) -->
                                     <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white dark:bg-slate-900 p-3 rounded-2xl border border-blue-300 dark:border-blue-700 shadow-lg flex flex-col items-center justify-center overflow-hidden">
-                                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center mb-1 w-full truncate"><i class="fa-solid fa-arrow-trend-up text-blue-500"></i> Evolução: ${title}</div>
-                                        <div class="relative w-full flex-1 min-h-[70px]"><canvas id="flip-chart-${id}"></canvas></div>
+                                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center mb-1 w-full truncate"><i class="fa-solid fa-arrow-trend-up text-blue-500"></i> Evolução (Clique para Expandir)</div>
+                                        <div class="relative w-full flex-1 min-h-[70px] pointer-events-none"><canvas id="flip-chart-${id}"></canvas></div>
                                     </div>
                                 </div>
                             </div>
                         `;
                     };
-
                     html += `
                         <!-- DASHBOARD CARDS MESTRES -->
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
@@ -7896,6 +7886,25 @@
                     html += `
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                        
+                        <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
+                        <div class="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
+                            <!-- Painel Adicionar Ações -->
+                            <div class="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center items-center text-center bg-slate-50/50 dark:bg-slate-800/30">
+                                <i class="fa-solid fa-camera-retro text-4xl text-blue-400 mb-3"></i>
+                                <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Galeria de Ações Validadas</h3>
+                                <p class="text-xs text-slate-500 mb-4 max-w-sm">Adicione as fotos das ações e intervenções presenciais para exibi-las lindamente na apresentação final.</p>
+                                <button onclick="app.ui.showAlert('Em Construção', 'O módulo dinâmico de Grid de Ações será implementado no próximo pacote de código via Firebase!', 'info')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Inserir Ação Presencial</button>
+                            </div>
+                            
+                            <!-- Painel Salvar Apresentação -->
+                            <div class="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center items-center text-center bg-slate-50/50 dark:bg-slate-800/30">
+                                <i class="fa-solid fa-floppy-disk text-4xl text-emerald-400 mb-3"></i>
+                                <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Salvar no Banco de Dados</h3>
+                                <p class="text-xs text-slate-500 mb-4 max-w-sm">Grave esta análise com seus comentários em uma pasta segura para acessar a qualquer momento no futuro.</p>
+                                <button onclick="app.ui.showAlert('Em Construção', 'A estrutura de Pastas e Salvamento Persistente exige modificação no menu lateral. Ela chegará no próximo passo!', 'info')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-cloud-arrow-up"></i> Arquivar Apresentação</button>
                             </div>
                         </div>
                     `;
@@ -9737,11 +9746,6 @@
                             }
                             let mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
 
-                            // FILTRO MULTIPLO DE MÊS
-                            if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
-                            
-                            let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
-
                             const op = opNomeDetalhe;
                             let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
                             if (monitor.includes(' - ')) monitor = monitor.split(' - ').slice(1).join(' - ').trim();
@@ -9751,14 +9755,7 @@
                                 nota = parseFloat(row[colNota].toString().replace(',', '.'));
                             }
 
-                            if (!data.monitorProdutividade[monitor]) data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
-                            data.monitorProdutividade[monitor].qtd += 1;
-                            data.monitorProdutividade[monitor].somaNotas += nota;
-
-                            if (monitorFiltro && monitor !== monitorFiltro) return;
-
-                            data.totalLinhas++;
-
+                            // ITEM 4: DADOS EVOLUTIVOS (GRAVA ANTES DE APLICAR O FILTRO GERAL DA PÁGINA)
                             if (typeof nota === 'number' && !isNaN(nota) && mesRef) {
                                 if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0 };
                                 data.mesesEvolutivo[mesRef].soma += nota;
@@ -9770,6 +9767,19 @@
                                 data.operadoresEvolutivo[op][mesRef].soma += nota;
                                 data.operadoresEvolutivo[op][mesRef].count++;
                             }
+
+                            // AGORA APLICA O FILTRO GERAL (Apenas a visão de tabela respeita isso)
+                            if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
+                            
+                            let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
+
+                            if (!data.monitorProdutividade[monitor]) data.monitorProdutividade[monitor] = { nome: monitor, qtd: 0, somaNotas: 0 };
+                            data.monitorProdutividade[monitor].qtd += 1;
+                            data.monitorProdutividade[monitor].somaNotas += nota;
+
+                            if (monitorFiltro && monitor !== monitorFiltro) return;
+
+                            data.totalLinhas++;
 
                             if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [] };
                             data.operadores[op].notas.push(nota);
