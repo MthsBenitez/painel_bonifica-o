@@ -7319,7 +7319,7 @@
                             <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Global da Falha:</h2>
                             <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4 mb-4" title="${decodedNome}">"${decodedNome}"</div>
                             
-                            <div class="w-full h-40 relative bg-white dark:bg-slate-900 rounded-xl p-2 border border-slate-200 dark:border-slate-700 shadow-sm mt-4">
+                            <div class="w-full h-72 relative bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm mt-4">
                                 <canvas id="${uniqueCanvasId}"></canvas>
                             </div>
                         </div>
@@ -7577,6 +7577,59 @@
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
+                openQuadranteModal(qName) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if(!data) return;
+
+                    let lista = [];
+                    let cor = ''; let bg = ''; let desc = ''; let icon = '';
+
+                    data.rankOperadores.forEach(op => {
+                        let m = parseFloat(op.media);
+                        if(qName === 'Q1' && m >= 90) lista.push(op);
+                        else if(qName === 'Q2' && m >= 80 && m < 90) lista.push(op);
+                        else if(qName === 'Q3' && m >= 70 && m < 80) lista.push(op);
+                        else if(qName === 'Q4' && m < 70) lista.push(op);
+                    });
+
+                    if(qName === 'Q1') { cor = 'text-green-500'; bg = 'bg-green-100 dark:bg-green-900/30'; desc = 'Excelente (90 a 100)'; icon = 'fa-star'; }
+                    else if(qName === 'Q2') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = 'Bom (80 a 89.9)'; icon = 'fa-thumbs-up'; }
+                    else if(qName === 'Q3') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = 'Regular (70 a 79.9)'; icon = 'fa-triangle-exclamation'; }
+                    else if(qName === 'Q4') { cor = 'text-red-500'; bg = 'bg-red-100 dark:bg-red-900/30'; desc = 'Atenção (< 70)'; icon = 'fa-fire'; }
+
+                    let htmlList = `<div class="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    if(lista.length === 0) {
+                        htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador enquadrado neste quadrante.</div>`;
+                    } else {
+                        lista.forEach((op, i) => {
+                            htmlList += `
+                                <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full ${bg} ${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50">${i+1}</div>
+                                        <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-0.5">Média Final</div>
+                                        <div class="font-black ${cor} text-xl">${op.media}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    htmlList += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon}${cor}"></i> Operadores do Quadrante ${qName}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Classificação Oficial: <strong class="${cor}">${desc}</strong></p>${htmlList}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm">Fechar</button>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl');
+                    modalBox.classList.add('max-w-lg');
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
                 exportOperadorAnaliseXLSX(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
                     const data = app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData.consolidado : null;
@@ -7820,143 +7873,132 @@
                         </div>
                     `;
 
-                    // --- RANKING DE FALHAS E DESVIOS ---
-                    html += `
-                        <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
-                            ${btnHideCode}
-                            
-                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full relative group">
-                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxDesvios')" class="absolute top-4 right-4 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
-                                ${data.comments?.boxDesvios ? `
-                                <div class="absolute top-4 right-14 z-50 group/tooltip">
-                                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
-                                    <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
-                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
-                                        <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxDesvios}</div>
-                                    </div>
-                                </div>` : ''}
-                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios</h3>
-                                <div class="space-y-3 pr-2 flex-1 custom-scrollbar ${this.analiseEditMode ? '' : 'overflow-y-auto max-h-64'}">
-                                    ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
-                                        <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
-                                            <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-orange-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
-                                            <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm flex items-center justify-center">${f.count}x</span>
-                                        </div>
-                                    `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
-                                </div>
-                            </div>
+                    // --- PREPARAÇÃO DOS QUADRANTES ---
+                    let q1 = [], q2 = [], q3 = [], q4 = [];
+                    data.rankOperadores.forEach(op => {
+                        let m = parseFloat(op.media);
+                        if(m >= 90) q1.push(op);
+                        else if(m >= 80) q2.push(op);
+                        else if(m >= 70) q3.push(op);
+                        else q4.push(op);
+                    });
 
-                            <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full relative group">
-                                ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxCriticas')" class="absolute top-4 right-4 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
-                                ${data.comments?.boxCriticas ? `
-                                <div class="absolute top-4 right-14 z-50 group/tooltip">
-                                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
-                                    <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
-                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
-                                        <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxCriticas}</div>
-                                    </div>
-                                </div>` : ''}
-                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-5 flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas</h3>
-                                <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
-                                    ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
-                                        <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
-                                            <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-red-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
-                                            <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm self-start mt-0.5">${f.count}x</span>
-                                        </div>
-                                    `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
+                    // --- MATRIZ DE DESEMPENHO (QUADRANTES) ---
+                    html += `
+                        <div class="hideable-box relative mb-8 animate-fade-in">
+                            ${btnHideCode}
+                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-border-all text-blue-500"></i> Matriz de Desempenho (Quadrantes)</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div onclick="app.ui.openQuadranteModal('Q1')" class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-green-400">
+                                    <i class="fa-solid fa-star absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
+                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q1.length}</div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q1 (Excelente)</div>
+                                    <div class="text-[10px] opacity-75 mt-1">Notas 90 a 100</div>
+                                </div>
+                                <div onclick="app.ui.openQuadranteModal('Q2')" class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-blue-400">
+                                    <i class="fa-solid fa-thumbs-up absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
+                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q2.length}</div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q2 (Bom)</div>
+                                    <div class="text-[10px] opacity-75 mt-1">Notas 80 a 89.9</div>
+                                </div>
+                                <div onclick="app.ui.openQuadranteModal('Q3')" class="bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-orange-300">
+                                    <i class="fa-solid fa-triangle-exclamation absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
+                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q3.length}</div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q3 (Regular)</div>
+                                    <div class="text-[10px] opacity-75 mt-1">Notas 70 a 79.9</div>
+                                </div>
+                                <div onclick="app.ui.openQuadranteModal('Q4')" class="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-red-400">
+                                    <i class="fa-solid fa-fire absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
+                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q4.length}</div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q4 (Atenção)</div>
+                                    <div class="text-[10px] opacity-75 mt-1">Abaixo de 70</div>
                                 </div>
                             </div>
                         </div>
                     `;
 
-                    // --- EVOLUTIVO VISUAL REORDENADO AQUI ---
-                    const showEvolutivo = data.mesesDisponiveis && data.mesesDisponiveis.length > 0;
-                    if (showEvolutivo) {
-                        html += `
-                        <div class="hideable-box bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-md mb-8 relative group">
-                            ${btnHideCode}
-                            ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxEvolucao')" class="absolute top-4 right-14 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
-                            ${data.comments?.boxEvolucao ? `
-                            <div class="absolute top-4 right-24 z-50 group/tooltip">
-                                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
-                                <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
-                                    <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
-                                    <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxEvolucao}</div>
-                                </div>
-                            </div>` : ''}
-                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                                <h3 class="font-extrabold text-xl text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 flex items-center justify-center rounded-xl"><i class="fa-solid fa-arrow-trend-up"></i></div> Evolução Mensal</h3>
-                                <!-- Botoes do Filtro Independente -->
-                                <div class="flex flex-wrap gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                    ${data.mesesDisponiveis.map(m => {
-                                        const isActive = app.ui.evolutivoFiltroMes && app.ui.evolutivoFiltroMes.includes(m);
-                                        const btnClass = isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-indigo-400';
-                                        return `<button onclick="app.ui.toggleEvolutivoFiltroMes('${m}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m).substring(0,3)}</button>`;
-                                    }).join('')}
-                                </div>
-                            </div>
-                            
-                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
-                                <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative min-h-[300px] flex flex-col justify-between">
-                                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Média Operacional no Período</h4>
-                                    <div class="flex-1 relative w-full h-full"><canvas id="chart-analise-evolutivo"></canvas></div>
-                                </div>
-                                
-                                <div class="space-y-4">
-                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
-                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-medal text-green-500"></i> Top 5: Evolução Positiva</h4>
-                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
-                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                                            ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, i) => `
-                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-400 transition-colors group shadow-sm">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-blue-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-3">
-                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
-                                                        <span class="font-black ${op.fim >= 85 ? 'text-green-500' : 'text-orange-500'} text-sm">${op.fim.toFixed(1)}</span>
-                                                    </div>
-                                                </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Dados insuficientes.</div>'}
-                                        </div>
-                                    </div>
-                                
-                                    <div class="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
-                                        <h4 class="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-2 shrink-0"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Alerta: Queda de Qualidade</h4>
-                                        <div class="text-[9px] text-slate-400 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Evolução de ${app.ui.formatMonthLabel(data.mesesDisponiveis[0])} p/ ${app.ui.formatMonthLabel(data.mesesDisponiveis[data.mesesDisponiveis.length - 1])}</div>
-                                        <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                                            ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, i) => `
-                                                <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex justify-between items-center text-xs bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-red-400 transition-colors group shadow-sm">
-                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate w-28 group-hover:text-red-600 transition-colors" title="${op.nome}">${i+1}.${op.nome.split(' ')[0]}</span>
-                                                    <div class="flex items-center gap-3">
-                                                        <span class="text-slate-400 font-mono text-[10px]">${op.inicio.toFixed(1)}</span>
-                                                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
-                                                        <span class="font-black text-red-500 text-sm">${op.fim.toFixed(1)}</span>
-                                                        <span class="text-[9px] text-red-600 bg-red-50 border border-red-100 px-1 rounded font-bold ml-1">${op.diff.toFixed(1)}</span>
-                                                    </div>
-                                                </div>
-                                            `).join('') : '<div class="text-xs text-slate-400 italic mt-2">Nenhuma queda crítica identificada.</div>'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        `;
-                    }
-
-                    // TABELA DETALHADA
+                    // --- RANKING DE FALHAS E DESVIOS (AGORA RETRÁTIL EM MODO APRESENTAÇÃO) ---
                     html += `
-                        <div class="hideable-box relative glass-card p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mt-8">
+                        <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
                             ${btnHideCode}
-                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
-                            <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[600px]'}">
+                            
+                            <details class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm group relative" ${this.analiseEditMode ? '' : 'open'}>
+                                <summary class="p-6 md:p-8 cursor-pointer flex justify-between items-center outline-none list-none [&::-webkit-details-marker]:hidden border-b border-transparent group-open:border-slate-100 dark:group-open:border-slate-700 transition-colors">
+                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-orange-100 text-orange-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-layer-group"></i></div> Maiores Desvios</h3>
+                                    <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
+                                </summary>
+                                <div class="px-6 md:px-8 pb-6 md:pb-8 pt-4">
+                                    ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxDesvios')" class="absolute top-4 right-14 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+                                    ${data.comments?.boxDesvios ? `
+                                    <div class="absolute top-4 right-24 z-50 group/tooltip">
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
+                                        <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                            <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxDesvios}</div>
+                                        </div>
+                                    </div>` : ''}
+                                    
+                                    <div class="space-y-3 pr-2 flex-1 custom-scrollbar ${this.analiseEditMode ? '' : 'overflow-y-auto max-h-64'}">
+                                        ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
+                                            <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
+                                                <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-orange-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                                <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm flex items-center justify-center">${f.count}x</span>
+                                            </div>
+                                        `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
+                                    </div>
+                                </div>
+                            </details>
+
+                            <details class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm group relative" ${this.analiseEditMode ? '' : 'open'}>
+                                <summary class="p-6 md:p-8 cursor-pointer flex justify-between items-center outline-none list-none [&::-webkit-details-marker]:hidden border-b border-transparent group-open:border-slate-100 dark:group-open:border-slate-700 transition-colors">
+                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-3"><div class="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center rounded-xl shrink-0"><i class="fa-solid fa-circle-exclamation"></i></div> Falhas Críticas</h3>
+                                    <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
+                                </summary>
+                                <div class="px-6 md:px-8 pb-6 md:pb-8 pt-4">
+                                    ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('boxCriticas')" class="absolute top-4 right-14 z-[60] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-md border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
+                                    ${data.comments?.boxCriticas ? `
+                                    <div class="absolute top-4 right-24 z-50 group/tooltip">
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[12px]"></i></div>
+                                        <div class="absolute bottom-full right-0 mb-2 w-56 p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none text-left">
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                            <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">${data.comments.boxCriticas}</div>
+                                        </div>
+                                    </div>` : ''}
+                                    
+                                    <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
+                                        ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
+                                            <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
+                                                <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-red-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                                <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm self-start mt-0.5">${f.count}x</span>
+                                            </div>
+                                        `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    `;
+
+                    // TABELA DETALHADA COM COLUNA QUADRANTE (TAMBÉM RETRÁTIL NO MODO APRESENTAÇÃO)
+                    html += `
+                        <details class="hideable-box relative glass-card rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mt-8 group mb-8 bg-white dark:bg-slate-800" ${this.analiseEditMode ? '' : 'open'}>
+                            <summary class="p-6 md:p-8 cursor-pointer flex justify-between items-center outline-none list-none [&::-webkit-details-marker]:hidden border-b border-transparent group-open:border-slate-200 dark:group-open:border-slate-700 transition-colors bg-white dark:bg-slate-800">
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
+                                <div class="flex items-center gap-4">
+                                    ${btnHideCode.replace('absolute top-2 right-2', 'relative')}
+                                    <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
+                                </div>
+                            </summary>
+                            
+                            <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[600px]'} pt-2">
                                 <table class="w-full text-left whitespace-nowrap text-sm border-collapse">
                                     <thead class="bg-slate-100/80 dark:bg-slate-800/80 sticky top-0 z-20 backdrop-blur-md shadow-sm">
                                         <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer select-none">
-                                            <th class="py-4 px-4 rounded-tl-xl hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('nome')">Nome do Operador <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
+                                            <th class="py-4 px-4 hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('nome')">Nome do Operador <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
+                                            <th class="py-4 px-4 text-center hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('quadrante')">Quadrante <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
                                             <th class="py-4 px-4 text-center hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('notas')">Ligs Analisadas <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
                                             <th class="py-4 px-4 text-center hover:text-blue-500 transition-colors" onclick="app.ui.sortAnaliseTable('min')">Menor Nota <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
                                             <th class="py-4 px-4 text-center text-blue-600 hover:text-blue-700 transition-colors" onclick="app.ui.sortAnaliseTable('media')">Média Final <i class="fa-solid fa-sort ml-1 opacity-50"></i></th>
-                                            <th class="py-4 px-4 text-right text-slate-400 rounded-tr-xl ${this.analiseEditMode ? 'hidden' : ''}">Ação</th>
+                                            <th class="py-4 px-4 text-right text-slate-400 ${this.analiseEditMode ? 'hidden' : ''}">Ação</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -7969,6 +8011,7 @@
                         if(this.analiseSortCol === 'nome') { vA = a.nome; vB = b.nome; }
                         else if(this.analiseSortCol === 'notas') { vA = a.notas.length; vB = b.notas.length; }
                         else if(this.analiseSortCol === 'min') { vA = a.min; vB = b.min; }
+                        else if(this.analiseSortCol === 'quadrante') { vA = parseFloat(a.media); vB = parseFloat(b.media); }
                         else { vA = parseFloat(a.media); vB = parseFloat(b.media); }
 
                         if(typeof vA === 'string') return this.analiseSortDir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA);
@@ -7976,8 +8019,12 @@
                     });
 
                     arrSort.forEach((op, index) => {
-                        // Limita visão a 5 linhas caso não esteja expandido
                         const rowClass = (!app.ui.tabelaAnaliticaExpandida && index > 4 && !this.analiseEditMode) ? 'hidden' : '';
+                        
+                        // Lógica da Coluna de Quadrantes
+                        let quadStr = op.media >= 90 ? 'Q1' : (op.media >= 80 ? 'Q2' : (op.media >= 70 ? 'Q3' : 'Q4'));
+                        let quadColor = op.media >= 90 ? 'text-green-600 bg-green-100 dark:bg-green-900/30' : (op.media >= 80 ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' : (op.media >= 70 ? 'text-orange-600 bg-orange-100 dark:bg-orange-900/30' : 'text-red-600 bg-red-100 dark:bg-red-900/30'));
+
                         html += `
                             <tr class="${rowClass} hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                                 <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">
@@ -7986,6 +8033,7 @@
                                         <span class="group-hover:text-blue-600 transition-colors cursor-pointer" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">${op.nome}</span>
                                     </div>
                                 </td>
+                                <td class="py-3 px-4 text-center"><span class="font-black text-[10px] px-2.5 py-1 rounded-md shadow-sm border border-slate-200/50 dark:border-slate-700 ${quadColor}">${quadStr}</span></td>
                                 <td class="py-3 px-4 text-center font-bold text-slate-600 dark:text-slate-400">${op.notas.length}</td>
                                 <td class="py-3 px-4 text-center font-bold text-orange-500">${op.min}</td>
                                 <td class="py-3 px-4 text-center font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-slate-50/50 dark:bg-slate-800/20 text-lg">${op.media}</td>
@@ -8004,7 +8052,7 @@
                             <button onclick="app.ui.tabelaAnaliticaExpandida = !app.ui.tabelaAnaliticaExpandida; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-700">
                                 ${app.ui.tabelaAnaliticaExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Tabela Completa'}
                             </button>` : ''}
-                        </div>
+                        </details>
                         
                         <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
                         <div class="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
@@ -8037,8 +8085,8 @@
                                         const foto = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
                                         return `
                                             <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
-                                                <div class="h-48 bg-slate-100 dark:bg-slate-900 relative overflow-hidden">
-                                                    ${foto ? `<img src="${foto}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>'}
+                                                <div class="h-56 bg-slate-100 dark:bg-slate-900 relative overflow-hidden flex items-center justify-center">
+                                                    ${foto ? `<img src="${foto}" class="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-500">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>'}
                                                 </div>
                                                 <div class="p-5 flex flex-col flex-1">
                                                     <div class="flex justify-between items-start mb-2">
