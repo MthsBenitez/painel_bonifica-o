@@ -7888,30 +7888,48 @@
                                     <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média & Destaques</h3>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    <div class="lg:col-span-2 w-full h-80 relative">
+                                    <div class="lg:col-span-2 w-full min-h-[350px] lg:min-h-full relative">
                                         <canvas id="chart-analise-evolutivo"></canvas>
                                     </div>
                                     <div class="lg:col-span-1 flex flex-col gap-6">
                                         <!-- Destaques Positivos -->
-                                        <div class="bg-emerald-50 dark:bg-emerald-900/10 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800/30 flex-1 shadow-inner">
+                                        <div class="bg-emerald-50 dark:bg-emerald-900/10 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800/30 flex-1 shadow-inner flex flex-col">
                                             <h4 class="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-up"></i> Top 5 Evoluções</h4>
-                                            <div class="space-y-2.5">
+                                            <div class="space-y-3 flex-1">
                                                 ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, idx) => `
-                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50">
-                                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
-                                                        <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${op.diff.toFixed(1)}</span>
+                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50 hover:border-emerald-300 dark:hover:border-emerald-600 transition-colors group">
+                                                        <div class="flex-1 min-w-0 pr-2">
+                                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate cursor-pointer hover:text-emerald-600 transition-colors" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">
+                                                                <span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}
+                                                            </div>
+                                                            <div class="text-[10px] text-slate-500 mt-1 font-medium">
+                                                                De <strong class="text-slate-600 dark:text-slate-400">${op.inicio.toFixed(1)}</strong> (${app.ui.formatMonthLabel(activeMonthsForEvol[0]).substring(0,3)}) p/ <strong class="text-slate-600 dark:text-slate-400">${op.fim.toFixed(1)}</strong> (${app.ui.formatMonthLabel(activeMonthsForEvol[activeMonthsForEvol.length-1]).substring(0,3)})
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1.5 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800 shadow-inner flex items-center gap-1">
+                                                            <i class="fa-solid fa-caret-up"></i> ${op.diff.toFixed(1)}
+                                                        </div>
                                                     </div>
                                                 `).join('') : '<div class="text-xs text-slate-500 italic p-2">Sem evoluções registradas.</div>'}
                                             </div>
                                         </div>
                                         <!-- Destaques Negativos -->
-                                        <div class="bg-red-50 dark:bg-red-900/10 p-5 rounded-2xl border border-red-100 dark:border-red-800/30 flex-1 shadow-inner">
+                                        <div class="bg-red-50 dark:bg-red-900/10 p-5 rounded-2xl border border-red-100 dark:border-red-800/30 flex-1 shadow-inner flex flex-col">
                                             <h4 class="text-[10px] font-black uppercase text-red-600 dark:text-red-400 tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-down"></i> Top 5 Quedas</h4>
-                                            <div class="space-y-2.5">
+                                            <div class="space-y-3 flex-1">
                                                 ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, idx) => `
-                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50">
-                                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
-                                                        <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${op.diff.toFixed(1)}</span>
+                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50 hover:border-red-300 dark:hover:border-red-600 transition-colors group">
+                                                        <div class="flex-1 min-w-0 pr-2">
+                                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate cursor-pointer hover:text-red-600 transition-colors" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">
+                                                                <span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}
+                                                            </div>
+                                                            <div class="text-[10px] text-slate-500 mt-1 font-medium">
+                                                                De <strong class="text-slate-600 dark:text-slate-400">${op.inicio.toFixed(1)}</strong> (${app.ui.formatMonthLabel(activeMonthsForEvol[0]).substring(0,3)}) p/ <strong class="text-slate-600 dark:text-slate-400">${op.fim.toFixed(1)}</strong> (${app.ui.formatMonthLabel(activeMonthsForEvol[activeMonthsForEvol.length-1]).substring(0,3)})
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2.5 py-1.5 rounded-lg shrink-0 border border-red-200 dark:border-red-800 shadow-inner flex items-center gap-1">
+                                                            <i class="fa-solid fa-caret-down"></i> ${Math.abs(op.diff).toFixed(1)}
+                                                        </div>
                                                     </div>
                                                 `).join('') : '<div class="text-xs text-slate-500 italic p-2">Sem quedas registradas.</div>'}
                                             </div>
