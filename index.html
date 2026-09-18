@@ -7273,8 +7273,21 @@
                                 let y = (30 - ((val / maxOpErro) * 26)).toFixed(1); // Altura máxima de 30px, margem de 4px
                                 return `${x},${y}`;
                             });
-                            svgSparkline = `<svg width="100%" height="30" viewBox="0 0 100 30" preserveAspectRatio="none" class="overflow-visible mt-1 drop-shadow-sm">
+                            
+                            // Criação de gradiente e área preenchida para modernizar o gráfico (UX Premium)
+                            let fillCoords = `0,30 ${coords.join(' ')} 100,30`; 
+                            let gradId = 'grad-' + Math.random().toString(36).substring(7);
+
+                            svgSparkline = `<svg width="100%" height="30" viewBox="0 0 100 30" preserveAspectRatio="none" class="overflow-visible mt-2 drop-shadow-sm">
+                                <defs>
+                                    <linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
+                                        <stop offset="0%" stop-color="${linhaCor}" stop-opacity="0.4"/>
+                                        <stop offset="100%" stop-color="${linhaCor}" stop-opacity="0.0"/>
+                                    </linearGradient>
+                                </defs>
+                                <polygon fill="url(#${gradId})" points="${fillCoords}" />
                                 <polyline fill="none" stroke="${linhaCor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(' ')}" />
+                                ${coords.map(c => `<circle cx="${c.split(',')[0]}" cy="${c.split(',')[1]}" r="2.5" fill="white" stroke="${linhaCor}" stroke-width="1.5" />`).join('')}
                             </svg>`;
                         } else {
                             svgSparkline = `<div class="h-[30px] flex items-center text-[9px] text-slate-400 italic mt-1">Dados insuficientes</div>`;
@@ -7664,7 +7677,7 @@
                             <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
                                 <!-- TÍTULO MUITO MAIOR COM COR -->
                                 <div class="flex items-center justify-center xl:justify-start gap-3">
-                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.infoOperacao = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block' : 'text-4xl md:text-5xl'} font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" style="color: ${data?.titleColor || ''}">${data ? data.infoOperacao : 'Analítico de Operação'}</h2>
+                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block' : 'text-4xl md:text-5xl'} font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" style="color: ${data?.titleColor \vert{}\vert{} ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
                                     ${!this.analiseEditMode && data ? `<input type="color" value="${data.titleColor || '#1e293b'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0" title="Cor do Título">` : ''}
                                 </div>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
@@ -7985,7 +7998,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                            ${(!this.analiseEditMode && arrSort.length > 5) ? `
+                            ${(arrSort.length > 5) ? `
                             <button onclick="app.ui.tabelaAnaliticaExpandida = !app.ui.tabelaAnaliticaExpandida; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-700">
                                 ${app.ui.tabelaAnaliticaExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Tabela Completa'}
                             </button>` : ''}
@@ -10018,6 +10031,19 @@
                     });
                     const mesesOrdenados = Array.from(mesesDisp).sort();
 
+                    // [NOVO] Resgatando a memória do usuário antes de recriar a estrutura!
+                    let oldComments = {};
+                    let oldAcoes = [];
+                    let oldCustomTitle = null;
+                    let oldTitleColor = '';
+
+                    if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                        oldComments = app.analiseCSVDinamicoData.consolidado.comments || {};
+                        oldAcoes = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas || [];
+                        oldCustomTitle = app.analiseCSVDinamicoData.consolidado.customTitle || null;
+                        oldTitleColor = app.analiseCSVDinamicoData.consolidado.titleColor || '';
+                    }
+
                     const data = {
                         totalLinhas: 0,
                         operadores: {},
@@ -10028,7 +10054,11 @@
                         mesesEvolutivo: {},
                         operadoresEvolutivo: {},
                         infoData: filtrosMes.length > 0 && filtrosMes[0] !== "" ? filtrosMes.map(m => app.ui.formatMonthLabel(m)).join(', ') : (mesesOrdenados.length > 1 ? 'Visão Evolutiva (Todos)' : (mesesOrdenados[0] ? app.ui.formatMonthLabel(mesesOrdenados[0]) : 'Indefinido')),
-                        infoOperacao: filtrosRelatorio.length > 0 && filtrosRelatorio[0] !== "" ? `Filtro Ativo: ${filtrosRelatorio.join(', ')}` : 'Visão Consolidada (Geral)'
+                        infoOperacao: filtrosRelatorio.length > 0 && filtrosRelatorio[0] !== "" ? `Filtro Ativo: ${filtrosRelatorio.join(', ')}` : 'Visão Consolidada (Geral)',
+                        comments: oldComments,
+                        acoesSelecionadas: oldAcoes,
+                        customTitle: oldCustomTitle,
+                        titleColor: oldTitleColor
                     };
 
                     relatoriosAtivos.forEach(relatorio => {
