@@ -7278,17 +7278,25 @@
                             let fillCoords = `0,50 ${coords.join(' ')} 100,50`; 
                             let gradId = 'grad-' + Math.random().toString(36).substring(7);
 
-                            svgSparkline = `<svg width="100%" height="45" viewBox="0 -5 100 50" preserveAspectRatio="none" class="overflow-visible drop-shadow-sm mt-1">
-                                <defs>
-                                    <linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
-                                        <stop offset="0%" stop-color="${linhaCor}" stop-opacity="0.4"/>
-                                        <stop offset="100%" stop-color="${linhaCor}" stop-opacity="0.0"/>
-                                    </linearGradient>
-                                </defs>
-                                <polygon fill="url(#${gradId})" points="${fillCoords}" />
-                                <polyline fill="none" stroke="${linhaCor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(' ')}" />
-                                ${coords.map(c => `<circle cx="${c.split(',')[0]}" cy="${c.split(',')[1]}" r="2.5" fill="white" stroke="${linhaCor}" stroke-width="2" class="dark:fill-slate-800" />`).join('')}
-                            </svg>`;
+                            let pointsHtml = coords.map(c => {
+                                let xPct = c.split(',')[0];
+                                let yPct = ((parseFloat(c.split(',')[1]) + 5) / 50) * 100;
+                                return `<div class="absolute w-2 h-2 rounded-full border border-white dark:border-slate-800 z-10 shadow-sm" style="background-color: ${linhaCor}; left: calc(${xPct}% - 4px); top: calc(${yPct}% - 4px);"></div>`;
+                            }).join('');
+
+                            svgSparkline = `<div class="relative w-full h-[45px] mt-1">
+                                <svg width="100%" height="100%" viewBox="0 -5 100 50" preserveAspectRatio="none" class="absolute inset-0 overflow-visible drop-shadow-sm">
+                                    <defs>
+                                        <linearGradient id="${gradId}" x1="0" x2="0" y1="0" y2="1">
+                                            <stop offset="0%" stop-color="${linhaCor}" stop-opacity="0.4"/>
+                                            <stop offset="100%" stop-color="${linhaCor}" stop-opacity="0.0"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <polygon fill="url(#${gradId})" points="${fillCoords}" />
+                                    <polyline fill="none" stroke="${linhaCor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${coords.join(' ')}" vector-effect="non-scaling-stroke" />
+                                </svg>
+                                ${pointsHtml}
+                            </div>`;
                         } else {
                             svgSparkline = `<div class="h-[45px] flex items-center justify-center text-[10px] text-slate-400 italic">Dados insuficientes para linha de tendência</div>`;
                         }
@@ -7860,8 +7868,7 @@
                     html += `
                         <!-- DASHBOARD CARDS MESTRES -->
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
-                            ${btnHideCode}
-                            ${renderDashCard('totalLinhas', 'fa-headphones text-blue-500', 'Total Analisado', `${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span>`, `Universo de ${totalPerguntasGlobais} perguntas validadas.`, 'bg-blue-500', data.comments?.totalLinhas)}
+                            ${btnHideCode}${renderDashCard('totalLinhas', 'fa-headphones text-blue-500', 'Total Analisado', `${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span>`, `Universo de ${totalPerguntasGlobais} perguntas validadas.`, 'bg-blue-500', data.comments?.totalLinhas)}
                             
                             ${renderDashCard('conformidadePct', 'fa-shield-halved text-emerald-500', 'Conformidade Absoluta', `${data.conformidadePct}%`, 'Ligs em que o operador gabaritou com nota máxima (100).', 'bg-emerald-500', data.comments?.conformidadePct)}
 
@@ -7871,8 +7878,6 @@
 
                             ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
-                    ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
-                        </div>
                     `;
 
                     // --- RESTAURAÇÃO: GRÁFICO EVOLUTIVO DE VOLTA À TELA ---
@@ -7880,10 +7885,38 @@
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
                                 <div class="flex justify-between items-center mb-6">
-                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média (Todos os Meses)</h3>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média & Destaques</h3>
                                 </div>
-                                <div class="w-full h-80 relative">
-                                    <canvas id="chart-analise-evolutivo"></canvas>
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    <div class="lg:col-span-2 w-full h-80 relative">
+                                        <canvas id="chart-analise-evolutivo"></canvas>
+                                    </div>
+                                    <div class="lg:col-span-1 flex flex-col gap-6">
+                                        <!-- Destaques Positivos -->
+                                        <div class="bg-emerald-50 dark:bg-emerald-900/10 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800/30 flex-1 shadow-inner">
+                                            <h4 class="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-up"></i> Top 5 Evoluções</h4>
+                                            <div class="space-y-2.5">
+                                                ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, idx) => `
+                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50">
+                                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
+                                                        <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${op.diff.toFixed(1)}</span>
+                                                    </div>
+                                                `).join('') : '<div class="text-xs text-slate-500 italic p-2">Sem evoluções registradas.</div>'}
+                                            </div>
+                                        </div>
+                                        <!-- Destaques Negativos -->
+                                        <div class="bg-red-50 dark:bg-red-900/10 p-5 rounded-2xl border border-red-100 dark:border-red-800/30 flex-1 shadow-inner">
+                                            <h4 class="text-[10px] font-black uppercase text-red-600 dark:text-red-400 tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-down"></i> Top 5 Quedas</h4>
+                                            <div class="space-y-2.5">
+                                                ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, idx) => `
+                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50">
+                                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
+                                                        <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${op.diff.toFixed(1)}</span>
+                                                    </div>
+                                                `).join('') : '<div class="text-xs text-slate-500 italic p-2">Sem quedas registradas.</div>'}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         `;
