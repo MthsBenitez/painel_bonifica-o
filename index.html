@@ -7709,7 +7709,7 @@
         
                     let mainData = app.analiseCSVDinamicoData || null;
                     let data = mainData ? mainData.consolidado : null;
-                    let btnHideCode = this.analiseEditMode ? `<button onclick="this.closest('.hideable-box').classList.add('hidden')" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 bg-white dark:bg-slate-800 p-1.5 rounded-lg z-50 transition-colors shadow-sm" title="Ocultar na Apresentação"><i class="fa-solid fa-eye-slash"></i></button>` : '';
+                    let btnHideCode = ''; // Removido a pedido do usuário
 
                     // CÁLCULO DE PORCENTAGEM EXATA DE FALHAS TOTAIS
                     let totalPerguntasGlobais = 0;
@@ -7871,7 +7871,23 @@
 
                             ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
+                    ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
+                        </div>
                     `;
+
+                    // --- RESTAURAÇÃO: GRÁFICO EVOLUTIVO DE VOLTA À TELA ---
+                    if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1) {
+                        html += `
+                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
+                                <div class="flex justify-between items-center mb-6">
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média (Todos os Meses)</h3>
+                                </div>
+                                <div class="w-full h-80 relative">
+                                    <canvas id="chart-analise-evolutivo"></canvas>
+                                </div>
+                            </div>
+                        `;
+                    }
 
                     // --- PREPARAÇÃO DOS QUADRANTES ---
                     let q1 = [], q2 = [], q3 = [], q4 = [];
@@ -7917,10 +7933,9 @@
                         </div>
                     `;
 
-                    // --- RANKING DE FALHAS E DESVIOS (AGORA RETRÁTIL EM MODO APRESENTAÇÃO) ---
+                    // --- RANKING DE FALHAS E DESVIOS (COM EXPANSOR DE TOP 5) ---
                     html += `
-                        <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
-                            ${btnHideCode}
+                        <div class="relative grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
                             
                             <details class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm group relative" ${this.analiseEditMode ? '' : 'open'}>
                                 <summary class="p-6 md:p-8 cursor-pointer flex justify-between items-center outline-none list-none [&::-webkit-details-marker]:hidden border-b border-transparent group-open:border-slate-100 dark:group-open:border-slate-700 transition-colors">
@@ -7939,13 +7954,19 @@
                                     </div>` : ''}
                                     
                                     <div class="space-y-3 pr-2 flex-1 custom-scrollbar ${this.analiseEditMode ? '' : 'overflow-y-auto max-h-64'}">
-                                        ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => `
-                                            <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
-                                                <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-orange-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                        ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => {
+                                            const hideClass = (!app.ui.desviosExpandidos && i > 4 && !this.analiseEditMode) ? 'hidden' : '';
+                                            return `
+                                            <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'comum')" class="${hideClass} flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition-all group">
+                                                <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-orange-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}.${f.nome}</span>
                                                 <span class="font-black text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm flex items-center justify-center">${f.count}x</span>
                                             </div>
-                                        `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
+                                        `}).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
                                     </div>
+                                    ${(data.falhasComunsArray && data.falhasComunsArray.length > 5 && !this.analiseEditMode) ? `
+                                    <button onclick="app.ui.desviosExpandidos = !app.ui.desviosExpandidos; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-orange-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
+                                        ${app.ui.desviosExpandidos ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todos os Desvios'}
+                                    </button>` : ''}
                                 </div>
                             </details>
 
@@ -7966,13 +7987,19 @@
                                     </div>` : ''}
                                     
                                     <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
-                                        ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => `
-                                            <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
-                                                <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-red-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}. ${f.nome}</span>
+                                        ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => {
+                                            const hideClass = (!app.ui.criticasExpandidas && i > 4 && !this.analiseEditMode) ? 'hidden' : '';
+                                            return `
+                                            <div onclick="app.ui.showOperatorsModal('${encodeURIComponent(f.nome)}', 'critica')" class="${hideClass} flex justify-between items-center text-xs bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700/50 shadow-sm cursor-pointer hover:border-red-400 hover:shadow-md transition-all group">
+                                                <span class="font-bold text-slate-700 dark:text-slate-300 pr-4 group-hover:text-red-500 transition-colors whitespace-normal leading-tight" title="${f.nome}">${i+1}.${f.nome}</span>
                                                 <span class="font-black text-red-600 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-md shrink-0 shadow-sm self-start mt-0.5">${f.count}x</span>
                                             </div>
-                                        `).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
+                                        `}).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
                                     </div>
+                                    ${(data.falhasCriticasArray && data.falhasCriticasArray.length > 5 && !this.analiseEditMode) ? `
+                                    <button onclick="app.ui.criticasExpandidas = !app.ui.criticasExpandidas; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-red-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
+                                        ${app.ui.criticasExpandidas ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todas as Críticas'}
+                                    </button>` : ''}
                                 </div>
                             </details>
                         </div>
@@ -8117,9 +8144,8 @@
 
                             // GRÁFICOS DOS CARDS (FLIP 3D)
                             let mesesBase = (data && data.mesesDisponiveis) ? data.mesesDisponiveis : [];
-                            let activeMonthsForEvol = (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.length > 0 && app.ui.analiseFiltroMes[0] !== "") 
-                                ? mesesBase.filter(m => app.ui.analiseFiltroMes.includes(m)) 
-                                : mesesBase;
+                            // FIX: Gráficos de Flip traseiros ignoram o filtro de mês da página para sempre mostrar o histórico real completo
+                            let activeMonthsForEvol = mesesBase;
                             
                             const labelsEvol = activeMonthsForEvol.map(m => app.ui.formatMonthLabel(m).substring(0,3));
 
@@ -8185,7 +8211,7 @@
                             initFlipChart('falhasCriticas', '#ef4444');
 
                             // GRÁFICO EVOLUTIVO CENTRAL
-                            if (showEvolutivo) {
+                            if (data.mesesDisponiveis && data.mesesDisponiveis.length >= 1) {
                                 if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
                                 const ctxEvol = document.getElementById('chart-analise-evolutivo');
                                 if (ctxEvol) {
