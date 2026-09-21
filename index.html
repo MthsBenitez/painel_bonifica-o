@@ -7605,7 +7605,7 @@
                     else if(qName === 'Q3') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = 'Regular (70 a 79.9)'; icon = 'fa-triangle-exclamation'; }
                     else if(qName === 'Q4') { cor = 'text-red-500'; bg = 'bg-red-100 dark:bg-red-900/30'; desc = 'Atenção (< 70)'; icon = 'fa-fire'; }
 
-                    let htmlList = `<div class="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    let htmlList = `<div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
                     if(lista.length === 0) {
                         htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador enquadrado neste quadrante.</div>`;
                     } else {
@@ -7626,16 +7626,72 @@
                     }
                     htmlList += `</div>`;
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon}${cor}"></i> Operadores do Quadrante ${qName}`;
+                    // --- NOVA LÓGICA DO GRÁFICO EVOLUTIVO DO QUADRANTE ---
+                    let mesesOrd = data.mesesDisponiveis || [];
+                    let chartLabels = mesesOrd.map(m => app.ui.formatMonthLabel(m).substring(0,3));
+                    let chartData = [];
+
+                    mesesOrd.forEach(mes => {
+                        let somaMes = 0;
+                        let countMes = 0;
+                        lista.forEach(op => {
+                            if(data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes]) {
+                                let dMes = data.operadoresEvolutivo[op.nome][mes];
+                                if(dMes.count > 0) {
+                                    somaMes += (dMes.soma / dMes.count);
+                                    countMes++;
+                                }
+                            }
+                        });
+                        chartData.push(countMes > 0 ? parseFloat((somaMes / countMes).toFixed(2)) : 0);
+                    });
+
+                    let chartHtml = '';
+                    if(chartData.length > 1) {
+                        chartHtml = `
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução Média Histórica do Quadrante</h4>
+                                <div class="w-full h-32 relative"><canvas id="quadrante-chart-canvas"></canvas></div>
+                            </div>
+                        `;
+                    }
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${cor}"></i> Operadores do Quadrante ${qName}`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Classificação Oficial: <strong class="${cor}">${desc}</strong></p>${htmlList}
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total: ${lista.length}</p>
+                        </div>
+                        ${chartHtml}
+                        ${htmlList}
                     `;
-                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm">Fechar</button>`;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
 
                     const modalBox = document.querySelector('#global-modal > div');
-                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl');
-                    modalBox.classList.add('max-w-lg');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-2xl');
                     document.getElementById('global-modal').classList.remove('hidden');
+
+                    // Desenha o gráfico se houver
+                    if(chartData.length > 1) {
+                        setTimeout(() => {
+                            if(window.quadranteChart) window.quadranteChart.destroy();
+                            const ctx = document.getElementById('quadrante-chart-canvas');
+                            if(ctx) {
+                                // Pega o hex da cor baseado na string do tailwind
+                                let hexColor = '#3b82f6';
+                                if(qName === 'Q1') hexColor = '#22c55e';
+                                if(qName === 'Q3') hexColor = '#f97316';
+                                if(qName === 'Q4') hexColor = '#ef4444';
+
+                                window.quadranteChart = new Chart(ctx, {
+                                    type: 'line',
+                                    data: { labels: chartLabels, datasets: [{ data: chartData, borderColor: hexColor, backgroundColor: hexColor+'20', fill: true, borderWidth: 3, pointBackgroundColor: hexColor, tension: 0.3 }] },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: Math.max(0, Math.min(...chartData.filter(v=>v>0))-10), max: 100, ticks: {font: {size: 9}} }, x: { ticks: {font: {size: 9}} } } }
+                                });
+                            }
+                        }, 300);
+                    }
                 },
 
                 exportOperadorAnaliseXLSX(nomeEncoded) {
@@ -7888,7 +7944,7 @@
                                     <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média & Destaques</h3>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    <div class="lg:col-span-2 w-full h-80 relative">
+                                    <div class="lg:col-span-2 w-full h-full min-h-[320px] relative">
                                         <canvas id="chart-analise-evolutivo"></canvas>
                                     </div>
                                     <div class="lg:col-span-1 flex flex-col gap-6">
@@ -7897,9 +7953,12 @@
                                             <h4 class="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-up"></i> Top 5 Evoluções</h4>
                                             <div class="space-y-2.5">
                                                 ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, idx) => `
-                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50">
-                                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
-                                                        <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${op.diff.toFixed(1)}</span>
+                                                    <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50 cursor-pointer hover:border-emerald-400 hover:-translate-y-0.5 transition-all group">
+                                                        <div class="flex justify-between items-center mb-1">
+                                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-emerald-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
+                                                            <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${op.diff.toFixed(1)}</span>
+                                                        </div>
+                                                        <div class="text-[9px] text-slate-500 font-medium">Subiu de <strong class="text-slate-700 dark:text-slate-300">${op.inicio.toFixed(1)}</strong> para <strong class="text-emerald-600">${op.fim.toFixed(1)}</strong></div>
                                                     </div>
                                                 `).join('') : '<div class="text-xs text-slate-500 italic p-2">Sem evoluções registradas.</div>'}
                                             </div>
@@ -7909,9 +7968,12 @@
                                             <h4 class="text-[10px] font-black uppercase text-red-600 dark:text-red-400 tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-down"></i> Top 5 Quedas</h4>
                                             <div class="space-y-2.5">
                                                 ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, idx) => `
-                                                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50">
-                                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
-                                                        <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${op.diff.toFixed(1)}</span>
+                                                    <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50 cursor-pointer hover:border-red-400 hover:-translate-y-0.5 transition-all group">
+                                                        <div class="flex justify-between items-center mb-1">
+                                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-red-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
+                                                            <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${op.diff.toFixed(1)}</span>
+                                                        </div>
+                                                        <div class="text-[9px] text-slate-500 font-medium">Caiu de <strong class="text-slate-700 dark:text-slate-300">${op.inicio.toFixed(1)}</strong> para <strong class="text-red-600">${op.fim.toFixed(1)}</strong></div>
                                                     </div>
                                                 `).join('') : '<div class="text-xs text-slate-500 italic p-2">Sem quedas registradas.</div>'}
                                             </div>
@@ -7933,34 +7995,76 @@
                     });
 
                     // --- MATRIZ DE DESEMPENHO (QUADRANTES) ---
+                    let tOps = data.rankOperadores.length || 1;
+                    let mQ1 = q1.length > 0 ? (q1.reduce((a,b)=>a+parseFloat(b.media),0)/q1.length).toFixed(1) : '0.0';
+                    let pQ1 = ((q1.length / tOps) * 100).toFixed(1);
+                    let mQ2 = q2.length > 0 ? (q2.reduce((a,b)=>a+parseFloat(b.media),0)/q2.length).toFixed(1) : '0.0';
+                    let pQ2 = ((q2.length / tOps) * 100).toFixed(1);
+                    let mQ3 = q3.length > 0 ? (q3.reduce((a,b)=>a+parseFloat(b.media),0)/q3.length).toFixed(1) : '0.0';
+                    let pQ3 = ((q3.length / tOps) * 100).toFixed(1);
+                    let mQ4 = q4.length > 0 ? (q4.reduce((a,b)=>a+parseFloat(b.media),0)/q4.length).toFixed(1) : '0.0';
+                    let pQ4 = ((q4.length / tOps) * 100).toFixed(1);
+
                     html += `
                         <div class="hideable-box relative mb-8 animate-fade-in">
                             ${btnHideCode}
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-border-all text-blue-500"></i> Matriz de Desempenho (Quadrantes)</h3>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div onclick="app.ui.openQuadranteModal('Q1')" class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-green-400">
-                                    <i class="fa-solid fa-star absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
-                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q1.length}</div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q1 (Excelente)</div>
-                                    <div class="text-[10px] opacity-75 mt-1">Notas 90 a 100</div>
+                                <!-- Q1 -->
+                                <div onclick="app.ui.openQuadranteModal('Q1')" class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-green-400 flex flex-col">
+                                    <i class="fa-solid fa-star absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
+                                    <div class="flex justify-between items-start mb-2 relative z-10">
+                                        <div class="text-4xl font-black drop-shadow-md">${q1.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
+                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ1}%</div>
+                                    </div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q1 (Excelente)</div>
+                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Notas 90 a 100</div>
+                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
+                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
+                                        <span class="font-black text-sm drop-shadow">${mQ1}</span>
+                                    </div>
                                 </div>
-                                <div onclick="app.ui.openQuadranteModal('Q2')" class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-blue-400">
-                                    <i class="fa-solid fa-thumbs-up absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
-                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q2.length}</div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q2 (Bom)</div>
-                                    <div class="text-[10px] opacity-75 mt-1">Notas 80 a 89.9</div>
+                                <!-- Q2 -->
+                                <div onclick="app.ui.openQuadranteModal('Q2')" class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-blue-400 flex flex-col">
+                                    <i class="fa-solid fa-thumbs-up absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
+                                    <div class="flex justify-between items-start mb-2 relative z-10">
+                                        <div class="text-4xl font-black drop-shadow-md">${q2.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
+                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ2}%</div>
+                                    </div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q2 (Bom)</div>
+                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Notas 80 a 89.9</div>
+                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
+                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
+                                        <span class="font-black text-sm drop-shadow">${mQ2}</span>
+                                    </div>
                                 </div>
-                                <div onclick="app.ui.openQuadranteModal('Q3')" class="bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-orange-300">
-                                    <i class="fa-solid fa-triangle-exclamation absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
-                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q3.length}</div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q3 (Regular)</div>
-                                    <div class="text-[10px] opacity-75 mt-1">Notas 70 a 79.9</div>
+                                <!-- Q3 -->
+                                <div onclick="app.ui.openQuadranteModal('Q3')" class="bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-orange-300 flex flex-col">
+                                    <i class="fa-solid fa-triangle-exclamation absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
+                                    <div class="flex justify-between items-start mb-2 relative z-10">
+                                        <div class="text-4xl font-black drop-shadow-md">${q3.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
+                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ3}%</div>
+                                    </div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q3 (Regular)</div>
+                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Notas 70 a 79.9</div>
+                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
+                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
+                                        <span class="font-black text-sm drop-shadow">${mQ3}</span>
+                                    </div>
                                 </div>
-                                <div onclick="app.ui.openQuadranteModal('Q4')" class="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-red-400">
-                                    <i class="fa-solid fa-fire absolute -right-2 -bottom-2 text-6xl text-white/20 group-hover:scale-110 transition-transform"></i>
-                                    <div class="text-4xl font-black mb-1 drop-shadow-md">${q4.length}</div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90">Q4 (Atenção)</div>
-                                    <div class="text-[10px] opacity-75 mt-1">Abaixo de 70</div>
+                                <!-- Q4 -->
+                                <div onclick="app.ui.openQuadranteModal('Q4')" class="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-red-400 flex flex-col">
+                                    <i class="fa-solid fa-fire absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
+                                    <div class="flex justify-between items-start mb-2 relative z-10">
+                                        <div class="text-4xl font-black drop-shadow-md">${q4.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
+                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ4}%</div>
+                                    </div>
+                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q4 (Atenção)</div>
+                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Abaixo de 70</div>
+                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
+                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
+                                        <span class="font-black text-sm drop-shadow">${mQ4}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
