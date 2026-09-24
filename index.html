@@ -7825,26 +7825,39 @@
 
                     // Desenha os gráficos após a renderização da tela
                     setTimeout(() => {
-                        // --- GRÁFICO CURVA DE APRENDIZADO ---
+                        // --- GRÁFICO CURVA DE APRENDIZADO (BARRA DINÂMICA) ---
                         if(window.chartCurvaAprendizado) window.chartCurvaAprendizado.destroy();
                         const ctxCurva = document.getElementById('chart-curva-aprendizado');
-                        if (ctxCurva && tcTotalOp > 0) {
+                        
+                        // Garante que matStats existe, senão pega um backup de segurança
+                        const finalMatStats = (typeof matStats !== 'undefined') ? matStats : (data.matConfig || []).map(c => ({...c, media: 0}));
+                        
+                        if (ctxCurva && finalMatStats.length > 0) {
                             const isDark = document.documentElement.classList.contains('dark');
+                            
+                            // Tradutor mágico de nomes de cores do tailwind para HEX para injetar no Canvas do Chart.js
+                            const colorMap = {
+                                'slate': '#64748b', 'blue': '#3b82f6', 'emerald': '#10b981', 
+                                'orange': '#f97316', 'red': '#ef4444', 'purple': '#a855f7', 'teal': '#14b8a6'
+                            };
+
                             window.chartCurvaAprendizado = new Chart(ctxCurva, {
-                                type: 'line',
+                                type: 'bar', // Gráfico de barras é perfeito para comparar grupos absolutos
                                 data: {
-                                    labels: ['Ramp-Up', 'Júnior', 'Pleno', 'Veterano'],
+                                    labels: finalMatStats.map(s => s.nome),
                                     datasets: [{
-                                        data: [parseFloat(mNov), parseFloat(mJun), parseFloat(mPle), parseFloat(mVet)],
-                                        borderColor: '#10b981', backgroundColor: '#10b98120', fill: true,
-                                        borderWidth: 3, pointBackgroundColor: '#10b981', pointRadius: 4, tension: 0.3
+                                        data: finalMatStats.map(s => parseFloat(s.media) || 0),
+                                        backgroundColor: finalMatStats.map(s => colorMap[s.cor] || '#3b82f6'),
+                                        borderRadius: 6,
+                                        borderWidth: 0
                                     }]
                                 },
                                 options: {
-                                    responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                                    responsive: true, maintainAspectRatio: false, 
+                                    plugins: { legend: { display: false }, tooltip: { padding: 10, bodyFont: {weight: 'bold', size: 14} } },
                                     scales: {
-                                        y: { min: 0, max: 100, ticks: { font: { size: 9 }, color: isDark ? '#94a3b8' : '#64748b' }, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
-                                        x: { ticks: { font: { size: 9 }, color: isDark ? '#94a3b8' : '#64748b' }, grid: { display: false } }
+                                        y: { min: Math.max(0, Math.min(...finalMatStats.map(s=>parseFloat(s.media)).filter(m=>m>0)) - 10), max: 100, ticks: { font: { size: 10 }, color: isDark ? '#94a3b8' : '#64748b' }, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
+                                        x: { ticks: { font: { size: 10, weight: 'bold' }, color: isDark ? '#cbd5e1' : '#475569' }, grid: { display: false } }
                                     }
                                 }
                             });
@@ -8025,6 +8038,17 @@
                             cyan: { bg: 'bg-cyan-100 dark:bg-cyan-900/40', text: 'text-cyan-600 dark:text-cyan-400', border: 'border-cyan-200 dark:border-cyan-800/50', light: 'text-cyan-500 dark:text-cyan-400' }
                         };
                         const t = themes[theme] || themes.blue;
+                        
+                        // ID Seguro e Leitura do Cofre
+                        const idKey = title.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                        if (!data.chapterCustomData) data.chapterCustomData = {};
+                        const exibT = data.chapterCustomData[idKey]?.t || title;
+                        const exibS = data.chapterCustomData[idKey]?.s || subtitle;
+
+                        // Funções de salvamento embutidas nos atributos onblur
+                        const onBlurT = `if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData) app.analiseCSVDinamicoData.consolidado.chapterCustomData = {}; if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}']) app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'] = {}; app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'].t = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);`;
+                        const onBlurS = `if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData) app.analiseCSVDinamicoData.consolidado.chapterCustomData = {}; if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}']) app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'] = {}; app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'].s = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);`;
+
                         return `
                             <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 animate-fade-in chapter-marker">
                                 <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_10px_20px_rgba(0,0,0,0.05)] border ${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
@@ -8035,8 +8059,8 @@
                                     <div class="text-[10px] font-black uppercase tracking-widest ${t.light}">Capítulo ${chapterCount++}</div>
                                     <div class="h-px w-12 ${t.bg}"></div>
                                 </div>
-                                <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-sm">${title}</h2>
-                                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto">${subtitle}</p>
+                                <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="${onBlurT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-sm outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
+                                <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="${onBlurS}" class="text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
                             </div>
                         `;
                     };
@@ -8327,7 +8351,6 @@
                     html += `
                         <div class="hideable-box relative mb-8 animate-fade-in">
                             ${btnHideCode}
-                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-4 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-border-all text-blue-500"></i> Matriz de Desempenho (Quadrantes)</h3>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <!-- Q1 -->
                                 <div onclick="app.ui.openQuadranteModal('Q1')" class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-green-400 flex flex-col">
@@ -8462,142 +8485,168 @@
                         </div>
                     `;
 
-                    // --- MATRIZ DE TEMPO DE CASA (CURVA DE APRENDIZADO) ---
-                    let tcNovato = { qtd: 0, soma: 0 }, tcJunior = { qtd: 0, soma: 0 }, tcPleno = { qtd: 0, soma: 0 }, tcVeterano = { qtd: 0, soma: 0 };
+                    // --- MATRIZ DE TEMPO DE CASA (CURVA DE APRENDIZADO TOTALMENTE CONFIGURÁVEL E DINÂMICA) ---
+                    // Se não houver configuração salva, injeta a padrão
+                    if (!data.matConfig) {
+                        data.matConfig = [
+                            { id: 'm1', nome: 'Ramp-Up', maxDias: 90, cor: 'orange', icone: 'fa-baby' },
+                            { id: 'm2', nome: 'Júnior', maxDias: 180, cor: 'emerald', icone: 'fa-child-reaching' },
+                            { id: 'm3', nome: 'Pleno', maxDias: 365, cor: 'blue', icone: 'fa-person-running' },
+                            { id: 'm4', nome: 'Veterano', maxDias: 99999, cor: 'purple', icone: 'fa-user-ninja' }
+                        ];
+                    }
+
                     let tcTotalOp = 0;
+                    // Cria uma cópia da config para operar os dados matemáticos nela
+                    let matStats = data.matConfig.map(cfg => ({ ...cfg, qtd: 0, soma: 0, media: 0, pct: 0 }));
 
                     data.rankOperadores.forEach(op => {
                         let dias = app.utils.getTempoCasaDoOperador(op.nome);
                         if (dias !== null) {
                             tcTotalOp++;
                             let m = parseFloat(op.media);
-                            if (dias <= 90) { tcNovato.qtd++; tcNovato.soma += m; }
-                            else if (dias <= 180) { tcJunior.qtd++; tcJunior.soma += m; }
-                            else if (dias <= 365) { tcPleno.qtd++; tcPleno.soma += m; }
-                            else { tcVeterano.qtd++; tcVeterano.soma += m; }
+                            
+                            // Acha em qual faixa ele se enquadra (Pula para o próximo se passar da linha de corte)
+                            for (let i = 0; i < matStats.length; i++) {
+                                // O último nível da array abriga todos os dias gigantes que sobrarem
+                                if (dias <= matStats[i].maxDias || i === matStats.length - 1) {
+                                    matStats[i].qtd++;
+                                    matStats[i].soma += m;
+                                    break;
+                                }
+                            }
                         }
                     });
 
-                    // Cálculos de Porcentagem e Média (Prevenindo divisão por zero)
-                    let pNov = tcTotalOp > 0 ? ((tcNovato.qtd / tcTotalOp) * 100).toFixed(1) : '0.0';
-                    let mNov = tcNovato.qtd > 0 ? (tcNovato.soma / tcNovato.qtd).toFixed(1) : '0.0';
-                    let pJun = tcTotalOp > 0 ? ((tcJunior.qtd / tcTotalOp) * 100).toFixed(1) : '0.0';
-                    let mJun = tcJunior.qtd > 0 ? (tcJunior.soma / tcJunior.qtd).toFixed(1) : '0.0';
-                    let pPle = tcTotalOp > 0 ? ((tcPleno.qtd / tcTotalOp) * 100).toFixed(1) : '0.0';
-                    let mPle = tcPleno.qtd > 0 ? (tcPleno.soma / tcPleno.qtd).toFixed(1) : '0.0';
-                    let pVet = tcTotalOp > 0 ? ((tcVeterano.qtd / tcTotalOp) * 100).toFixed(1) : '0.0';
-                    let mVet = tcVeterano.qtd > 0 ? (tcVeterano.soma / tcVeterano.qtd).toFixed(1) : '0.0';
+                    // Consolida as médias e porcentagens
+                    matStats.forEach(st => {
+                        st.pct = tcTotalOp > 0 ? ((st.qtd / tcTotalOp) * 100).toFixed(1) : '0.0';
+                        st.media = st.qtd > 0 ? (st.soma / st.qtd).toFixed(1) : '0.0';
+                    });
 
-                    // Só mostra essa área se existir arquivo de RH importado (tcTotalOp > 0)
-                    if (tcTotalOp > 0) {
-                        html += renderChapterTitle('Ciclo de Maturidade', 'Acompanhamento do impacto do Tempo de Empresa (Curva de Aprendizado e Retenção) na qualidade das entregas.', 'fa-seedling', 'teal');
+                    // Só mostra essa área se existir arquivo de RH importado cruzando dados (tcTotalOp > 0)
+                    if (tcTotalOp > 0 || app.isAdmin) {
+                        html += renderChapterTitle('Ciclo de Maturidade', 'Acompanhamento do impacto do Tempo de Empresa (Curva de Aprendizado) na qualidade das entregas.', 'fa-seedling', 'teal');
                         html += `
                             <div class="hideable-box relative mb-8 animate-fade-in glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-emerald-500 shadow-sm bg-slate-50 dark:bg-slate-900">
                                 ${btnHideCode}
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-2 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-seedling text-emerald-500"></i> Curva de Aprendizado (Tempo de Casa vs. Nota)</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mb-6">Acompanhe como a qualidade do atendimento evolui conforme o operador ganha maturidade na empresa.</p>
+                                ${!this.analiseEditMode ? `<button onclick="window.abrirConfigMaturidade()" class="absolute top-6 right-6 text-slate-400 hover:text-emerald-500 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-2"><i class="fa-solid fa-gear"></i> Configurar Níveis</button>` : ''}
                                 
-                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                    <!-- Cartões de Quadrante -->
-                                    <div class="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        <!-- Ramp-up -->
-                                        <div onclick="app.ui.openMaturidadeModal('Ramp-Up')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-orange-200 dark:border-orange-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-orange-400 hover:shadow-md transition-all">
-                                            <div class="absolute -right-3 -bottom-3 text-6xl text-orange-100 dark:text-orange-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-baby"></i></div>
-                                            <div class="flex justify-between items-start mb-2 relative z-10">
-                                                <div>
-                                                    <div class="text-xs font-black uppercase text-orange-600 tracking-widest">Ramp-Up</div>
-                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Até 90 dias</div>
-                                                </div>
-                                                <div class="text-[10px] font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded-lg">${pNov}%</div>
-                                            </div>
-                                            <div class="mt-auto pt-3 border-t border-orange-100 dark:border-orange-800/50 relative z-10 flex items-end justify-between">
-                                                <div>
-                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
-                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mNov}</span>
-                                                </div>
-                                                <div class="text-xs font-bold text-orange-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                                    <i class="fa-solid fa-users"></i> ${tcNovato.qtd} Op.
-                                                </div>
-                                            </div>
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
+                                    <!-- Cartões Dinâmicos de Quadrante -->
+                                    <div class="lg:col-span-2 grid grid-cols-2 md:grid-cols-${matStats.length > 4 ? 4 : matStats.length} gap-4">
+                        `;
+                        
+                        matStats.forEach((st, index) => {
+                            // Helper para cores Tailwind
+                            let cText = `text-${st.cor}-600 dark:text-${st.cor}-400`;
+                            let cBg = `bg-${st.cor}-100 dark:bg-${st.cor}-900/30 text-${st.cor}-700`;
+                            let cBorder = `border-${st.cor}-200 dark:border-${st.cor}-800`;
+                            let cIcon = `text-${st.cor}-100 dark:text-${st.cor}-900/30`;
+                            
+                            // Criação inteligente da String de dias (Ex: "Até 90 Dias" ou "91 a 180 Dias")
+                            let textDias = index === 0 ? `Até ${st.maxDias} dias` : (index === matStats.length - 1 ? `Mais de ${matStats[index-1].maxDias} dias` : `De ${matStats[index-1].maxDias + 1} a ${st.maxDias} dias`);
+                            
+                            html += `
+                                <div onclick="app.ui.openMaturidadeModal('${st.nome}')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border ${cBorder} shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:border-${st.cor}-400">
+                                    <div class="absolute -right-3 -bottom-3 text-6xl ${cIcon} group-hover:scale-110 transition-transform"><i class="fa-solid ${st.icone}"></i></div>
+                                    <div class="flex justify-between items-start mb-2 relative z-10">
+                                        <div>
+                                            <div class="text-xs font-black uppercase ${cText} tracking-widest truncate max-w-[80px]" title="${st.nome}">${st.nome}</div>
+                                            <div class="text-[9px] text-slate-500 font-medium mt-0.5 truncate">${textDias}</div>
                                         </div>
-                                        <!-- Junior -->
-                                        <div onclick="app.ui.openMaturidadeModal('Júnior')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-emerald-200 dark:border-emerald-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all">
-                                            <div class="absolute -right-3 -bottom-3 text-6xl text-emerald-100 dark:text-emerald-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-child-reaching"></i></div>
-                                            <div class="flex justify-between items-start mb-2 relative z-10">
-                                                <div>
-                                                    <div class="text-xs font-black uppercase text-emerald-600 tracking-widest">Júnior</div>
-                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">91 a 180 dias</div>
-                                                </div>
-                                                <div class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-lg">${pJun}%</div>
-                                            </div>
-                                            <div class="mt-auto pt-3 border-t border-emerald-100 dark:border-emerald-800/50 relative z-10 flex items-end justify-between">
-                                                <div>
-                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
-                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mJun}</span>
-                                                </div>
-                                                <div class="text-xs font-bold text-emerald-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                                    <i class="fa-solid fa-users"></i> ${tcJunior.qtd} Op.
-                                                </div>
-                                            </div>
+                                        <div class="text-[10px] font-bold ${cBg} px-2 py-1 rounded-lg shadow-sm">${st.pct}%</div>
+                                    </div>
+                                    <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700/50 relative z-10 flex items-end justify-between">
+                                        <div>
+                                            <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média</span>
+                                            <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${st.media}</span>
                                         </div>
-                                        <!-- Pleno -->
-                                        <div onclick="app.ui.openMaturidadeModal('Pleno')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-blue-200 dark:border-blue-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-blue-400 hover:shadow-md transition-all">
-                                            <div class="absolute -right-3 -bottom-3 text-6xl text-blue-100 dark:text-blue-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-person-running"></i></div>
-                                            <div class="flex justify-between items-start mb-2 relative z-10">
-                                                <div>
-                                                    <div class="text-xs font-black uppercase text-blue-600 tracking-widest">Pleno</div>
-                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">181 a 365 dias</div>
-                                                </div>
-                                                <div class="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">${pPle}%</div>
-                                            </div>
-                                            <div class="mt-auto pt-3 border-t border-blue-100 dark:border-blue-800/50 relative z-10 flex items-end justify-between">
-                                                <div>
-                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
-                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mPle}</span>
-                                                </div>
-                                                <div class="text-xs font-bold text-blue-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                                    <i class="fa-solid fa-users"></i> ${tcPleno.qtd} Op.
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <!-- Veterano -->
-                                        <div onclick="app.ui.openMaturidadeModal('Veterano')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-purple-200 dark:border-purple-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-purple-400 hover:shadow-md transition-all">
-                                            <div class="absolute -right-3 -bottom-3 text-6xl text-purple-100 dark:text-purple-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-user-ninja"></i></div>
-                                            <div class="flex justify-between items-start mb-2 relative z-10">
-                                                <div>
-                                                    <div class="text-xs font-black uppercase text-purple-600 tracking-widest">Veterano</div>
-                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Mais de 1 ano</div>
-                                                </div>
-                                                <div class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-1 rounded-lg">${pVet}%</div>
-                                            </div>
-                                            <div class="mt-auto pt-3 border-t border-purple-100 dark:border-purple-800/50 relative z-10 flex items-end justify-between">
-                                                <div>
-                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
-                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mVet}</span>
-                                                </div>
-                                                <div class="text-xs font-bold text-purple-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                                    <i class="fa-solid fa-users"></i> ${tcVeterano.qtd} Op.
-                                                </div>
-                                            </div>
+                                        <div class="text-[10px] font-bold ${cText} flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                            <i class="fa-solid fa-users"></i> ${st.qtd} Op.
                                         </div>
                                     </div>
+                                </div>
+                            `;
+                        });
+
+                        html += `
+                                    </div>
                                     
-                                    <!-- Gráfico Curva de Aprendizado BLINDADO -->
+                                    <!-- NOVO Gráfico Curva de Aprendizado EM BARRAS -->
                                     <div class="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-full min-h-[220px]">
-                                        <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-line text-emerald-500"></i> Desempenho x Tempo</div>
+                                        <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-simple text-emerald-500"></i> Desempenho x Tempo</div>
                                         <div class="flex-1 relative w-full h-full min-h-[160px]"><canvas id="chart-curva-aprendizado"></canvas></div>
                                     </div>
                                 </div>
                             </div>
                         `;
                     }
+                    
+                    // Injeção da Função Global do Modal de Edição (Apenas instanciado se precisar)
+                    if (!window.abrirConfigMaturidade) {
+                        window.abrirConfigMaturidade = () => {
+                            let currConfig = app.analiseCSVDinamicoData.consolidado.matConfig;
+                            
+                            let htmlInputs = currConfig.map((c, i) => `
+                                <div class="flex flex-wrap gap-2 mb-3 items-center bg-slate-50 dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <div class="w-full flex justify-between items-center mb-1">
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nível ${i+1}</span>
+                                        ${i > 0 ? `<button onclick="app.analiseCSVDinamicoData.consolidado.matConfig.splice(${i}, 1); window.abrirConfigMaturidade()" class="text-red-500 hover:text-red-700 text-xs"><i class="fa-solid fa-trash"></i> Excluir</button>` : ''}
+                                    </div>
+                                    <input type="text" id="mat-cfg-nome-${i}" value="${c.nome}" class="flex-1 min-w-[100px] p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold outline-none dark:text-white" placeholder="Nome">
+                                    <input type="number" id="mat-cfg-dias-${i}" value="${c.maxDias}" class="w-20 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold text-center outline-none dark:text-white" placeholder="Máx Dias">
+                                    <select id="mat-cfg-cor-${i}" class="w-24 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold outline-none dark:text-white">
+                                        <option value="slate" ${c.cor=='slate'?'selected':''}>Cinza</option>
+                                        <option value="blue" ${c.cor=='blue'?'selected':''}>Azul</option>
+                                        <option value="emerald" ${c.cor=='emerald'?'selected':''}>Verde</option>
+                                        <option value="orange" ${c.cor=='orange'?'selected':''}>Laranja</option>
+                                        <option value="red" ${c.cor=='red'?'selected':''}>Vermelho</option>
+                                        <option value="purple" ${c.cor=='purple'?'selected':''}>Roxo</option>
+                                        <option value="teal" ${c.cor=='teal'?'selected':''}>Turquesa</option>
+                                    </select>
+                                    <input type="text" id="mat-cfg-icone-${i}" value="${c.icone}" class="w-28 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold outline-none dark:text-white" placeholder="Ícone FontAwesome">
+                                </div>
+                            `).join('');
 
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-seedling text-emerald-500"></i> Configurar Ciclo de Maturidade`;
+                            document.getElementById('modal-content').innerHTML = `
+                                <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Defina as faixas de tempo de casa. Atenção aos dias: o sistema lerá do menor para o maior. Ex: Se definir Nível 1 até 90 dias, e Nível 2 até 180, o sistema enquadrará quem tem 100 dias no Nível 2.</p>
+                                <div id="mat-cfg-container" class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">${htmlInputs}</div>
+                                <button onclick="app.analiseCSVDinamicoData.consolidado.matConfig.push({id: 'm'+Date.now(), nome: 'Novo Nível', maxDias: 999, cor: 'slate', icone: 'fa-star'}); window.abrirConfigMaturidade()" class="mt-4 w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-white px-4 py-3 rounded-xl text-xs font-bold transition-colors border border-dashed border-slate-300 dark:border-slate-600"><i class="fa-solid fa-plus mr-1"></i> Adicionar Nível de Tempo</button>
+                            `;
+                            document.getElementById('modal-actions').innerHTML = `
+                                <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition-colors">Cancelar</button>
+                                <button onclick="window.salvarConfigMaturidade()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md transition-transform hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar e Recalcular</button>
+                            `;
+                            document.getElementById('global-modal').classList.remove('hidden');
+                        };
+
+                        window.salvarConfigMaturidade = () => {
+                            let currConfig = app.analiseCSVDinamicoData.consolidado.matConfig;
+                            currConfig.forEach((c, i) => {
+                                c.nome = document.getElementById('mat-cfg-nome-'+i).value;
+                                c.maxDias = parseInt(document.getElementById('mat-cfg-dias-'+i).value) || 9999;
+                                c.cor = document.getElementById('mat-cfg-cor-'+i).value;
+                                c.icone = document.getElementById('mat-cfg-icone-'+i).value;
+                            });
+                            
+                            // Ordena pelas faixas de dia crescentemente para a matemática não quebrar
+                            currConfig.sort((a,b) => a.maxDias - b.maxDias);
+                            
+                            // Salva na memória do HD e dá F5 virtual
+                            localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).then(() => {
+                                document.getElementById('global-modal').classList.add('hidden');
+                                app.ui.showAlert("Atualizado", "A régua de maturidade foi salva e os operadores re-enquadrados com sucesso.", "success");
+                                app.ui.renderTab('analise_csv_dinamico', true);
+                            });
+                        };
+                    }
                     // TABELA DETALHADA COM COLUNA QUADRANTE (TAMBÉM RETRÁTIL NO MODO APRESENTAÇÃO)
                     html += renderChapterTitle('Auditoria Individual', 'Detalhamento analítico por operador com a lista completa de avaliações, notas e cruzamentos interativos.', 'fa-users-viewfinder', 'purple');
                     html += `
                         <details class="hideable-box relative glass-card rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mt-8 group mb-8 bg-white dark:bg-slate-800" ${this.analiseEditMode ? '' : 'open'}>
                             <summary class="p-6 md:p-8 cursor-pointer flex justify-between items-center outline-none list-none [&::-webkit-details-marker]:hidden border-b border-transparent group-open:border-slate-200 dark:group-open:border-slate-700 transition-colors bg-white dark:bg-slate-800">
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-table-list text-blue-500"></i> Tabela Analítica por Operador</h3>
                                 <div class="flex items-center gap-4">
                                     ${btnHideCode.replace('absolute top-2 right-2', 'relative')}
                                     <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
