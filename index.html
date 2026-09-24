@@ -3130,13 +3130,26 @@
                 valuesHidden: false,
                 timerInterval: null,
                 
-                // CORREÇÃO: Função auxiliar para filtrar pendentes de forma segura
+                // CORREÇÃO: Filtros dinâmicos para a tabela bruta
                 filterPendingRows(className, showOnlyPending) {
                     document.querySelectorAll('.' + className).forEach(el => {
                         if (showOnlyPending) {
                             el.style.display = el.classList.contains('fb-pendente') ? '' : 'none';
                         } else {
                             el.style.display = '';
+                        }
+                    });
+                },
+                filterAuditoriaTable(term) {
+                    const t = term.toLowerCase().trim();
+                    const rows = document.querySelectorAll('.linha-bruta');
+                    rows.forEach(row => {
+                        const opNameCol = row.querySelector('td:nth-child(2)'); // Coluna do operador
+                        if (!opNameCol) return;
+                        if (opNameCol.innerText.toLowerCase().includes(t)) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = 'none';
                         }
                     });
                 },
@@ -6198,11 +6211,15 @@
                 
                                 <!-- Tabela Linha por Linha Glassmorphism 3D -->
                                 <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
-                                    <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
+                                    <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                         <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
-                                        <div class="flex gap-2">
-                                            <button onclick="document.querySelectorAll('.linha-bruta').forEach(el => el.style.display='')" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
-                                            <button onclick="document.querySelectorAll('.linha-bruta').forEach(el => el.style.display=el.classList.contains('fb-pendente')?'':'none')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                                            <div class="relative flex-1 md:flex-none">
+                                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                                                <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value)" placeholder="Buscar operador..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-blue-500 shadow-sm dark:text-white transition-colors">
+                                            </div>
+                                            <button onclick="app.ui.filterPendingRows('linha-bruta', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition-colors">Todos</button>
+                                            <button onclick="app.ui.filterPendingRows('linha-bruta', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-colors">Só Pendentes</button>
                                         </div>
                                     </div>
                                     <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[500px]'}">
@@ -7916,25 +7933,33 @@
 
                 openMaturidadeModal(nivel) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
-                    if(!data) return;
+                    if(!data || !data.matConfig) return;
 
                     let lista = [];
                     let cor = ''; let bg = ''; let desc = ''; let icon = '';
 
-                    data.rankOperadores.forEach(op => {
-                        let diasCasa = app.utils.getTempoCasaDoOperador(op.nome);
-                        if (diasCasa !== null) {
-                            if(nivel === 'Ramp-Up' && diasCasa <= 90) lista.push(op);
-                            else if(nivel === 'Júnior' && diasCasa > 90 && diasCasa <= 180) lista.push(op);
-                            else if(nivel === 'Pleno' && diasCasa > 180 && diasCasa <= 365) lista.push(op);
-                            else if(nivel === 'Veterano' && diasCasa > 365) lista.push(op);
-                        }
-                    });
+                    const cfgIndex = data.matConfig.findIndex(c => c.nome === nivel);
+                    if (cfgIndex > -1) {
+                        const cfg = data.matConfig[cfgIndex];
+                        const prevMax = cfgIndex > 0 ? data.matConfig[cfgIndex-1].maxDias : -1;
+                        
+                        data.rankOperadores.forEach(op => {
+                            let diasCasa = app.utils.getTempoCasaDoOperador(op.nome);
+                            if (diasCasa !== null) {
+                                // Se for o último nível, engloba tudo que for maior que o nível anterior
+                                if (cfgIndex === data.matConfig.length - 1 && diasCasa > prevMax) {
+                                    lista.push(op);
+                                } else if (diasCasa > prevMax && diasCasa <= cfg.maxDias) {
+                                    lista.push(op);
+                                }
+                            }
+                        });
 
-                    if(nivel === 'Ramp-Up') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = 'Até 90 dias'; icon = 'fa-baby'; }
-                    else if(nivel === 'Júnior') { cor = 'text-emerald-500'; bg = 'bg-emerald-100 dark:bg-emerald-900/30'; desc = '91 a 180 dias'; icon = 'fa-child-reaching'; }
-                    else if(nivel === 'Pleno') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = '181 a 365 dias'; icon = 'fa-person-running'; }
-                    else if(nivel === 'Veterano') { cor = 'text-purple-500'; bg = 'bg-purple-100 dark:bg-purple-900/30'; desc = 'Mais de 1 ano'; icon = 'fa-user-ninja'; }
+                        cor = `text-${cfg.cor}-500`;
+                        bg = `bg-${cfg.cor}-100 dark:bg-${cfg.cor}-900/30`;
+                        desc = cfgIndex === 0 ? `Até ${cfg.maxDias} dias` : (cfgIndex === data.matConfig.length - 1 ? `Mais de ${prevMax} dias` : `De ${prevMax + 1} a${cfg.maxDias} dias`);
+                        icon = cfg.icone;
+                    }
 
                     let htmlList = `<div class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
                     if(lista.length === 0) {
@@ -7945,7 +7970,7 @@
                             htmlList += `
                                 <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
                                     <div class="flex items-center gap-4">
-                                        <div class="w-10 h-10 rounded-full ${bg} ${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50 shadow-sm">${i+1}</div>
+                                        <div class="w-10 h-10 rounded-full ${bg}${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50 shadow-sm">${i+1}</div>
                                         <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}</div>
                                     </div>
                                     <div class="text-right">
@@ -7958,7 +7983,7 @@
                     }
                     htmlList += `</div>`;
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${cor}"></i> Nível de Maturidade: ${nivel}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon}${cor}"></i> Nível de Maturidade: ${nivel}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
@@ -8844,9 +8869,15 @@
                             todasFotos.sort(() => Math.random() - 0.5);
 
                             let monitoresHtml = Object.values(monitoresAcaoMap).map(m => `
-                                <div class="flex flex-col items-center group cursor-help" title="${m.nome}">
-                                    <img src="${m.foto}" class="w-10 h-10 rounded-full border-2 border-white dark:border-slate-800 shadow-md group-hover:scale-110 transition-transform object-cover">
-                                    <span class="text-[9px] font-bold text-slate-500 mt-1 truncate max-w-[50px]">${m.nome}</span>
+                                <div class="flex items-center gap-3 bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-transform hover:-translate-y-1">
+                                    <div class="relative w-10 h-10 shrink-0">
+                                        <img src="${m.foto}" class="w-full h-full rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm">
+                                        <div class="absolute -bottom-1 -right-1 bg-purple-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[8px] border border-white shadow-sm"><i class="fa-solid fa-star"></i></div>
+                                    </div>
+                                    <div class="flex flex-col text-left pr-3">
+                                        <span class="text-xs font-black text-slate-800 dark:text-white uppercase truncate max-w-[120px]" title="${m.nome}">${m.nome}</span>
+                                        <span class="text-[9px] font-bold text-slate-400 tracking-widest uppercase">Líder CQ</span>
+                                    </div>
                                 </div>
                             `).join('');
 
@@ -8872,24 +8903,27 @@
                                     <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3"><i class="fa-solid fa-camera-retro text-teal-500"></i> Ações & Intervenções em Qualidade</h3>
                                     
                                     <!-- Resumo Dashboard -->
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                                        <div class="bg-teal-50 dark:bg-teal-900/20 rounded-2xl p-5 border border-teal-200 dark:border-teal-800 flex items-center gap-4 shadow-sm">
-                                            <div class="w-12 h-12 bg-teal-100 dark:bg-teal-800 text-teal-600 dark:text-teal-300 rounded-xl flex items-center justify-center text-2xl"><i class="fa-solid fa-layer-group"></i></div>
-                                            <div>
-                                                <div class="text-[10px] uppercase font-bold text-teal-600 dark:text-teal-400 tracking-widest">Total de Ações</div>
-                                                <div class="text-3xl font-black text-slate-800 dark:text-white">${totalAcoes}</div>
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 cursor-pointer" onclick="app.admin.openAcoesSelectorModal()" title="Clique para expandir as ações e ver os detalhes">
+                                        <div class="bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/30 dark:to-teal-800/40 rounded-3xl p-6 border border-teal-200 dark:border-teal-700 flex items-center gap-5 shadow-sm hover:shadow-lg transform hover:-translate-y-1 transition-all group magnetic-btn relative overflow-hidden">
+                                            <div class="absolute -right-4 -bottom-4 text-teal-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-layer-group"></i></div>
+                                            <div class="w-14 h-14 bg-teal-500 text-white rounded-2xl flex items-center justify-center text-2xl shadow-[0_5px_15px_rgba(20,184,166,0.4)] z-10"><i class="fa-solid fa-layer-group"></i></div>
+                                            <div class="z-10">
+                                                <div class="text-[11px] uppercase font-bold text-teal-700 dark:text-teal-300 tracking-widest mb-1">Total de Ações</div>
+                                                <div class="text-4xl font-black text-slate-800 dark:text-white drop-shadow-sm">${totalAcoes}</div>
                                             </div>
                                         </div>
-                                        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800 flex items-center gap-4 shadow-sm">
-                                            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 rounded-xl flex items-center justify-center text-2xl"><i class="fa-solid fa-users"></i></div>
-                                            <div>
-                                                <div class="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-widest">Operadores Impactados</div>
-                                                <div class="text-3xl font-black text-slate-800 dark:text-white">${opsImpactados}</div>
+                                        <div class="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/40 rounded-3xl p-6 border border-blue-200 dark:border-blue-700 flex items-center gap-5 shadow-sm hover:shadow-lg transform hover:-translate-y-1 transition-all group magnetic-btn relative overflow-hidden">
+                                            <div class="absolute -right-4 -bottom-4 text-blue-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-users"></i></div>
+                                            <div class="w-14 h-14 bg-blue-500 text-white rounded-2xl flex items-center justify-center text-2xl shadow-[0_5px_15px_rgba(59,130,246,0.4)] z-10"><i class="fa-solid fa-users"></i></div>
+                                            <div class="z-10">
+                                                <div class="text-[11px] uppercase font-bold text-blue-700 dark:text-blue-300 tracking-widest mb-1">Operadores Impactados</div>
+                                                <div class="text-4xl font-black text-slate-800 dark:text-white drop-shadow-sm">${opsImpactados}</div>
                                             </div>
                                         </div>
-                                        <div class="bg-purple-50 dark:bg-purple-900/20 rounded-2xl p-5 border border-purple-200 dark:border-purple-800 flex flex-col justify-center shadow-sm">
-                                            <div class="text-[10px] uppercase font-bold text-purple-600 dark:text-purple-400 tracking-widest mb-2">Monitores Responsáveis</div>
-                                            <div class="flex flex-wrap gap-2">
+                                        <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/40 rounded-3xl p-6 border border-purple-200 dark:border-purple-700 flex flex-col justify-center shadow-sm hover:shadow-lg transition-shadow relative overflow-hidden group">
+                                            <div class="absolute -right-4 -bottom-4 text-purple-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-id-badge"></i></div>
+                                            <div class="text-[11px] uppercase font-bold text-purple-700 dark:text-purple-300 tracking-widest mb-3 z-10">Monitores Responsáveis</div>
+                                            <div class="flex flex-wrap gap-2 z-10">
                                                 ${monitoresHtml}
                                             </div>
                                         </div>
@@ -11019,6 +11053,8 @@
                         feedbacksGlobais: { aplicado: 0, nao_aplicado: 0, monitorado: 0 },
                         monitorProdutividade: {},
                         mesesDisponiveis: mesesOrdenados,
+                        ciclosDisponiveis: ciclosOrdenados,
+                        matConfig: matConfigFallback,
                         mesesEvolutivo: {},
                         operadoresEvolutivo: {},
                         infoData: filtrosMes.length > 0 && filtrosMes[0] !== "" ? filtrosMes.map(m => app.ui.formatMonthLabel(m)).join(', ') : (mesesOrdenados.length > 1 ? 'Visão Evolutiva (Todos)' : (mesesOrdenados[0] ? app.ui.formatMonthLabel(mesesOrdenados[0]) : 'Indefinido')),
