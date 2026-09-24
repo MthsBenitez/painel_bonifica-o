@@ -6103,39 +6103,43 @@
                             const userObj = app.users.find(u => u.matricula === r.matricula) || { nome: r.nome, foto: null };
                             const avatar = userObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(userObj.nome)}&background=cbd5e1&color=ffffff`;
                             
+                            let isIsento = r.isentaMeta === true;
+                            let metaAtual = isIsento ? 0 : metaIndividual;
+                            
                             let diasPassadosEfetivos = Math.max(1, wd.passed - 1);
                             let diasRestantes = Math.max(1, wd.total - diasPassadosEfetivos);
                             
-                            let pct = metaIndividual > 0 ? Math.min(100, (r.total / metaIndividual) * 100).toFixed(1) : 0;
                             let proj = Math.round((r.total / diasPassadosEfetivos) * wd.total);
-                            let colorProj = proj >= metaIndividual ? 'text-green-500' : 'text-orange-500';
+                            let colorProj = isIsento ? 'text-teal-500' : (proj >= metaAtual ? 'text-green-500' : 'text-orange-500');
                             
                             let mediaDiaria = (r.total / diasPassadosEfetivos).toFixed(1);
-                            let metaDiariaRes = r.falta > 0 ? Math.ceil(r.falta / diasRestantes) : 0;
+                            let faltaReal = isIsento ? 0 : Math.max(0, metaAtual - r.total);
+                            let metaDiariaRes = faltaReal > 0 ? Math.ceil(faltaReal / diasRestantes) : 0;
+                            let pct = metaAtual > 0 ? Math.min(100, (r.total / metaAtual) * 100).toFixed(1) : (r.total > 0 ? '100.0' : '0.0');
                             
                             html += `
                                 <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                     <td class="py-3 px-4 flex items-center gap-3">
                                         <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
                                         <div>
-                                            <div onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="font-bold text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:text-blue-700 transition-colors flex items-center gap-2" title="Abrir Calculadora / Editar Lançamento">
-                                                ${userObj.nome} 
-                                                <span class="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded flex items-center shadow-sm">
-                                                    <i class="fa-solid fa-calculator text-[10px]"></i>
-                                                </span>
+                                            <div class="font-bold text-blue-600 dark:text-blue-400 text-sm flex items-center gap-2">
+                                                <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:text-blue-700 transition-colors" title="Abrir Calculadora / Editar Lançamento">${userObj.nome}</span> 
+                                                <button onclick="app.admin.toggleIsentarMeta('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-teal-100 hover:text-teal-600 px-1.5 py-0.5 rounded shadow-sm text-[9px] uppercase tracking-widest font-black transition-colors" title="Isentar Colaborador da Meta de 400 Mensal">
+                                                    <i class="fa-solid ${isIsento ? 'fa-star text-teal-500' : 'fa-star-half-stroke'}"></i> ${isIsento ? 'Isento' : 'Isentar'}
+                                                </button>
                                             </div>
                                         </div>
                                     </td>
                                     <td class="py-3 px-4 text-center font-black text-slate-700 dark:text-slate-200">${r.total}</td>
                                     <td class="py-3 px-4 text-center font-bold text-blue-500 bg-blue-50/30 dark:bg-blue-900/10">${mediaDiaria}</td>
-                                    <td class="py-3 px-4 text-center font-bold text-orange-500">${r.falta > 0 ? r.falta : 0}</td>
-                                    <td class="py-3 px-4 text-center font-bold text-red-500 bg-red-50/30 dark:bg-red-900/10">${metaDiariaRes}</td>
+                                    <td class="py-3 px-4 text-center font-bold ${isIsento ? 'text-teal-500' : 'text-orange-500'}">${faltaReal}</td>
+                                    <td class="py-3 px-4 text-center font-bold ${isIsento ? 'text-teal-500 bg-teal-50/30 dark:bg-teal-900/10' : 'text-red-500 bg-red-50/30 dark:bg-red-900/10'}">${metaDiariaRes}</td>
                                     <td class="py-3 px-4 text-center font-black ${colorProj}">${proj}</td>
                                     <td class="py-3 px-4 text-center">
                                         <div class="flex flex-col items-center gap-1 w-full">
                                             <span class="text-[10px] font-bold text-slate-500">${pct}%</span>
                                             <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                <div class="h-full bg-blue-500 rounded-full" style="width: ${pct}%"></div>
+                                                <div class="h-full ${isIsento ? 'bg-teal-500' : 'bg-blue-500'} rounded-full" style="width: ${pct}%"></div>
                                             </div>
                                         </div>
                                     </td>
@@ -9422,7 +9426,13 @@
                         }
                     });
             
-                    let novoRanking = Object.values(rankingMap).filter(r => r.total > 0).sort((a,b) => b.total - a.total);
+                    // Recupera isenções anteriores antes de reescrever o ranking
+                    let oldRanking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
+                    let novoRanking = Object.values(rankingMap).filter(r => r.total > 0).sort((a,b) => b.total - a.total).map(r => {
+                        let oldR = oldRanking.find(x => x.matricula === r.matricula);
+                        if(oldR && oldR.isentaMeta) r.isentaMeta = true;
+                        return r;
+                    });
                     let novaMediaTotal = countNotas > 0 ? (somaNotas / countNotas).toFixed(2) : 0;
                     let novosColaboradores = Object.values(opsMap).map(o => ({
                         nome: o.nome, qtd: o.qtd, media: (o.soma / o.qtd).toFixed(2)
@@ -9544,7 +9554,8 @@
             
                                 const keyNormal = nomeFormatado.toUpperCase();
                                 let matriculaEncontrada = app.config?.aliases?.[keyNormal] || null;
-                                let monitorObj = app.users.find(u => u.matricula === matriculaEncontrada || u.nome.toUpperCase() === keyNormal || u.nome.toUpperCase().includes(nomeFormatado.split(' ')[0].toUpperCase()));
+                                // Busca ESTRITA (Sem adivinhar pelo primeiro nome)
+                                let monitorObj = app.users.find(u => u.matricula === matriculaEncontrada || u.nome.toUpperCase() === keyNormal);
             
                                 if(monitorObj) matchCount++;
             
@@ -9644,11 +9655,10 @@
                                     else if (app.config.aliases[keyAliasParte]) matricula = app.config.aliases[keyAliasParte];
                                 }
                                 
-                                // Procura o usuário cruzando a matrícula, nome completo ou primeiro nome
+                                // Procura o usuário de forma ESTRITA (Matrícula ou Nome Exato). Se não achar, vai pro Radar de Vínculos.
                                 let userObj = app.users.find(u => 
                                     u.matricula === matricula || 
-                                    u.nome.toUpperCase() === nomeParte.toUpperCase() || 
-                                    u.nome.toUpperCase().includes(nomeParte.split(' ')[0].toUpperCase())
+                                    u.nome.toUpperCase() === nomeParte.toUpperCase()
                                 );
              
                                 if(userObj) {
@@ -12061,6 +12071,18 @@
 
                 reprocessarPontuacoes() {
                     app.ui.showConfirm("Auditoria de Pontuação", "O sistema irá varrer toda a base de dados, identificar todas as Atas e Ações Aprovadas e recalcular do zero as pontuações de todos os colaboradores para todos os meses, removendo duplicidades. Continuar?", "app.admin.execReprocessarPontuacoes()", true);
+                },
+
+                toggleIsentarMeta(matricula) {
+                    if(!app.monitoriasData || !app.monitoriasData.ranking) return;
+                    const idx = app.monitoriasData.ranking.findIndex(r => r.matricula === matricula);
+                    if (idx > -1) {
+                        app.monitoriasData.ranking[idx].isentaMeta = !app.monitoriasData.ranking[idx].isentaMeta;
+                        app.allMonitorias[app.currentMonth] = app.monitoriasData;
+                        firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias).then(() => {
+                            app.ui.renderTab('import_monitorias', true);
+                        });
+                    }
                 },
 
                 execReprocessarPontuacoes() {
