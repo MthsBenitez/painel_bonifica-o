@@ -7177,8 +7177,9 @@
                                 
                                 let fakePerguntas = [];
                                 keys.filter(k => k.toUpperCase().includes('PESO')).forEach(k => {
-                                    let m = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                                    fakePerguntas.push({ q: k.split('=')[0].trim(), p: m ? parseFloat(m[1].replace(',','.')) : 0, a: String(row[k] || '').trim() });
+                                    // CORREÇÃO: Injetando o nome do relatório no prefixo para a busca bater exatamente!
+                                    let cleanQ = `[${rel.nome}] ` + k.split('=')[0].trim();
+                                    fakePerguntas.push({ q: cleanQ, p: m ? parseFloat(m[1].replace(',','.')) : 0, a: String(row[k] || '').trim() });
                                 });
                                 todasAsAvaliacoes.push({ operador: opNameRaw, data: row[colData], perguntas: fakePerguntas });
                             });
@@ -7868,6 +7869,66 @@
                     }, 300);
                 },
 
+                openMaturidadeModal(nivel) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if(!data) return;
+
+                    let lista = [];
+                    let cor = ''; let bg = ''; let desc = ''; let icon = '';
+
+                    data.rankOperadores.forEach(op => {
+                        let diasCasa = app.utils.getTempoCasaDoOperador(op.nome);
+                        if (diasCasa !== null) {
+                            if(nivel === 'Ramp-Up' && diasCasa <= 90) lista.push(op);
+                            else if(nivel === 'Júnior' && diasCasa > 90 && diasCasa <= 180) lista.push(op);
+                            else if(nivel === 'Pleno' && diasCasa > 180 && diasCasa <= 365) lista.push(op);
+                            else if(nivel === 'Veterano' && diasCasa > 365) lista.push(op);
+                        }
+                    });
+
+                    if(nivel === 'Ramp-Up') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = 'Até 90 dias'; icon = 'fa-baby'; }
+                    else if(nivel === 'Júnior') { cor = 'text-emerald-500'; bg = 'bg-emerald-100 dark:bg-emerald-900/30'; desc = '91 a 180 dias'; icon = 'fa-child-reaching'; }
+                    else if(nivel === 'Pleno') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = '181 a 365 dias'; icon = 'fa-person-running'; }
+                    else if(nivel === 'Veterano') { cor = 'text-purple-500'; bg = 'bg-purple-100 dark:bg-purple-900/30'; desc = 'Mais de 1 ano'; icon = 'fa-user-ninja'; }
+
+                    let htmlList = `<div class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    if(lista.length === 0) {
+                        htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador neste nível de maturidade.</div>`;
+                    } else {
+                        // Ordena os operadores por nota
+                        lista.sort((a,b) => parseFloat(b.media) - parseFloat(a.media)).forEach((op, i) => {
+                            htmlList += `
+                                <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full ${bg} ${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50 shadow-sm">${i+1}</div>
+                                        <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-0.5">Média Base</div>
+                                        <div class="font-black ${cor} text-xl">${op.media}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    htmlList += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${cor}"></i> Nível de Maturidade: ${nivel}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total de Operadores: ${lista.length}</p>
+                        </div>
+                        ${htmlList}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-2xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
                 exportOperadorAnaliseXLSX(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
                     const data = app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData.consolidado : null;
@@ -8404,62 +8465,90 @@
                                     <!-- Cartões de Quadrante -->
                                     <div class="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <!-- Ramp-up -->
-                                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-orange-200 dark:border-orange-800 shadow-sm flex flex-col relative overflow-hidden group">
-                                            <div class="absolute -right-2 -bottom-2 text-5xl text-orange-100 dark:text-orange-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-baby"></i></div>
-                                            <div class="flex justify-between items-center mb-1 relative z-10">
-                                                <div class="text-[10px] font-black uppercase text-orange-600 tracking-widest">Ramp-Up</div>
-                                                <div class="text-[9px] font-bold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">${pNov}%</div>
+                                        <div onclick="app.ui.openMaturidadeModal('Ramp-Up')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-orange-200 dark:border-orange-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-orange-400 hover:shadow-md transition-all">
+                                            <div class="absolute -right-3 -bottom-3 text-6xl text-orange-100 dark:text-orange-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-baby"></i></div>
+                                            <div class="flex justify-between items-start mb-2 relative z-10">
+                                                <div>
+                                                    <div class="text-xs font-black uppercase text-orange-600 tracking-widest">Ramp-Up</div>
+                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Até 90 dias</div>
+                                                </div>
+                                                <div class="text-[10px] font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded-lg">${pNov}%</div>
                                             </div>
-                                            <div class="text-[9px] text-slate-400 mb-3 relative z-10 border-b border-orange-100 dark:border-orange-800/50 pb-1">Até 90 dias (${tcNovato.qtd} Op)</div>
-                                            <div class="mt-auto relative z-10 flex items-center justify-between">
-                                                <span class="text-[9px] font-bold uppercase text-slate-400">Média:</span>
-                                                <span class="text-xl font-black text-slate-800 dark:text-white">${mNov}</span>
+                                            <div class="mt-auto pt-3 border-t border-orange-100 dark:border-orange-800/50 relative z-10 flex items-end justify-between">
+                                                <div>
+                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
+                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mNov}</span>
+                                                </div>
+                                                <div class="text-xs font-bold text-orange-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                                    <i class="fa-solid fa-users"></i> ${tcNovato.qtd} Op.
+                                                </div>
                                             </div>
                                         </div>
                                         <!-- Junior -->
-                                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-800 shadow-sm flex flex-col relative overflow-hidden group">
-                                            <div class="absolute -right-2 -bottom-2 text-5xl text-emerald-100 dark:text-emerald-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-child-reaching"></i></div>
-                                            <div class="flex justify-between items-center mb-1 relative z-10">
-                                                <div class="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Júnior</div>
-                                                <div class="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">${pJun}%</div>
+                                        <div onclick="app.ui.openMaturidadeModal('Júnior')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-emerald-200 dark:border-emerald-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all">
+                                            <div class="absolute -right-3 -bottom-3 text-6xl text-emerald-100 dark:text-emerald-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-child-reaching"></i></div>
+                                            <div class="flex justify-between items-start mb-2 relative z-10">
+                                                <div>
+                                                    <div class="text-xs font-black uppercase text-emerald-600 tracking-widest">Júnior</div>
+                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">91 a 180 dias</div>
+                                                </div>
+                                                <div class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-lg">${pJun}%</div>
                                             </div>
-                                            <div class="text-[9px] text-slate-400 mb-3 relative z-10 border-b border-emerald-100 dark:border-emerald-800/50 pb-1">91 a 180 dias (${tcJunior.qtd} Op)</div>
-                                            <div class="mt-auto relative z-10 flex items-center justify-between">
-                                                <span class="text-[9px] font-bold uppercase text-slate-400">Média:</span>
-                                                <span class="text-xl font-black text-slate-800 dark:text-white">${mJun}</span>
+                                            <div class="mt-auto pt-3 border-t border-emerald-100 dark:border-emerald-800/50 relative z-10 flex items-end justify-between">
+                                                <div>
+                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
+                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mJun}</span>
+                                                </div>
+                                                <div class="text-xs font-bold text-emerald-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                                    <i class="fa-solid fa-users"></i> ${tcJunior.qtd} Op.
+                                                </div>
                                             </div>
                                         </div>
                                         <!-- Pleno -->
-                                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-blue-200 dark:border-blue-800 shadow-sm flex flex-col relative overflow-hidden group">
-                                            <div class="absolute -right-2 -bottom-2 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-person-running"></i></div>
-                                            <div class="flex justify-between items-center mb-1 relative z-10">
-                                                <div class="text-[10px] font-black uppercase text-blue-600 tracking-widest">Pleno</div>
-                                                <div class="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">${pPle}%</div>
+                                        <div onclick="app.ui.openMaturidadeModal('Pleno')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-blue-200 dark:border-blue-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-blue-400 hover:shadow-md transition-all">
+                                            <div class="absolute -right-3 -bottom-3 text-6xl text-blue-100 dark:text-blue-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-person-running"></i></div>
+                                            <div class="flex justify-between items-start mb-2 relative z-10">
+                                                <div>
+                                                    <div class="text-xs font-black uppercase text-blue-600 tracking-widest">Pleno</div>
+                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">181 a 365 dias</div>
+                                                </div>
+                                                <div class="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">${pPle}%</div>
                                             </div>
-                                            <div class="text-[9px] text-slate-400 mb-3 relative z-10 border-b border-blue-100 dark:border-blue-800/50 pb-1">181 a 365 dias (${tcPleno.qtd} Op)</div>
-                                            <div class="mt-auto relative z-10 flex items-center justify-between">
-                                                <span class="text-[9px] font-bold uppercase text-slate-400">Média:</span>
-                                                <span class="text-xl font-black text-slate-800 dark:text-white">${mPle}</span>
+                                            <div class="mt-auto pt-3 border-t border-blue-100 dark:border-blue-800/50 relative z-10 flex items-end justify-between">
+                                                <div>
+                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
+                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mPle}</span>
+                                                </div>
+                                                <div class="text-xs font-bold text-blue-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                                    <i class="fa-solid fa-users"></i> ${tcPleno.qtd} Op.
+                                                </div>
                                             </div>
                                         </div>
                                         <!-- Veterano -->
-                                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-purple-200 dark:border-purple-800 shadow-sm flex flex-col relative overflow-hidden group">
-                                            <div class="absolute -right-2 -bottom-2 text-5xl text-purple-100 dark:text-purple-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-user-ninja"></i></div>
-                                            <div class="flex justify-between items-center mb-1 relative z-10">
-                                                <div class="text-[10px] font-black uppercase text-purple-600 tracking-widest">Veterano</div>
-                                                <div class="text-[9px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">${pVet}%</div>
+                                        <div onclick="app.ui.openMaturidadeModal('Veterano')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-purple-200 dark:border-purple-800 shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:border-purple-400 hover:shadow-md transition-all">
+                                            <div class="absolute -right-3 -bottom-3 text-6xl text-purple-100 dark:text-purple-900/30 group-hover:scale-110 transition-transform"><i class="fa-solid fa-user-ninja"></i></div>
+                                            <div class="flex justify-between items-start mb-2 relative z-10">
+                                                <div>
+                                                    <div class="text-xs font-black uppercase text-purple-600 tracking-widest">Veterano</div>
+                                                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Mais de 1 ano</div>
+                                                </div>
+                                                <div class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-1 rounded-lg">${pVet}%</div>
                                             </div>
-                                            <div class="text-[9px] text-slate-400 mb-3 relative z-10 border-b border-purple-100 dark:border-purple-800/50 pb-1">Mais de 1 ano (${tcVeterano.qtd} Op)</div>
-                                            <div class="mt-auto relative z-10 flex items-center justify-between">
-                                                <span class="text-[9px] font-bold uppercase text-slate-400">Média:</span>
-                                                <span class="text-xl font-black text-slate-800 dark:text-white">${mVet}</span>
+                                            <div class="mt-auto pt-3 border-t border-purple-100 dark:border-purple-800/50 relative z-10 flex items-end justify-between">
+                                                <div>
+                                                    <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média Base</span>
+                                                    <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${mVet}</span>
+                                                </div>
+                                                <div class="text-xs font-bold text-purple-500 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                                    <i class="fa-solid fa-users"></i> ${tcVeterano.qtd} Op.
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                     
-                                    <!-- Gráfico Curva de Aprendizado -->
-                                    <div class="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-full min-h-[160px]">
-                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Desempenho x Tempo</div>
+                                    <!-- Gráfico Curva de Aprendizado CORRIGIDO (Altura Minima) -->
+                                    <div class="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-full min-h-[220px]">
+                                        <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-line text-emerald-500"></i> Desempenho x Tempo</div>
                                         <div class="flex-1 relative w-full h-full"><canvas id="chart-curva-aprendizado"></canvas></div>
                                     </div>
                                 </div>
