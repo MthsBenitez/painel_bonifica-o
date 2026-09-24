@@ -7116,11 +7116,20 @@
                 isFetchingAnaliseData: false, // Trava do banco de dados
                 evolutivoFiltroMes: [], // Variável para o filtro exclusivo do gráfico de evolução
 
-                // MEMÓRIA DE ROLAGEM: Preserva o Scroll após o Loading
+                // MEMÓRIA DE ROLAGEM: Preserva o Scroll e Evita a "Piscada" da Tela
                 _refreshComMemoriaDeScroll() {
                     const scrollY = window.scrollY;
-                    this.renderTab('analise_csv_dinamico', true);
-                    setTimeout(() => window.scrollTo({ top: scrollY, behavior: 'instant' }), 450); // Aguarda o skeleton loader passar
+                    const container = document.getElementById('view-container-analise_csv_dinamico');
+                    
+                    if (container) {
+                        // Atualiza apenas o conteúdo internamente e instantaneamente (sem skeleton loader)
+                        this.renderView_AnaliseCSVDinamico(container);
+                        // Como a troca é síncrona, a tela não encolhe e mantemos a posição original milimetricamente
+                        window.scrollTo({ top: scrollY, behavior: 'instant' });
+                    } else {
+                        // Fallback de segurança se a tela por algum motivo não existir no HTML ainda
+                        this.renderTab('analise_csv_dinamico', true);
+                    }
                 },
 
                 toggleMesFiltro(mes) {
