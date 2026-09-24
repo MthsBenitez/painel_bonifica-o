@@ -1266,6 +1266,35 @@
                     } catch(e) {}
                 },
 
+                formatTempoCasa(dias) {
+                    if (dias === undefined || dias === null || isNaN(dias) || dias === 0) return 'Tempo não mapeado';
+                    let anos = Math.floor(dias / 365);
+                    let meses = Math.floor((dias % 365) / 30);
+                    let str = '';
+                    if (anos > 0) str += `${anos} ano${anos > 1 ? 's' : ''}`;
+                    if (meses > 0) str += `${anos > 0 ? ' e ' : ''}${meses} mês${meses > 1 ? 'es' : ''}`;
+                    if (anos === 0 && meses === 0) str = `${dias} dias`;
+                    return str.trim();
+                },
+
+                getTempoCasaDoOperador(nomePesquisa) {
+                    if (!app.config.tempoDeCasa) return null;
+                    const nomeStr = String(nomePesquisa).trim().toUpperCase();
+                    
+                    // 1. Tenta achar direto se o RH salvou pelo nome exato
+                    if (app.config.tempoDeCasa[nomeStr] !== undefined) return app.config.tempoDeCasa[nomeStr];
+
+                    // 2. Tenta achar via Alias Global de vínculos criados
+                    const matriculaAlias = app.config.aliases && app.config.aliases[nomeStr];
+                    if (matriculaAlias && app.config.tempoDeCasa[matriculaAlias] !== undefined) return app.config.tempoDeCasa[matriculaAlias];
+
+                    // 3. Varre cruzado para ver se alguma chave corresponde a parte do nome (flexível)
+                    const userSys = app.users.find(u => u.nome.toUpperCase() === nomeStr);
+                    if (userSys && app.config.tempoDeCasa[userSys.matricula] !== undefined) return app.config.tempoDeCasa[userSys.matricula];
+
+                    return null;
+                },
+
                 fixEncoding(str) {
                     if (typeof str !== 'string') return str;
                     let s = str.replace(/Ã©/g, 'é').replace(/Ã£/g, 'ã').replace(/Ã§/g, 'ç')
@@ -7366,39 +7395,76 @@
                     const topErros = Object.entries(errosOpCount).sort((a,b)=>b[1]-a[1]).slice(0,3);
                     const topCriticos = Object.entries(criticosOpCount).sort((a,b)=>b[1]-a[1]).slice(0,2);
                     
-                    let miniResumoHtml = '';
-                    if (chartData.length > 1 || topErros.length > 0 || topCriticos.length > 0) {
-                        miniResumoHtml = `
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 border-b border-slate-200 dark:border-slate-700 pb-6">
-                                ${chartData.length > 1 ? `
-                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
-                                        <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Curva de Aprendizagem</h4>
-                                        <div class="w-full h-32 relative"><canvas id="modal-chart-${nome.replace(/\s+/g, '')}"></canvas></div>
+                    const diasCasa = app.utils.getTempoCasaDoOperador(nome);
+                        let maturidadeHtml = '';
+                        if (diasCasa !== null) {
+                            let matNivel = diasCasa > 365 ? 'Veterano' : (diasCasa > 180 ? 'Pleno' : (diasCasa > 90 ? 'Júnior' : 'Novato (Ramp-up)'));
+                            let matColor = diasCasa > 365 ? 'text-purple-600' : (diasCasa > 180 ? 'text-blue-600' : (diasCasa > 90 ? 'text-emerald-600' : 'text-orange-600'));
+                            let matBg = diasCasa > 365 ? 'bg-purple-100 dark:bg-purple-900/30' : (diasCasa > 180 ? 'bg-blue-100 dark:bg-blue-900/30' : (diasCasa > 90 ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-orange-100 dark:bg-orange-900/30'));
+                            
+                            let avisoCoerencia = '';
+                            if (diasCasa > 180 && opData.media < 80) avisoCoerencia = '<div class="text-[10px] text-red-500 font-bold mt-3 border-t border-red-200/50 pt-2"><i class="fa-solid fa-triangle-exclamation"></i> Alerta: Baixo desempenho para o tempo de casa. Requer reciclagem.</div>';
+                            else if (diasCasa <= 90 && opData.media >= 90) avisoCoerencia = '<div class="text-[10px] text-emerald-500 font-bold mt-3 border-t border-emerald-200/50 pt-2"><i class="fa-solid fa-star"></i> Excelente curva de aprendizado (Destaque Ramp-up).</div>';
+                            else avisoCoerencia = '<div class="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-3 border-t border-slate-200 dark:border-slate-700/50 pt-2"><i class="fa-solid fa-check"></i> Desempenho dentro da coerência de maturidade.</div>';
+
+                            maturidadeHtml = `
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner flex flex-col justify-center relative overflow-hidden">
+                                    <i class="fa-solid fa-medal absolute -right-4 -bottom-4 text-6xl text-slate-200 dark:text-slate-700/30 opacity-50"></i>
+                                    <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-4 relative z-10"><i class="fa-solid fa-business-time text-indigo-500 mr-1"></i> Maturidade Operacional</h4>
+                                    <div class="flex items-center gap-3 mb-2 relative z-10">
+                                        <div class="w-12 h-12 rounded-full ${matBg} ${matColor} flex items-center justify-center text-xl font-black shadow-sm shrink-0 border border-current opacity-80"><i class="fa-solid fa-hourglass-half"></i></div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white text-sm leading-tight">${matNivel}</div>
+                                            <div class="text-[10px] font-bold text-slate-500 uppercase mt-0.5">${app.utils.formatTempoCasa(diasCasa)}</div>
+                                        </div>
                                     </div>
-                                ` : `
-                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center shadow-inner">
-                                        <i class="fa-solid fa-chart-line text-slate-300 text-3xl mb-2"></i>
-                                        <div class="text-xs text-slate-400 font-bold">Gráfico Indisponível</div>
-                                        <div class="text-[10px] text-slate-500">Avaliações insuficientes.</div>
-                                    </div>
-                                `}
-                                <div class="space-y-3">
-                                    <div class="bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-200 dark:border-red-900/30">
-                                        <h4 class="text-[10px] uppercase font-bold text-red-600 mb-1.5"><i class="fa-solid fa-circle-exclamation"></i> Recorrência Crítica</h4>
-                                        ${topCriticos.length > 0 
-                                            ? topCriticos.map(c => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-red-500 bg-red-100 px-1.5 rounded mr-1">${c[1]}x</span> ${c[0]}</div>`).join('')
-                                            : '<div class="text-[10px] text-slate-500 italic">Nenhuma falha crítica recorrente.</div>'}
-                                    </div>
-                                    <div class="bg-orange-50 dark:bg-orange-900/10 p-3 rounded-xl border border-orange-200 dark:border-orange-900/30">
-                                        <h4 class="text-[10px] uppercase font-bold text-orange-600 mb-1.5"><i class="fa-solid fa-layer-group"></i> Maior Oportunidade</h4>
-                                        ${topErros.length > 0 
-                                            ? topErros.map(e => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-orange-500 bg-orange-100 px-1.5 rounded mr-1">${e[1]}x</span> ${e[0]}</div>`).join('')
-                                            : '<div class="text-[10px] text-slate-500 italic">Sem desvios padrões registrados.</div>'}
-                                    </div>
+                                    ${avisoCoerencia}
                                 </div>
-                            </div>
-                        `;
-                    }
+                            `;
+                        } else {
+                            maturidadeHtml = `
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner flex flex-col items-center justify-center text-center">
+                                    <i class="fa-solid fa-clock-rotate-left text-slate-300 dark:text-slate-600 text-3xl mb-2"></i>
+                                    <div class="text-xs text-slate-400 font-bold">Maturidade Oculta</div>
+                                    <div class="text-[9px] text-slate-500 mt-1 max-w-[180px]">Importe a base do RH na tela inicial para ativar este cruzamento e ver os insights.</div>
+                                </div>
+                            `;
+                        }
+
+                        let miniResumoHtml = '';
+                        if (chartData.length > 1 || topErros.length > 0 || topCriticos.length > 0 || diasCasa !== null) {
+                            miniResumoHtml = `
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 border-b border-slate-200 dark:border-slate-700 pb-6">
+                                    ${chartData.length > 1 ? `
+                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                                            <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Curva de Aprendizagem</h4>
+                                            <div class="w-full h-32 relative"><canvas id="modal-chart-${nome.replace(/\s+/g, '')}"></canvas></div>
+                                        </div>
+                                    ` : `
+                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center shadow-inner">
+                                            <i class="fa-solid fa-chart-line text-slate-300 dark:text-slate-600 text-3xl mb-2"></i>
+                                            <div class="text-xs text-slate-400 font-bold">Gráfico Indisponível</div>
+                                            <div class="text-[10px] text-slate-500">Avaliações insuficientes.</div>
+                                        </div>
+                                    `}
+                                    <div class="space-y-3">
+                                        <div class="bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-200 dark:border-red-900/30">
+                                            <h4 class="text-[10px] uppercase font-bold text-red-600 mb-1.5"><i class="fa-solid fa-circle-exclamation"></i> Recorrência Crítica</h4>
+                                            ${topCriticos.length > 0 
+                                                ? topCriticos.map(c => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-red-500 bg-red-100 px-1.5 rounded mr-1">${c[1]}x</span>${c[0]}</div>`).join('')
+                                                : '<div class="text-[10px] text-slate-500 italic">Nenhuma falha crítica recorrente.</div>'}
+                                        </div>
+                                        <div class="bg-orange-50 dark:bg-orange-900/10 p-3 rounded-xl border border-orange-200 dark:border-orange-900/30">
+                                            <h4 class="text-[10px] uppercase font-bold text-orange-600 mb-1.5"><i class="fa-solid fa-layer-group"></i> Maior Oportunidade</h4>
+                                            ${topErros.length > 0 
+                                                ? topErros.map(e => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-orange-500 bg-orange-100 px-1.5 rounded mr-1">${e[1]}x</span>${e[0]}</div>`).join('')
+                                                : '<div class="text-[10px] text-slate-500 italic">Sem desvios padrões registrados.</div>'}
+                                        </div>
+                                    </div>
+                                    ${maturidadeHtml}
+                                </div>
+                            `;
+                        }
 
                     setTimeout(() => {
                         if (chartData.length > 0) {
@@ -8332,7 +8398,9 @@
                                 <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">
                                     <div class="flex items-center gap-3">
                                         <i class="fa-solid fa-headset text-slate-300 dark:text-slate-600 text-lg"></i>
-                                        <span class="group-hover:text-blue-600 transition-colors cursor-pointer" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">${op.nome}</span>
+                                        <div class="flex flex-col">
+                                            <span class="group-hover:text-blue-600 transition-colors cursor-pointer" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">${op.nome}</span>${app.utils.getTempoCasaDoOperador(op.nome) !== null ? `<span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5"><i class="fa-solid fa-business-time text-emerald-500 mr-1"></i> ${app.utils.formatTempoCasa(app.utils.getTempoCasaDoOperador(op.nome))}</span>` : `<span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 opacity-50" title="Importe a base de RH para cruzar o tempo de casa"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Tempo não mapeado</span>`}
+                                        </div>
                                     </div>
                                 </td>
                                 <td class="py-3 px-4 text-center"><span class="font-black text-[10px] px-2.5 py-1 rounded-md shadow-sm border border-slate-200/50 dark:border-slate-700 ${quadColor}">${quadStr}</span></td>
@@ -9949,12 +10017,22 @@
                                 };
 
                                 const mat = getVal(['MATRICULA', 'MATR', 'LOGIN']);
+                                const nome = getVal(['NOME', 'COLABORADOR', 'OPERADOR']);
                                 const dias = getVal(['DIAS', 'EMPRESA', 'TEMPO']);
 
-                                if (mat !== undefined && mat !== "" && dias !== undefined && dias !== "") {
-                                    // Associa o número de dias à matrícula do operador de forma permanente
-                                    app.config.tempoDeCasa[String(mat).trim()] = parseInt(dias) || 0;
-                                    contagem++;
+                                if (dias !== undefined && dias !== "") {
+                                    const diasInt = parseInt(dias) || 0;
+                                    let added = false;
+                                    // Salva as duas chaves no cofre para nunca falhar o cruzamento
+                                    if (mat !== undefined && mat !== "") {
+                                        app.config.tempoDeCasa[String(mat).trim()] = diasInt;
+                                        added = true;
+                                    }
+                                    if (nome !== undefined && nome !== "") {
+                                        app.config.tempoDeCasa[String(nome).trim().toUpperCase()] = diasInt;
+                                        added = true;
+                                    }
+                                    if(added) contagem++;
                                 }
                             });
 
