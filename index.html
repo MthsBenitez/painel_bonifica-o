@@ -7176,10 +7176,13 @@
                                 const opNameRaw = app.utils.fixEncoding(String(row[colNome] || '')).trim();
                                 
                                 let fakePerguntas = [];
+                                let fakePerguntas = [];
                                 keys.filter(k => k.toUpperCase().includes('PESO')).forEach(k => {
-                                    // CORREÇÃO: Injetando o nome do relatório no prefixo para a busca bater exatamente!
+                                    // CORREÇÃO: Extraindo o Peso antes de montar a pergunta para evitar erro de escopo
+                                    let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
+                                    let pesoExtraido = match ? parseFloat(match[1].replace(',', '.')) : 0;
                                     let cleanQ = `[${rel.nome}] ` + k.split('=')[0].trim();
-                                    fakePerguntas.push({ q: cleanQ, p: m ? parseFloat(m[1].replace(',','.')) : 0, a: String(row[k] || '').trim() });
+                                    fakePerguntas.push({ q: cleanQ, p: pesoExtraido, a: String(row[k] || '').trim() });
                                 });
                                 todasAsAvaliacoes.push({ operador: opNameRaw, data: row[colData], perguntas: fakePerguntas });
                             });
@@ -8546,10 +8549,10 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- Gráfico Curva de Aprendizado CORRIGIDO (Altura Minima) -->
+                                    <!-- Gráfico Curva de Aprendizado BLINDADO -->
                                     <div class="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-full min-h-[220px]">
                                         <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-line text-emerald-500"></i> Desempenho x Tempo</div>
-                                        <div class="flex-1 relative w-full h-full"><canvas id="chart-curva-aprendizado"></canvas></div>
+                                        <div class="flex-1 relative w-full h-full min-h-[160px]"><canvas id="chart-curva-aprendizado"></canvas></div>
                                     </div>
                                 </div>
                             </div>
@@ -8664,38 +8667,106 @@
                             </div>
                         </div>
 
-                        <!-- GRID RENDERIZADA DAS AÇÕES (APARECE SE ALGO FOI SELECIONADO) -->
-                        ${(data.acoesSelecionadas && data.acoesSelecionadas.length > 0) ? `
-                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-teal-500 shadow-lg animate-fade-in">
-                                ${btnHideCode}
-                                <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3"><i class="fa-solid fa-camera-retro text-teal-500"></i> Ações & Intervenções em Qualidade</h3>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    ${data.acoesSelecionadas.map(idAct => {
-                                        const act = app.actionsList ? app.actionsList[idAct] : null;
-                                        if(!act) return '';
-                                        const foto = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
-                                        return `
-                                            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
-                                                <div class="h-56 bg-slate-100 dark:bg-slate-900 relative overflow-hidden flex items-center justify-center">
-                                                    ${foto ? `<img src="${foto}" class="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-500">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>'}
-                                                </div>
-                                                <div class="p-5 flex flex-col flex-1">
-                                                    <div class="flex justify-between items-start mb-2">
-                                                        <h4 class="font-extrabold text-slate-800 dark:text-white leading-tight">${act.objetivo}</h4>
-                                                    </div>
-                                                    <div class="text-[10px] uppercase font-black text-teal-600 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">${act.dataAcao.split('-').reverse().join('/')} \vert{}${act.codigoOpe}</div>
-                                                    <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-3 line-clamp-3">${act.acaoRealizada}</div>
-                                                    <div class="mt-auto flex justify-between items-end pt-3 border-t border-slate-100 dark:border-slate-700 text-[10px] text-slate-500 font-medium">
-                                                        <span><i class="fa-solid fa-user text-slate-300"></i> ${act.nome}</span>
-                                                        <span>${act.operadores} Impactados</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        `;
-                                    }).join('')}
+                        <!-- NOVA APRESENTAÇÃO DE AÇÕES PRESENCIAIS (DASHBOARD + SLIDESHOW) -->
+                        `; // Fechamento do template string anterior
+
+                        if (data.acoesSelecionadas && data.acoesSelecionadas.length > 0) {
+                            let totalAcoes = data.acoesSelecionadas.length;
+                            let opsImpactados = 0;
+                            let monitoresAcaoMap = {};
+                            let todasFotos = [];
+
+                            data.acoesSelecionadas.forEach(idAct => {
+                                const act = app.actionsList ? app.actionsList[idAct] : null;
+                                if(act) {
+                                    opsImpactados += parseInt(act.operadores) || 0;
+                                    if(!monitoresAcaoMap[act.matricula]) {
+                                        const u = app.users.find(x => x.matricula === act.matricula);
+                                        monitoresAcaoMap[act.matricula] = {
+                                            nome: u ? u.nome.split(' ')[0] : act.nome,
+                                            foto: u && u.foto ? u.foto : `https://ui-avatars.com/api/?name=${encodeURIComponent(act.nome)}&background=cbd5e1&color=ffffff`
+                                        };
+                                    }
+                                    let fotos = act.photos || (act.photo ? [act.photo] : []);
+                                    fotos.forEach(f => {
+                                        if(f && !f.startsWith('data:application/pdf')) {
+                                            todasFotos.push({ src: f, tema: act.objetivo });
+                                        }
+                                    });
+                                }
+                            });
+
+                            // Embaralhar as fotos para o carrossel ficar vivo e orgânico
+                            todasFotos.sort(() => Math.random() - 0.5);
+
+                            let monitoresHtml = Object.values(monitoresAcaoMap).map(m => `
+                                <div class="flex flex-col items-center group cursor-help" title="${m.nome}">
+                                    <img src="${m.foto}" class="w-10 h-10 rounded-full border-2 border-white dark:border-slate-800 shadow-md group-hover:scale-110 transition-transform object-cover">
+                                    <span class="text-[9px] font-bold text-slate-500 mt-1 truncate max-w-[50px]">${m.nome}</span>
                                 </div>
-                            </div>
-                        ` : ''}
+                            `).join('');
+
+                            // Gera as imagens do Track (Slide Infinito)
+                            let trackHtml = todasFotos.map(f => `
+                                <div class="shrink-0 w-64 h-48 rounded-2xl overflow-hidden relative shadow-md border border-slate-200 dark:border-slate-700 mx-2 hover:scale-[1.02] transition-transform">
+                                    <img src="${f.src}" class="w-full h-full object-cover">
+                                    <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8 pointer-events-none">
+                                        <p class="text-white text-[10px] font-bold truncate">${f.tema}</p>
+                                    </div>
+                                </div>
+                            `).join('');
+                            trackHtml += trackHtml; // Duplica para o scroll ficar infinito e liso
+
+                            html += `
+                                <style>
+                                    @keyframes slideMarquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+                                    .animate-marquee { display: flex; width: max-content; animation: slideMarquee ${Math.max(20, todasFotos.length * 4)}s linear infinite; }
+                                    .animate-marquee:hover { animation-play-state: paused; }
+                                </style>
+                                <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-teal-500 shadow-lg animate-fade-in overflow-hidden">
+                                    ${btnHideCode}
+                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3"><i class="fa-solid fa-camera-retro text-teal-500"></i> Ações & Intervenções em Qualidade</h3>
+                                    
+                                    <!-- Resumo Dashboard -->
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                        <div class="bg-teal-50 dark:bg-teal-900/20 rounded-2xl p-5 border border-teal-200 dark:border-teal-800 flex items-center gap-4 shadow-sm">
+                                            <div class="w-12 h-12 bg-teal-100 dark:bg-teal-800 text-teal-600 dark:text-teal-300 rounded-xl flex items-center justify-center text-2xl"><i class="fa-solid fa-layer-group"></i></div>
+                                            <div>
+                                                <div class="text-[10px] uppercase font-bold text-teal-600 dark:text-teal-400 tracking-widest">Total de Ações</div>
+                                                <div class="text-3xl font-black text-slate-800 dark:text-white">${totalAcoes}</div>
+                                            </div>
+                                        </div>
+                                        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800 flex items-center gap-4 shadow-sm">
+                                            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 rounded-xl flex items-center justify-center text-2xl"><i class="fa-solid fa-users"></i></div>
+                                            <div>
+                                                <div class="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-widest">Operadores Impactados</div>
+                                                <div class="text-3xl font-black text-slate-800 dark:text-white">${opsImpactados}</div>
+                                            </div>
+                                        </div>
+                                        <div class="bg-purple-50 dark:bg-purple-900/20 rounded-2xl p-5 border border-purple-200 dark:border-purple-800 flex flex-col justify-center shadow-sm">
+                                            <div class="text-[10px] uppercase font-bold text-purple-600 dark:text-purple-400 tracking-widest mb-2">Monitores Responsáveis</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                ${monitoresHtml}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Slide / Marquee de Fotos -->
+                                    ${todasFotos.length > 0 ? `
+                                    <div class="w-full overflow-hidden bg-slate-50 dark:bg-slate-900/50 rounded-3xl border border-slate-200 dark:border-slate-700 py-6 relative shadow-inner">
+                                        <div class="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-slate-50 dark:from-slate-900 to-transparent z-10 pointer-events-none"></div>
+                                        <div class="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-slate-50 dark:from-slate-900 to-transparent z-10 pointer-events-none"></div>
+                                        <div class="animate-marquee cursor-ew-resize">
+                                            ${trackHtml}
+                                        </div>
+                                        <div class="text-center mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><i class="fa-solid fa-pause"></i> Passe o mouse na área para pausar</div>
+                                    </div>
+                                    ` : '<div class="text-center text-slate-400 py-10 border-dashed border-2 rounded-2xl bg-slate-50 dark:bg-slate-900/50">Nenhuma imagem cadastrada nestas ações.</div>'}
+                                </div>
+                            `;
+                        }
+
+                        html += ``; // Reabertura da variável para finalizar
                     `;
                     container.innerHTML = html;
 
