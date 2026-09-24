@@ -7566,6 +7566,108 @@
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
+                openFeedbackModal(type) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if(!data) return;
+
+                    let lista = [];
+                    let cor = ''; let bg = ''; let desc = ''; let icon = '';
+
+                    // Filtra operadores de acordo com o card clicado
+                    Object.values(data.operadores).forEach(op => {
+                        if(type === 'aplicado' && op.feedbacks.aplicado > 0) lista.push({nome: op.nome, qtd: op.feedbacks.aplicado});
+                        else if(type === 'nao_aplicado' && op.feedbacks.nao_aplicado > 0) lista.push({nome: op.nome, qtd: op.feedbacks.nao_aplicado});
+                        else if(type === 'monitorado' && op.feedbacks.monitorado > 0) lista.push({nome: op.nome, qtd: op.feedbacks.monitorado});
+                    });
+
+                    lista.sort((a,b) => b.qtd - a.qtd); // Do que tem mais pra quem tem menos
+
+                    if(type === 'aplicado') { cor = 'text-emerald-500'; bg = 'bg-emerald-100 dark:bg-emerald-900/30'; desc = 'Feedback Presencial Aplicado'; icon = 'fa-check-double'; }
+                    else if(type === 'nao_aplicado') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = 'Feedback Remoto Não Aplicado'; icon = 'fa-paper-plane'; }
+                    else if(type === 'monitorado') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = 'Aguardando Validação (Pendentes)'; icon = 'fa-hourglass-half'; }
+
+                    let htmlList = `<div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    if(lista.length === 0) {
+                        htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador com este status neste mês.</div>`;
+                    } else {
+                        lista.forEach((op, i) => {
+                            htmlList += `
+                                <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full ${bg} ${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50">${i+1}</div>
+                                        <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-0.5">Ocorrências</div>
+                                        <div class="font-black ${cor} text-xl">${op.qtd}x</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    htmlList += `</div>`;
+
+                    // Gráfico Evolutivo de Feedbacks (Lê do mesesEvolutivo global)
+                    let mesesOrd = data.mesesDisponiveis || [];
+                    let chartLabels = mesesOrd.map(m => app.ui.formatMonthLabel(m).substring(0,3));
+                    let chartData = [];
+
+                    mesesOrd.forEach(mes => {
+                        if (data.mesesEvolutivo[mes]) {
+                            if(type === 'aplicado') chartData.push(data.mesesEvolutivo[mes].fbAplicado || 0);
+                            else if(type === 'nao_aplicado') chartData.push(data.mesesEvolutivo[mes].fbNaoAplicado || 0);
+                            else if(type === 'monitorado') chartData.push(data.mesesEvolutivo[mes].fbMonitorado || 0);
+                        } else {
+                            chartData.push(0);
+                        }
+                    });
+
+                    let chartHtml = '';
+                    if(chartData.length > 1) {
+                        chartHtml = `
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução Histórica Deste Volume</h4>
+                                <div class="w-full h-32 relative"><canvas id="feedback-chart-canvas"></canvas></div>
+                            </div>
+                        `;
+                    }
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${cor}"></i> Colaboradores Envolvidos`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total: ${lista.reduce((a,b)=>a+b.qtd,0)}</p>
+                        </div>
+                        ${chartHtml}
+                        ${htmlList}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-2xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+
+                    // Desenha o gráfico se houver
+                    if(chartData.length > 1) {
+                        setTimeout(() => {
+                            if(window.feedbackChartModal) window.feedbackChartModal.destroy();
+                            const ctx = document.getElementById('feedback-chart-canvas');
+                            if(ctx) {
+                                let hexColor = '#10b981'; // verde
+                                if(type === 'nao_aplicado') hexColor = '#3b82f6'; // azul
+                                if(type === 'monitorado') hexColor = '#f97316'; // laranja
+
+                                window.feedbackChartModal = new Chart(ctx, {
+                                    type: 'line',
+                                    data: { labels: chartLabels, datasets: [{ data: chartData, borderColor: hexColor, backgroundColor: hexColor+'20', fill: true, borderWidth: 3, pointBackgroundColor: hexColor, tension: 0.3 }] },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, suggestedMax: Math.max(...chartData)+2, ticks: {font: {size: 9}} }, x: { ticks: {font: {size: 9}} } } }
+                                });
+                            }
+                        }, 300);
+                    }
+                },
+
                 openQuadranteModal(qName) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data) return;
@@ -7920,38 +8022,44 @@
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 animate-fade-in">
                             <!-- Cards Interativos de Feedback -->
                             <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-emerald-400 group relative overflow-hidden cursor-default">
-                                    <div class="absolute -right-4 -bottom-4 text-emerald-500/10 text-7xl group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-comments"></i></div>
-                                    <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-emerald-100 dark:border-emerald-800/50 group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid fa-check-double"></i></div>
-                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10">Feedback Presencial</div>
-                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10">${data.feedbacksGlobais.aplicado}</div>
-                                    <div class="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-2 relative z-10">Aplicados</div>
+                                <div onclick="app.ui.openFeedbackModal('aplicado')" class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-emerald-400 group relative overflow-hidden cursor-pointer">
+                                    <div class="absolute -right-4 -bottom-4 text-emerald-500/10 text-7xl group-hover:scale-110 transition-transform duration-500 pointer-events-none"><i class="fa-solid fa-comments"></i></div>
+                                    <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-emerald-100 dark:border-emerald-800/50 group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-300 pointer-events-none"><i class="fa-solid fa-check-double"></i></div>
+                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10 pointer-events-none">Feedback Presencial</div>
+                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10 pointer-events-none">${data.feedbacksGlobais.aplicado}</div>
+                                    <div class="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-2 relative z-10 flex items-center justify-between w-full pointer-events-none"><span>Aplicados</span> <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i></div>
                                 </div>
 
-                                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-blue-400 group relative overflow-hidden cursor-default">
-                                    <div class="absolute -right-4 -bottom-4 text-blue-500/10 text-7xl group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-laptop"></i></div>
-                                    <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid fa-paper-plane"></i></div>
-                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10">Feedback Remoto</div>
-                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10">${data.feedbacksGlobais.nao_aplicado}</div>
-                                    <div class="text-xs text-blue-600 dark:text-blue-400 font-bold mt-2 relative z-10">Não Aplicados</div>
+                                <div onclick="app.ui.openFeedbackModal('nao_aplicado')" class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-blue-400 group relative overflow-hidden cursor-pointer">
+                                    <div class="absolute -right-4 -bottom-4 text-blue-500/10 text-7xl group-hover:scale-110 transition-transform duration-500 pointer-events-none"><i class="fa-solid fa-laptop"></i></div>
+                                    <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors duration-300 pointer-events-none"><i class="fa-solid fa-paper-plane"></i></div>
+                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10 pointer-events-none">Feedback Remoto</div>
+                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10 pointer-events-none">${data.feedbacksGlobais.nao_aplicado}</div>
+                                    <div class="text-xs text-blue-600 dark:text-blue-400 font-bold mt-2 relative z-10 flex items-center justify-between w-full pointer-events-none"><span>Não Aplicados</span> <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i></div>
                                 </div>
 
-                                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-orange-400 group relative overflow-hidden cursor-default">
-                                    <div class="absolute -right-4 -bottom-4 text-orange-500/10 text-7xl group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-clock"></i></div>
-                                    <div class="w-12 h-12 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-orange-100 dark:border-orange-800/50 group-hover:bg-orange-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid fa-hourglass-half"></i></div>
-                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10">Aguardando Validação</div>
-                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10">${data.feedbacksGlobais.monitorado}</div>
-                                    <div class="text-xs text-orange-500 dark:text-orange-400 font-bold mt-2 relative z-10">Pendentes (Monitorado)</div>
+                                <div onclick="app.ui.openFeedbackModal('monitorado')" class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-orange-400 group relative overflow-hidden cursor-pointer">
+                                    <div class="absolute -right-4 -bottom-4 text-orange-500/10 text-7xl group-hover:scale-110 transition-transform duration-500 pointer-events-none"><i class="fa-solid fa-clock"></i></div>
+                                    <div class="w-12 h-12 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-orange-100 dark:border-orange-800/50 group-hover:bg-orange-500 group-hover:text-white transition-colors duration-300 pointer-events-none"><i class="fa-solid fa-hourglass-half"></i></div>
+                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10 pointer-events-none">Aguardando Validação</div>
+                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10 pointer-events-none">${data.feedbacksGlobais.monitorado}</div>
+                                    <div class="text-xs text-orange-500 dark:text-orange-400 font-bold mt-2 relative z-10 flex items-center justify-between w-full pointer-events-none"><span>Pendentes (Monitorado)</span> <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i></div>
                                 </div>
                             </div>
 
-                            <!-- Gráfico de Donut -->
-                            <div class="lg:col-span-1 glass-card p-6 rounded-3xl relative shadow-sm border-t-4 border-t-indigo-500 flex flex-col justify-between">
-                                <div class="flex justify-between items-center mb-4">
+                            <!-- Gráfico de Donut (Beautificado) -->
+                            <div class="lg:col-span-1 glass-card p-6 rounded-3xl relative shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
+                                <div class="absolute -right-10 -top-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                <div class="flex justify-between items-center mb-4 relative z-10">
                                     <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie text-indigo-500"></i> Proporção</h3>
                                 </div>
-                                <div class="relative w-full flex-1 min-h-[180px]">
-                                    <canvas id="chart-feedbacks-global"></canvas>
+                                <div class="relative w-full flex-1 min-h-[180px] flex items-center justify-center">
+                                    <canvas id="chart-feedbacks-global" class="relative z-10"></canvas>
+                                    <!-- Contador Central do Donut -->
+                                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0 mt-2">
+                                        <span class="text-2xl font-black text-slate-700 dark:text-white leading-none">${data.feedbacksGlobais.aplicado + data.feedbacksGlobais.nao_aplicado + data.feedbacksGlobais.monitorado}</span>
+                                        <span class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Total</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -8379,25 +8487,30 @@
                             initFlipChart('falhasCriticas', '#ef4444');
 
                             // GRÁFICO DE FEEDBACKS
+                            // GRÁFICO DE FEEDBACKS (UX PREMIUM)
                             if(window.chartFeedbacksGlobal) window.chartFeedbacksGlobal.destroy();
                             const ctxFb = document.getElementById('chart-feedbacks-global');
                             if (ctxFb) {
                                 window.chartFeedbacksGlobal = new Chart(ctxFb, {
                                     type: 'doughnut',
                                     data: {
-                                        labels: ['Aplicado (Presencial)', 'Não Aplicado (Remoto)', 'Monitorado (Pendente)'],
+                                        labels: ['Presencial (Aplicado)', 'Remoto (Não Aplicado)', 'Pendente (Monitorado)'],
                                         datasets: [{
                                             data: [data.feedbacksGlobais.aplicado, data.feedbacksGlobais.nao_aplicado, data.feedbacksGlobais.monitorado],
                                             backgroundColor: ['#10b981', '#3b82f6', '#f97316'],
-                                            borderWidth: 2,
-                                            borderColor: isDark ? '#1e293b' : '#ffffff'
+                                            borderWidth: 0,
+                                            borderRadius: 8, // Cantos arredondados elegantes
+                                            hoverOffset: 6, // Efeito da fatia pular para fora ao passar o mouse
+                                            spacing: 4 // Espaçamento negativo/transparente entre fatias
                                         }]
                                     },
                                     options: {
                                         responsive: true, maintainAspectRatio: false,
-                                        cutout: '65%',
+                                        cutout: '80%', // Rosca bem fininha e chique
+                                        layout: { padding: 10 },
                                         plugins: {
-                                            legend: { position: 'right', labels: { color: textColor, font: { size: 10, weight: 'bold' } } }
+                                            tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', titleFont: {size: 11}, bodyFont: {size: 13, weight: 'bold'}, padding: 10, cornerRadius: 8, displayColors: false },
+                                            legend: { display: false } // A legenda fica poluída, o card em si já diz tudo
                                         }
                                     }
                                 });
