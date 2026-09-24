@@ -7892,6 +7892,10 @@
                                     <i class="fa-solid fa-cloud-arrow-up"></i> Importar Dados
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                 </label>
+                                <label class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importar arquivo de RH com Dias de Empresa">
+                                    <i class="fa-solid fa-user-clock"></i> Carga de RH (Tempo)
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                </label>
                                 <label class="bg-purple-50 text-purple-600 hover:bg-purple-100 border border-purple-200 dark:bg-purple-900/30 dark:border-purple-800 dark:text-purple-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Raio-X de Pesos e Falhas.">
                                     <i class="fa-solid fa-microscope"></i> Raio-X
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
@@ -9912,6 +9916,64 @@
                 removeAlias(wrongName) {
                     delete app.config.aliases[wrongName];
                     app.storage.saveConfig().then(() => this.renderAliasList());
+                },
+
+                processarTempoDeCasa(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    app.ui.showAlert("Lendo Base RH...", "Cruzando matrículas com dias de empresa na base de dados...", "info");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = e.target.result;
+                            const workbook = XLSX.read(data, { type: 'binary', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
+                            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+
+                            if (rows.length === 0) return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
+
+                            // Prepara o dicionário na memória global se não existir
+                            if (!app.config.tempoDeCasa) app.config.tempoDeCasa = {};
+                            let contagem = 0;
+
+                            rows.forEach(row => {
+                                // Função para lidar com problemas de codificação ("MATRÃCULA")
+                                const getVal = (keywords) => {
+                                    const key = Object.keys(row).find(k => {
+                                        const norm = k.toUpperCase().replace(/[^A-Z]/g, ''); // Remove acentos bizarros
+                                        return keywords.some(kw => norm.includes(kw));
+                                    });
+                                    return key ? row[key] : undefined;
+                                };
+
+                                const mat = getVal(['MATRICULA', 'MATR', 'LOGIN']);
+                                const dias = getVal(['DIAS', 'EMPRESA', 'TEMPO']);
+
+                                if (mat !== undefined && mat !== "" && dias !== undefined && dias !== "") {
+                                    // Associa o número de dias à matrícula do operador de forma permanente
+                                    app.config.tempoDeCasa[String(mat).trim()] = parseInt(dias) || 0;
+                                    contagem++;
+                                }
+                            });
+
+                            // Salva as configurações de forma atômica
+                            app.storage.saveConfig().then(() => {
+                                app.ui.showAlert("Importação Bem Sucedida!", `O sistema mapeou e memorizou o Tempo de Empresa de <b>${contagem} colaboradores</b>.<br><br>Esses dados agora poderão ser cruzados nos relatórios analíticos!`, "success");
+                                // Recalcula a tabela para aplicar possíveis atualizações instantaneamente
+                                if(app.analiseCSVDinamicoData) {
+                                    app.admin.gerarInteligenciaCSV();
+                                }
+                                app.ui.renderTab('analise_csv_dinamico', true);
+                            });
+
+                        } catch (error) {
+                            console.error(error);
+                            app.ui.showAlert("Erro de Leitura", "Falha ao ler a planilha. Verifique se existem as colunas 'Matrícula' e 'Dias'.", "error");
+                        }
+                    };
+                    reader.readAsBinaryString(file);
                 },
 
                 processarCSVAvancado(input) {
