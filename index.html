@@ -7916,13 +7916,43 @@
                             ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
 
-                        <!-- GRÁFICO DE FEEDBACKS -->
-                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative shadow-sm border-t-4 border-t-indigo-500 animate-fade-in">
-                            <div class="flex justify-between items-center mb-6">
-                                <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie text-indigo-500"></i> Tratativa de Feedbacks</h3>
+                        <!-- GESTÃO E GRÁFICO DE FEEDBACKS -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 animate-fade-in">
+                            <!-- Cards Interativos de Feedback -->
+                            <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-emerald-400 group relative overflow-hidden cursor-default">
+                                    <div class="absolute -right-4 -bottom-4 text-emerald-500/10 text-7xl group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-comments"></i></div>
+                                    <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-emerald-100 dark:border-emerald-800/50 group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid fa-check-double"></i></div>
+                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10">Feedback Presencial</div>
+                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10">${data.feedbacksGlobais.aplicado}</div>
+                                    <div class="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-2 relative z-10">Aplicados</div>
+                                </div>
+
+                                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-blue-400 group relative overflow-hidden cursor-default">
+                                    <div class="absolute -right-4 -bottom-4 text-blue-500/10 text-7xl group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-laptop"></i></div>
+                                    <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid fa-paper-plane"></i></div>
+                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10">Feedback Remoto</div>
+                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10">${data.feedbacksGlobais.nao_aplicado}</div>
+                                    <div class="text-xs text-blue-600 dark:text-blue-400 font-bold mt-2 relative z-10">Não Aplicados</div>
+                                </div>
+
+                                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-all duration-300 hover:-translate-y-2 hover:shadow-lg hover:border-orange-400 group relative overflow-hidden cursor-default">
+                                    <div class="absolute -right-4 -bottom-4 text-orange-500/10 text-7xl group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-clock"></i></div>
+                                    <div class="w-12 h-12 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl flex items-center justify-center text-xl mb-4 shadow-inner border border-orange-100 dark:border-orange-800/50 group-hover:bg-orange-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid fa-hourglass-half"></i></div>
+                                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 relative z-10">Aguardando Validação</div>
+                                    <div class="text-4xl font-black text-slate-800 dark:text-white relative z-10">${data.feedbacksGlobais.monitorado}</div>
+                                    <div class="text-xs text-orange-500 dark:text-orange-400 font-bold mt-2 relative z-10">Pendentes (Monitorado)</div>
+                                </div>
                             </div>
-                            <div class="relative w-full h-[250px]">
-                                <canvas id="chart-feedbacks-global"></canvas>
+
+                            <!-- Gráfico de Donut -->
+                            <div class="lg:col-span-1 glass-card p-6 rounded-3xl relative shadow-sm border-t-4 border-t-indigo-500 flex flex-col justify-between">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie text-indigo-500"></i> Proporção</h3>
+                                </div>
+                                <div class="relative w-full flex-1 min-h-[180px]">
+                                    <canvas id="chart-feedbacks-global"></canvas>
+                                </div>
                             </div>
                         </div>
                     `;
