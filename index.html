@@ -6332,7 +6332,7 @@
                                                 <button onclick="app.ui.filterPendingRows('linha-bruta-user', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
                                             </div>
                                         </div>
-                                        <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[400px]'}">">
+                                        <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[400px]'}">
                                             <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
                                                 <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
                                                     <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -7808,17 +7808,13 @@
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${cor}"></i> Operadores do Quadrante ${qName}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            document.getElementById('modal-content').innerHTML = `
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
                             <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total: ${lista.length}</p>
                         </div>
                         ${chartHtml}
-                        ${htmlList}</div>
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </div>
-                        </div>
+                        ${htmlList}
                     `;
                     document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
 
