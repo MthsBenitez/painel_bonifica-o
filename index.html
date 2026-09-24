@@ -7176,7 +7176,6 @@
                                 const opNameRaw = app.utils.fixEncoding(String(row[colNome] || '')).trim();
                                 
                                 let fakePerguntas = [];
-                                let fakePerguntas = [];
                                 keys.filter(k => k.toUpperCase().includes('PESO')).forEach(k => {
                                     // CORREÇÃO: Extraindo o Peso antes de montar a pergunta para evitar erro de escopo
                                     let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
