@@ -8012,6 +8012,35 @@
                     let data = mainData ? mainData.consolidado : null;
                     let btnHideCode = ''; // Removido a pedido do usuário
 
+                    // --- MOTOR DE STORYTELLING (GERADOR DE CAPÍTULOS) ---
+                    let chapterCount = 1;
+                    const renderChapterTitle = (title, subtitle, icon, theme) => {
+                        const themes = {
+                            blue: { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-600 dark:text-blue-400', border: 'border-blue-200 dark:border-blue-800/50', light: 'text-blue-500 dark:text-blue-400' },
+                            emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-800/50', light: 'text-emerald-500 dark:text-emerald-400' },
+                            indigo: { bg: 'bg-indigo-100 dark:bg-indigo-900/40', text: 'text-indigo-600 dark:text-indigo-400', border: 'border-indigo-200 dark:border-indigo-800/50', light: 'text-indigo-500 dark:text-indigo-400' },
+                            orange: { bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-600 dark:text-orange-400', border: 'border-orange-200 dark:border-orange-800/50', light: 'text-orange-500 dark:text-orange-400' },
+                            teal: { bg: 'bg-teal-100 dark:bg-teal-900/40', text: 'text-teal-600 dark:text-teal-400', border: 'border-teal-200 dark:border-teal-800/50', light: 'text-teal-500 dark:text-teal-400' },
+                            purple: { bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-600 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800/50', light: 'text-purple-500 dark:text-purple-400' },
+                            cyan: { bg: 'bg-cyan-100 dark:bg-cyan-900/40', text: 'text-cyan-600 dark:text-cyan-400', border: 'border-cyan-200 dark:border-cyan-800/50', light: 'text-cyan-500 dark:text-cyan-400' }
+                        };
+                        const t = themes[theme] || themes.blue;
+                        return `
+                            <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 animate-fade-in chapter-marker">
+                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_10px_20px_rgba(0,0,0,0.05)] border ${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                                    <i class="fa-solid ${icon} text-3xl"></i>
+                                </div>
+                                <div class="flex items-center gap-3 mb-2">
+                                    <div class="h-px w-12 ${t.bg}"></div>
+                                    <div class="text-[10px] font-black uppercase tracking-widest ${t.light}">Capítulo ${chapterCount++}</div>
+                                    <div class="h-px w-12 ${t.bg}"></div>
+                                </div>
+                                <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-sm">${title}</h2>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto">${subtitle}</p>
+                            </div>
+                        `;
+                    };
+
                     // CÁLCULO DE PORCENTAGEM EXATA DE FALHAS TOTAIS
                     let totalPerguntasGlobais = 0;
                     if (data && data.operadores) {
@@ -8163,6 +8192,7 @@
                     };
                     
                     html += `
+                        ${renderChapterTitle('Visão Executiva', 'Indicadores chave de performance (KPIs) e resumos métricos globais da operação no período.', 'fa-chart-pie', 'blue')}
                         <!-- DASHBOARD CARDS MESTRES -->
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
                             ${btnHideCode}${renderDashCard('totalLinhas', 'fa-headphones text-blue-500', 'Total Analisado', `${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span>`, `Universo de ${totalPerguntasGlobais} perguntas validadas.`, 'bg-blue-500', data.comments?.totalLinhas)}
@@ -8176,6 +8206,7 @@
                             ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
 
+                        ${renderChapterTitle('Engajamento & Qualidade', 'Mapeamento da entrega de feedbacks e saúde da comunicação direta entre gestão e operação.', 'fa-comments', 'emerald')}
                         <!-- GESTÃO E GRÁFICO DE FEEDBACKS -->
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 animate-fade-in">
                             <!-- Cards Interativos de Feedback -->
@@ -8224,6 +8255,7 @@
                     `;
                     // --- RESTAURAÇÃO: GRÁFICO EVOLUTIVO DE VOLTA À TELA ---
                     if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1) {
+                        html += renderChapterTitle('Evolução Histórica', 'Análise gráfica da curva de melhoria contínua e identificação dos destaques de alta ou queda.', 'fa-arrow-trend-up', 'indigo');
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
                                 <div class="flex justify-between items-center mb-6">
@@ -8291,6 +8323,7 @@
                     let mQ4 = q4.length > 0 ? (q4.reduce((a,b)=>a+parseFloat(b.media),0)/q4.length).toFixed(1) : '0.0';
                     let pQ4 = ((q4.length / tOps) * 100).toFixed(1);
 
+                    html += renderChapterTitle('Matriz de Desempenho', 'Classificação dos operadores em quadrantes com base na qualidade técnica para ações de desenvolvimento direcionadas.', 'fa-border-all', 'orange');
                     html += `
                         <div class="hideable-box relative mb-8 animate-fade-in">
                             ${btnHideCode}
@@ -8457,6 +8490,7 @@
 
                     // Só mostra essa área se existir arquivo de RH importado (tcTotalOp > 0)
                     if (tcTotalOp > 0) {
+                        html += renderChapterTitle('Ciclo de Maturidade', 'Acompanhamento do impacto do Tempo de Empresa (Curva de Aprendizado e Retenção) na qualidade das entregas.', 'fa-seedling', 'teal');
                         html += `
                             <div class="hideable-box relative mb-8 animate-fade-in glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-emerald-500 shadow-sm bg-slate-50 dark:bg-slate-900">
                                 ${btnHideCode}
@@ -8559,6 +8593,7 @@
                     }
 
                     // TABELA DETALHADA COM COLUNA QUADRANTE (TAMBÉM RETRÁTIL NO MODO APRESENTAÇÃO)
+                    html += renderChapterTitle('Auditoria Individual', 'Detalhamento analítico por operador com a lista completa de avaliações, notas e cruzamentos interativos.', 'fa-users-viewfinder', 'purple');
                     html += `
                         <details class="hideable-box relative glass-card rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mt-8 group mb-8 bg-white dark:bg-slate-800" ${this.analiseEditMode ? '' : 'open'}>
                             <summary class="p-6 md:p-8 cursor-pointer flex justify-between items-center outline-none list-none [&::-webkit-details-marker]:hidden border-b border-transparent group-open:border-slate-200 dark:group-open:border-slate-700 transition-colors bg-white dark:bg-slate-800">
@@ -8647,6 +8682,7 @@
                             </button>` : ''}
                         </details>
                         
+                        ${renderChapterTitle('Evidências & Fechamento', 'Galeria de intervenções presenciais e consolidação da apresentação para o histórico permanente na nuvem.', 'fa-camera-retro', 'cyan')}
                         <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
                         <div class="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
                             <!-- Painel Adicionar Ações -->
