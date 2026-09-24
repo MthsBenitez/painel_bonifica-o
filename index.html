@@ -1306,6 +1306,14 @@
                     return s.replace(/[\x00-\x1F\x7F-\x9F\u200B]/g, "").replace(/ert\{\}/gi, "").trim();
                 },
                 
+                getWeekNumber(d) {
+                    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                    const dayNum = date.getUTCDay() || 7;
+                    date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+                    const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+                    return Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+                },
+
                 getWorkingDays(yearMonthStr) {
                     if(!yearMonthStr) return { total: 22, passed: 11 };
                     const [year, month] = yearMonthStr.split('-').map(Number);
@@ -7120,6 +7128,28 @@
                     this._refreshComMemoriaDeScroll();
                 },
 
+                toggleCicloFiltro(ciclo) {
+                    if (!this.analiseFiltroCiclo) this.analiseFiltroCiclo = [];
+                    if (this.analiseFiltroCiclo.includes(ciclo)) {
+                        this.analiseFiltroCiclo = this.analiseFiltroCiclo.filter(c => c !== ciclo);
+                    } else {
+                        this.analiseFiltroCiclo.push(ciclo);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                toggleMaturidadeFiltro(maturidade) {
+                    if (!this.analiseFiltroMaturidade) this.analiseFiltroMaturidade = [];
+                    if (this.analiseFiltroMaturidade.includes(maturidade)) {
+                        this.analiseFiltroMaturidade = this.analiseFiltroMaturidade.filter(m => m !== maturidade);
+                    } else {
+                        this.analiseFiltroMaturidade.push(maturidade);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this._refreshComMemoriaDeScroll();
+                },
+
                 toggleEvolutivoFiltroMes(mes) {
                     if (!this.evolutivoFiltroMes) this.evolutivoFiltroMes = [];
                     if (this.evolutivoFiltroMes.includes(mes)) {
@@ -8138,32 +8168,62 @@
                     // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS (UX MODERNA)
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
                         html += `
-                        <div class="mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative">
-                            ${btnHideCode}
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
-                                <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
-                            </div>
+                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999] group' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
                             
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div>
-                                    <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Meses:</div>
-                                    <div class="flex flex-wrap gap-2">
-                                        ${data.mesesDisponiveis.map(m => {
-                                            const isActive = app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.includes(m);
-                                            const btnClass = isActive ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600';
-                                            return `<button onclick="app.ui.toggleMesFiltro('${m}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m).substring(0,3)}</button>`;
-                                        }).join('')}
-                                    </div>
+                            ${this.analiseEditMode ? `
+                            <div class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer hover:scale-110 transition-transform relative z-50">
+                                <i class="fa-solid fa-filter"></i>
+                            </div>
+                            ` : ''}
+
+                            <div class="${this.analiseEditMode ? 'absolute bottom-8 left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-[2rem] shadow-2xl w-[90vw] max-w-4xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 origin-bottom-left scale-95 group-hover:scale-100 pb-16' : ''}">
+                                ${!this.analiseEditMode ? btnHideCode : ''}
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
+                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
                                 </div>
-                                <div>
-                                    <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Formulários / Setores:</div>
-                                    <div class="flex flex-wrap gap-2">
-                                        ${mainData.relatorios.map(r => {
-                                            const isActive = app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.includes(r.nome);
-                                            const btnClass = isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600';
-                                            return `<button onclick="app.ui.toggleRelatorioFiltro('${r.nome}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${r.nome}</button>`;
-                                        }).join('')}
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Mês / Período:</div>
+                                        <div class="flex flex-wrap gap-2">
+                                            ${data.mesesDisponiveis.map(m => {
+                                                const isActive = app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.includes(m);
+                                                const btnClass = isActive ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600';
+                                                return `<button onclick="app.ui.toggleMesFiltro('${m}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${app.ui.formatMonthLabel(m).substring(0,3)}</button>`;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Ciclo de Qualidade (Semana):</div>
+                                        <div class="flex flex-wrap gap-2">
+                                            ${(data.ciclosDisponiveis || []).map(c => {
+                                                const isActive = app.ui.analiseFiltroCiclo && app.ui.analiseFiltroCiclo.includes(c);
+                                                const btnClass = isActive ? 'bg-orange-500 text-white border-orange-500 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500';
+                                                return `<button onclick="app.ui.toggleCicloFiltro('${c}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">S${c}</button>`;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Maturidade (Tempo Casa):</div>
+                                        <div class="flex flex-wrap gap-2">
+                                            ${(data.matConfig || [{nome:'Ramp-Up'}, {nome:'Júnior'}, {nome:'Pleno'}, {nome:'Veterano'}]).map(mat => {
+                                                const isActive = app.ui.analiseFiltroMaturidade && app.ui.analiseFiltroMaturidade.includes(mat.nome);
+                                                const btnClass = isActive ? 'bg-teal-500 text-white border-teal-500 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300 dark:hover:border-teal-500';
+                                                return `<button onclick="app.ui.toggleMaturidadeFiltro('${mat.nome}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${mat.nome}</button>`;
+                                            }).join('')}
+                                            <button onclick="app.ui.toggleMaturidadeFiltro('Não Mapeado')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroMaturidade && app.ui.analiseFiltroMaturidade.includes('Não Mapeado') ? 'bg-slate-500 text-white border-slate-500 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}">N/A</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Formulários / Setores:</div>
+                                        <div class="flex flex-wrap gap-2">
+                                            ${mainData.relatorios.map(r => {
+                                                const isActive = app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.includes(r.nome);
+                                                const btnClass = isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600';
+                                                return `<button onclick="app.ui.toggleRelatorioFiltro('${r.nome}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${r.nome}</button>`;
+                                            }).join('')}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -10915,6 +10975,7 @@
                     };
 
                     const mesesDisp = new Set();
+                    const ciclosDisp = new Set();
                     relatoriosAtivos.forEach(rel => {
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
@@ -10924,11 +10985,18 @@
                             if (dtObj && !isNaN(dtObj)) {
                                 if (dtObj.getFullYear() <= 2030 && dtObj.getFullYear() >= 2020) {
                                     mesesDisp.add(dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0'));
+                                    ciclosDisp.add(app.utils.getWeekNumber(dtObj).toString());
                                 }
                             }
                         });
                     });
                     const mesesOrdenados = Array.from(mesesDisp).sort();
+                    const ciclosOrdenados = Array.from(ciclosDisp).sort((a,b) => parseInt(a) - parseInt(b));
+
+                    let matConfigFallback = app.analiseCSVDinamicoData?.consolidado?.matConfig || [
+                        { id: 'm1', nome: 'Ramp-Up', maxDias: 90 }, { id: 'm2', nome: 'Júnior', maxDias: 180 },
+                        { id: 'm3', nome: 'Pleno', maxDias: 365 }, { id: 'm4', nome: 'Veterano', maxDias: 99999 }
+                    ];
 
                     // [NOVO] Resgatando a memória do usuário antes de recriar a estrutura!
                     let oldComments = {};
@@ -11028,7 +11096,24 @@
                             }
 
                             // AGORA APLICA O FILTRO GERAL (Apenas a visão de tabela respeita isso)
+                            let weekStr = dtObj ? app.utils.getWeekNumber(dtObj).toString() : null;
+                            let filtrosCiclo = app.ui.analiseFiltroCiclo || [];
+                            let filtrosMaturidade = app.ui.analiseFiltroMaturidade || [];
+
+                            let diasCasa = app.utils.getTempoCasaDoOperador(opNomeDetalhe);
+                            let nivelMatStr = "Não Mapeado";
+                            if (diasCasa !== null) {
+                                for (let i = 0; i < matConfigFallback.length; i++) {
+                                    if (diasCasa <= matConfigFallback[i].maxDias || i === matConfigFallback.length - 1) {
+                                        nivelMatStr = matConfigFallback[i].nome;
+                                        break;
+                                    }
+                                }
+                            }
+
                             if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
+                            if (filtrosCiclo.length > 0 && weekStr && !filtrosCiclo.includes(weekStr)) return;
+                            if (filtrosMaturidade.length > 0 && !filtrosMaturidade.includes(nivelMatStr)) return;
                             
                             let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
 
