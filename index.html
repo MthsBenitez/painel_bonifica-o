@@ -7916,38 +7916,16 @@
                             ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
 
-                        initFlipChart('totalLinhas', '#3b82f6');
-                            initFlipChart('conformidadePct', '#10b981');
-                            initFlipChart('mediaTotal', '#22c55e');
-                            initFlipChart('desviosTotais', '#f97316');
-                            initFlipChart('falhasCriticas', '#ef4444');
-
-                            // GRÁFICO DE FEEDBACKS
-                            if(window.chartFeedbacksGlobal) window.chartFeedbacksGlobal.destroy();
-                            const ctxFb = document.getElementById('chart-feedbacks-global');
-                            if (ctxFb) {
-                                window.chartFeedbacksGlobal = new Chart(ctxFb, {
-                                    type: 'doughnut',
-                                    data: {
-                                        labels: ['Aplicado (Presencial)', 'Não Aplicado (Remoto)', 'Monitorado (Pendente)'],
-                                        datasets: [{
-                                            data: [data.feedbacksGlobais.aplicado, data.feedbacksGlobais.nao_aplicado, data.feedbacksGlobais.monitorado],
-                                            backgroundColor: ['#10b981', '#3b82f6', '#f97316'],
-                                            borderWidth: 2,
-                                            borderColor: isDark ? '#1e293b' : '#ffffff'
-                                        }]
-                                    },
-                                    options: {
-                                        responsive: true, maintainAspectRatio: false,
-                                        cutout: '65%',
-                                        plugins: {
-                                            legend: { position: 'right', labels: { color: textColor, font: { size: 10, weight: 'bold' } } }
-                                        }
-                                    }
-                                });
-                            }
+                        <!-- GRÁFICO DE FEEDBACKS -->
+                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative shadow-sm border-t-4 border-t-indigo-500 animate-fade-in">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie text-indigo-500"></i> Tratativa de Feedbacks</h3>
+                            </div>
+                            <div class="relative w-full h-[250px]">
+                                <canvas id="chart-feedbacks-global"></canvas>
+                            </div>
+                        </div>
                     `;
-
                     // --- RESTAURAÇÃO: GRÁFICO EVOLUTIVO DE VOLTA À TELA ---
                     if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1) {
                         html += `
