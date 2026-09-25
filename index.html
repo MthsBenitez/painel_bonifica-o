@@ -8000,11 +8000,52 @@
                                     type: 'line',
                                     data: { labels: chartLabels, datasets: [{ data: chartData, borderColor: hexColor, backgroundColor: hexColor+'20', fill: true, borderWidth: 3, pointBackgroundColor: hexColor, tension: 0.3 }] },
                                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: Math.max(0, Math.min(...chartData.filter(v=>v>0))-10), max: 100, ticks: {font: {size: 9}} }, x: { ticks: {font: {size: 9}} } } }
+                                    });
+                                }
+                            } // <--- CORREÇÃO: A CHAVE QUE FALTAVA FOI ADICIONADA AQUI
+
+                            // --- INTERAÇÃO DE STORYTELLING E ROLAGEM MÁGICA ---
+                            const containerApresentacao = document.getElementById('view-container-analise_csv_dinamico');
+                            if (containerApresentacao && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                                // 1. Injeta classes de revelação suave nas seções principais de forma inteligente
+                                Array.from(containerApresentacao.children).forEach(el => {
+                                    if (el.id !== 'story-dynamic-bg' && !el.querySelector('h2[contenteditable]')) {
+                                        el.classList.add('opacity-0', 'translate-y-12', 'transition-all', 'duration-[1200ms]', 'ease-out', 'story-reveal');
+                                    }
                                 });
+
+                                // 2. Observer (Olheiro) que dispara a animação quando o card entra na visão do usuário
+                                const observer = new IntersectionObserver((entries) => {
+                                    entries.forEach(entry => {
+                                        if (entry.isIntersecting) {
+                                            entry.target.classList.remove('opacity-0', 'translate-y-12');
+                                            entry.target.classList.add('opacity-100', 'translate-y-0');
+                                            observer.unobserve(entry.target); // Anima apenas 1 vez (não repete se subir a tela)
+                                        }
+                                    });
+                                }, { threshold: 0.05, rootMargin: '0px 0px -20px 0px' });
+                                containerApresentacao.querySelectorAll('.story-reveal').forEach(el => observer.observe(el));
+
+                                // 3. Parallax do Fundo Dinâmico (Efeito Magnético na Rolagem)
+                                const orb1 = document.getElementById('story-orb-1');
+                                const orb2 = document.getElementById('story-orb-2');
+                                if (orb1 && orb2) {
+                                    const onScrollAnalise = () => {
+                                        if(app.currentTab !== 'analise_csv_dinamico') {
+                                            window.removeEventListener('scroll', onScrollAnalise);
+                                            return;
+                                        }
+                                        const scrolled = window.scrollY;
+                                        orb1.style.transform = `translateY(${scrolled * 0.35}px) rotate(${scrolled * 0.02}deg)`;
+                                        orb2.style.transform = `translateY(${scrolled * -0.25}px) rotate(${scrolled * -0.015}deg) scale(${1 + (scrolled * 0.0002)})`;
+                                    };
+                                    window.removeEventListener('scroll', window.activeScrollAnalise);
+                                    window.activeScrollAnalise = onScrollAnalise;
+                                    window.addEventListener('scroll', window.activeScrollAnalise);
+                                }
                             }
-                        } // <--- CORREÇÃO: A CHAVE QUE FALTAVA FOI ADICIONADA AQUI
-                    }, 300);
-                },
+                        }, 300);
+                    },
 
                 openMaturidadeModal(nivel) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
@@ -8164,6 +8205,19 @@
                     let data = mainData ? mainData.consolidado : null;
                     let btnHideCode = ''; // Removido a pedido do usuário
 
+                    // --- LÓGICA DE CORES E FUNDO IMERSIVO ---
+                    const hex2rgba = (hex, alpha) => {
+                        let rawHex = (hex || '#3b82f6').replace('#', '');
+                        if (rawHex.length === 3) rawHex = rawHex.split('').map(x => x + x).join('');
+                        const r = parseInt(rawHex.substring(0,2), 16);
+                        const g = parseInt(rawHex.substring(2,4), 16);
+                        const b = parseInt(rawHex.substring(4,6), 16);
+                        return `rgba(${r},${g},${b},${alpha})`;
+                    };
+                    const userBg = data ? (data.bgColor || '#3b82f6') : '#3b82f6';
+                    const glowColor = hex2rgba(userBg, 0.15); // Orbe principal suave
+                    const glowSecondary = hex2rgba(userBg, 0.08); // Orbe secundário de preenchimento
+
                     // --- MOTOR DE STORYTELLING (GERADOR DE CAPÍTULOS) ---
                     let chapterCount = 1;
                     const renderChapterTitle = (title, subtitle, icon, theme) => {
@@ -8184,13 +8238,13 @@
                         const exibT = data.chapterCustomData[idKey]?.t || title;
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
 
-                        // Funções de salvamento blindadas e centralizadas (Agora salvando em tempo real)
+                        // Funções de salvamento blindadas e centralizadas
                         const onInputT = `app.ui.saveChapterData('${idKey}', 't', this.innerText)`;
                         const onInputS = `app.ui.saveChapterData('${idKey}', 's', this.innerText)`;
 
                         return `
-                            <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 animate-fade-in chapter-marker">
-                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_10px_20px_rgba(0,0,0,0.05)] border ${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                            <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 chapter-marker">
+                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_10px_20px_rgba(0,0,0,0.05)] border${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
                                     <i class="fa-solid ${icon} text-3xl"></i>
                                 </div>
                                 <div class="flex items-center gap-3 mb-2">
@@ -8221,12 +8275,29 @@
                     const pctErrosCriticos = totalPerguntasGlobais > 0 ? ((totalFalhasCriticas / totalPerguntasGlobais) * 100).toFixed(1) : 0;
 
                     let html = `
-                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative">
+                        <!-- Fundo Animado Base -->
+                        <div id="story-dynamic-bg" class="absolute inset-0 pointer-events-none z-[0] transition-colors duration-1000 overflow-hidden rounded-[2rem]" style="background-color: ${hex2rgba(userBg, 0.02)};">
+                            <div id="story-orb-1" class="absolute top-[-20%] left-[-10%] w-[70vw] h-[70vw] rounded-full blur-[120px]" style="background: radial-gradient(circle, ${glowColor} 0%, transparent 70%);"></div>
+                            <div id="story-orb-2" class="absolute bottom-[-10%] right-[-10%] w-[60vw] h-[60vw] rounded-full blur-[100px]" style="background: radial-gradient(circle, ${glowSecondary} 0%, transparent 70%);"></div>
+                        </div>
+
+                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
                             <div class="w-full ${this.analiseEditMode ? 'text-center' : 'xl:w-auto'}">
                                 <!-- TÍTULO MUITO MAIOR COM COR -->
-                                <div class="flex items-center justify-center xl:justify-start gap-3">
-                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block' : 'text-4xl md:text-5xl'} font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" style="color: ${data?.titleColor || ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
-                                    ${!this.analiseEditMode && data ? `<input type="color" value="${data.titleColor || '#1e293b'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0" title="Cor do Título">` : ''}
+                                <div class="flex flex-col xl:flex-row items-center xl:justify-start gap-4">
+                                    <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block' : 'text-4xl md:text-5xl'} font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-white/50 dark:hover:bg-slate-800 transition-all" style="color: ${data?.titleColor \vert{}\vert{} ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
+                                    ${!this.analiseEditMode && data ? `
+                                    <div class="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+                                        <div class="flex flex-col items-center" title="Cor da Fonte do Título">
+                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-heading"></i> Título</span>
+                                            <input type="color" value="${data.titleColor || '#1e293b'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0">
+                                        </div>
+                                        <div class="w-px h-6 bg-slate-200 dark:bg-slate-700"></div>
+                                        <div class="flex flex-col items-center" title="Cor Charmosa do Fundo">
+                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-fill-drip"></i> Fundo</span>
+                                            <input type="color" value="${userBg}" onchange="app.analiseCSVDinamicoData.consolidado.bgColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0">
+                                        </div>
+                                    </div>` : ''}
                                 </div>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
                                     <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
