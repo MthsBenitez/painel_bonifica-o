@@ -11485,53 +11485,53 @@
                     }
                     
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Gerando PDF...", "Capturando a tela atual da apresentação. Isso pode levar alguns segundos.", "info");
+                    app.ui.showAlert("Gerando PDF...", "Capturando a tela atual em alta resolução. Isso pode levar alguns segundos...", "info");
 
                     const oldMode = app.ui.analiseEditMode;
-                    
-                    // Entra no modo apresentação rapidamente (invisível para o usuário) para tirar a foto limpa
                     if (!oldMode) app.ui.toggleEditModeAnalise();
 
                     setTimeout(() => {
                         window.scrollTo(0, 0);
-                        
                         const area = document.getElementById('view-container-analise_csv_dinamico');
                         
                         html2canvas(area, { 
-                            scale: 1.5, 
+                            scale: 1, // Reduzido de 1.5 para 1 para evitar estouro de limite de megapixels do navegador
                             useCORS: true, 
                             allowTaint: false, 
                             backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
                             logging: false 
                         }).then(canvas => {
                             try {
-                                const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                                
-                                // CORREÇÃO DE DOWNLOAD SILENCIOSO: Reduzimos o tamanho físico do papel pela metade 
-                                // para não quebrar a especificação do navegador, mas mantendo a imagem em alta resolução
-                                const pdfWidth = canvas.width / 2;
-                                const pdfHeight = canvas.height / 2;
-                                
-                                if (pdfWidth === 0 || pdfHeight === 0) throw new Error("Tela fantasma detectada.");
+                                const imgData = canvas.toDataURL('image/jpeg', 0.75); // Compressão maior habilitada
+                                if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
+
+                                // Reduzindo em 25% o tamanho físico da "folha" de PDF gerada para não quebrar a spec do Acrobat Reader
+                                const pdfWidth = canvas.width * 0.75;
+                                const pdfHeight = canvas.height * 0.75;
                                 
                                 const pdf = new window.jspdf.jsPDF({
                                     orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
                                     unit: 'px',
-                                    format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)]
+                                    format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
+                                    compress: true // Habilita deflação zlib pesada no PDF
                                 });
                                 
-                                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                                // O parâmetro 'FAST' é o segredo aqui para ignorar metadados pesados e desobstruir o Chrome
+                                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
                                 pdf.save(`Analitico_Operacao_${new Date().toISOString().split('T')[0]}.pdf`);
                                 
                                 app.ui.showAlert("Sucesso!", "O seu PDF do Analítico foi gerado e baixado.", "success");
                             } catch (e) {
                                 console.error("Erro PDF Analítico:", e);
-                                app.ui.showAlert("Erro no PDF", "Não foi possível estruturar o arquivo final.", "error");
+                                app.ui.showAlert("Erro de Memória", "A página de análise é muito longa para caber em um único PDF. Tente fechar as tabelas expansíveis (Top 5) antes de exportar.", "error");
                             }
+                        }).catch(err => {
+                            console.error("Erro no Canvas:", err);
+                            app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar a tela. Pressione F12 para detalhes.", "error");
                         }).finally(() => {
                             if (!oldMode) app.ui.toggleEditModeAnalise(); // Devolve a tela ao normal
                         });
-                    }, 1000);
+                    }, 1000); // Aumentado para 1 segundo garantindo que os gráficos da página terminaram a animação
                 },
 
                 confirmarNomeCSV() {
@@ -13255,7 +13255,7 @@
                     window.scrollTo(0, 0);
                 
                     html2canvas(area, { 
-                        scale: 1.5, 
+                        scale: 1.2, // Reduzido de 1.5 para 1.2 (mantém ótima resolução, mas evita Memory Leak do Chrome)
                         useCORS: true, 
                         allowTaint: false, 
                         backgroundColor: '#ffffff',
@@ -13263,24 +13263,25 @@
                     }).then(canvas => {
                         try {
                             const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                            if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
                             
-                            // CORREÇÃO DE DOWNLOAD SILENCIOSO: Reduzimos as dimensões do PDF em 50%
                             const pdfWidth = canvas.width / 2;
                             const pdfHeight = canvas.height / 2;
                             
                             const pdf = new window.jspdf.jsPDF({
                                 orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
                                 unit: 'px',
-                                format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)]
+                                format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
+                                compress: true
                             });
                             
-                            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
                             pdf.save(`Media_Evolucao_Mensal_${new Date().toISOString().split('T')[0]}.pdf`);
                             
                             app.ui.showAlert("Sucesso!", "O seu PDF foi gerado e baixado com sucesso.", "success");
                         } catch (e) {
                             console.error("Erro na montagem do PDF:", e);
-                            app.ui.showAlert("Erro no PDF", "Não foi possível estruturar o arquivo final. O conteúdo pode ser grande demais.", "error");
+                            app.ui.showAlert("Erro no PDF", "A apresentação atual possui muitas fotos pesadas. Tente remover algumas ações antes de gerar.", "error");
                         }
                     }).catch(err => {
                         console.error("Erro na captura da tela:", err);
