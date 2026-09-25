@@ -10798,16 +10798,17 @@
                             const fileFeedback = datasets[1];
                             const filePerguntas = datasets[2];
 
-                            // FUNÇÃO DETETIVE: Encontra a coluna de ID não importa como esteja escrita no Excel
-                            const extrairIDSeguro = (linha) => {
-                                const chave = Object.keys(linha).find(k => {
+                            // FUNÇÃO DETETIVE: Encontra a coluna de ID blindada contra espaços, acentos e formatações exóticas
+                            const extrairIDSeguro = (rowObj) => {
+                                const chave = Object.keys(rowObj).find(k => {
                                     const kLimpo = String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, '');
-                                    return kLimpo.includes('IDMONITORIA') || kLimpo === 'ID';
+                                    return kLimpo.includes('IDMONITORIA') || kLimpo === 'ID' || kLimpo === 'IDAVALIACAO' || kLimpo === 'PROTOCOLO';
                                 });
-                                return chave ? String(linha[chave]).trim() : '';
+                                return chave ? String(rowObj[chave]).trim() : '';
                             };
 
                             // CAIXINHA 1: Agrupando as Perguntas usando o ID Monitoria como supercola
+                            // NOTA: Como você explicou, um ID tem várias perguntas, por isso usamos um Array (.push) aqui!
                             const mapaPerguntas = {};
                             filePerguntas.forEach(row => {
                                 const id = extrairIDSeguro(row);
