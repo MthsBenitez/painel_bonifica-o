@@ -13354,48 +13354,99 @@
                     }
                     
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Gerando PDF...", "Capturando a apresentação atual em alta resolução. Isso pode levar alguns segundos...", "info");
+                    app.ui.showAlert("Gerando PDF Oficial...", "Aplicando Filtro Anti-Bug, desativando 3D e renderizando em alta definição...", "info");
                     
                     const area = document.getElementById('area-apresentacao');
                     const scrollAntigo = window.scrollY;
-                    
                     window.scrollTo(0, 0);
-                
-                    html2canvas(area, { 
-                        scale: 1.2, // Reduzido de 1.5 para 1.2 (mantém ótima resolução, mas evita Memory Leak do Chrome)
-                        useCORS: true, 
-                        allowTaint: false, 
-                        backgroundColor: '#ffffff',
-                        logging: false 
-                    }).then(canvas => {
-                        try {
-                            const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                            if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
-                            
-                            const pdfWidth = canvas.width / 2;
-                            const pdfHeight = canvas.height / 2;
-                            
-                            const pdf = new window.jspdf.jsPDF({
-                                orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
-                                unit: 'px',
-                                format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
-                                compress: true
-                            });
-                            
-                            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-                            pdf.save(`Media_Evolucao_Mensal_${new Date().toISOString().split('T')[0]}.pdf`);
-                            
-                            app.ui.showAlert("Sucesso!", "O seu PDF foi gerado e baixado com sucesso.", "success");
-                        } catch (e) {
-                            console.error("Erro na montagem do PDF:", e);
-                            app.ui.showAlert("Erro no PDF", "A apresentação atual possui muitas fotos pesadas. Tente remover algumas ações antes de gerar.", "error");
+
+                    // VESTE A ROUPA PARA FOTO (PDF CLEAN MODE)
+                    area.classList.add('pdf-clean-mode');
+                    const style = document.createElement('style');
+                    style.id = 'pdf-fix-styles';
+                    style.innerHTML = `
+                        /* 1. Oculta todos os ruídos visuais */
+                        .pdf-clean-mode button, 
+                        .pdf-clean-mode input[type="file"],
+                        .pdf-clean-mode input[type="color"],
+                        .pdf-clean-mode .hideable-box { 
+                            display: none !important; 
                         }
-                    }).catch(err => {
-                        console.error("Erro na captura da tela:", err);
-                        app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar o PDF da apresentação.", "error");
-                    }).finally(() => {
-                        window.scrollTo(0, scrollAntigo);
-                    });
+                        
+                        /* 2. Arrebenta as amarras de rolagem para que toda tabela apareça solta na folha */
+                        .pdf-clean-mode .overflow-x-auto, 
+                        .pdf-clean-mode .overflow-y-auto, 
+                        .pdf-clean-mode .custom-scrollbar,
+                        .pdf-clean-mode details,
+                        .pdf-clean-mode [class*="max-h-"] { 
+                            overflow: visible !important; 
+                            max-height: none !important; 
+                        }
+
+                        /* 3. Trava os Cards 3D para o Html2Canvas não surtar */
+                        .pdf-clean-mode [style*="preserve-3d"], 
+                        .pdf-clean-mode [class*="preserve-3d"] {
+                            transform: none !important;
+                            transition: none !important;
+                        }
+                        /* 4. Degola a parte de trás do Cartão 3D para não borrar a frente */
+                        .pdf-clean-mode [class*="rotateY(180deg)"] {
+                            display: none !important;
+                            opacity: 0 !important;
+                            visibility: hidden !important;
+                        }
+
+                        /* 5. Controla os cortes das bordas para não criar linhas acinzentadas feias */
+                        .pdf-clean-mode .glass-card { 
+                            box-shadow: none !important; 
+                            border: 1px solid rgba(226, 232, 240, 0.4) !important; 
+                            page-break-inside: avoid !important; 
+                            break-inside: avoid !important; 
+                        }
+                    `;
+                    document.head.appendChild(style);
+                
+                    setTimeout(() => {
+                        html2canvas(area, { 
+                            scale: 1.5, // Resolução premium
+                            useCORS: true, 
+                            allowTaint: false, 
+                            backgroundColor: '#ffffff',
+                            logging: false 
+                        }).then(canvas => {
+                            try {
+                                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                                if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
+                                
+                                const pdfWidth = canvas.width / 2;
+                                const pdfHeight = canvas.height / 2;
+                                
+                                const pdf = new window.jspdf.jsPDF({
+                                    orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
+                                    unit: 'px',
+                                    format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
+                                    compress: true
+                                });
+                                
+                                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+                                pdf.save(`Apresentacao_Qualidade_${new Date().toISOString().split('T')[0]}.pdf`);
+                                
+                                app.ui.showAlert("Sucesso Absoluto!", "O seu PDF foi renderizado cirurgicamente com a limpeza visual que aplicamos.", "success");
+                            } catch (e) {
+                                console.error("Erro na montagem do PDF:", e);
+                                app.ui.showAlert("Aviso", "O PDF era gigante demais, mas a boa notícia é que você pode apertar 'Apresentar / Imprimir' e gerar o PDF nativo pela função Ctrl+P perfeitamente.", "info");
+                            }
+                        }).catch(err => {
+                            console.error("Erro na captura da tela:", err);
+                            app.ui.showAlert("Erro ao Gerar", "A câmera de tela (html2canvas) travou.", "error");
+                        }).finally(() => {
+                            // REMOVE A ROUPA DE FOTO E DEVOLVE O ESTADO ORIGINAL
+                            area.classList.remove('pdf-clean-mode');
+                            const fixStyle = document.getElementById('pdf-fix-styles');
+                            if (fixStyle) fixStyle.remove();
+                            window.scrollTo(0, scrollAntigo);
+                        });
+                    }, 1000);
                 },
 
                 showAcaoCompleta(actId) {
