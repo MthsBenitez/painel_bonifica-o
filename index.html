@@ -536,6 +536,69 @@
         </div>
     </div>
 
+    <!-- Modal Importação Tripla Guiada -->
+    <div id="import-tripla-modal" class="fixed inset-0 z-[105] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl p-8 max-w-2xl w-full border border-slate-200 dark:border-slate-700 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 text-9xl text-teal-500/5 pointer-events-none"><i class="fa-solid fa-cubes-stacked"></i></div>
+            
+            <div class="flex justify-between items-center mb-6 relative z-10">
+                <div>
+                    <h3 class="text-2xl font-black text-slate-800 dark:text-white flex items-center gap-3"><i class="fa-solid fa-cubes-stacked text-teal-500"></i> Assistente de Importação</h3>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Carregue as três partes do relatório para que o sistema faça a fusão automática.</p>
+                </div>
+                <button onclick="app.admin.fecharModalImportacaoTripla()" class="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-colors shadow-sm"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="space-y-4 relative z-10 mb-8">
+                <!-- Slot 1: Base -->
+                <label id="slot-base" class="flex items-center justify-between p-4 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 cursor-pointer transition-all group">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform"><i class="fa-solid fa-1"></i></div>
+                        <div>
+                            <h4 class="font-bold text-slate-700 dark:text-slate-200">Arquivo Base (Operadores e Notas)</h4>
+                            <p id="txt-base" class="text-[11px] text-slate-500">Aguardando arquivo...</p>
+                        </div>
+                    </div>
+                    <i id="icon-base" class="fa-solid fa-cloud-arrow-up text-2xl text-slate-300"></i>
+                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.receberArquivoTriplo('base', this)">
+                </label>
+
+                <!-- Slot 2: Feedback -->
+                <label id="slot-fb" class="flex items-center justify-between p-4 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 cursor-pointer transition-all group">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform"><i class="fa-solid fa-2"></i></div>
+                        <div>
+                            <h4 class="font-bold text-slate-700 dark:text-slate-200">Arquivo de Feedbacks</h4>
+                            <p id="txt-fb" class="text-[11px] text-slate-500">Aguardando arquivo...</p>
+                        </div>
+                    </div>
+                    <i id="icon-fb" class="fa-solid fa-cloud-arrow-up text-2xl text-slate-300"></i>
+                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.receberArquivoTriplo('fb', this)">
+                </label>
+
+                <!-- Slot 3: Perguntas -->
+                <label id="slot-qa" class="flex items-center justify-between p-4 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 cursor-pointer transition-all group">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform"><i class="fa-solid fa-3"></i></div>
+                        <div>
+                            <h4 class="font-bold text-slate-700 dark:text-slate-200">Arquivo de Formulários (Sessões)</h4>
+                            <p id="txt-qa" class="text-[11px] text-slate-500">Aguardando arquivo...</p>
+                        </div>
+                    </div>
+                    <i id="icon-qa" class="fa-solid fa-cloud-arrow-up text-2xl text-slate-300"></i>
+                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.receberArquivoTriplo('qa', this)">
+                </label>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-6 border-t border-slate-200 dark:border-slate-700 relative z-10">
+                <button onclick="app.admin.fecharModalImportacaoTripla()" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white rounded-xl font-bold text-sm transition-colors">Cancelar</button>
+                <button id="btn-processar-tripla" disabled onclick="app.admin.executarImportacaoTripla()" class="px-8 py-3 bg-teal-600 text-white rounded-xl font-black shadow-lg shadow-teal-500/30 transition-all opacity-50 cursor-not-allowed uppercase tracking-widest text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Processar Fusão
+                </button>
+            </div>
+        </div>
+    </div>
+
 <!-- Modal de Troca de Senha -->
     <div id="pwd-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
@@ -8163,10 +8226,9 @@
                                     <i class="fa-solid fa-cloud-arrow-up"></i> Importar Dados
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                 </label>
-                                <label class="bg-teal-50 text-teal-600 hover:bg-teal-100 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-800 dark:text-teal-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importe simultaneamente as 3 planilhas separadas desta operação">
+                                <button onclick="app.admin.abrirModalImportacaoTripla()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-800 dark:text-teal-400 font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Inicia o assistente para unir planilhas separadas">
                                     <i class="fa-solid fa-cubes-stacked"></i> Unir 3 Arquivos
-                                    <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarImportacaoTripla(this)" onclick="this.value = null">
-                                </label>
+                                </button>
                                 <label class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importar arquivo de RH com Dias de Empresa">
                                     <i class="fa-solid fa-user-clock"></i> Carga de RH
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
@@ -10653,6 +10715,232 @@
                             app.ui.showAlert("Erro de Extração", "Falha crítica durante a junção dos 3 arquivos. Verifique se eles possuem a coluna em comum [ID Monitoria] para que o sistema consiga colá-los.", "error");
                         }
                         input.value = ''; // Limpa a sujeira do input para não bugar a próxima importação
+                    });
+                },
+
+                // ===== NOVO MÓDULO: GERENCIADOR DO MODAL E ESTADO DOS ARQUIVOS =====
+                arquivosTriplos: { base: null, fb: null, qa: null },
+
+                abrirModalImportacaoTripla() {
+                    // Limpa o estado atual
+                    this.arquivosTriplos = { base: null, fb: null, qa: null };
+                    
+                    // Reseta a UI do Modal
+                    const slots = ['base', 'fb', 'qa'];
+                    slots.forEach(slot => {
+                        document.getElementById(`slot-${slot}`).classList.remove('border-teal-500', 'bg-teal-50', 'dark:bg-teal-900/20');
+                        document.getElementById(`slot-${slot}`).classList.add('border-slate-300', 'dark:border-slate-600', 'bg-slate-50', 'dark:bg-slate-800');
+                        document.getElementById(`txt-${slot}`).textContent = 'Aguardando arquivo...';
+                        document.getElementById(`txt-${slot}`).classList.remove('text-teal-600', 'font-bold');
+                        document.getElementById(`icon-${slot}`).className = 'fa-solid fa-cloud-arrow-up text-2xl text-slate-300';
+                    });
+
+                    const btn = document.getElementById('btn-processar-tripla');
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+                    document.getElementById('import-tripla-modal').classList.remove('hidden');
+                },
+
+                fecharModalImportacaoTripla() {
+                    document.getElementById('import-tripla-modal').classList.add('hidden');
+                },
+
+                receberArquivoTriplo(tipo, input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    // Salva no estado
+                    this.arquivosTriplos[tipo] = file;
+
+                    // Atualiza a UI daquele slot específico
+                    const slotEl = document.getElementById(`slot-${tipo}`);
+                    const txtEl = document.getElementById(`txt-${tipo}`);
+                    const iconEl = document.getElementById(`icon-${tipo}`);
+
+                    slotEl.classList.remove('border-slate-300', 'dark:border-slate-600', 'bg-slate-50', 'dark:bg-slate-800');
+                    slotEl.classList.add('border-teal-500', 'bg-teal-50', 'dark:bg-teal-900/20');
+                    
+                    txtEl.textContent = file.name;
+                    txtEl.classList.add('text-teal-600', 'font-bold');
+                    
+                    iconEl.className = 'fa-solid fa-check-circle text-3xl text-teal-500 scale-110 transition-transform';
+
+                    // Checa se os 3 estão preenchidos para liberar o botão principal
+                    if (this.arquivosTriplos.base && this.arquivosTriplos.fb && this.arquivosTriplos.qa) {
+                        const btn = document.getElementById('btn-processar-tripla');
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                },
+
+                executarImportacaoTripla() {
+                    const { base, fb, qa } = this.arquivosTriplos;
+                    if (!base || !fb || !qa) return;
+
+                    this.fecharModalImportacaoTripla();
+                    app.ui.showAlert("Sintetizando Dados...", "A Inteligência do sistema está lendo as 3 planilhas e cruzando os IDs...", "info");
+
+                    // A ordem aqui é estrita de acordo com o modal: [0] Base, [1] Feedback, [2] Perguntas
+                    const filesToProcess = [base, fb, qa];
+
+                    Promise.all(filesToProcess.map(f => new Promise(resolve => {
+                        const reader = new FileReader();
+                        reader.onload = e => {
+                            const workbook = XLSX.read(e.target.result, { type: 'array', raw: true });
+                            resolve(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" }));
+                        };
+                        reader.readAsArrayBuffer(f);
+                    }))).then(datasets => {
+                        try {
+                            // Como o usuário inseriu nos slots corretos, NÓS JÁ SABEMOS QUEM É QUEM!
+                            const fileBase = datasets[0];
+                            const fileFeedback = datasets[1];
+                            const filePerguntas = datasets[2];
+
+                            // CAIXINHA 1: Agrupando as Perguntas usando o ID Monitoria como supercola
+                            const mapaPerguntas = {};
+                            filePerguntas.forEach(row => {
+                                const id = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                if (!id) return;
+                                if (!mapaPerguntas[id]) mapaPerguntas[id] = [];
+                                mapaPerguntas[id].push(row);
+                            });
+
+                            // CAIXINHA 2: Agrupando Feedback usando o ID Monitoria
+                            const mapaFeedback = {};
+                            fileFeedback.forEach(row => {
+                                const id = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                if (id) mapaFeedback[id] = row;
+                            });
+
+                            // MOTOR TRADUTOR: Percorre a base, agrupa tudo e transforma em Padrão
+                            let linhasSintetizadas = [];
+                            
+                            let nomeApresentacaoFinal = "Operação Específica";
+
+                            fileBase.forEach(row => {
+                                const idMonitoria = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                if (!idMonitoria) return;
+
+                                const fbDados = mapaFeedback[idMonitoria] || {};
+                                const perguntasDados = mapaPerguntas[idMonitoria] || [];
+
+                                // Limpa dados da Base (Com tolerância de nomes no objeto para evitar quebras de case sensitivity)
+                                const findKey = (keywords) => Object.keys(row).find(k => keywords.some(kw => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes(kw)));
+                                
+                                let operadorFmt = app.utils.fixEncoding(String(row[findKey(['AGENTE'])] || 'Não Identificado')).trim();
+                                let monitorStr = app.utils.fixEncoding(String(row[findKey(['NOMEAVALIADOR', 'MONITOR', 'AVALIADOR'])] || 'Não Identificado')).trim();
+                                let setorIlha = String(row[findKey(['ILHA', 'SETOR'])] || 'Sem Setor').trim();
+                                nomeApresentacaoFinal = setorIlha; 
+                                
+                                let notaStr = String(row[findKey(['NOTA', 'PONTUACAO'])] || '0').replace(',', '.').replace('%', '');
+                                let notaFormatada = parseFloat(notaStr);
+                                
+                                // Formata Data da Monitoria
+                                let dataFormatada = 'N/A';
+                                let dataCrua = row[findKey(['DATA DA MONITORIA', 'DATA'])];
+                                if (typeof dataCrua === 'number' && dataCrua > 20000) {
+                                    const dt = new Date((dataCrua - 25569) * 86400 * 1000);
+                                    dt.setUTCHours(12);
+                                    dataFormatada = dt.toLocaleDateString('pt-BR');
+                                } else if (dataCrua) {
+                                    dataFormatada = String(dataCrua).split(' ')[0];
+                                }
+
+                                // Tradutor de Feedback: A presença ou ausência da data define o status
+                                let statusFeedbackLido = "Monitorado"; // Padrão
+                                
+                                const fbKeyFeedback = Object.keys(fbDados).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('FEEDBACK'));
+                                const fbKeyDataFin = Object.keys(fbDados).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('DATA DE FINALIZACAO'));
+
+                                const txtFeedbackStatus = String(fbKeyFeedback ? fbDados[fbKeyFeedback] : '').toLowerCase();
+                                const hasDataFinalizacao = fbKeyDataFin && String(fbDados[fbKeyDataFin]).trim() !== '';
+                                
+                                if (hasDataFinalizacao) {
+                                    statusFeedbackLido = "Feedback_Aplicado";
+                                } else if (txtFeedbackStatus.includes('não aplicado') || txtFeedbackStatus.includes('nao aplicado') || txtFeedbackStatus === 'remoto') {
+                                    statusFeedbackLido = "Feedback_Nao_Aplicado";
+                                }
+
+                                let infoDerivacoes = [];
+                                let linhaSimulada = {
+                                    "DATA": dataFormatada,
+                                    "NOME": operadorFmt,
+                                    "MONITOR": monitorStr,
+                                    "NOTA": notaFormatada,
+                                    "STATUS": statusFeedbackLido,
+                                    "OPERACAO": setorIlha
+                                };
+
+                                perguntasDados.forEach(qRow => {
+                                    const qKeySessao = Object.keys(qRow).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('SESSAO'));
+                                    const qKeyResp = Object.keys(qRow).find(k => ['RESPOSTA', 'ANSWER', 'ALTERNATIVA', 'VALOR'].includes(String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim()));
+
+                                    const perguntaRaw = String(qKeySessao ? qRow[qKeySessao] : '').trim();
+                                    const repostaRaw = String(qKeyResp ? qRow[qKeyResp] : '').trim().toUpperCase();
+                                    
+                                    if (!perguntaRaw) return;
+
+                                    const matchCod = perguntaRaw.match(/^(\d+(?:\.\d+)*)/);
+                                    if (!matchCod) return;
+
+                                    const codigoCompleto = matchCod[1];
+                                    const niveis = codigoCompleto.split('.');
+                                    const textoPerguntaLimpado = perguntaRaw.replace(codigoCompleto, '').replace(/^-/, '').trim();
+                                    
+                                    const isSim = repostaRaw === 'SIM' || repostaRaw === 'S' || repostaRaw === 'YES' || repostaRaw === 'Y';
+                                    const isNao = repostaRaw === 'NAO' || repostaRaw === 'NÃO' || repostaRaw === 'N' || repostaRaw === 'NO';
+
+                                    if (niveis.length === 2) {
+                                        let formatadorPeso = "PESO: 10"; 
+                                        let statusRespostaFormatada = "Sim"; 
+
+                                        if (niveis[0] === '1') {
+                                            statusRespostaFormatada = isNao ? "Não" : "Sim"; 
+                                        } else if (niveis[0] === '2') {
+                                            formatadorPeso = "PESO: 100";
+                                            statusRespostaFormatada = isSim ? "Sim" : "Não";
+                                        }
+
+                                        const headerPadrao = `${textoPerguntaLimpado} = ${formatadorPeso}`;
+                                        linhaSimulada[headerPadrao] = statusRespostaFormatada;
+                                    } else if (niveis.length >= 3) {
+                                        if (repostaRaw !== '') {
+                                            infoDerivacoes.push(`- ${textoPerguntaLimpado}: ${qRow[qKeyResp]}`);
+                                        }
+                                    }
+                                });
+
+                                linhasSintetizadas.push(linhaSimulada);
+
+                                if (infoDerivacoes.length > 0 && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                                    if (!app.analiseCSVDinamicoData.consolidado.comments) app.analiseCSVDinamicoData.consolidado.comments = {};
+                                    app.analiseCSVDinamicoData.consolidado.comments['detalhe_' + idMonitoria] = infoDerivacoes.join('\n');
+                                }
+                            });
+
+                            if (linhasSintetizadas.length === 0) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada após o cruzamento.", "error");
+
+                            if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) {
+                                app.analiseCSVDinamicoData = { relatorios: [], consolidado: null };
+                            }
+
+                            app.analiseCSVDinamicoData.relatorios.push({
+                                id: Date.now(),
+                                nome: nomeApresentacaoFinal,
+                                rows: linhasSintetizadas
+                            });
+
+                            localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => console.error(err));
+                            this.gerarInteligenciaCSV();
+                            app.ui.renderTab('analise_csv_dinamico', true);
+                            app.ui.showAlert("Importação Tripla Concluída!", "Os 3 arquivos foram processados e colados através do ID Monitoria.", "success");
+
+                        } catch (e) {
+                            console.error(e);
+                            app.ui.showAlert("Erro de Extração", "Ocorreu uma falha durante o cruzamento. Verifique se os arquivos correspondem e possuem o ID Monitoria.", "error");
+                        }
                     });
                 },
 
