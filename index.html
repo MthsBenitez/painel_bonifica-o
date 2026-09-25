@@ -8102,6 +8102,15 @@
                     XLSX.writeFile(workbook, `Analitico_${nome.replace(/\s+/g, '_')}.xlsx`);
                 },
 
+                saveChapterData(idKey, field, value) {
+                    if(!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) return;
+                    if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData) app.analiseCSVDinamicoData.consolidado.chapterCustomData = {};
+                    if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey]) app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey] = {};
+                    
+                    app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey][field] = value;
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(e => console.error("Erro ao salvar texto do capítulo:", e));
+                },
+
                 toggleEditModeAnalise() {
                     this.analiseEditMode = !this.analiseEditMode;
                     const header = document.querySelector('header');
@@ -8175,9 +8184,9 @@
                         const exibT = data.chapterCustomData[idKey]?.t || title;
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
 
-                        // Funções de salvamento embutidas nos atributos onblur
-                        const onBlurT = `if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData) app.analiseCSVDinamicoData.consolidado.chapterCustomData = {}; if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}']) app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'] = {}; app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'].t = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);`;
-                        const onBlurS = `if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData) app.analiseCSVDinamicoData.consolidado.chapterCustomData = {}; if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}']) app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'] = {}; app.analiseCSVDinamicoData.consolidado.chapterCustomData['${idKey}'].s = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);`;
+                        // Funções de salvamento blindadas e centralizadas
+                        const onBlurT = `app.admin.saveChapterData('${idKey}', 't', this.innerText)`;
+                        const onBlurS = `app.admin.saveChapterData('${idKey}', 's', this.innerText)`;
 
                         return `
                             <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 animate-fade-in chapter-marker">
@@ -8286,7 +8295,15 @@
                                     <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
                                 </div>
                                 
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+                                    <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtro de Cargo:</div>
+                                        <div class="flex flex-wrap gap-2">
+                                            <button onclick="app.ui.analiseFiltroCargo=''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${!app.ui.analiseFiltroCargo ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Todos</button>
+                                            <button onclick="app.ui.analiseFiltroCargo='Monitor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Monitor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Monitores</button>
+                                            <button onclick="app.ui.analiseFiltroCargo='Supervisor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Supervisor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Sup.</button>
+                                        </div>
+                                    </div>
                                     <div>
                                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Mês / Período:</div>
                                         <div class="flex flex-wrap gap-2">
@@ -8740,14 +8757,6 @@
                                     <div class="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-full min-h-[220px]">
                                         <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-simple text-emerald-500"></i> Desempenho x Tempo</div>
                                         <div class="flex-1 relative w-full h-full min-h-[160px]"><canvas id="chart-curva-aprendizado"></canvas></div>
-                                    </div>
-                                    <div>
-                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtro de Cargo Avaliador:</div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <button onclick="app.ui.analiseFiltroCargo=''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${!app.ui.analiseFiltroCargo ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Todos</button>
-                                            <button onclick="app.ui.analiseFiltroCargo='Monitor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Monitor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Monitores</button>
-                                            <button onclick="app.ui.analiseFiltroCargo='Supervisor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Supervisor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Supervisores</button>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -10843,9 +10852,7 @@
                             });
 
                             // MOTOR TRADUTOR: Percorre a base, agrupa tudo e transforma em Padrão
-                            let linhasSintetizadas = [];
-                            
-                            let nomeApresentacaoFinal = "Operação Específica";
+                            let agrupamentoPorIlha = {};
 
                             fileBase.forEach(row => {
                                 const idMonitoria = extrairIDSeguro(row);
@@ -10855,13 +10862,19 @@
                                 const perguntasDados = mapaPerguntas[idMonitoria] || [];
 
                                 // Limpa dados da Base (Com tolerância de nomes no objeto para evitar quebras de case sensitivity)
-                                const findKey = (keywords) => Object.keys(row).find(k => keywords.some(kw => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes(kw)));
+                                const findKey = (keywords, excludes = []) => Object.keys(row).find(k => {
+                                    const kNorm = String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                                    if (excludes.length > 0 && excludes.some(ex => kNorm.includes(ex))) return false;
+                                    return keywords.some(kw => kNorm.includes(kw));
+                                });
                                 
                                 let operadorFmt = app.utils.fixEncoding(String(row[findKey(['AGENTE'])] || 'Não Identificado')).trim();
-                                let monitorStr = app.utils.fixEncoding(String(row[findKey(['NOMEAVALIADOR', 'MONITOR', 'AVALIADOR'])] || 'Não Identificado')).trim();
+                                let monitorStr = app.utils.fixEncoding(String(row[findKey(['NOMEAVALIADOR', 'MONITOR', 'AVALIADOR'], ['ID', 'CODIGO'])] || 'Não Identificado')).trim();
                                 let setorIlha = String(row[findKey(['ILHA', 'SETOR'])] || 'Sem Setor').trim();
-                                nomeApresentacaoFinal = setorIlha; 
                                 
+                                let formNameRaw = String(row[findKey(['FORMULARIO', 'AVALIACAO', 'AVALIAÇÃO'])] || '').trim();
+                                let cargoAvaliador = formNameRaw.toUpperCase().endsWith('SUPER,') ? 'Supervisor' : 'Monitor';
+
                                 let notaStr = String(row[findKey(['NOTA', 'PONTUACAO'])] || '0').replace(',', '.').replace('%', '');
                                 let notaFormatada = parseFloat(notaStr);
                                 
@@ -10877,25 +10890,16 @@
                                 }
 
                                 // Tradutor de Feedback: A presença ou ausência da data define o status
-                                let statusFeedbackLido = "Monitorado"; // Padrão
-                                
-                                const fbKeyFeedback = Object.keys(fbDados).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('FEEDBACK'));
                                 const fbKeyDataFin = Object.keys(fbDados).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('DATA DE FINALIZACAO'));
-
-                                const txtFeedbackStatus = String(fbKeyFeedback ? fbDados[fbKeyFeedback] : '').toLowerCase();
                                 const hasDataFinalizacao = fbKeyDataFin && String(fbDados[fbKeyDataFin]).trim() !== '';
-                                
-                                if (hasDataFinalizacao) {
-                                    statusFeedbackLido = "Feedback_Aplicado";
-                                } else if (txtFeedbackStatus.includes('não aplicado') || txtFeedbackStatus.includes('nao aplicado') || txtFeedbackStatus === 'remoto') {
-                                    statusFeedbackLido = "Feedback_Nao_Aplicado";
-                                }
+                                let statusFeedbackLido = hasDataFinalizacao ? "Feedback_Aplicado" : "Feedback_Nao_Aplicado";
 
                                 let infoDerivacoes = [];
                                 let linhaSimulada = {
                                     "DATA": dataFormatada,
                                     "NOME": operadorFmt,
                                     "MONITOR": monitorStr,
+                                    "CARGO_AVALIADOR": cargoAvaliador,
                                     "NOTA": notaFormatada,
                                     "STATUS": statusFeedbackLido,
                                     "OPERACAO": setorIlha
@@ -10940,7 +10944,8 @@
                                     }
                                 });
 
-                                linhasSintetizadas.push(linhaSimulada);
+                                if (!agrupamentoPorIlha[setorIlha]) agrupamentoPorIlha[setorIlha] = [];
+                                agrupamentoPorIlha[setorIlha].push(linhaSimulada);
 
                                 if (infoDerivacoes.length > 0 && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
                                     if (!app.analiseCSVDinamicoData.consolidado.comments) app.analiseCSVDinamicoData.consolidado.comments = {};
@@ -10948,22 +10953,24 @@
                                 }
                             });
 
-                            if (linhasSintetizadas.length === 0) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada após o cruzamento.", "error");
+                            if (Object.keys(agrupamentoPorIlha).length === 0) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada após o cruzamento.", "error");
 
                             if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) {
                                 app.analiseCSVDinamicoData = { relatorios: [], consolidado: null };
                             }
 
-                            app.analiseCSVDinamicoData.relatorios.push({
-                                id: Date.now(),
-                                nome: nomeApresentacaoFinal,
-                                rows: linhasSintetizadas
+                            Object.keys(agrupamentoPorIlha).forEach(ilhaName => {
+                                app.analiseCSVDinamicoData.relatorios.push({
+                                    id: Date.now() + Math.random(),
+                                    nome: ilhaName,
+                                    rows: agrupamentoPorIlha[ilhaName]
+                                });
                             });
 
                             localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => console.error(err));
                             this.gerarInteligenciaCSV();
                             app.ui.renderTab('analise_csv_dinamico', true);
-                            app.ui.showAlert("Importação Tripla Concluída!", "Os 3 arquivos foram processados e colados através do ID Monitoria.", "success");
+                            app.ui.showAlert("Triangulação Concluída!", "Os 3 arquivos foram fundidos com sucesso e divididos por Setores (Ilhas).", "success");
 
                         } catch (e) {
                             console.error(e);
