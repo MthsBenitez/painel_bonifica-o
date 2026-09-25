@@ -8184,9 +8184,9 @@
                         const exibT = data.chapterCustomData[idKey]?.t || title;
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
 
-                        // Funções de salvamento blindadas e centralizadas
-                        const onBlurT = `app.ui.saveChapterData('${idKey}', 't', this.innerText)`;
-                        const onBlurS = `app.ui.saveChapterData('${idKey}', 's', this.innerText)`;
+                        // Funções de salvamento blindadas e centralizadas (Agora salvando em tempo real)
+                        const onInputT = `app.ui.saveChapterData('${idKey}', 't', this.innerText)`;
+                        const onInputS = `app.ui.saveChapterData('${idKey}', 's', this.innerText)`;
 
                         return `
                             <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 animate-fade-in chapter-marker">
@@ -8198,8 +8198,8 @@
                                     <div class="text-[10px] font-black uppercase tracking-widest ${t.light}">Capítulo ${chapterCount++}</div>
                                     <div class="h-px w-12 ${t.bg}"></div>
                                 </div>
-                                <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="${onBlurT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-sm outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
-                                <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="${onBlurS}" class="text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
+                                <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputT}" onblur="${onInputT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-sm outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
+                                <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputS}" onblur="${onInputS}" class="text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
                             </div>
                         `;
                     };
@@ -8976,9 +8976,9 @@
                                 </div>
                             `).join('');
 
-                            // Gera as imagens do Track (Slide Infinito)
+                            // Gera as imagens do Track (Slide Infinito) - Clique Ajustado para app.admin
                             let trackHtml = todasFotos.map(f => `
-                                <div class="shrink-0 w-64 h-48 rounded-2xl overflow-hidden relative shadow-md border border-slate-200 dark:border-slate-700 mx-2 hover:scale-[1.02] transition-transform cursor-pointer" onclick="app.ui.showAcaoCompleta('${f.id}')">
+                                <div class="shrink-0 w-64 h-48 rounded-2xl overflow-hidden relative shadow-md border border-slate-200 dark:border-slate-700 mx-2 hover:scale-[1.02] transition-transform cursor-pointer" onclick="app.admin.showAcaoCompleta('${f.id}')">
                                     <img src="${f.src}" class="w-full h-full object-cover pointer-events-none">
                                     <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8 pointer-events-none">
                                         <p class="text-white text-[10px] font-bold truncate">${f.tema}</p>
