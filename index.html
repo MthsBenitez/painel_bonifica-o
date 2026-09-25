@@ -11649,12 +11649,14 @@
                     let oldAcoes = [];
                     let oldCustomTitle = null;
                     let oldTitleColor = '';
+                    let oldChapterCustomData = {}; // <--- SALVA VIDAS DOS CAPÍTULOS
 
                     if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
                         oldComments = app.analiseCSVDinamicoData.consolidado.comments || {};
                         oldAcoes = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas || [];
                         oldCustomTitle = app.analiseCSVDinamicoData.consolidado.customTitle || null;
                         oldTitleColor = app.analiseCSVDinamicoData.consolidado.titleColor || '';
+                        oldChapterCustomData = app.analiseCSVDinamicoData.consolidado.chapterCustomData || {}; // <--- RESGATA DA MEMÓRIA ANTERIOR
                     }
 
                     const data = {
@@ -11674,9 +11676,9 @@
                         comments: oldComments,
                         acoesSelecionadas: oldAcoes,
                         customTitle: oldCustomTitle,
-                        titleColor: oldTitleColor
+                        titleColor: oldTitleColor,
+                        chapterCustomData: oldChapterCustomData // <--- DEVOLVE PRA ESTRUTURA BLINDADA
                     };
-
                     relatoriosAtivos.forEach(relatorio => {
                         const rows = relatorio.rows;
                         const formNameDisplay = relatorio.nome;
