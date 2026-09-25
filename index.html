@@ -8163,8 +8163,12 @@
                                     <i class="fa-solid fa-cloud-arrow-up"></i> Importar Dados
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
                                 </label>
+                                <label class="bg-teal-50 text-teal-600 hover:bg-teal-100 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-800 dark:text-teal-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importe simultaneamente as 3 planilhas separadas desta operação">
+                                    <i class="fa-solid fa-cubes-stacked"></i> Unir 3 Arquivos
+                                    <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarImportacaoTripla(this)" onclick="this.value = null">
+                                </label>
                                 <label class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importar arquivo de RH com Dias de Empresa">
-                                    <i class="fa-solid fa-user-clock"></i> Carga de RH (Tempo)
+                                    <i class="fa-solid fa-user-clock"></i> Carga de RH
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
                                 </label>
                                 <label class="bg-purple-50 text-purple-600 hover:bg-purple-100 border border-purple-200 dark:bg-purple-900/30 dark:border-purple-800 dark:text-purple-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Raio-X de Pesos e Falhas.">
@@ -10458,6 +10462,192 @@
                 removeAlias(wrongName) {
                     delete app.config.aliases[wrongName];
                     app.storage.saveConfig().then(() => this.renderAliasList());
+                },
+
+                processarImportacaoTripla(input) {
+                    const files = Array.from(input.files);
+                    if (files.length < 3) {
+                        return app.ui.showAlert("Atenção", "Para esta operação, você precisa selecionar os 3 arquivos de uma vez (Base, Feedback e Formulário).", "error");
+                    }
+
+                    app.ui.showAlert("Sintetizando Dados...", "A Inteligência do sistema está cruzando os 3 arquivos usando o ID da Monitoria como ponte...", "info");
+
+                    // Processamento assíncrono paralelo para ler os 3 arquivos sem travar a tela
+                    Promise.all(files.map(f => new Promise(resolve => {
+                        const reader = new FileReader();
+                        reader.onload = e => {
+                            const workbook = XLSX.read(e.target.result, { type: 'array', raw: true });
+                            resolve(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" }));
+                        };
+                        reader.readAsArrayBuffer(f);
+                    }))).then(datasets => {
+                        try {
+                            // Identificador Inteligente: Descobre quem é quem olhando os cabeçalhos
+                            const fileBase = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => k.trim() === 'Agente'));
+                            const fileFeedback = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => k.trim() === 'Data de Finalização' || k.trim() === 'Feedback'));
+                            const filePerguntas = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => k.trim() === 'Sessao'));
+
+                            if (!fileBase || !fileFeedback || !filePerguntas) {
+                                return app.ui.showAlert("Erro nos Arquivos", "Não consegui identificar as planilhas corretamente. Certifique-se de importar o arquivo Base (Agente), o de Feedback e o de Perguntas (Sessao).", "error");
+                            }
+
+                            // CAIXINHA 1: Agrupando as Perguntas usando o ID Monitoria como supercola
+                            const mapaPerguntas = {};
+                            filePerguntas.forEach(row => {
+                                const id = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                if (!id) return;
+                                if (!mapaPerguntas[id]) mapaPerguntas[id] = [];
+                                mapaPerguntas[id].push(row);
+                            });
+
+                            // CAIXINHA 2: Agrupando Feedback usando o ID Monitoria
+                            const mapaFeedback = {};
+                            fileFeedback.forEach(row => {
+                                const id = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                if (id) mapaFeedback[id] = row;
+                            });
+
+                            // MOTOR TRADUTOR: Percorre a base, agrupa tudo e transforma em Padrão
+                            let linhasSintetizadas = [];
+                            
+                            // Pega o nome global da operação pelo arquivo base (se não existir Ilha, usa um genérico)
+                            let nomeApresentacaoFinal = "Operação Específica";
+
+                            fileBase.forEach(row => {
+                                const idMonitoria = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                if (!idMonitoria) return;
+
+                                const fbDados = mapaFeedback[idMonitoria] || {};
+                                const perguntasDados = mapaPerguntas[idMonitoria] || [];
+
+                                // Limpa dados da Base
+                                let operadorFmt = app.utils.fixEncoding(String(row["Agente"] || 'Não Identificado')).trim();
+                                let monitorStr = app.utils.fixEncoding(String(row["NomeAvaliador"] || 'Não Identificado')).trim();
+                                let setorIlha = String(row["Ilha"] || 'Sem Setor').trim();
+                                nomeApresentacaoFinal = setorIlha; // Guarda o nome do setor para batizar o arquivo depois
+                                
+                                let notaStr = String(row["Nota"] || '0').replace(',', '.').replace('%', '');
+                                let notaFormatada = parseFloat(notaStr);
+                                
+                                // Corrige e formata a Data da Monitoria (DD/MM/YYYY)
+                                let dataFormatada = 'N/A';
+                                let dataCrua = row["Data da Monitoria"];
+                                if (typeof dataCrua === 'number' && dataCrua > 20000) {
+                                    const dt = new Date((dataCrua - 25569) * 86400 * 1000);
+                                    dt.setUTCHours(12);
+                                    dataFormatada = dt.toLocaleDateString('pt-BR');
+                                } else if (dataCrua) {
+                                    dataFormatada = String(dataCrua).split(' ')[0];
+                                }
+
+                                // Verifica cruzamento do monitor
+                                let keyAliasCompleta = monitorStr.toUpperCase();
+                                let matriculaDoMonitor = app.config?.aliases?.[keyAliasCompleta] || null;
+                                let userObj = app.users.find(u => u.matricula === matriculaDoMonitor || u.nome.toUpperCase() === keyAliasCompleta);
+                                const isRegisteredMonitor = !!userObj;
+
+                                // Tradutor de Feedback: A presença ou ausência da data define o status
+                                let statusFeedbackLido = "Monitorado"; // Padrão
+                                const txtFeedbackStatus = String(fbDados["Feedback"] || '').toLowerCase();
+                                const hasDataFinalizacao = fbDados["Data de Finalização"] && String(fbDados["Data de Finalização"]).trim() !== '';
+                                
+                                if (hasDataFinalizacao) {
+                                    statusFeedbackLido = "Feedback_Aplicado";
+                                } else if (txtFeedbackStatus.includes('não aplicado') || txtFeedbackStatus.includes('nao aplicado') || txtFeedbackStatus === 'remoto') {
+                                    statusFeedbackLido = "Feedback_Nao_Aplicado";
+                                }
+
+                                // Tradutor de Perguntas Inteligente (Cria o objeto linha formatado que a tela espera)
+                                let infoDerivacoes = [];
+                                let linhaSimulada = {
+                                    "DATA": dataFormatada,
+                                    "NOME": operadorFmt,
+                                    "MONITOR": monitorStr,
+                                    "NOTA": notaFormatada,
+                                    "STATUS": statusFeedbackLido,
+                                    "OPERACAO": setorIlha
+                                };
+
+                                perguntasDados.forEach(qRow => {
+                                    const perguntaRaw = String(qRow["Sessao"] || '').trim();
+                                    const repostaRaw = String(qRow["Resposta"] || qRow["Answer"] || qRow["Alternativa"] || qRow["Valor"] || '').trim().toUpperCase();
+                                    
+                                    if (!perguntaRaw) return;
+
+                                    // Regex para pegar os códigos numéricos no começo (ex: 1.00, 2.01, 1.00.01)
+                                    const matchCod = perguntaRaw.match(/^(\d+(?:\.\d+)*)/);
+                                    if (!matchCod) return; // Se não tem código no começo, ignora
+
+                                    const codigoCompleto = matchCod[1]; // Ex: "1.00.01" ou "2.00"
+                                    const niveis = codigoCompleto.split('.');
+
+                                    // Limpa o texto da pergunta arrancando o código do começo
+                                    const textoPerguntaLimpado = perguntaRaw.replace(codigoCompleto, '').replace(/^-/, '').trim();
+                                    
+                                    const isSim = repostaRaw === 'SIM' || repostaRaw === 'S' || repostaRaw === 'YES' || repostaRaw === 'Y';
+                                    const isNao = repostaRaw === 'NAO' || repostaRaw === 'NÃO' || repostaRaw === 'N' || repostaRaw === 'NO';
+
+                                    if (niveis.length === 2) {
+                                        // É UMA PERGUNTA PRINCIPAL (2 Níveis. Ex: 1.00 ou 2.01)
+                                        let formatadorPeso = "PESO: 10"; // Padrão Normal
+                                        let statusRespostaFormatada = "Sim"; 
+
+                                        if (niveis[0] === '1') {
+                                            // Falha Normal. O Painel entende que NÃO = Erro para pesos normais.
+                                            statusRespostaFormatada = isNao ? "Não" : "Sim"; 
+                                        } else if (niveis[0] === '2') {
+                                            // Falha Crítica. O Painel entende que SIM = Erro Crítico quando peso é 100.
+                                            formatadorPeso = "PESO: 100";
+                                            statusRespostaFormatada = isSim ? "Sim" : "Não";
+                                        }
+
+                                        // Monta o header exato que o Raio-X do painel espera encontrar
+                                        const headerPadrao = `${textoPerguntaLimpado} = ${formatadorPeso}`;
+                                        linhaSimulada[headerPadrao] = statusRespostaFormatada;
+                                    } else if (niveis.length >= 3) {
+                                        // É UMA DERIVAÇÃO/SUBPERGUNTA (Ex: 1.00.01)
+                                        // Apenas empilha para formar o balão de informação (Tooltip) no dashboard
+                                        if (repostaRaw !== '') {
+                                            infoDerivacoes.push(`- ${textoPerguntaLimpado}: ${qRow["Resposta"] || qRow["Answer"] || qRow["Alternativa"] || qRow["Valor"]}`);
+                                        }
+                                    }
+                                });
+
+                                linhasSintetizadas.push(linhaSimulada);
+
+                                // Se houveram derivações (perguntas de 3 níveis), salvamos esse bloco inteiro como um comentário do Card Geral 
+                                // para que a diretoria possa consultar as especificidades do erro na tela principal depois!
+                                if (infoDerivacoes.length > 0 && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                                    if (!app.analiseCSVDinamicoData.consolidado.comments) app.analiseCSVDinamicoData.consolidado.comments = {};
+                                    // Anexa a compilação de subperguntas neste ID da monitoria
+                                    app.analiseCSVDinamicoData.consolidado.comments['detalhe_' + idMonitoria] = infoDerivacoes.join('\n');
+                                }
+                            });
+
+                            // SALVAMENTO (Mesma rotina do importador original)
+                            if (linhasSintetizadas.length === 0) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada após o cruzamento.", "error");
+
+                            if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) {
+                                app.analiseCSVDinamicoData = { relatorios: [], consolidado: null };
+                            }
+
+                            app.analiseCSVDinamicoData.relatorios.push({
+                                id: Date.now(),
+                                nome: nomeApresentacaoFinal, // Usa o Setor/Ilha dinâmico
+                                rows: linhasSintetizadas
+                            });
+
+                            localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => console.error(err));
+                            this.gerarInteligenciaCSV();
+                            app.ui.renderTab('analise_csv_dinamico', true);
+                            app.ui.showAlert("Triangulação Concluída!", "Os 3 arquivos foram fundidos com sucesso. A árvore lógica de penalidades foi convertida para o nosso padrão de visualização.", "success");
+
+                        } catch (e) {
+                            console.error(e);
+                            app.ui.showAlert("Erro de Extração", "Falha crítica durante a junção dos 3 arquivos. Verifique se eles possuem a coluna em comum [ID Monitoria] para que o sistema consiga colá-los.", "error");
+                        }
+                        input.value = ''; // Limpa a sujeira do input para não bugar a próxima importação
+                    });
                 },
 
                 processarTempoDeCasa(input) {
