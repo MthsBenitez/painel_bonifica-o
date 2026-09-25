@@ -592,6 +592,9 @@
 
             <div class="flex justify-end gap-3 pt-6 border-t border-slate-200 dark:border-slate-700 relative z-10">
                 <button onclick="app.admin.fecharModalImportacaoTripla()" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white rounded-xl font-bold text-sm transition-colors">Cancelar</button>
+                <button id="btn-debug-tripla" disabled onclick="app.admin.debugImportacaoTripla()" class="px-5 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm shadow-md transition-all opacity-50 cursor-not-allowed uppercase tracking-widest" title="Raio-X de Dados">
+                    <i class="fa-solid fa-bug"></i> Debug
+                </button>
                 <button id="btn-processar-tripla" disabled onclick="app.admin.executarImportacaoTripla()" class="px-8 py-3 bg-teal-600 text-white rounded-xl font-black shadow-lg shadow-teal-500/30 transition-all opacity-50 cursor-not-allowed uppercase tracking-widest text-sm flex items-center gap-2">
                     <i class="fa-solid fa-wand-magic-sparkles"></i> Processar Fusão
                 </button>
@@ -10736,8 +10739,10 @@
                     });
 
                     const btn = document.getElementById('btn-processar-tripla');
-                    btn.disabled = true;
+                    const btnDbg = document.getElementById('btn-debug-tripla');
+                    btn.disabled = true; btnDbg.disabled = true;
                     btn.classList.add('opacity-50', 'cursor-not-allowed');
+                    btnDbg.classList.add('opacity-50', 'cursor-not-allowed');
 
                     document.getElementById('import-tripla-modal').classList.remove('hidden');
                 },
@@ -10766,11 +10771,13 @@
                     
                     iconEl.className = 'fa-solid fa-check-circle text-3xl text-teal-500 scale-110 transition-transform';
 
-                    // Checa se os 3 estão preenchidos para liberar o botão principal
+                    // Checa se os 3 estão preenchidos para liberar os botões principais
                     if (this.arquivosTriplos.base && this.arquivosTriplos.fb && this.arquivosTriplos.qa) {
                         const btn = document.getElementById('btn-processar-tripla');
-                        btn.disabled = false;
+                        const btnDbg = document.getElementById('btn-debug-tripla');
+                        btn.disabled = false; btnDbg.disabled = false;
                         btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        btnDbg.classList.remove('opacity-50', 'cursor-not-allowed');
                     }
                 },
 
@@ -10951,6 +10958,98 @@
                             console.error(e);
                             app.ui.showAlert("Erro de Extração", "Ocorreu uma falha durante o cruzamento. Verifique se os arquivos correspondem e possuem o ID Monitoria.", "error");
                         }
+                    });
+                },
+
+                debugImportacaoTripla() {
+                    const { base, fb, qa } = this.arquivosTriplos;
+                    if (!base || !fb || !qa) return;
+
+                    this.fecharModalImportacaoTripla();
+                    app.ui.showAlert("Iniciando Raio-X...", "Abra o <b>Console (F12)</b>! Estou imprimindo tabelas e dados brutos nele agora mesmo.", "info");
+
+                    console.group("%c🕵️‍♂️ MODO DEBUG: IMPORTAÇÃO TRIPLA", "font-size:18px; color:#a855f7; font-weight:bold; background:#f3e8ff; padding: 5px; border-radius: 5px;");
+
+                    const filesToProcess = [base, fb, qa];
+                    const nomesText = ["1. ARQUIVO BASE (XLSX)", "2. ARQUIVO FEEDBACK (XLSX)", "3. SESSÕES/FORMULÁRIO (CSV)"];
+
+                    Promise.all(filesToProcess.map(f => new Promise(resolve => {
+                        const reader = new FileReader();
+                        reader.onload = e => {
+                            const workbook = XLSX.read(e.target.result, { type: 'array', raw: true });
+                            const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+                            resolve(data);
+                        };
+                        reader.readAsArrayBuffer(f);
+                    }))).then(datasets => {
+                        let relatorioHTML = `<div class="text-[11px] text-left font-mono space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">`;
+
+                        // Função Idêntica à original para garantir que testamos as mesmas chaves
+                        const extrairIDSeguro = (rowObj) => {
+                            const chave = Object.keys(rowObj).find(k => {
+                                const kLimpo = String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                return kLimpo.includes('IDMONITORIA') || kLimpo === 'ID' || kLimpo === 'IDAVALIACAO' || kLimpo === 'PROTOCOLO';
+                            });
+                            return chave ? String(rowObj[chave]).trim() : '';
+                        };
+
+                        datasets.forEach((data, index) => {
+                            console.groupCollapsed(`%c${nomesText[index]}`, "font-size:14px; color:#3b82f6;");
+                            console.log("Total de Linhas:", data.length);
+                            
+                            let boxCor = 'bg-slate-50 border-slate-300 text-slate-700';
+
+                            if(data.length > 0) {
+                                const headers = Object.keys(data[0]);
+                                console.log("Colunas Identificadas:", headers);
+                                console.table(data.slice(0, 3)); // Imprime 3 primeiras no F12
+                                
+                                // Captura e extrai IDs válidos
+                                let idsEncontrados = [];
+                                data.forEach(r => { const rxId = extrairIDSeguro(r); if(rxId) idsEncontrados.push(rxId); });
+                                const sampleIds = [...new Set(idsEncontrados)].slice(0, 5).join(', ');
+
+                                relatorioHTML += `<div class="p-3 rounded-lg border ${boxCor} shadow-sm">
+                                    <strong class="text-blue-600 block mb-1">${nomesText[index]}</strong>
+                                    Linhas capturadas: <b>${data.length}</b><br>
+                                    Qtd. de Colunas lidas: <b>${headers.length}</b><br>
+                                    <div class="mt-2 text-[9px] text-slate-500 font-bold uppercase tracking-widest">Amostra de IDs detectados:</div>
+                                    <div class="bg-white p-1 rounded border border-slate-200 text-blue-500 mt-1">${sampleIds || 'Nenhum ID Reconhecido!'}</div>
+                                </div>`;
+
+                                // DETECÇÃO CRÍTICA DO CSV "COLADO"
+                                if (index === 2 && headers.length === 1 && (headers[0].includes(';') || headers[0].includes(','))) {
+                                    const msg = `CRÍTICO: O arquivo 3 (CSV) falhou na leitura das colunas! O Excel exportou tudo em uma coluna única usando separador (${headers[0].includes(';') ? ';' : ','}). Converta ele para .XLSX antes de subir!`;
+                                    console.warn("🚨 " + msg);
+                                    relatorioHTML += `<div class="bg-red-50 text-red-600 p-3 rounded-lg font-bold border border-red-300 mt-2 flex gap-2 items-start"><i class="fa-solid fa-triangle-exclamation mt-1"></i> <div>${msg}</div></div>`;
+                                }
+                            } else {
+                                console.warn("🚨 ARQUIVO VAZIO!");
+                                relatorioHTML += `<div class="bg-red-50 text-red-600 p-3 rounded-lg border border-red-200"><strong>${nomesText[index]}:</strong> VAZIO OU CORROMPIDO!</div>`;
+                            }
+                            console.groupEnd();
+                        });
+
+                        console.groupEnd(); // Fim do grupo F12
+
+                        // Janela de Resumo
+                        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-purple-600"></i> Relatório do Raio-X`;
+                        document.getElementById('modal-content').innerHTML = `
+                            <div class="mb-4 bg-purple-50 text-purple-700 p-3 rounded-xl border border-purple-200 text-xs font-medium leading-relaxed">
+                                <i class="fa-solid fa-circle-info mr-1"></i> Abra o console do seu navegador (tecle <b>F12</b> e vá na aba <b>Console</b>) para visualizar as tabelas exatas que o sistema tentou puxar.
+                            </div>
+                            ${relatorioHTML}
+                        `;
+                        document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-800 hover:bg-black text-white rounded-xl font-bold text-sm shadow-md transition-colors w-full">Encerrar Debug</button>`;
+                        
+                        const modalBox = document.querySelector('#global-modal > div');
+                        modalBox.classList.remove('max-w-4xl', 'max-w-5xl');
+                        modalBox.classList.add('max-w-lg');
+                        document.getElementById('global-modal').classList.remove('hidden');
+
+                    }).catch(e => {
+                        console.error("Erro fatal no Debug:", e);
+                        app.ui.showAlert("Erro Fatal", "O arquivo não pôde ser analisado, pois está ilegível ou corrompido. Olhe o F12 para detalhes técnicos.", "error");
                     });
                 },
 
