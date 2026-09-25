@@ -8185,8 +8185,8 @@
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
 
                         // Funções de salvamento blindadas e centralizadas
-                        const onBlurT = `app.admin.saveChapterData('${idKey}', 't', this.innerText)`;
-                        const onBlurS = `app.admin.saveChapterData('${idKey}', 's', this.innerText)`;
+                        const onBlurT = `app.ui.saveChapterData('${idKey}', 't', this.innerText)`;
+                        const onBlurS = `app.ui.saveChapterData('${idKey}', 's', this.innerText)`;
 
                         return `
                             <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 animate-fade-in chapter-marker">
@@ -8954,7 +8954,7 @@
                                     let fotos = act.photos || (act.photo ? [act.photo] : []);
                                     fotos.forEach(f => {
                                         if(f && !f.startsWith('data:application/pdf')) {
-                                            todasFotos.push({ src: f, tema: act.objetivo });
+                                            todasFotos.push({ src: f, tema: act.objetivo, id: act.id });
                                         }
                                     });
                                 }
@@ -8978,8 +8978,8 @@
 
                             // Gera as imagens do Track (Slide Infinito)
                             let trackHtml = todasFotos.map(f => `
-                                <div class="shrink-0 w-64 h-48 rounded-2xl overflow-hidden relative shadow-md border border-slate-200 dark:border-slate-700 mx-2 hover:scale-[1.02] transition-transform">
-                                    <img src="${f.src}" class="w-full h-full object-cover">
+                                <div class="shrink-0 w-64 h-48 rounded-2xl overflow-hidden relative shadow-md border border-slate-200 dark:border-slate-700 mx-2 hover:scale-[1.02] transition-transform cursor-pointer" onclick="app.ui.showAcaoCompleta('${f.id}')">
+                                    <img src="${f.src}" class="w-full h-full object-cover pointer-events-none">
                                     <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8 pointer-events-none">
                                         <p class="text-white text-[10px] font-bold truncate">${f.tema}</p>
                                     </div>
@@ -8998,21 +8998,13 @@
                                     <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3"><i class="fa-solid fa-camera-retro text-teal-500"></i> Ações & Intervenções em Qualidade</h3>
                                     
                                     <!-- Resumo Dashboard -->
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 cursor-pointer" onclick="app.admin.openAcoesSelectorModal()" title="Clique para expandir as ações e ver os detalhes">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 cursor-pointer" onclick="app.admin.openAcoesSelectorModal()" title="Clique para expandir as ações e ver os detalhes">
                                         <div class="bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/30 dark:to-teal-800/40 rounded-3xl p-6 border border-teal-200 dark:border-teal-700 flex items-center gap-5 shadow-sm hover:shadow-lg transform hover:-translate-y-1 transition-all group magnetic-btn relative overflow-hidden">
                                             <div class="absolute -right-4 -bottom-4 text-teal-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-layer-group"></i></div>
                                             <div class="w-14 h-14 bg-teal-500 text-white rounded-2xl flex items-center justify-center text-2xl shadow-[0_5px_15px_rgba(20,184,166,0.4)] z-10"><i class="fa-solid fa-layer-group"></i></div>
                                             <div class="z-10">
-                                                <div class="text-[11px] uppercase font-bold text-teal-700 dark:text-teal-300 tracking-widest mb-1">Total de Ações</div>
+                                                <div class="text-[11px] uppercase font-bold text-teal-700 dark:text-teal-300 tracking-widest mb-1">Total de Ações Validadas</div>
                                                 <div class="text-4xl font-black text-slate-800 dark:text-white drop-shadow-sm">${totalAcoes}</div>
-                                            </div>
-                                        </div>
-                                        <div class="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/40 rounded-3xl p-6 border border-blue-200 dark:border-blue-700 flex items-center gap-5 shadow-sm hover:shadow-lg transform hover:-translate-y-1 transition-all group magnetic-btn relative overflow-hidden">
-                                            <div class="absolute -right-4 -bottom-4 text-blue-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-users"></i></div>
-                                            <div class="w-14 h-14 bg-blue-500 text-white rounded-2xl flex items-center justify-center text-2xl shadow-[0_5px_15px_rgba(59,130,246,0.4)] z-10"><i class="fa-solid fa-users"></i></div>
-                                            <div class="z-10">
-                                                <div class="text-[11px] uppercase font-bold text-blue-700 dark:text-blue-300 tracking-widest mb-1">Operadores Impactados</div>
-                                                <div class="text-4xl font-black text-slate-800 dark:text-white drop-shadow-sm">${opsImpactados}</div>
                                             </div>
                                         </div>
                                         <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/40 rounded-3xl p-6 border border-purple-200 dark:border-purple-700 flex flex-col justify-center shadow-sm hover:shadow-lg transition-shadow relative overflow-hidden group">
@@ -13298,6 +13290,56 @@
                         // Restaura a posição original da tela do usuário
                         window.scrollTo(0, scrollAntigo);
                     });
+                },
+
+                showAcaoCompleta(actId) {
+                    const act = app.actionsList[actId];
+                    if(!act) return;
+                    
+                    const dataFmt = act.dataAcao.split('-').reverse().join('/');
+                    
+                    let fotosHtml = '';
+                    if(act.photos && act.photos.length > 0) {
+                        fotosHtml = act.photos.map((p, i) => `<img src="${p}" class="w-full rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-2">`).join('');
+                    } else if (act.photo) {
+                        fotosHtml = `<img src="${act.photo}" class="w-full rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-2">`;
+                    }
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-camera-retro text-teal-500"></i> Detalhes da Ação Ocorrida`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="flex flex-col gap-4">
+                            <div class="flex gap-4 items-center bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                                <div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center text-xl shrink-0 border border-teal-200 shadow-sm"><i class="fa-solid fa-bullseye"></i></div>
+                                <div class="flex-1">
+                                    <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest">${dataFmt} | Op: <strong class="text-teal-600 dark:text-teal-400">${act.codigoOpe}</strong></div>
+                                    <div class="text-lg font-black text-slate-800 dark:text-white leading-tight mt-1">${act.objetivo}</div>
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Responsável CQ</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">${act.nome}</div></div>
+                                <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Gestor Alinhado</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">${act.gestor}</div></div>
+                                <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Ofensor Alvo</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">${act.ofensor}</div></div>
+                                <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Impacto Tático</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.operadores} Op / ${act.brindes} Br.</div></div>
+                            </div>
+
+                            <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30 text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed shadow-inner"><strong class="text-blue-700 dark:text-blue-400">Resumo da Execução:</strong><br>${act.acaoRealizada}</div>
+                            
+                            <div class="mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest"><i class="fa-solid fa-images text-teal-500"></i> Evidências Visuais Anexadas</h4>
+                                <div class="space-y-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
+                                    ${fotosHtml}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all">Fechar Detalhes</button>`;
+                    
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-4xl', 'max-w-5xl');
+                    modalBox.classList.add('max-w-3xl');
+                    
+                    document.getElementById('global-modal').classList.remove('hidden');
                 },
 
                 modoApresentacao() {
