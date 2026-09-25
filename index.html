@@ -10798,10 +10798,19 @@
                             const fileFeedback = datasets[1];
                             const filePerguntas = datasets[2];
 
+                            // FUNÇÃO DETETIVE: Encontra a coluna de ID não importa como esteja escrita no Excel
+                            const extrairIDSeguro = (linha) => {
+                                const chave = Object.keys(linha).find(k => {
+                                    const kLimpo = String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                    return kLimpo.includes('IDMONITORIA') || kLimpo === 'ID';
+                                });
+                                return chave ? String(linha[chave]).trim() : '';
+                            };
+
                             // CAIXINHA 1: Agrupando as Perguntas usando o ID Monitoria como supercola
                             const mapaPerguntas = {};
                             filePerguntas.forEach(row => {
-                                const id = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                const id = extrairIDSeguro(row);
                                 if (!id) return;
                                 if (!mapaPerguntas[id]) mapaPerguntas[id] = [];
                                 mapaPerguntas[id].push(row);
@@ -10810,7 +10819,7 @@
                             // CAIXINHA 2: Agrupando Feedback usando o ID Monitoria
                             const mapaFeedback = {};
                             fileFeedback.forEach(row => {
-                                const id = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                const id = extrairIDSeguro(row);
                                 if (id) mapaFeedback[id] = row;
                             });
 
@@ -10820,7 +10829,7 @@
                             let nomeApresentacaoFinal = "Operação Específica";
 
                             fileBase.forEach(row => {
-                                const idMonitoria = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                const idMonitoria = extrairIDSeguro(row);
                                 if (!idMonitoria) return;
 
                                 const fbDados = mapaFeedback[idMonitoria] || {};
