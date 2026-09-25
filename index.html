@@ -10482,13 +10482,19 @@
                         reader.readAsArrayBuffer(f);
                     }))).then(datasets => {
                         try {
-                            // Identificador Inteligente: Descobre quem é quem olhando os cabeçalhos
-                            const fileBase = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => k.trim() === 'Agente'));
-                            const fileFeedback = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => k.trim() === 'Data de Finalização' || k.trim() === 'Feedback'));
-                            const filePerguntas = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => k.trim() === 'Sessao'));
+                            // Identificador Inteligente Ultra-Tolerante: Descobre quem é quem olhando os cabeçalhos
+                            const norm = (txt) => String(txt).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                            
+                            const fileBase = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => norm(k).includes('AGENTE')));
+                            const fileFeedback = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => norm(k).includes('DATA DE FINALIZACAO') || norm(k).includes('FEEDBACK')));
+                            const filePerguntas = datasets.find(d => d.length > 0 && Object.keys(d[0]).some(k => norm(k).includes('SESSAO') || norm(k).includes('PERGUNTA')));
 
                             if (!fileBase || !fileFeedback || !filePerguntas) {
-                                return app.ui.showAlert("Erro nos Arquivos", "Não consegui identificar as planilhas corretamente. Certifique-se de importar o arquivo Base (Agente), o de Feedback e o de Perguntas (Sessao).", "error");
+                                // Em caso de falha, imprime no console F12 exatamente o que ele leu, para facilitar nossa investigação!
+                                console.warn("Cabecalhos do Arquivo 1:", datasets[0] ? Object.keys(datasets[0]) : "Vazio");
+                                console.warn("Cabecalhos do Arquivo 2:", datasets[1] ? Object.keys(datasets[1]) : "Vazio");
+                                console.warn("Cabecalhos do Arquivo 3:", datasets[2] ? Object.keys(datasets[2]) : "Vazio");
+                                return app.ui.showAlert("Erro nos Arquivos", "Não consegui encontrar as colunas. Pressione F12, abra a aba Console e tire um print para diagnosticarmos juntos!", "error");
                             }
 
                             // CAIXINHA 1: Agrupando as Perguntas usando o ID Monitoria como supercola
