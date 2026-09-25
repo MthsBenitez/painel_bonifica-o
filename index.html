@@ -8741,9 +8741,17 @@
                                         <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-simple text-emerald-500"></i> Desempenho x Tempo</div>
                                         <div class="flex-1 relative w-full h-full min-h-[160px]"><canvas id="chart-curva-aprendizado"></canvas></div>
                                     </div>
+                                    <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtro de Cargo Avaliador:</div>
+                                        <div class="flex flex-wrap gap-2">
+                                            <button onclick="app.ui.analiseFiltroCargo=''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${!app.ui.analiseFiltroCargo ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Todos</button>
+                                            <button onclick="app.ui.analiseFiltroCargo='Monitor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Monitor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Monitores</button>
+                                            <button onclick="app.ui.analiseFiltroCargo='Supervisor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Supervisor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Supervisores</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        `;
+                        </div>`;
                     }
                     
                     // Injeção da Função Global do Modal de Edição (Apenas instanciado se precisar)
@@ -10579,30 +10587,38 @@
                             });
 
                             // MOTOR TRADUTOR: Percorre a base, agrupa tudo e transforma em Padrão
-                            let linhasSintetizadas = [];
-                            
-                            // Pega o nome global da operação pelo arquivo base (se não existir Ilha, usa um genérico)
-                            let nomeApresentacaoFinal = "Operação Específica";
+                            let agrupamentoPorIlha = {}; // NOVO: Múltiplas ilhas
 
                             fileBase.forEach(row => {
-                                const idMonitoria = String(row["ID Monitoria"] || row["ID_Monitoria"] || '').trim();
+                                const idMonitoria = extrairIDSeguro(row);
                                 if (!idMonitoria) return;
 
                                 const fbDados = mapaFeedback[idMonitoria] || {};
                                 const perguntasDados = mapaPerguntas[idMonitoria] || [];
 
-                                // Limpa dados da Base
-                                let operadorFmt = app.utils.fixEncoding(String(row["Agente"] || 'Não Identificado')).trim();
-                                let monitorStr = app.utils.fixEncoding(String(row["NomeAvaliador"] || 'Não Identificado')).trim();
-                                let setorIlha = String(row["Ilha"] || 'Sem Setor').trim();
-                                nomeApresentacaoFinal = setorIlha; // Guarda o nome do setor para batizar o arquivo depois
+                                // Limpa dados da Base: Busca blindada excluindo IDs
+                                const findKey = (keywords, excludes = []) => Object.keys(row).find(k => {
+                                    const kNorm = String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                                    if (excludes.length > 0 && excludes.some(ex => kNorm.includes(ex))) return false;
+                                    return keywords.some(kw => kNorm.includes(kw));
+                                });
                                 
-                                let notaStr = String(row["Nota"] || '0').replace(',', '.').replace('%', '');
+                                let operadorFmt = app.utils.fixEncoding(String(row[findKey(['AGENTE'])] || 'Não Identificado')).trim();
+                                
+                                // CORREÇÃO 4: Excluir 'ID' e 'CODIGO' para não puxar o ID Monitoria!
+                                let monitorStr = app.utils.fixEncoding(String(row[findKey(['NOMEAVALIADOR', 'MONITOR', 'AVALIADOR'], ['ID', 'CODIGO'])] || 'Não Identificado')).trim();
+                                let setorIlha = String(row[findKey(['ILHA', 'SETOR'])] || 'Sem Setor').trim();
+                                
+                                // CORREÇÃO 3: Identificar Cargo via Formulário
+                                let formNameRaw = String(row[findKey(['FORMULARIO', 'AVALIACAO', 'AVALIAÇÃO'])] || '').trim();
+                                let cargoAvaliador = formNameRaw.toUpperCase().endsWith('SUPER,') ? 'Supervisor' : 'Monitor';
+                                
+                                let notaStr = String(row[findKey(['NOTA', 'PONTUACAO'])] || '0').replace(',', '.').replace('%', '');
                                 let notaFormatada = parseFloat(notaStr);
                                 
-                                // Corrige e formata a Data da Monitoria (DD/MM/YYYY)
+                                // Formata Data da Monitoria
                                 let dataFormatada = 'N/A';
-                                let dataCrua = row["Data da Monitoria"];
+                                let dataCrua = row[findKey(['DATA DA MONITORIA', 'DATA'])];
                                 if (typeof dataCrua === 'number' && dataCrua > 20000) {
                                     const dt = new Date((dataCrua - 25569) * 86400 * 1000);
                                     dt.setUTCHours(12);
@@ -10617,95 +10633,90 @@
                                 let userObj = app.users.find(u => u.matricula === matriculaDoMonitor || u.nome.toUpperCase() === keyAliasCompleta);
                                 const isRegisteredMonitor = !!userObj;
 
-                                // Tradutor de Feedback: A presença ou ausência da data define o status
+                                // CORREÇÃO 2: Tradutor de Feedback (NÃO INFORMADO = Não Aplicado, Outros = Aplicado)
                                 let statusFeedbackLido = "Monitorado"; // Padrão
-                                const txtFeedbackStatus = String(fbDados["Feedback"] || '').toLowerCase();
-                                const hasDataFinalizacao = fbDados["Data de Finalização"] && String(fbDados["Data de Finalização"]).trim() !== '';
-                                
-                                if (hasDataFinalizacao) {
-                                    statusFeedbackLido = "Feedback_Aplicado";
-                                } else if (txtFeedbackStatus.includes('não aplicado') || txtFeedbackStatus.includes('nao aplicado') || txtFeedbackStatus === 'remoto') {
+                                const fbKeyFeedback = Object.keys(fbDados).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('FEEDBACK'));
+                                const txtFeedbackStatus = String(fbKeyFeedback ? fbDados[fbKeyFeedback] : '').trim().toUpperCase();
+
+                                if (txtFeedbackStatus === 'NÃO INFORMADO' || txtFeedbackStatus === 'NAO INFORMADO') {
                                     statusFeedbackLido = "Feedback_Nao_Aplicado";
+                                } else if (txtFeedbackStatus !== '') {
+                                    statusFeedbackLido = "Feedback_Aplicado";
                                 }
 
-                                // Tradutor de Perguntas Inteligente (Cria o objeto linha formatado que a tela espera)
                                 let infoDerivacoes = [];
                                 let linhaSimulada = {
                                     "DATA": dataFormatada,
                                     "NOME": operadorFmt,
-                                    "MONITOR": monitorStr,
+                                    "MONITOR": isRegisteredMonitor ? userObj.nome : monitorStr,
+                                    "CARGO_AVALIADOR": cargoAvaliador,
                                     "NOTA": notaFormatada,
                                     "STATUS": statusFeedbackLido,
                                     "OPERACAO": setorIlha
                                 };
 
                                 perguntasDados.forEach(qRow => {
-                                    const perguntaRaw = String(qRow["Sessao"] || '').trim();
-                                    const repostaRaw = String(qRow["Resposta"] || qRow["Answer"] || qRow["Alternativa"] || qRow["Valor"] || '').trim().toUpperCase();
+                                    const qKeySessao = Object.keys(qRow).find(k => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().includes('SESSAO'));
+                                    const qKeyResp = Object.keys(qRow).find(k => ['RESPOSTA', 'ANSWER', 'ALTERNATIVA', 'VALOR'].includes(String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim()));
+
+                                    const perguntaRaw = String(qKeySessao ? qRow[qKeySessao] : '').trim();
+                                    const repostaRaw = String(qKeyResp ? qRow[qKeyResp] : '').trim().toUpperCase();
                                     
                                     if (!perguntaRaw) return;
 
-                                    // Regex para pegar os códigos numéricos no começo (ex: 1.00, 2.01, 1.00.01)
                                     const matchCod = perguntaRaw.match(/^(\d+(?:\.\d+)*)/);
-                                    if (!matchCod) return; // Se não tem código no começo, ignora
+                                    if (!matchCod) return;
 
-                                    const codigoCompleto = matchCod[1]; // Ex: "1.00.01" ou "2.00"
+                                    const codigoCompleto = matchCod[1];
                                     const niveis = codigoCompleto.split('.');
-
-                                    // Limpa o texto da pergunta arrancando o código do começo
                                     const textoPerguntaLimpado = perguntaRaw.replace(codigoCompleto, '').replace(/^-/, '').trim();
                                     
                                     const isSim = repostaRaw === 'SIM' || repostaRaw === 'S' || repostaRaw === 'YES' || repostaRaw === 'Y';
                                     const isNao = repostaRaw === 'NAO' || repostaRaw === 'NÃO' || repostaRaw === 'N' || repostaRaw === 'NO';
 
                                     if (niveis.length === 2) {
-                                        // É UMA PERGUNTA PRINCIPAL (2 Níveis. Ex: 1.00 ou 2.01)
-                                        let formatadorPeso = "PESO: 10"; // Padrão Normal
+                                        let formatadorPeso = "PESO: 10"; 
                                         let statusRespostaFormatada = "Sim"; 
 
                                         if (niveis[0] === '1') {
-                                            // Falha Normal. O Painel entende que NÃO = Erro para pesos normais.
                                             statusRespostaFormatada = isNao ? "Não" : "Sim"; 
                                         } else if (niveis[0] === '2') {
-                                            // Falha Crítica. O Painel entende que SIM = Erro Crítico quando peso é 100.
                                             formatadorPeso = "PESO: 100";
                                             statusRespostaFormatada = isSim ? "Sim" : "Não";
                                         }
 
-                                        // Monta o header exato que o Raio-X do painel espera encontrar
                                         const headerPadrao = `${textoPerguntaLimpado} = ${formatadorPeso}`;
                                         linhaSimulada[headerPadrao] = statusRespostaFormatada;
                                     } else if (niveis.length >= 3) {
-                                        // É UMA DERIVAÇÃO/SUBPERGUNTA (Ex: 1.00.01)
-                                        // Apenas empilha para formar o balão de informação (Tooltip) no dashboard
                                         if (repostaRaw !== '') {
-                                            infoDerivacoes.push(`- ${textoPerguntaLimpado}: ${qRow["Resposta"] || qRow["Answer"] || qRow["Alternativa"] || qRow["Valor"]}`);
+                                            infoDerivacoes.push(`- ${textoPerguntaLimpado}: ${qRow[qKeyResp]}`);
                                         }
                                     }
                                 });
 
-                                linhasSintetizadas.push(linhaSimulada);
+                                if (!agrupamentoPorIlha[setorIlha]) agrupamentoPorIlha[setorIlha] = [];
+                                agrupamentoPorIlha[setorIlha].push(linhaSimulada);
 
-                                // Se houveram derivações (perguntas de 3 níveis), salvamos esse bloco inteiro como um comentário do Card Geral 
-                                // para que a diretoria possa consultar as especificidades do erro na tela principal depois!
                                 if (infoDerivacoes.length > 0 && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
                                     if (!app.analiseCSVDinamicoData.consolidado.comments) app.analiseCSVDinamicoData.consolidado.comments = {};
-                                    // Anexa a compilação de subperguntas neste ID da monitoria
                                     app.analiseCSVDinamicoData.consolidado.comments['detalhe_' + idMonitoria] = infoDerivacoes.join('\n');
                                 }
                             });
 
                             // SALVAMENTO (Mesma rotina do importador original)
-                            if (linhasSintetizadas.length === 0) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada após o cruzamento.", "error");
+                            if (Object.keys(agrupamentoPorIlha).length === 0) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada após o cruzamento.", "error");
 
                             if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) {
                                 app.analiseCSVDinamicoData = { relatorios: [], consolidado: null };
                             }
 
-                            app.analiseCSVDinamicoData.relatorios.push({
-                                id: Date.now(),
-                                nome: nomeApresentacaoFinal, // Usa o Setor/Ilha dinâmico
-                                rows: linhasSintetizadas
+                            // CORREÇÃO 1: Salvando cada Ilha como um relatório distinto
+                            Object.keys(agrupamentoPorIlha).forEach(ilhaName => {
+                                app.analiseCSVDinamicoData.relatorios.push({
+                                    id: Date.now() + Math.random(),
+                                    nome: ilhaName,
+                                    rows: agrupamentoPorIlha[ilhaName]
+                                });
                             });
 
                             localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => console.error(err));
@@ -11737,6 +11748,7 @@
                             let weekStr = dtObj ? app.utils.getWeekNumber(dtObj).toString() : null;
                             let filtrosCiclo = app.ui.analiseFiltroCiclo || [];
                             let filtrosMaturidade = app.ui.analiseFiltroMaturidade || [];
+                            let cargoFiltro = app.ui.analiseFiltroCargo || ''; // NOVO FILTRO APLICADO
 
                             let diasCasa = app.utils.getTempoCasaDoOperador(opNomeDetalhe);
                             let nivelMatStr = "Não Mapeado";
@@ -11752,6 +11764,7 @@
                             if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
                             if (filtrosCiclo.length > 0 && weekStr && !filtrosCiclo.includes(weekStr)) return;
                             if (filtrosMaturidade.length > 0 && !filtrosMaturidade.includes(nivelMatStr)) return;
+                            if (cargoFiltro && row['CARGO_AVALIADOR'] && row['CARGO_AVALIADOR'] !== cargoFiltro) return; // TRAVA DE SEGURANÇA
                             
                             let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
 
