@@ -11592,53 +11592,90 @@
                     }
                     
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Gerando PDF...", "Capturando a tela atual em alta resolução. Isso pode levar alguns segundos...", "info");
+                    app.ui.showAlert("Gerando PDF Oficial...", "Aplicando Filtro Anti-Bug, desativando 3D e renderizando em alta definição...", "info");
 
                     const oldMode = app.ui.analiseEditMode;
-                    if (!oldMode) app.ui.toggleEditModeAnalise();
+                    if (!oldMode) app.ui.toggleEditModeAnalise(); // Ativa o modo apresentação limpo
 
                     setTimeout(() => {
                         window.scrollTo(0, 0);
                         const area = document.getElementById('view-container-analise_csv_dinamico');
-                        
-                        html2canvas(area, { 
-                            scale: 1, // Reduzido de 1.5 para 1 para evitar estouro de limite de megapixels do navegador
-                            useCORS: true, 
-                            allowTaint: false, 
-                            backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
-                            logging: false 
-                        }).then(canvas => {
-                            try {
-                                const imgData = canvas.toDataURL('image/jpeg', 0.75); // Compressão maior habilitada
-                                if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
 
-                                // Reduzindo em 25% o tamanho físico da "folha" de PDF gerada para não quebrar a spec do Acrobat Reader
-                                const pdfWidth = canvas.width * 0.75;
-                                const pdfHeight = canvas.height * 0.75;
-                                
-                                const pdf = new window.jspdf.jsPDF({
-                                    orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
-                                    unit: 'px',
-                                    format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
-                                    compress: true // Habilita deflação zlib pesada no PDF
-                                });
-                                
-                                // O parâmetro 'FAST' é o segredo aqui para ignorar metadados pesados e desobstruir o Chrome
-                                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-                                pdf.save(`Analitico_Operacao_${new Date().toISOString().split('T')[0]}.pdf`);
-                                
-                                app.ui.showAlert("Sucesso!", "O seu PDF do Analítico foi gerado e baixado.", "success");
-                            } catch (e) {
-                                console.error("Erro PDF Analítico:", e);
-                                app.ui.showAlert("Erro de Memória", "A página de análise é muito longa para caber em um único PDF. Tente fechar as tabelas expansíveis (Top 5) antes de exportar.", "error");
-                            }
-                        }).catch(err => {
-                            console.error("Erro no Canvas:", err);
-                            app.ui.showAlert("Erro ao Gerar", "Ocorreu um erro ao renderizar a tela. Pressione F12 para detalhes.", "error");
-                        }).finally(() => {
-                            if (!oldMode) app.ui.toggleEditModeAnalise(); // Devolve a tela ao normal
-                        });
-                    }, 1000); // Aumentado para 1 segundo garantindo que os gráficos da página terminaram a animação
+                        // VESTE A ROUPA PARA FOTO (PDF CLEAN MODE) - Congela o 3D e destrava o Scroll
+                        area.classList.add('pdf-clean-mode');
+                        const style = document.createElement('style');
+                        style.id = 'pdf-fix-styles-analise';
+                        style.innerHTML = `
+                            /* 1. Oculta botões flutuantes que atrapalham o papel */
+                            .pdf-clean-mode button, 
+                            .pdf-clean-mode input[type="file"],
+                            .pdf-clean-mode input[type="color"],
+                            .pdf-clean-mode .hideable-box,
+                            #btn-sair-apresentacao { display: none !important; }
+                            
+                            /* 2. Arrebenta as amarras de rolagem para expandir 100% da tabela na vertical */
+                            .pdf-clean-mode .overflow-x-auto, 
+                            .pdf-clean-mode .overflow-y-auto, 
+                            .pdf-clean-mode .custom-scrollbar,
+                            .pdf-clean-mode details,
+                            .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
+
+                            /* 3. Trava os Cards Magnéticos e Flip 3D para evitar borrões (frente/verso colidindo) */
+                            .pdf-clean-mode [style*="preserve-3d"], 
+                            .pdf-clean-mode [class*="preserve-3d"] { transform: none !important; transition: none !important; }
+                            .pdf-clean-mode [class*="rotateY(180deg)"] { display: none !important; opacity: 0 !important; visibility: hidden !important; }
+
+                            /* 4. Remove o sombreamento e ajeita quebras de bordas */
+                            .pdf-clean-mode .glass-card { box-shadow: none !important; border: 1px solid rgba(226, 232, 240, 0.4) !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+                            
+                            /* 5. Evita que o Chart.js "estoure" de tamanho sem limites de altura */
+                            .pdf-clean-mode canvas { max-width: 100% !important; }
+                        `;
+                        document.head.appendChild(style);
+                        
+                        // Tempo extra para o navegador e os gráficos absorverem as novas regras CSS
+                        setTimeout(() => {
+                            html2canvas(area, { 
+                                scale: 1.2, // Mantém resolução alta sem estourar limite da VRAM
+                                useCORS: true, 
+                                allowTaint: false, 
+                                backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+                                logging: false 
+                            }).then(canvas => {
+                                try {
+                                    const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG é imensamente mais leve para PDFs longos
+                                    if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
+
+                                    const pdfWidth = canvas.width * 0.75;
+                                    const pdfHeight = canvas.height * 0.75;
+                                    
+                                    const pdf = new window.jspdf.jsPDF({
+                                        orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
+                                        unit: 'px',
+                                        format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
+                                        compress: true
+                                    });
+                                    
+                                    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+                                    pdf.save(`Analitico_Operacao_${new Date().toISOString().split('T')[0]}.pdf`);
+                                    
+                                    app.ui.showAlert("Sucesso!", "O PDF Oficial do Analítico foi gerado e baixado.", "success");
+                                } catch (e) {
+                                    console.error("Erro PDF Analítico:", e);
+                                    app.ui.showAlert("Erro de Memória", "A tabela desta operação está imensa. Para PDFs muito grandes, clique no botão 'Modo Apresentação' e use o atalho <b>Ctrl + P</b> do teclado.", "error");
+                                }
+                            }).catch(err => {
+                                console.error("Erro no Canvas:", err);
+                                app.ui.showAlert("Erro ao Gerar", "O sistema de captura de tela travou.", "error");
+                            }).finally(() => {
+                                // Restaura a vida normal da tela
+                                area.classList.remove('pdf-clean-mode');
+                                const fixStyle = document.getElementById('pdf-fix-styles-analise');
+                                if (fixStyle) fixStyle.remove();
+                                if (!oldMode) app.ui.toggleEditModeAnalise(); // Sair do Modo Apresentação se não estava nele
+                            });
+                        }, 400); // 400ms garantem que o CSS recém-injetado repintou a tela antes do clique da foto
+                    }, 800);
                 },
 
                 confirmarNomeCSV() {
