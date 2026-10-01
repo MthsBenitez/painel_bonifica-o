@@ -9853,10 +9853,22 @@
 
                             let count = 0;
                             jsonData.forEach(row => {
-                                const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR' || k.trim().toUpperCase() === 'NOME' || k.trim().toUpperCase() === 'OPERADOR');
-                                const keyCampanha = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESCRIÇÃO DO JOB' || k.trim().toUpperCase() === 'DESCRICAO DO JOB' || k.trim().toUpperCase() === 'CAMPANHA');
-                                const keyMotivo = Object.keys(row).find(k => k.trim().toUpperCase() === 'MOTIVO DO CANCELAMENTO' || k.trim().toUpperCase() === 'MOTIVO');
-                                const keyQtd = Object.keys(row).find(k => k.trim().toUpperCase() === 'QUANTIDADE' || k.trim().toUpperCase() === 'TOTAL' || k.trim().toUpperCase() === 'QTD');
+                                const keyEntrevistador = Object.keys(row).find(k => {
+                                    const up = k.trim().toUpperCase();
+                                    return up.includes('ENTREVISTADOR') || up.includes('NOME') || up.includes('OPERADOR');
+                                });
+                                const keyCampanha = Object.keys(row).find(k => {
+                                    const up = k.trim().toUpperCase();
+                                    return up.includes('JOB') || up.includes('CAMPANHA') || up.includes('PROJETO');
+                                });
+                                const keyMotivo = Object.keys(row).find(k => {
+                                    const up = k.trim().toUpperCase();
+                                    return up.includes('MOTIVO') || up.includes('JUSTIFICATIVA') || up.includes('OBSERVA');
+                                });
+                                const keyQtd = Object.keys(row).find(k => {
+                                    const up = k.trim().toUpperCase();
+                                    return up.includes('QUANTIDADE') || up.includes('TOTAL') || up.includes('QTD');
+                                });
 
                                 let entrevistador = keyEntrevistador ? String(row[keyEntrevistador]).replace(/_SOFT$/i, '').trim() : 'Não Identificado';
                                 let campanha = keyCampanha ? String(row[keyCampanha]).trim() : 'Geral (S/ Campanha)';
@@ -9979,11 +9991,11 @@
                                     });
                                     const keyEscuta = Object.keys(row).find(k => {
                                         const up = k.trim().toUpperCase();
-                                        return up.includes('ESCUTA') || up.includes('VALIDADA') || up.includes('SUCESSO');
+                                        return up.includes('VERIFICADAS (FOR)') || up.includes('VERIFICADA') || up.includes('ESCUTA') || up.includes('VALIDADA') || up.includes('SUCESSO');
                                     });
                                     const keyCancFor = Object.keys(row).find(k => {
                                         const up = k.trim().toUpperCase();
-                                        return up.includes('FOR') && (up.includes('CANC') || up.includes('INV'));
+                                        return up.includes('CANCELADAS (TOTAL)') || up.includes('CANCELADA (TOTAL)') || (up.includes('FOR') && (up.includes('CANC') || up.includes('INV'))) || up === 'CANCELADAS';
                                     });
                                     const keyCancCq = Object.keys(row).find(k => {
                                         const up = k.trim().toUpperCase();
