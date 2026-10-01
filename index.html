@@ -1786,12 +1786,15 @@
                     if (richText) document.getElementById('act-acao').value = richText.innerHTML.trim();
                     
                     const evtEditId = document.getElementById('act-edit-id').value;
+                    const dataAcaoVal = document.getElementById('act-data').value;
+                    const targetMonth = dataAcaoVal ? dataAcaoVal.substring(0, 7) : app.currentMonth;
+
                     const payload = {
                         id: evtEditId || ('act_' + Date.now()),
                         matricula: app.currentUser.matricula,
                         nome: app.currentUser.nome,
-                        month: app.currentMonth,
-                        dataAcao: document.getElementById('act-data').value,
+                        month: targetMonth,
+                        dataAcao: dataAcaoVal,
                         codigoOpe: document.getElementById('act-codigo').value,
                         objetivo: document.getElementById('act-objetivo').value,
                         acaoRealizada: document.getElementById('act-acao').value,
@@ -3193,6 +3196,7 @@
                     checkboxes.forEach(cb => cb.checked = !allChecked);
                 },
                 // ------------------------------------------------------------
+                filtrosApresentacaoAbertos: false,
                 valuesHidden: false,
                 timerInterval: null,
                 
@@ -8344,15 +8348,7 @@
                             .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; }
                         </style>
 
-                        <!-- Fundo Animado Imersivo e Interativo -->
-                        <div id="story-dynamic-bg" class="absolute inset-0 pointer-events-none z-[0] overflow-hidden rounded-[2rem] bg-[#0b1120]" style="transition: background-color 1s ease;">
-                            <!-- Orbes de Luz Dinâmica responsivos ao mouse via CSS Variables -->
-                            <div id="story-orb-1" class="absolute w-[60vw] h-[60vw] rounded-full blur-[100px] animate-orb-1 opacity-60" style="top: calc(-10% + var(--mouse-y, 0px) * -0.05); left: calc(-10% + var(--mouse-x, 0px) * -0.05); background: radial-gradient(circle, ${hex2rgba(userBg, 0.8)} 0%, transparent 70%); transition: top 0.3s ease-out, left 0.3s ease-out;"></div>
-                            <div id="story-orb-2" class="absolute w-[50vw] h-[50vw] rounded-full blur-[80px] animate-orb-2 opacity-40" style="bottom: calc(-10% + var(--mouse-y, 0px) * 0.05); right: calc(-10% + var(--mouse-x, 0px) * 0.05); background: radial-gradient(circle, ${hex2rgba(userBg, 0.5)} 0%, transparent 70%); transition: bottom 0.3s ease-out, right 0.3s ease-out;"></div>
-                            
-                            <!-- Vignette Suave -->
-                            <div class="absolute inset-0 bg-gradient-to-b from-[#0b1120]/10 via-[#0b1120]/60 to-[#0b1120]/90"></div>
-                        </div>
+                        <!-- Fundo Animado Removido conforme solicitação de UX -->
 
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
                             <div class="w-full ${this.analiseEditMode ? 'text-center mt-12' : 'xl:w-auto'}">
@@ -8424,15 +8420,15 @@
                     // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS (UX MODERNA)
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
                         html += `
-                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999] group' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
+                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999]' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
                             
                             ${this.analiseEditMode ? `
-                            <div class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer hover:scale-110 transition-transform relative z-50">
-                                <i class="fa-solid fa-filter"></i>
+                            <div onclick="app.ui.filtrosApresentacaoAbertos = !app.ui.filtrosApresentacaoAbertos; app.ui.renderTab('analise_csv_dinamico', true)" class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer hover:scale-110 transition-transform relative z-50">
+                                <i class="fa-solid ${this.filtrosApresentacaoAbertos ? 'fa-xmark' : 'fa-filter'}"></i>
                             </div>
                             ` : ''}
 
-                            <div class="${this.analiseEditMode ? 'absolute bottom-8 left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-[2rem] shadow-2xl w-[90vw] max-w-4xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 origin-bottom-left scale-95 group-hover:scale-100 pb-16' : ''}">
+                            <div class="${this.analiseEditMode ? `absolute bottom-16 left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-[2rem] shadow-2xl w-[90vw] max-w-4xl transition-all duration-300 origin-bottom-left pb-8 z-40 ${this.filtrosApresentacaoAbertos ? 'opacity-100 visible scale-100' : 'opacity-0 invisible scale-95'}` : ''}">
                                 ${!this.analiseEditMode ? btnHideCode : ''}
                                 <div class="flex justify-between items-center mb-4">
                                     <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
@@ -11575,10 +11571,18 @@
                     app.storage.saveApresentacoes().then(() => app.ui.renderTab('analise_csv_dinamico', true));
                 },
 
-                filtrarGaleriaAcoes(term) {
-                    const t = term.toLowerCase();
+                filtrarGaleriaAcoes() {
+                    const termEl = document.getElementById('filtro-acao-texto');
+                    const monthEl = document.getElementById('filtro-acao-mes');
+                    
+                    const term = termEl ? termEl.value.toLowerCase() : '';
+                    const month = monthEl ? monthEl.value : '';
+
                     document.querySelectorAll('.card-acao-galeria').forEach(el => {
-                        if (el.innerText.toLowerCase().includes(t)) el.style.display = '';
+                        const matchText = el.innerText.toLowerCase().includes(term);
+                        const matchMonth = month === '' || el.getAttribute('data-month') === month;
+                        
+                        if (matchText && matchMonth) el.style.display = '';
                         else el.style.display = 'none';
                     });
                 },
@@ -11589,14 +11593,23 @@
                     
                     const acoesAprovadas = Object.values(app.actionsList || {}).filter(a => a.status === 'aprovado').sort((a,b) => b.timestamp - a.timestamp);
                     
+                    const mesesDisponiveis = [...new Set(acoesAprovadas.map(a => a.month))].sort().reverse();
+                    const comboMeses = mesesDisponiveis.map(m => `<option value="${m}">${app.ui.formatMonthLabel(m)}</option>`).join('');
+
                     let htmlList = '';
                     if(acoesAprovadas.length === 0) {
                         htmlList = '<div class="text-center text-sm text-slate-400 py-8 border-dashed border-2 rounded-2xl">Não há ações presenciais aprovadas no sistema.</div>';
                     } else {
                         htmlList = `
-                            <div class="mb-4 relative">
-                                <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                <input type="text" onkeyup="app.admin.filtrarGaleriaAcoes(this.value)" placeholder="Pesquise por tema, responsável ou operação..." class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 outline-none focus:border-teal-500 shadow-sm text-sm dark:text-white transition-colors">
+                            <div class="flex flex-col sm:flex-row gap-2 mb-4 relative z-10">
+                                <div class="relative flex-1">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                    <input type="text" id="filtro-acao-texto" onkeyup="app.admin.filtrarGaleriaAcoes()" placeholder="Pesquise por tema, responsável ou operação..." class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 outline-none focus:border-teal-500 shadow-sm text-sm dark:text-white transition-colors">
+                                </div>
+                                <select id="filtro-acao-mes" onchange="app.admin.filtrarGaleriaAcoes()" class="w-full sm:w-48 p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 outline-none focus:border-teal-500 shadow-sm text-sm dark:text-white transition-colors cursor-pointer">
+                                    <option value="">Todos os Meses</option>
+                                    ${comboMeses}
+                                </select>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar p-2">
                         `;
@@ -11604,9 +11617,9 @@
                             const isSelected = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.includes(act.id);
                             const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
                             htmlList += `
-                                <div class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
-                                    <div class="flex gap-3 cursor-pointer" onclick="app.admin.toggleAcaoApresentacao('${act.id}')">
-                                        <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
+                                <div data-month="${act.month}" class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
+                                    <div class="flex gap-3 cursor-pointer" onclick="app.admin.toggleAcaoApresentacao('${act.id}', this.parentElement)">
+                                        <div class="check-indicator absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
                                         <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
                                             ${photoThumb ? `<img src="${photoThumb}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}
                                         </div>
@@ -11641,18 +11654,40 @@
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
-                toggleAcaoApresentacao(id) {
+                toggleAcaoApresentacao(id, el) {
                     let acoes = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas;
+                    let isSelected = false;
+                    
                     if(acoes.includes(id)) {
                         app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = acoes.filter(x => x !== id);
                     } else {
                         app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.push(id);
+                        isSelected = true;
                     }
+                    
                     localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);
-                    app.ui._refreshComMemoriaDeScroll(); // Atualiza tela atrás do modal
-                    this.openAcoesSelectorModal(); // Atualiza cores do modal
+                    app.ui._refreshComMemoriaDeScroll(); // Atualiza a tela de trás (sem fechar modal e mantendo filtros intactos)
+                    
+                    // Troca classes do card Clicado sem fechar/resetar o modal
+                    if (el) {
+                        const checkDiv = el.querySelector('.check-indicator');
+                        if (isSelected) {
+                            el.classList.add('border-teal-500', 'bg-teal-50', 'dark:bg-teal-900/20');
+                            el.classList.remove('border-slate-200', 'dark:border-slate-700');
+                            if (checkDiv) {
+                                checkDiv.classList.remove('bg-slate-300', 'scale-0', 'group-hover:scale-100');
+                                checkDiv.classList.add('bg-teal-500', 'scale-100', 'shadow-md');
+                            }
+                        } else {
+                            el.classList.remove('border-teal-500', 'bg-teal-50', 'dark:bg-teal-900/20');
+                            el.classList.add('border-slate-200', 'dark:border-slate-700');
+                            if (checkDiv) {
+                                checkDiv.classList.add('bg-slate-300', 'scale-0', 'group-hover:scale-100');
+                                checkDiv.classList.remove('bg-teal-500', 'scale-100', 'shadow-md');
+                            }
+                        }
+                    }
                 },
-
                 exportarAnalisePDF() {
                     if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
                         return app.ui.showAlert("Aviso", "As ferramentas de PDF ainda estão carregando. Tente novamente em alguns segundos.", "info");
