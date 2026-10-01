@@ -8047,22 +8047,45 @@
                             // --- INTERAÇÃO DE STORYTELLING E ROLAGEM MÁGICA ---
                             const containerApresentacao = document.getElementById('view-container-analise_csv_dinamico');
                             if (containerApresentacao && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
-                                // Observer (Olheiro) que dispara a animação em efeito cascata quando o elemento entra na tela
+                                // 1. Aplica classe de animação em TODOS os cards, tabelas e caixas de destaque
+                                const elementsToAnimate = containerApresentacao.querySelectorAll('.glass-card, .hideable-box, .chapter-marker');
+                                elementsToAnimate.forEach(el => {
+                                    // Ignora o card do título principal e o fundo em si para evitar piscar no carregamento
+                                    if (el.id !== 'story-dynamic-bg' && !el.querySelector('h2[contenteditable]')) {
+                                        el.classList.add('scroll-reveal-card');
+                                    }
+                                });
+
+                                // 2. Observer (Olheiro) que dispara a animação em efeito cascata quando o elemento entra na tela
                                 const observer = new IntersectionObserver((entries) => {
-                                    // Filtra apenas os que entraram na tela para o cálculo do index do delay ficar perfeito
-                                    const visibleEntries = entries.filter(entry => entry.isIntersecting);
-                                    
-                                    visibleEntries.forEach((entry, index) => {
-                                        // Delay matemático baseado no índice visual da tela para um efeito "Dominó" impecável
-                                        setTimeout(() => {
-                                            entry.target.classList.add('is-visible');
-                                        }, index * 120); // Multiplicador ajustado para a cascata respirar melhor
-                                        
-                                        observer.unobserve(entry.target);
+                                    entries.forEach((entry, index) => {
+                                        if (entry.isIntersecting) {
+                                            // Delay matemático baseado no índice visual da tela para um efeito "Dominó" chiquérrimo
+                                            setTimeout(() => {
+                                                entry.target.classList.add('is-visible');
+                                            }, index * 80); 
+                                            observer.unobserve(entry.target);
+                                        }
                                     });
-                                }, { threshold: 0.05, rootMargin: '0px 0px -30px 0px' });
+                                }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
                                 
                                 containerApresentacao.querySelectorAll('.scroll-reveal-card').forEach(el => observer.observe(el));
+
+                                // 3. Interação do Mouse e Scroll com os Orbes (Imersão Total)
+                                const orb1 = document.getElementById('story-orb-1');
+                                const orb2 = document.getElementById('story-orb-2');
+                                
+                                if (orb1 && orb2) {
+                                    // Efeito Magnético: Agora usando Variáveis CSS para alta performance (60fps)
+                                    containerApresentacao.addEventListener('mousemove', (e) => {
+                                        const xPos = (e.clientX / window.innerWidth) - 0.5;
+                                        const yPos = (e.clientY / window.innerHeight) - 0.5;
+                                        
+                                        // Aplica os valores dinâmicos direto no style global do container animado
+                                        document.getElementById('story-dynamic-bg').style.setProperty('--mouse-x', `${xPos * 400}px`);
+                                        document.getElementById('story-dynamic-bg').style.setProperty('--mouse-y', `${yPos * 400}px`);
+                                    });
+                                }
                             }
                         }, 300);
                     },
@@ -8301,17 +8324,28 @@
 
                     let html = `
                         <style>
-                            /* Efeito de Scroll Suave para os Cards (Scrollytelling Premium) */
+                            /* Efeito de Scroll Suave para os Cards */
                             .scroll-reveal-card {
                                 opacity: 0;
-                                transform: translateY(60px) scale(0.95);
-                                transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
-                                will-change: transform, opacity;
+                                transform: translateY(40px) scale(0.98);
+                                transition: opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
                             }
                             .scroll-reveal-card.is-visible {
                                 opacity: 1;
                                 transform: translateY(0) scale(1);
                             }
+                            
+                            /* Animação contínua dos orbes de luz de fundo */
+                            @keyframes floatOrb1 {
+                                0%, 100% { transform: translate(0, 0) scale(1); }
+                                50% { transform: translate(40px, -60px) scale(1.1); }
+                            }
+                            @keyframes floatOrb2 {
+                                0%, 100% { transform: translate(0, 0) scale(1); }
+                                50% { transform: translate(-50px, 40px) scale(1.2); }
+                            }
+                            .animate-orb-1 { animation: floatOrb1 18s ease-in-out infinite; }
+                            .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; }
                         </style>
 
                         <!-- Fundo Animado Removido conforme solicitação de UX -->
@@ -9141,19 +9175,9 @@
                 
                     container.innerHTML = html;
 
-                    container.innerHTML = html;
-                            
-                            // [SCROLLYTELLING] Aplicação imediata das classes ocultas ANTES do navegador renderizar a tela (Evita piscar)
-                            const elementsToAnimate = container.querySelectorAll('.glass-card, .hideable-box, .chapter-marker');
-                            elementsToAnimate.forEach(el => {
-                                if (el.id !== 'story-dynamic-bg' && !el.querySelector('h2[contenteditable]')) {
-                                    el.classList.add('scroll-reveal-card');
-                                }
-                            });
-
-                            // CARREGAMENTO SEGURO DOS GRÁFICOS
-                            setTimeout(() => {
-                                try {
+                    // CARREGAMENTO SEGURO DOS GRÁFICOS
+                    setTimeout(() => {
+                        try {
                             const isDark = document.documentElement.classList.contains('dark');
                             const textColor = isDark ? '#94a3b8' : '#64748b';
                             const gridColor = isDark ? '#334155' : '#e2e8f0';
