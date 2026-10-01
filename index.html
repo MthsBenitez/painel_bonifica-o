@@ -8043,40 +8043,59 @@
                             // --- INTERAÇÃO DE STORYTELLING E ROLAGEM MÁGICA ---
                             const containerApresentacao = document.getElementById('view-container-analise_csv_dinamico');
                             if (containerApresentacao && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
-                                // 1. Injeta classes de revelação suave nas seções principais de forma inteligente
-                                Array.from(containerApresentacao.children).forEach(el => {
+                                // 1. Aplica classe de animação em TODOS os cards, tabelas e caixas de destaque
+                                const elementsToAnimate = containerApresentacao.querySelectorAll('.glass-card, .hideable-box, .chapter-marker');
+                                elementsToAnimate.forEach(el => {
+                                    // Ignora o card do título principal e o fundo em si para evitar piscar no carregamento
                                     if (el.id !== 'story-dynamic-bg' && !el.querySelector('h2[contenteditable]')) {
-                                        el.classList.add('opacity-0', 'translate-y-12', 'transition-all', 'duration-[1200ms]', 'ease-out', 'story-reveal');
+                                        el.classList.add('scroll-reveal-card');
                                     }
                                 });
 
-                                // 2. Observer (Olheiro) que dispara a animação quando o card entra na visão do usuário
+                                // 2. Observer (Olheiro) que dispara a animação em efeito cascata quando o elemento entra na tela
                                 const observer = new IntersectionObserver((entries) => {
-                                    entries.forEach(entry => {
+                                    entries.forEach((entry, index) => {
                                         if (entry.isIntersecting) {
-                                            entry.target.classList.remove('opacity-0', 'translate-y-12');
-                                            entry.target.classList.add('opacity-100', 'translate-y-0');
-                                            observer.unobserve(entry.target); // Anima apenas 1 vez (não repete se subir a tela)
+                                            // Delay matemático baseado no índice visual da tela para um efeito "Dominó" chiquérrimo
+                                            setTimeout(() => {
+                                                entry.target.classList.add('is-visible');
+                                            }, index * 80); 
+                                            observer.unobserve(entry.target);
                                         }
                                     });
-                                }, { threshold: 0.05, rootMargin: '0px 0px -20px 0px' });
-                                containerApresentacao.querySelectorAll('.story-reveal').forEach(el => observer.observe(el));
+                                }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+                                
+                                containerApresentacao.querySelectorAll('.scroll-reveal-card').forEach(el => observer.observe(el));
 
-                                // 3. Parallax do Fundo Dinâmico (Efeito Magnético na Rolagem)
+                                // 3. Interação do Mouse e Scroll com os Orbes (Imersão Total)
                                 const orb1 = document.getElementById('story-orb-1');
                                 const orb2 = document.getElementById('story-orb-2');
+                                
                                 if (orb1 && orb2) {
-                                    const onScrollAnalise = () => {
+                                    // Efeito Magnético: O Fundo Fog da Posição do Mouse
+                                    containerApresentacao.addEventListener('mousemove', (e) => {
+                                        const xPos = (e.clientX / window.innerWidth) - 0.5;
+                                        const yPos = (e.clientY / window.innerHeight) - 0.5;
+                                        
+                                        orb1.style.marginLeft = `${xPos * -90}px`;
+                                        orb1.style.marginTop = `${yPos * -90}px`;
+                                        orb2.style.marginRight = `${xPos * 70}px`;
+                                        orb2.style.marginBottom = `${yPos * 70}px`;
+                                    });
+
+                                    // Limpa eventos antigos para não sobrecarregar
+                                    if (window.activeScrollAnalise) window.removeEventListener('scroll', window.activeScrollAnalise);
+                                    
+                                    window.activeScrollAnalise = () => {
                                         if(app.currentTab !== 'analise_csv_dinamico') {
-                                            window.removeEventListener('scroll', onScrollAnalise);
+                                            window.removeEventListener('scroll', window.activeScrollAnalise);
                                             return;
                                         }
                                         const scrolled = window.scrollY;
-                                        orb1.style.transform = `translateY(${scrolled * 0.35}px) rotate(${scrolled * 0.02}deg)`;
-                                        orb2.style.transform = `translateY(${scrolled * -0.25}px) rotate(${scrolled * -0.015}deg) scale(${1 + (scrolled * 0.0002)})`;
+                                        // Orbes sobem e descem conforme rola a página, criando profundidade 3D (Parallax)
+                                        orb1.style.top = `calc(-10% + ${scrolled * 0.25}px)`;
+                                        orb2.style.bottom = `calc(-10% - ${scrolled * 0.15}px)`;
                                     };
-                                    window.removeEventListener('scroll', window.activeScrollAnalise);
-                                    window.activeScrollAnalise = onScrollAnalise;
                                     window.addEventListener('scroll', window.activeScrollAnalise);
                                 }
                             }
@@ -8311,10 +8330,42 @@
                     const pctErrosCriticos = totalPerguntasGlobais > 0 ? ((totalFalhasCriticas / totalPerguntasGlobais) * 100).toFixed(1) : 0;
 
                     let html = `
-                        <!-- Fundo Animado Base -->
-                        <div id="story-dynamic-bg" class="absolute inset-0 pointer-events-none z-[0] transition-colors duration-1000 overflow-hidden rounded-[2rem]" style="background-color: ${hex2rgba(userBg, 0.02)};">
-                            <div id="story-orb-1" class="absolute top-[-20%] left-[-10%] w-[70vw] h-[70vw] rounded-full blur-[120px]" style="background: radial-gradient(circle, ${glowColor} 0%, transparent 70%);"></div>
-                            <div id="story-orb-2" class="absolute bottom-[-10%] right-[-10%] w-[60vw] h-[60vw] rounded-full blur-[100px]" style="background: radial-gradient(circle, ${glowSecondary} 0%, transparent 70%);"></div>
+                        <style>
+                            /* Efeito de Scroll Suave para os Cards */
+                            .scroll-reveal-card {
+                                opacity: 0;
+                                transform: translateY(50px);
+                                transition: all 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+                            }
+                            .scroll-reveal-card.is-visible {
+                                opacity: 1;
+                                transform: translateY(0);
+                            }
+                            
+                            /* Animação contínua dos orbes de luz de fundo */
+                            @keyframes floatOrb1 {
+                                0%, 100% { transform: translate(0, 0) scale(1); }
+                                50% { transform: translate(40px, -60px) scale(1.1); }
+                            }
+                            @keyframes floatOrb2 {
+                                0%, 100% { transform: translate(0, 0) scale(1); }
+                                50% { transform: translate(-50px, 40px) scale(1.2); }
+                            }
+                            .animate-orb-1 { animation: floatOrb1 18s ease-in-out infinite; }
+                            .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; }
+                        </style>
+
+                        <!-- Fundo Animado Imersivo e Interativo -->
+                        <div id="story-dynamic-bg" class="absolute inset-0 pointer-events-none z-[0] transition-colors duration-1000 overflow-hidden rounded-[2rem] bg-slate-900">
+                            <!-- Textura quadriculada sutil no fundo para visual tech -->
+                            <div class="absolute inset-0 opacity-40 mix-blend-overlay" style="background-image: url('data:image/svg+xml,%3Csvg width=\\'60\\' height=\\'60\\' viewBox=\\'0 0 60 60\\' xmlns=\\'http://www.w3.org/2000/svg\\'%3E%3Cg fill=\\'none\\' fill-rule=\\'evenodd\\'%3E%3Cg fill=\\'%23ffffff\\' fill-opacity=\\'0.05\\'%3E%3Cpath d=\\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');"></div>
+                            
+                            <!-- Orbes de Luz Dinâmica -->
+                            <div id="story-orb-1" class="absolute top-[-10%] left-[-10%] w-[60vw] h-[60vw] rounded-full blur-[120px] animate-orb-1 mix-blend-screen opacity-70" style="background: radial-gradient(circle, ${hex2rgba(userBg, 0.9)} 0%, transparent 70%); transition: margin 0.2s ease-out;"></div>
+                            <div id="story-orb-2" class="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full blur-[100px] animate-orb-2 mix-blend-screen opacity-50" style="background: radial-gradient(circle, ${hex2rgba(userBg, 0.6)} 0%, transparent 70%); transition: margin 0.2s ease-out;"></div>
+                            
+                            <!-- Vignette (Bordas escurecidas) para fechar o palco -->
+                            <div class="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/50 to-slate-900"></div>
                         </div>
 
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
