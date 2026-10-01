@@ -3129,7 +3129,7 @@
 
                 forgotPassword() {
                     const mat = document.getElementById('login-mat').value.trim();
-                    if(!mat) return app.ui.showAlert("Aviso", "Digite sua matrícula no campo antes de clicar em Esqueci a senha.", "error");
+                    so", "Digite sua matrícula no campo antes de clicar em Esqueci a senha.", "error");
                     
                     app.notifications.notify('ADM', 'Solicitação de Senha', `O colaborador da matrícula ${mat} solicitou o reset de senha.`, 'error');
                     app.ui.showAlert("Solicitação Enviada", "A administração foi notificada para redefinir sua senha. Aguarde o retorno do seu gestor.", "success");
@@ -9845,11 +9845,11 @@
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
                             const firstSheet = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheet];
                             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
 
                             let count = 0;
                             jsonData.forEach(row => {
-                                // Mapeamento Flexível: Tenta achar a coluna exata não importa como digitaram
                                 const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR' || k.trim().toUpperCase() === 'NOME' || k.trim().toUpperCase() === 'OPERADOR');
                                 const keyCampanha = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESCRIÇÃO DO JOB' || k.trim().toUpperCase() === 'DESCRICAO DO JOB' || k.trim().toUpperCase() === 'CAMPANHA');
                                 const keyMotivo = Object.keys(row).find(k => k.trim().toUpperCase() === 'MOTIVO DO CANCELAMENTO' || k.trim().toUpperCase() === 'MOTIVO');
@@ -9858,7 +9858,7 @@
                                 let entrevistador = keyEntrevistador ? String(row[keyEntrevistador]).replace(/_SOFT$/i, '').trim() : 'Não Identificado';
                                 let campanha = keyCampanha ? String(row[keyCampanha]).trim() : 'Geral (S/ Campanha)';
                                 let motivo = keyMotivo ? String(row[keyMotivo]).trim() : 'Sem motivo informado';
-                                let qtd = keyQtd ? (parseInt(row[keyQtd]) || 1) : 1;  // Se for uma linha por cancelada, a qtd é sempre 1
+                                let qtd = keyQtd ? (parseInt(row[keyQtd]) || 1) : 1;
 
                                 if (entrevistador && entrevistador !== '0' && entrevistador !== 'Não Identificado') {
                                     app.anatelData.canceladasNovas.push({
@@ -9955,10 +9955,11 @@
                                 const data = new Uint8Array(e.target.result);
                                 const workbook = XLSX.read(data, { type: 'array', raw: true });
                                 const firstSheet = workbook.SheetNames[0];
+                                const worksheet = workbook.Sheets[firstSheet];
                                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
                                 
                                 jsonData.forEach(row => {
-                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR');
+                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR' || k.trim().toUpperCase() === 'NOME' || k.trim().toUpperCase() === 'OPERADOR');
                                     let entrevistador = keyEntrevistador ? row[keyEntrevistador] : '';
                                     if (!entrevistador) return;
                                     
@@ -9999,6 +10000,7 @@
                     });
                     input.value = ''; 
                 },
+                
                 abrirModalMonitoriaManual(matriculaEdit = null) {
                     const ranking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
                     let nome = '', matr = '', total = 0, fbsPendentes = 0;
