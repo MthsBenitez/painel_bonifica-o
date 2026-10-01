@@ -9393,20 +9393,23 @@
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider"><i class="fa-solid fa-layer-group text-slate-400"></i> Por Campanha</h3>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
-                                    <tr><th class="p-4 rounded-tl-xl">Campanha</th><th class="p-4 text-center">Real.</th><th class="p-4 text-center">Validadas</th><th class="p-4 text-right rounded-tr-xl">% Mon.</th>${app.isAdmin ? '<th class="p-4 text-center">Ação</th>' : ''}</tr>
+                                    <tr><th class="p-4 rounded-tl-xl">Campanha</th><th class="p-4 text-center">Real.</th><th class="p-4 text-center">Validadas</th><th class="p-4 text-center">Canc. S/ Valid.</th><th class="p-4 text-right rounded-tr-xl">% Mon.</th>${app.isAdmin ? '<th class="p-4 text-center">Ação</th>' : ''}</tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
                     `;
                     
-                    const campanhasExibir = Object.values(campanhasMap).filter(c => c.realizadas > 0).sort((a,b) => b.realizadas - a.realizadas);
+                    // CORREÇÃO: Mostra se tiver 'realizadas' OU 'novasCanc', ordenando pela soma das duas!
+                    const campanhasExibir = Object.values(campanhasMap).filter(c => c.realizadas > 0 || c.novasCanc > 0).sort((a,b) => (b.realizadas + b.novasCanc) - (a.realizadas + a.novasCanc));
                     
                     campanhasExibir.forEach(c => {
-                        const pct = c.realizadas > 0 ? ((c.escuta / c.realizadas) * 100).toFixed(1) : 0;
+                        const totalMonCampanha = c.escuta + c.novasCanc;
+                        const pct = c.realizadas > 0 ? ((totalMonCampanha / c.realizadas) * 100).toFixed(1) : 0;
                         html += `
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <td class="p-4 font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]" title="${c.nome}">${c.nome}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.realizadas}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.escuta}</td>
+                                <td class="p-4 text-center font-medium text-slate-500">${c.novasCanc > 0 ? '+'+c.novasCanc : '-'}</td>
                                 <td class="p-4 text-right font-black text-slate-600 dark:text-slate-300">${pct}%</td>
                                 ${app.isAdmin ? `<td class="p-4 text-center"><button onclick="app.admin.renomearCampanhaAnatel('${c.nome}')" class="text-slate-400 hover:text-slate-800 dark:hover:text-white bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 p-2 rounded-lg transition shadow-sm" title="Renomear Campanha"><i class="fa-solid fa-pen"></i></button></td>` : ''}
                             </tr>
@@ -9959,16 +9962,33 @@
                                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
                                 
                                 jsonData.forEach(row => {
-                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR' || k.trim().toUpperCase() === 'NOME' || k.trim().toUpperCase() === 'OPERADOR');
+                                    const keyEntrevistador = Object.keys(row).find(k => {
+                                        const up = k.trim().toUpperCase();
+                                        return up.includes('ENTREVISTADOR') || up.includes('NOME') || up.includes('OPERADOR');
+                                    });
                                     let entrevistador = keyEntrevistador ? row[keyEntrevistador] : '';
                                     if (!entrevistador) return;
                                     
+                                    // Limpa sufixos sistêmicos
                                     entrevistador = entrevistador.toString().replace(/_SOFT$/i, '').trim();
                                     
-                                    const keyRealizadas = Object.keys(row).find(k => k.trim().toUpperCase().includes('REALIZADA'));
-                                    const keyEscuta = Object.keys(row).find(k => k.trim().toUpperCase().includes('ESCUTA'));
-                                    const keyCancFor = Object.keys(row).find(k => k.trim().toUpperCase().includes('FOR') && k.trim().toUpperCase().includes('CANC'));
-                                    const keyCancCq = Object.keys(row).find(k => k.trim().toUpperCase().includes('CQ') && k.trim().toUpperCase().includes('CANC'));
+                                    // Radar Inteligente (Aceita Múltiplas Nomenclaturas)
+                                    const keyRealizadas = Object.keys(row).find(k => {
+                                        const up = k.trim().toUpperCase();
+                                        return up.includes('REALIZADA') || up.includes('TOTAL') || up.includes('QTD');
+                                    });
+                                    const keyEscuta = Object.keys(row).find(k => {
+                                        const up = k.trim().toUpperCase();
+                                        return up.includes('ESCUTA') || up.includes('VALIDADA') || up.includes('SUCESSO');
+                                    });
+                                    const keyCancFor = Object.keys(row).find(k => {
+                                        const up = k.trim().toUpperCase();
+                                        return up.includes('FOR') && (up.includes('CANC') || up.includes('INV'));
+                                    });
+                                    const keyCancCq = Object.keys(row).find(k => {
+                                        const up = k.trim().toUpperCase();
+                                        return (up.includes('CQ') || up.includes('QUALIDADE')) && (up.includes('CANC') || up.includes('INV'));
+                                    });
                                     
                                     const realizadas = keyRealizadas ? (parseInt(row[keyRealizadas]) || 0) : 0;
                                     const escuta = keyEscuta ? (parseInt(row[keyEscuta]) || 0) : 0;
@@ -9992,7 +10012,7 @@
                             if (processedCount === files.length) {
                                 app.storage.saveAnatel().then(() => {
                                     app.ui.renderTab('pesquisas_anatel', true);
-                                    app.ui.showAlert("Importação Concluída", "Tabelas Padrão HSR integradas e salvas de forma persistente com sucesso.", "success");
+                                    app.ui.showAlert("Importação Concluída", "Tabelas Padrão integradas com sucesso. Seu relatório de Validadas foi atualizado.", "success");
                                 });
                             }
                         };
