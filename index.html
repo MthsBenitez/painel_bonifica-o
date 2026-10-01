@@ -8321,7 +8321,6 @@
                         const exibT = data.chapterCustomData[idKey]?.t || title;
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
 
-                        // Funções de salvamento blindadas e centralizadas
                         const onInputT = `app.ui.saveChapterData('${idKey}', 't', this.innerText)`;
                         const onInputS = `app.ui.saveChapterData('${idKey}', 's', this.innerText)`;
 
@@ -8335,8 +8334,8 @@
                                     <div class="text-[10px] font-black uppercase tracking-widest ${t.light}">Capítulo ${chapterCount++}</div>
                                     <div class="h-px w-12 ${t.bg}"></div>
                                 </div>
-                                <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputT}" onblur="${onInputT}" class="text-3xl md:text-4xl font-black ${this.analiseEditMode ? 'text-white' : 'text-slate-800 dark:text-white'} tracking-tight mb-3 drop-shadow-lg outline-none focus:bg-white/10 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
-                                <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputS}" onblur="${onInputS}" class="text-sm ${this.analiseEditMode ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'} max-w-2xl leading-relaxed mx-auto outline-none focus:bg-white/10 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
+                                <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputT}" onblur="${onInputT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-lg outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
+                                <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputS}" onblur="${onInputS}" class="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
                             </div>
                         `;
                     };
@@ -8389,7 +8388,7 @@
                             <div class="w-full ${this.analiseEditMode ? 'text-center mt-12' : 'xl:w-auto'}">
                                 <!-- TÍTULO MUITO MAIOR COM COR -->
                                 <div class="flex flex-col xl:flex-row items-center xl:justify-start gap-4">
-                                    <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block text-white drop-shadow-lg' : 'text-4xl md:text-5xl'} font-black tracking-tight outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-white/10 transition-all" style="${!this.analiseEditMode ? 'color: ' + (data?.titleColor || '') : ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
+                                    <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block drop-shadow-lg' : 'text-4xl md:text-5xl'} font-black tracking-tight text-slate-800 dark:text-white outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" style="${data?.titleColor ? 'color: ' + data.titleColor + ' !important;' : ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
                                     ${!this.analiseEditMode && data ? `
                                     <div class="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
                                         <div class="flex flex-col items-center" title="Cor da Fonte do Título">
