@@ -9393,23 +9393,21 @@
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider"><i class="fa-solid fa-layer-group text-slate-400"></i> Por Campanha</h3>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
-                                    <tr><th class="p-4 rounded-tl-xl">Campanha</th><th class="p-4 text-center">Real.</th><th class="p-4 text-center">Validadas</th><th class="p-4 text-center">Canc. S/ Valid.</th><th class="p-4 text-right rounded-tr-xl">% Mon.</th>${app.isAdmin ? '<th class="p-4 text-center">Ação</th>' : ''}</tr>
+                                    <tr><th class="p-4 rounded-tl-xl">Campanha</th><th class="p-4 text-center">Real.</th><th class="p-4 text-center">Validadas</th><th class="p-4 text-right rounded-tr-xl">% Mon.</th>${app.isAdmin ? '<th class="p-4 text-center">Ação</th>' : ''}</tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
                     `;
                     
-                    // CORREÇÃO: Mostra se tiver 'realizadas' OU 'novasCanc', ordenando pela soma das duas!
-                    const campanhasExibir = Object.values(campanhasMap).filter(c => c.realizadas > 0 || c.novasCanc > 0).sort((a,b) => (b.realizadas + b.novasCanc) - (a.realizadas + a.novasCanc));
+                    // Restaura a trava para exibir apenas campanhas que possuem pesquisas realizadas no Relatório Padrão
+                    const campanhasExibir = Object.values(campanhasMap).filter(c => c.realizadas > 0).sort((a,b) => b.realizadas - a.realizadas);
                     
                     campanhasExibir.forEach(c => {
-                        const totalMonCampanha = c.escuta + c.novasCanc;
-                        const pct = c.realizadas > 0 ? ((totalMonCampanha / c.realizadas) * 100).toFixed(1) : 0;
+                        const pct = c.realizadas > 0 ? ((c.escuta / c.realizadas) * 100).toFixed(1) : 0;
                         html += `
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <td class="p-4 font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]" title="${c.nome}">${c.nome}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.realizadas}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.escuta}</td>
-                                <td class="p-4 text-center font-medium text-slate-500">${c.novasCanc > 0 ? '+'+c.novasCanc : '-'}</td>
                                 <td class="p-4 text-right font-black text-slate-600 dark:text-slate-300">${pct}%</td>
                                 ${app.isAdmin ? `<td class="p-4 text-center"><button onclick="app.admin.renomearCampanhaAnatel('${c.nome}')" class="text-slate-400 hover:text-slate-800 dark:hover:text-white bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 p-2 rounded-lg transition shadow-sm" title="Renomear Campanha"><i class="fa-solid fa-pen"></i></button></td>` : ''}
                             </tr>
