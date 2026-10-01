@@ -9853,10 +9853,9 @@
 
                             let count = 0;
                             jsonData.forEach(row => {
-                                const keyEntrevistador = Object.keys(row).find(k => {
-                                    const up = k.trim().toUpperCase();
-                                    return up.includes('ENTREVISTADOR') || up.includes('NOME') || up.includes('OPERADOR');
-                                });
+                                // Busca ESTRITA pela coluna "Entrevistador" para não pegar "Nome do Cliente" por acidente
+                                const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || 
+                                                             Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
                                 const keyCampanha = Object.keys(row).find(k => {
                                     const up = k.trim().toUpperCase();
                                     return up.includes('JOB') || up.includes('CAMPANHA') || up.includes('PROJETO');
@@ -9974,10 +9973,9 @@
                                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
                                 
                                 jsonData.forEach(row => {
-                                    const keyEntrevistador = Object.keys(row).find(k => {
-                                        const up = k.trim().toUpperCase();
-                                        return up.includes('ENTREVISTADOR') || up.includes('NOME') || up.includes('OPERADOR');
-                                    });
+                                    // Busca ESTRITA pela coluna "Entrevistador" para não pegar "Nome do Cliente" por acidente
+                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || 
+                                                             Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
                                     let entrevistador = keyEntrevistador ? row[keyEntrevistador] : '';
                                     if (!entrevistador) return;
                                     
