@@ -3129,7 +3129,7 @@
 
                 forgotPassword() {
                     const mat = document.getElementById('login-mat').value.trim();
-                    so", "Digite sua matrícula no campo antes de clicar em Esqueci a senha.", "error");
+                    if(!mat) return app.ui.showAlert("Aviso", "Digite sua matrícula no campo antes de clicar em Esqueci a senha.", "error");
                     
                     app.notifications.notify('ADM', 'Solicitação de Senha', `O colaborador da matrícula ${mat} solicitou o reset de senha.`, 'error');
                     app.ui.showAlert("Solicitação Enviada", "A administração foi notificada para redefinir sua senha. Aguarde o retorno do seu gestor.", "success");
@@ -12197,8 +12197,11 @@
                 },
 
                 execDeleteUser(mat) {
-                app.users = app.users.filter(u => u.matricula !== mat);
-                app.storage.saveUsers().then(() => { app.ui.renderTab('gestao_equipe', true); app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); });
+                    app.users = app.users.filter(u => u.matricula !== mat);
+                    app.storage.saveUsers().then(() => { 
+                        app.ui.renderTab('gestao_equipe', true); 
+                        app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); 
+                    });
                 },
     
                 updateConfigPreview() {
