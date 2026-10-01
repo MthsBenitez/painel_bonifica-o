@@ -7913,6 +7913,118 @@
                     }
                 },
 
+                openGerenciarBasesModal() {
+                    const data = app.analiseCSVDinamicoData;
+                    if(!data || !data.relatorios || data.relatorios.length === 0) return app.ui.showAlert("Aviso", "Nenhuma base importada no momento.", "info");
+
+                    let listHtml = `<div class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    data.relatorios.forEach(rel => {
+                        listHtml += `
+                            <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div>
+                                    <div class="font-bold text-slate-800 dark:text-white text-sm"><i class="fa-solid fa-file-csv text-blue-500 mr-2"></i>${rel.nome}</div>
+                                    <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">${rel.rows.length} Linhas Vinculadas</div>
+                                </div>
+                                <button onclick="app.admin.deleteBaseRelatorio(${rel.id})" class="bg-red-50 text-red-600 hover:bg-red-100 p-2.5 rounded-lg transition-colors border border-red-200 shadow-sm" title="Excluir esta base específica"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        `;
+                    });
+                    listHtml += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-database text-blue-500"></i> Gerenciar Bases Importadas`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-2 leading-relaxed">Abaixo estão todos os arquivos individuais ou abas de formulários que você unificou na memória. Você pode excluir um elemento defeituoso sem perder as demais planilhas conectadas.</p>
+                        ${listHtml}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Fechar Gestor</button>`;
+                    
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl');
+                    modalBox.classList.add('max-w-lg');
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                openNotaAnaliseModal(notaKey) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if(!data || !data.notasDistribuicao || !data.notasDistribuicao[notaKey]) return;
+
+                    const info = data.notasDistribuicao[notaKey];
+                    const notaNum = parseFloat(notaKey);
+                    const corTheme = notaNum < 80 ? 'red' : (notaNum < 95 ? 'orange' : 'green');
+                    const corHex = notaNum < 80 ? '#ef4444' : (notaNum < 95 ? '#f97316' : '#22c55e');
+
+                    let mesesOrd = data.mesesDisponiveis || [];
+                    let chartLabels = mesesOrd.map(m => app.ui.formatMonthLabel(m).substring(0,3));
+                    let chartData = [];
+
+                    mesesOrd.forEach(mes => {
+                        if (data.mesesEvolutivo[mes] && data.mesesEvolutivo[mes].notas && data.mesesEvolutivo[mes].notas[notaKey]) {
+                            chartData.push(data.mesesEvolutivo[mes].notas[notaKey]);
+                        } else {
+                            chartData.push(0);
+                        }
+                    });
+
+                    let chartHtml = '';
+                    if(chartData.length > 1) {
+                        chartHtml = `
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-4">
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução Histórica da Nota ${notaKey}</h4>
+                                <div class="w-full h-32 relative"><canvas id="nota-chart-canvas"></canvas></div>
+                            </div>
+                        `;
+                    }
+
+                    let operadoresHtml = `<div class="space-y-2 max-h-[35vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    const opsArray = Object.entries(info.operadores).map(([nome, qtd]) => ({nome, qtd})).sort((a,b) => b.qtd - a.qtd);
+                    
+                    opsArray.forEach((op, i) => {
+                        operadoresHtml += `
+                            <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-${corTheme}-400 hover:shadow-md transition-all group">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-${corTheme}-100 text-${corTheme}-600 flex items-center justify-center font-black text-xs shrink-0 border border-${corTheme}-200/50 shadow-sm">${i+1}</div>
+                                    <div class="font-bold text-sm text-slate-700 dark:text-slate-200 group-hover:text-${corTheme}-500 transition-colors">${op.nome}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-black text-${corTheme}-600 text-lg bg-${corTheme}-50 dark:bg-${corTheme}-900/20 px-2 py-0.5 rounded-lg border border-${corTheme}-200 dark:border-${corTheme}-800/50">${op.qtd}x</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    operadoresHtml += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-ranking-star text-${corTheme}-500"></i> Detalhamento da Nota Absoluta: ${notaKey}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Total de Aplicações Globais: <strong class="text-${corTheme}-600 font-black">${info.count}x</strong></p>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Operadores Atingidos: ${opsArray.length}</p>
+                        </div>
+                        ${chartHtml}
+                        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4"><i class="fa-solid fa-users text-${corTheme}-400 mr-1"></i> Ranking de Frequência</h4>
+                        ${operadoresHtml}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar Detalhamento</button>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-2xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+
+                    if(chartData.length > 1) {
+                        setTimeout(() => {
+                            if(window.notaChartModal) window.notaChartModal.destroy();
+                            const ctx = document.getElementById('nota-chart-canvas');
+                            if(ctx) {
+                                window.notaChartModal = new Chart(ctx, {
+                                    type: 'bar',
+                                    data: { labels: chartLabels, datasets: [{ data: chartData, backgroundColor: corHex, borderRadius: 4 }] },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, ticks: {stepSize: 1} }, x: { grid: {display: false} } } }
+                                });
+                            }
+                        }, 300);
+                    }
+                },
+
                 openQuadranteModal(qName) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data) return;
@@ -8466,7 +8578,10 @@
                                 ${!this.analiseEditMode ? btnHideCode : ''}
                                 <div class="flex justify-between items-center mb-4">
                                     <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
-                                    <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                                    <div class="flex gap-2">
+                                        <button onclick="app.ui.openGerenciarBasesModal()" class="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-database mr-1"></i> Gerenciar Bases</button>
+                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                                    </div>
                                 </div>
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
@@ -8996,6 +9111,31 @@
                             });
                         };
                     }
+                    // NOVO CAPÍTULO: DISTRIBUIÇÃO E FREQUÊNCIA DE NOTAS
+                    if (data.notasDistribuicao) {
+                        html += renderChapterTitle('Distribuição de Notas', 'Visão quantitativa de todas as notas absolutas aplicadas na operação e sua recorrência.', 'fa-ranking-star', 'orange');
+                        
+                        const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(a) - parseFloat(b));
+                        
+                        let notasCards = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 relative z-10 hideable-box animate-fade-in">${btnHideCode}`;
+                        
+                        notasOrdenadas.forEach(notaKey => {
+                            const info = data.notasDistribuicao[notaKey];
+                            const notaNum = parseFloat(notaKey);
+                            const corTheme = notaNum < 80 ? 'red' : (notaNum < 95 ? 'orange' : 'green');
+                            
+                            notasCards += `
+                                <div onclick="app.ui.openNotaAnaliseModal('${notaKey}')" class="bg-white dark:bg-slate-800 p-4 rounded-2xl border-b-4 border-${corTheme}-500 shadow-sm cursor-pointer hover:-translate-y-1 transition-transform group text-center flex flex-col items-center justify-center">
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Nota</div>
+                                    <div class="text-3xl font-black text-${corTheme}-600 dark:text-${corTheme}-400 mb-1">${notaKey}</div>
+                                    <div class="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-md transition-colors group-hover:bg-${corTheme}-50 dark:group-hover:bg-${corTheme}-900/20">${info.count} <span class="font-normal opacity-70">avaliações</span></div>
+                                </div>
+                            `;
+                        });
+                        notasCards += `</div>`;
+                        html += notasCards;
+                    }
+
                     // TABELA DETALHADA COM COLUNA QUADRANTE (TAMBÉM RETRÁTIL NO MODO APRESENTAÇÃO)
                     html += renderChapterTitle('Auditoria Individual', 'Detalhamento analítico por operador com a lista completa de avaliações, notas e cruzamentos interativos.', 'fa-users-viewfinder', 'purple');
                     html += `
@@ -11495,35 +11635,78 @@
                     reader.readAsBinaryString(file);
                 },
 
-                // --- ITENS 5 E 6: MÓDULO DE PASTAS E SELEÇÃO DE AÇÕES ---
                 openSaveApresentacaoModal() {
                     const data = app.analiseCSVDinamicoData;
                     if(!data) return;
                     
-                    const pastasExistentes = [...new Set(Object.values(app.apresentacoesList || {}).map(a => a.pasta))];
-                    const pastasDatalist = pastasExistentes.map(p => `<option value="${p}">`).join('');
+                    const anosDisponiveis = [new Date().getFullYear(), new Date().getFullYear()-1];
+                    const mesesLista = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+                    const mesAtualNum = new Date().getMonth(); // 0 a 11
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> Arquivar Apresentação`;
+                    // Resgata o nome extraído da própria planilha se possível
+                    const sugestaoNome = data.consolidado.infoOperacao.replace('Filtro Ativo: ', '');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> Arquivar Projeto (Nuvem Local)`;
                     document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-5 leading-relaxed">Salve a versão final desta apresentação estruturada para acessar a qualquer momento no futuro sem precisar importar planilhas novamente.</p>
                         <div class="space-y-4">
                             <div>
-                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Apresentação *</label>
-                                <input type="text" id="save-apres-nome" value="${data.consolidado.infoOperacao.replace('Filtro Ativo: ', '')} - ${app.ui.formatMonthLabel(app.currentMonth)}" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-300 dark:bg-slate-800 dark:border-slate-600 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white">
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação / Célula Alvo *</label>
+                                <input type="text" id="save-apres-op" value="${sugestaoNome !== 'Visão Consolidada (Geral)' ? sugestaoNome : ''}" class="w-full p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white" placeholder="Ex: SAC, Vendas, Retenção">
                             </div>
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Pasta de Destino *</label>
-                                <input type="text" id="save-apres-pasta" list="pastas-list" placeholder="Ex: Resultados SAC, Fechamentos 2026..." class="w-full p-3 rounded-xl bg-slate-50 border border-slate-300 dark:bg-slate-800 dark:border-slate-600 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white">
-                                <datalist id="pastas-list">${pastasDatalist}</datalist>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Mês de Referência *</label>
+                                    <select id="save-apres-mes" class="w-full p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white cursor-pointer">
+                                        ${mesesLista.map((m, i) => `<option value="${m}" ${i === mesAtualNum ? 'selected' : ''}>${m}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ano Corretivo *</label>
+                                    <select id="save-apres-ano" class="w-full p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white cursor-pointer">
+                                        ${anosDisponiveis.map(a => `<option value="${a}">${a}</option>`).join('')}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
-                        <button onclick="app.admin.executeSaveApresentacao()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm shadow-md transition-all"><i class="fa-solid fa-check mr-1"></i> Salvar Agora</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="app.admin.executeSaveApresentacao()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-check mr-1"></i> Salvar Projeto</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
+                executeSaveApresentacao() {
+                    const op = document.getElementById('save-apres-op').value.trim();
+                    const mes = document.getElementById('save-apres-mes').value;
+                    const ano = document.getElementById('save-apres-ano').value;
+
+                    if(!op || !mes || !ano) return app.ui.showAlert("Atenção", "Preencha a Operação, o Mês e o Ano para prosseguir.", "error");
+
+                    const id = 'apr_' + Date.now();
+                    const nome = `${mes} / ${ano}`;
+                    const pasta = op; // A pasta organizadora passará a ser a operação (Ex: "SAC")
+
+                    const payload = {
+                        id: id,
+                        nome: nome,
+                        pasta: pasta,
+                        dataStr: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                        timestamp: Date.now(),
+                        // Salva uma cópia EXATA do estado atual da análise no cofre
+                        payloadData: JSON.stringify(app.analiseCSVDinamicoData)
+                    };
+
+                    if(!app.apresentacoesList) app.apresentacoesList = {};
+                    app.apresentacoesList[id] = payload;
+
+                    app.storage.saveApresentacoes().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.renderTab('analise_csv_dinamico', true); // Recarrega a tela para a nova pasta surgir instantaneamente
+                        app.ui.showAlert("Projeto Protegido", "Sua apresentação foi arquivada e estruturada com sucesso no catálogo de nuvem local!", "success");
+                    });
+                },
                 executeSaveApresentacao() {
                     const nome = document.getElementById('save-apres-nome').value.trim();
                     const pasta = document.getElementById('save-apres-pasta').value.trim();
@@ -11598,6 +11781,27 @@
                     } catch(e) {
                         app.ui.showAlert("Erro de Corrupção", "Não foi possível carregar os dados desta apresentação.", "error");
                     }
+                },
+
+                deleteBaseRelatorio(id) {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) return;
+                    
+                    app.analiseCSVDinamicoData.relatorios = app.analiseCSVDinamicoData.relatorios.filter(r => r.id !== id);
+                    
+                    if (app.analiseCSVDinamicoData.relatorios.length === 0) {
+                        localforage.removeItem('soft_analise_data');
+                        app.analiseCSVDinamicoData = null;
+                        app.ui.analiseFiltroRelatorio = [];
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.renderTab('analise_csv_dinamico', true);
+                        return app.ui.showAlert("Base Vazia", "Todas as bases integradas foram excluídas com sucesso.", "info");
+                    }
+                    
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).then(() => {
+                        app.admin.gerarInteligenciaCSV();
+                        app.ui.openGerenciarBasesModal(); // Mantém o modal aberto e atualizado
+                        app.ui._refreshComMemoriaDeScroll(); // Atualiza a tela de fundo sorrateiramente
+                    });
                 },
 
                 deleteApresentacao(id) {
@@ -11958,7 +12162,8 @@
                         acoesSelecionadas: oldAcoes,
                         customTitle: oldCustomTitle,
                         titleColor: oldTitleColor,
-                        chapterCustomData: oldChapterCustomData // <--- DEVOLVE PRA ESTRUTURA BLINDADA
+                        chapterCustomData: oldChapterCustomData, // <--- DEVOLVE PRA ESTRUTURA BLINDADA
+                        notasDistribuicao: {} // <--- NOVO: Armazena a contagem exata de cada nota
                     };
                     relatoriosAtivos.forEach(relatorio => {
                         const rows = relatorio.rows;
@@ -12010,7 +12215,7 @@
 
                             // ITEM 4: DADOS EVOLUTIVOS (GRAVA ANTES DE APLICAR O FILTRO GERAL DA PÁGINA)
                             if (typeof nota === 'number' && !isNaN(nota) && mesRef) {
-                                if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0, fbAplicado: 0, fbNaoAplicado: 0, fbMonitorado: 0 };
+                                if (!data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef] = { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0, fbAplicado: 0, fbNaoAplicado: 0, fbMonitorado: 0, notas: {} };
                                 data.mesesEvolutivo[mesRef].soma += nota;
                                 data.mesesEvolutivo[mesRef].count++;
                                 data.mesesEvolutivo[mesRef].totalLinhas++;
@@ -12057,6 +12262,17 @@
                             if (monitorFiltro && monitor !== monitorFiltro) return;
 
                             data.totalLinhas++;
+
+                            // NOVO: Adiciona a nota na distribuição geral da operação e no mês exato
+                            let strNotaKey = String(nota);
+                            if (!data.notasDistribuicao[strNotaKey]) data.notasDistribuicao[strNotaKey] = { count: 0, operadores: {} };
+                            data.notasDistribuicao[strNotaKey].count++;
+                            data.notasDistribuicao[strNotaKey].operadores[op] = (data.notasDistribuicao[strNotaKey].operadores[op] || 0) + 1;
+                            
+                            if (mesRef) {
+                                if (!data.mesesEvolutivo[mesRef].notas[strNotaKey]) data.mesesEvolutivo[mesRef].notas[strNotaKey] = 0;
+                                data.mesesEvolutivo[mesRef].notas[strNotaKey]++;
+                            }
 
                             if (!data.operadores[op]) data.operadores[op] = { nome: op, notas: [], min: 100, max: 0, avaliacoes: [], feedbacks: { aplicado: 0, nao_aplicado: 0, monitorado: 0 } };
                             data.operadores[op].notas.push(nota);
