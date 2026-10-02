@@ -391,8 +391,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <!-- Lottie Files Player -->
     <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
-    <!-- LocalForage (Banco de Dados Navegador Anti-Limite de 5MB) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+        <!-- LocalForage (Banco de Dados Navegador Anti-Limite de 5MB) -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+        <!-- Particles.js (Efeito Verde Leve) -->
+        <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
 </head>
     
 <body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
@@ -8279,8 +8281,24 @@
                                     });
                                 }
                             }
+
+                            // INIT PARTICLES.JS VERDE LEVE
+                            if (window.particlesJS && document.getElementById('particles-js')) {
+                                window.particlesJS('particles-js', {
+                                  "particles": {
+                                    "number": { "value": 50, "density": { "enable": true, "value_area": 800 } },
+                                    "color": { "value": "#86efac" },
+                                    "shape": { "type": "circle" },
+                                    "opacity": { "value": 0.5, "random": false },
+                                    "size": { "value": 3, "random": true },
+                                    "line_linked": { "enable": true, "distance": 150, "color": "#6ee7b7", "opacity": 0.4, "width": 1 },
+                                    "move": { "enable": true, "speed": 1.5, "direction": "none", "random": true, "straight": false, "out_mode": "out", "bounce": false }
+                                  }
+                                });
+                            }
+
                         }, 300);
-                    },
+                },
 
                 openMaturidadeModal(nivel) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
@@ -8537,16 +8555,17 @@
                             }
                             .animate-orb-1 { animation: floatOrb1 18s ease-in-out infinite; }
                             .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; }
-                            @media print { .parallax-layer { display: none !important; } }
+                            @media print { .parallax-layer, #particles-js { display: none !important; } }
                         </style>
 
-                        <!-- ESTRUTURA PARALLAX DE FUNDO (LENDÁRIA) -->
+                        <!-- ESTRUTURA PARALLAX COM PARTICLES.JS VERDE LEVE -->
                         <div class="absolute inset-0 pointer-events-none overflow-hidden z-0" style="height: 100%;">
-                            <div class="parallax-layer absolute top-[5%] left-[2%] w-[400px] h-[400px] bg-blue-500/15 rounded-full blur-[100px]" data-parallax-speed="0.25"></div>
-                            <div class="parallax-layer absolute top-[25%] right-[2%] w-[500px] h-[500px] bg-purple-500/15 rounded-full blur-[120px]" data-parallax-speed="0.45"></div>
-                            <div class="parallax-layer absolute top-[50%] left-[5%] w-[600px] h-[600px] bg-emerald-500/15 rounded-full blur-[150px]" data-parallax-speed="0.15"></div>
-                            <div class="parallax-layer absolute top-[75%] right-[10%] w-[450px] h-[450px] bg-orange-500/15 rounded-full blur-[100px]" data-parallax-speed="0.35"></div>
-                            <div class="parallax-layer absolute top-[90%] left-[15%] w-[550px] h-[550px] bg-teal-500/15 rounded-full blur-[130px]" data-parallax-speed="0.55"></div>
+                            <!-- Orbes suaves de fundo para não perder a profundidade -->
+                            <div class="parallax-layer absolute top-[10%] left-[5%] w-[400px] h-[400px] bg-emerald-400/10 rounded-full blur-[100px]" data-parallax-speed="0.25"></div>
+                            <div class="parallax-layer absolute top-[60%] right-[5%] w-[500px] h-[500px] bg-green-500/10 rounded-full blur-[120px]" data-parallax-speed="0.45"></div>
+                            
+                            <!-- Container do Particles -->
+                            <div id="particles-js" class="absolute inset-0 w-full h-full opacity-60 mix-blend-screen dark:mix-blend-lighten"></div>
                         </div>
 
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
