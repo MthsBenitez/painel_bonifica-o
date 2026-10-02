@@ -8696,34 +8696,25 @@
                     const renderDashCard = (id, iconClass, title, mainValue, subText, colorClass, commentText) => {
                         const hasComment = commentText && commentText.trim() !== '';
                         return `
-                            <div class="group [perspective:1200px] w-full min-h-[140px] h-[140px] relative" onmouseenter="try { if(window['chart_${id}']) { window['chart_${id}'].resize(); window['chart_${id}'].update(); } } catch(e){}">
-                                <!-- Botão Flutuante de Comentário Isolado (Item 8) -->
+                            <div class="group w-full min-h-[140px] h-[140px] relative">
+                                <!-- Botão Flutuante de Comentário Isolado -->
                                 ${!this.analiseEditMode ? `<button onclick="event.stopPropagation(); app.ui.openCardCommentModal('${id}')" class="absolute -top-3 -right-2 z-[99] text-slate-400 hover:text-blue-500 bg-white dark:bg-slate-800 w-8 h-8 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-auto" title="Adicionar Comentário"><i class="fa-solid fa-comment-medical"></i></button>` : ''}
 
-                                <div class="relative w-full h-full transition-all duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] rounded-2xl shadow-sm cursor-pointer" onclick="app.ui.openCardChartModal('${id}', '${title}')">
-                                    <!-- Lado da Frente (Item 7: Expandir ao clicar) -->
-                                    <div class="absolute inset-0 [backface-visibility:hidden] bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center overflow-hidden hover:border-blue-400 transition-colors">
-                                        <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
-                                        
-                                        ${hasComment ? `
-                                        <div class="absolute top-3 right-3 z-50 group/tooltip">
-                                            <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[10px]"></i></div>
-                                            <div class="absolute bottom-full right-0 mb-2 w-48 p-3 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none">
-                                                <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
-                                                <div class="text-xs text-slate-700 dark:text-slate-300 leading-tight whitespace-pre-wrap">${commentText}</div>
-                                            </div>
-                                        </div>` : ''}
+                                <div class="w-full h-full bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center overflow-hidden hover:border-blue-400 hover:shadow-md transition-all cursor-pointer relative" onclick="app.ui.openCardChartModal('${id}', '${title}')" title="Clique para ver o gráfico de evolução">
+                                    <div class="absolute right-0 top-0 w-16 h-16 ${colorClass}/10 rounded-bl-full pointer-events-none z-0"></div>
+                                    
+                                    ${hasComment ? `
+                                    <div class="absolute top-3 right-3 z-50 group/tooltip">
+                                        <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-sm border border-blue-200 dark:border-blue-700 cursor-help animate-pulse"><i class="fa-solid fa-info text-[10px]"></i></div>
+                                        <div class="absolute bottom-full right-0 mb-2 w-48 p-3 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-600 shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 z-50 pointer-events-none">
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 border-b border-slate-200 dark:border-slate-700 pb-1">Insight do Gestor</div>
+                                            <div class="text-xs text-slate-700 dark:text-slate-300 leading-tight whitespace-pre-wrap">${commentText}</div>
+                                        </div>
+                                    </div>` : ''}
 
-                                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10 pr-6"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
-                                        <div class="text-3xl font-black text-slate-800 dark:text-white mb-1 relative z-10">${mainValue}</div>
-                                        <div class="text-[10px] text-slate-400 font-medium leading-tight relative z-10 line-clamp-2">${subText}</div>
-                                    </div>
-
-                                    <!-- Lado de Trás (Gráfico de Linha) -->
-                                    <div class="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white dark:bg-slate-900 p-3 rounded-2xl border border-blue-300 dark:border-blue-700 shadow-lg flex flex-col items-center justify-center overflow-hidden">
-                                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center mb-1 w-full truncate"><i class="fa-solid fa-arrow-trend-up text-blue-500"></i> Evolução (Clique para Expandir)</div>
-                                        <div class="relative w-full flex-1 min-h-[70px] pointer-events-none"><canvas id="flip-chart-${id}"></canvas></div>
-                                    </div>
+                                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10 pr-6"><i class="fa-solid ${iconClass} mr-1"></i> ${title}</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white mb-1 relative z-10">${mainValue}</div>
+                                    <div class="text-[10px] text-slate-400 font-medium leading-tight relative z-10 line-clamp-2">${subText}</div>
                                 </div>
                             </div>
                         `;
@@ -11984,47 +11975,14 @@
                         style.innerHTML = `
                             @media print {
                                 @page { size: A4 landscape; margin: 10mm; }
-                                
                                 body * { visibility: hidden; }
                                 #view-container-analise_csv_dinamico, #view-container-analise_csv_dinamico * { visibility: visible; }
-                                
                                 body { background: #ffffff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                                
-                                #view-app, main, #content-container { 
-                                    padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; overflow: visible !important; 
-                                }
-
-                                #view-container-analise_csv_dinamico {
-                                    position: absolute; left: 0; top: 0; width: 100%;
-                                }
-
-                                .pdf-clean-mode button, 
-                                .pdf-clean-mode input[type="file"],
-                                .pdf-clean-mode input[type="color"],
-                                .pdf-clean-mode .hideable-box,
-                                #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
-                                
-                                .pdf-clean-mode .overflow-x-auto, 
-                                .pdf-clean-mode .overflow-y-auto, 
-                                .pdf-clean-mode .custom-scrollbar,
-                                .pdf-clean-mode details,
-                                .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
-
-                                .pdf-clean-mode [style*="preserve-3d"], 
-                                .pdf-clean-mode [class*="preserve-3d"] { transform: none !important; transition: none !important; }
-                                .pdf-clean-mode [class*="rotateY(180deg)"] { display: none !important; opacity: 0 !important; visibility: hidden !important; }
-
-                                /* Impede cortes no meio dos cartões */
-                                .pdf-clean-mode .glass-card, .chapter-marker, details { 
-                                    box-shadow: none !important; 
-                                    border: 1px solid rgba(226, 232, 240, 0.8) !important; 
-                                    background: #f8fafc !important; /* Remove vidro e garante legibilidade */
-                                    page-break-inside: avoid !important; 
-                                    break-inside: avoid !important; 
-                                    display: block !important;
-                                    margin-bottom: 24px !important;
-                                }
-                                
+                                #view-app, main, #content-container { padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; overflow: visible !important; }
+                                #view-container-analise_csv_dinamico { position: absolute; left: 0; top: 0; width: 100%; }
+                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .hideable-box, #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
+                                .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar, .pdf-clean-mode details, .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
+                                .pdf-clean-mode .glass-card, .chapter-marker, details { box-shadow: none !important; border: 1px solid rgba(226, 232, 240, 0.8) !important; background: #f8fafc !important; page-break-inside: avoid !important; break-inside: avoid !important; display: block !important; margin-bottom: 24px !important; }
                                 .pdf-clean-mode canvas { max-width: 100% !important; page-break-inside: avoid !important; break-inside: avoid !important; }
                                 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                             }
@@ -12033,7 +11991,6 @@
                         
                         setTimeout(() => {
                             window.print();
-                            
                             setTimeout(() => {
                                 area.classList.remove('pdf-clean-mode');
                                 const fixStyle = document.getElementById('pdf-fix-styles-analise');
@@ -13816,6 +13773,7 @@
                                 margin-bottom: 24px !important;
                                 background-color: #f8fafc !important; 
                                 border: 1px solid rgba(226, 232, 240, 0.8) !important;
+                                box-shadow: none !important; 
                             }
                             
                             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
