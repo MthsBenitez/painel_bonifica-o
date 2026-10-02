@@ -11968,94 +11968,79 @@
                     }
                 },
                 exportarAnalisePDF() {
-                    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
-                        return app.ui.showAlert("Aviso", "As ferramentas de PDF ainda estão carregando. Tente novamente em alguns segundos.", "info");
-                    }
-                    
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Gerando PDF Oficial...", "Aplicando Filtro Anti-Bug, desativando 3D e renderizando em alta definição...", "info");
+                    app.ui.showAlert("Preparando PDF Oficial...", "A janela de impressão do seu computador será aberta. Certifique-se de selecionar a opção <b>'Salvar como PDF'</b>. O documento terá paginação perfeita, sem cortes e com texto selecionável!", "success");
 
                     const oldMode = app.ui.analiseEditMode;
-                    if (!oldMode) app.ui.toggleEditModeAnalise(); // Ativa o modo apresentação limpo
+                    if (!oldMode) app.ui.toggleEditModeAnalise();
 
                     setTimeout(() => {
                         window.scrollTo(0, 0);
                         const area = document.getElementById('view-container-analise_csv_dinamico');
-
-                        // VESTE A ROUPA PARA FOTO (PDF CLEAN MODE) - Congela o 3D e destrava o Scroll
                         area.classList.add('pdf-clean-mode');
+                        
                         const style = document.createElement('style');
                         style.id = 'pdf-fix-styles-analise';
                         style.innerHTML = `
-                            /* 1. Oculta botões flutuantes que atrapalham o papel */
-                            .pdf-clean-mode button, 
-                            .pdf-clean-mode input[type="file"],
-                            .pdf-clean-mode input[type="color"],
-                            .pdf-clean-mode .hideable-box,
-                            #btn-sair-apresentacao { display: none !important; }
-                            
-                            /* 2. Arrebenta as amarras de rolagem para expandir 100% da tabela na vertical */
-                            .pdf-clean-mode .overflow-x-auto, 
-                            .pdf-clean-mode .overflow-y-auto, 
-                            .pdf-clean-mode .custom-scrollbar,
-                            .pdf-clean-mode details,
-                            .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
+                            @media print {
+                                @page { size: A4 landscape; margin: 10mm; }
+                                
+                                body * { visibility: hidden; }
+                                #view-container-analise_csv_dinamico, #view-container-analise_csv_dinamico * { visibility: visible; }
+                                
+                                body { background: #ffffff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                                
+                                #view-app, main, #content-container { 
+                                    padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; overflow: visible !important; 
+                                }
 
-                            /* 3. Trava os Cards Magnéticos e Flip 3D para evitar borrões (frente/verso colidindo) */
-                            .pdf-clean-mode [style*="preserve-3d"], 
-                            .pdf-clean-mode [class*="preserve-3d"] { transform: none !important; transition: none !important; }
-                            .pdf-clean-mode [class*="rotateY(180deg)"] { display: none !important; opacity: 0 !important; visibility: hidden !important; }
+                                #view-container-analise_csv_dinamico {
+                                    position: absolute; left: 0; top: 0; width: 100%;
+                                }
 
-                            /* 4. Remove o sombreamento e ajeita quebras de bordas */
-                            .pdf-clean-mode .glass-card { box-shadow: none !important; border: 1px solid rgba(226, 232, 240, 0.4) !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-                            
-                            /* 5. Evita que o Chart.js "estoure" de tamanho sem limites de altura */
-                            .pdf-clean-mode canvas { max-width: 100% !important; }
+                                .pdf-clean-mode button, 
+                                .pdf-clean-mode input[type="file"],
+                                .pdf-clean-mode input[type="color"],
+                                .pdf-clean-mode .hideable-box,
+                                #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
+                                
+                                .pdf-clean-mode .overflow-x-auto, 
+                                .pdf-clean-mode .overflow-y-auto, 
+                                .pdf-clean-mode .custom-scrollbar,
+                                .pdf-clean-mode details,
+                                .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
+
+                                .pdf-clean-mode [style*="preserve-3d"], 
+                                .pdf-clean-mode [class*="preserve-3d"] { transform: none !important; transition: none !important; }
+                                .pdf-clean-mode [class*="rotateY(180deg)"] { display: none !important; opacity: 0 !important; visibility: hidden !important; }
+
+                                /* Impede cortes no meio dos cartões */
+                                .pdf-clean-mode .glass-card, .chapter-marker, details { 
+                                    box-shadow: none !important; 
+                                    border: 1px solid rgba(226, 232, 240, 0.8) !important; 
+                                    background: #f8fafc !important; /* Remove vidro e garante legibilidade */
+                                    page-break-inside: avoid !important; 
+                                    break-inside: avoid !important; 
+                                    display: block !important;
+                                    margin-bottom: 24px !important;
+                                }
+                                
+                                .pdf-clean-mode canvas { max-width: 100% !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+                                * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                            }
                         `;
                         document.head.appendChild(style);
                         
-                        // Tempo extra para o navegador e os gráficos absorverem as novas regras CSS
                         setTimeout(() => {
-                            html2canvas(area, { 
-                                scale: 1.2, // Mantém resolução alta sem estourar limite da VRAM
-                                useCORS: true, 
-                                allowTaint: false, 
-                                backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
-                                logging: false 
-                            }).then(canvas => {
-                                try {
-                                    const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG é imensamente mais leve para PDFs longos
-                                    if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
-
-                                    const pdfWidth = canvas.width * 0.75;
-                                    const pdfHeight = canvas.height * 0.75;
-                                    
-                                    const pdf = new window.jspdf.jsPDF({
-                                        orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
-                                        unit: 'px',
-                                        format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
-                                        compress: true
-                                    });
-                                    
-                                    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-                                    pdf.save(`Analitico_Operacao_${new Date().toISOString().split('T')[0]}.pdf`);
-                                    
-                                    app.ui.showAlert("Sucesso!", "O PDF Oficial do Analítico foi gerado e baixado.", "success");
-                                } catch (e) {
-                                    console.error("Erro PDF Analítico:", e);
-                                    app.ui.showAlert("Erro de Memória", "A tabela desta operação está imensa. Para PDFs muito grandes, clique no botão 'Modo Apresentação' e use o atalho <b>Ctrl + P</b> do teclado.", "error");
-                                }
-                            }).catch(err => {
-                                console.error("Erro no Canvas:", err);
-                                app.ui.showAlert("Erro ao Gerar", "O sistema de captura de tela travou.", "error");
-                            }).finally(() => {
-                                // Restaura a vida normal da tela
+                            window.print();
+                            
+                            setTimeout(() => {
                                 area.classList.remove('pdf-clean-mode');
                                 const fixStyle = document.getElementById('pdf-fix-styles-analise');
                                 if (fixStyle) fixStyle.remove();
-                                if (!oldMode) app.ui.toggleEditModeAnalise(); // Sair do Modo Apresentação se não estava nele
-                            });
-                        }, 400); // 400ms garantem que o CSS recém-injetado repintou a tela antes do clique da foto
+                                if (!oldMode) app.ui.toggleEditModeAnalise();
+                            }, 1000);
+                        }, 800);
                     }, 800);
                 },
 
@@ -13782,104 +13767,72 @@
                 },
 
                 exportarApresentacaoPDF() {
-                    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
-                        return app.ui.showAlert("Aviso", "As ferramentas de PDF ainda estão carregando. Tente novamente em alguns segundos.", "info");
-                    }
-                    
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Gerando PDF Oficial...", "Aplicando Filtro Anti-Bug, desativando 3D e renderizando em alta definição...", "info");
+                    app.ui.showAlert("Gerando Apresentação em PDF...", "A janela de impressão do seu computador será aberta. Certifique-se de selecionar a opção <b>'Salvar como PDF'</b>. Nossos estilos cuidarão de quebrar as páginas perfeitamente onde devem!", "success");
                     
                     const area = document.getElementById('area-apresentacao');
                     const scrollAntigo = window.scrollY;
                     window.scrollTo(0, 0);
 
-                    // VESTE A ROUPA PARA FOTO (PDF CLEAN MODE)
                     area.classList.add('pdf-clean-mode');
                     const style = document.createElement('style');
                     style.id = 'pdf-fix-styles';
                     style.innerHTML = `
-                        /* 1. Oculta todos os ruídos visuais */
-                        .pdf-clean-mode button, 
-                        .pdf-clean-mode input[type="file"],
-                        .pdf-clean-mode input[type="color"],
-                        .pdf-clean-mode .hideable-box { 
-                            display: none !important; 
-                        }
-                        
-                        /* 2. Arrebenta as amarras de rolagem para que toda tabela apareça solta na folha */
-                        .pdf-clean-mode .overflow-x-auto, 
-                        .pdf-clean-mode .overflow-y-auto, 
-                        .pdf-clean-mode .custom-scrollbar,
-                        .pdf-clean-mode details,
-                        .pdf-clean-mode [class*="max-h-"] { 
-                            overflow: visible !important; 
-                            max-height: none !important; 
-                        }
+                        @media print {
+                            @page { size: A3 landscape; margin: 10mm; }
+                            
+                            body * { visibility: hidden; }
+                            #area-apresentacao, #area-apresentacao * { visibility: visible; }
+                            
+                            body { background: #ffffff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                            
+                            #view-app, main, #content-container { 
+                                padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; overflow: visible !important; 
+                            }
+                            
+                            #area-apresentacao {
+                                position: absolute; left: 0; top: 0;
+                                width: 100% !important; min-width: 100% !important;
+                                height: auto !important; max-height: none !important;
+                                margin: 0 !important; padding: 0 !important;
+                                box-shadow: none !important; border: none !important;
+                                overflow: visible !important;
+                            }
 
-                        /* 3. Trava os Cards 3D para o Html2Canvas não surtar */
-                        .pdf-clean-mode [style*="preserve-3d"], 
-                        .pdf-clean-mode [class*="preserve-3d"] {
-                            transform: none !important;
-                            transition: none !important;
-                        }
-                        /* 4. Degola a parte de trás do Cartão 3D para não borrar a frente */
-                        .pdf-clean-mode [class*="rotateY(180deg)"] {
-                            display: none !important;
-                            opacity: 0 !important;
-                            visibility: hidden !important;
-                        }
+                            .pdf-clean-mode button, .pdf-clean-mode .hideable-box, #apresentacao-topo-actions, header, nav, #global-modal { display: none !important; }
+                            
+                            .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar { 
+                                overflow: visible !important; max-height: none !important; 
+                            }
 
-                        /* 5. Controla os cortes das bordas para não criar linhas acinzentadas feias */
-                        .pdf-clean-mode .glass-card { 
-                            box-shadow: none !important; 
-                            border: 1px solid rgba(226, 232, 240, 0.4) !important; 
-                            page-break-inside: avoid !important; 
-                            break-inside: avoid !important; 
+                            .pdf-clean-mode [style*="preserve-3d"], .pdf-clean-mode [class*="preserve-3d"] { transform: none !important; transition: none !important; }
+                            .pdf-clean-mode [class*="rotateY(180deg)"] { display: none !important; }
+
+                            /* Trava mágica contra cortes bizarros e aplica o fundo sólido no modo impressão */
+                            .glass-card, .chapter-marker, #apresentacao-tabela, .bg-blue-50, .bg-purple-50 { 
+                                page-break-inside: avoid !important; 
+                                break-inside: avoid !important; 
+                                display: block !important;
+                                margin-bottom: 24px !important;
+                                background-color: #f8fafc !important; 
+                                border: 1px solid rgba(226, 232, 240, 0.8) !important;
+                            }
+                            
+                            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                         }
                     `;
                     document.head.appendChild(style);
                 
                     setTimeout(() => {
-                        html2canvas(area, { 
-                            scale: 1.5, // Resolução premium
-                            useCORS: true, 
-                            allowTaint: false, 
-                            backgroundColor: '#ffffff',
-                            logging: false 
-                        }).then(canvas => {
-                            try {
-                                const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                                if(imgData === 'data:,') throw new Error("A imagem excedeu o limite de memória do navegador.");
-                                
-                                const pdfWidth = canvas.width / 2;
-                                const pdfHeight = canvas.height / 2;
-                                
-                                const pdf = new window.jspdf.jsPDF({
-                                    orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
-                                    unit: 'px',
-                                    format: [Math.max(pdfWidth, 1), Math.max(pdfHeight, 1)],
-                                    compress: true
-                                });
-                                
-                                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-                                pdf.save(`Apresentacao_Qualidade_${new Date().toISOString().split('T')[0]}.pdf`);
-                                
-                                app.ui.showAlert("Sucesso Absoluto!", "O seu PDF foi renderizado cirurgicamente com a limpeza visual que aplicamos.", "success");
-                            } catch (e) {
-                                console.error("Erro na montagem do PDF:", e);
-                                app.ui.showAlert("Aviso", "O PDF era gigante demais, mas a boa notícia é que você pode apertar 'Apresentar / Imprimir' e gerar o PDF nativo pela função Ctrl+P perfeitamente.", "info");
-                            }
-                        }).catch(err => {
-                            console.error("Erro na captura da tela:", err);
-                            app.ui.showAlert("Erro ao Gerar", "A câmera de tela (html2canvas) travou.", "error");
-                        }).finally(() => {
-                            // REMOVE A ROUPA DE FOTO E DEVOLVE O ESTADO ORIGINAL
+                        window.print();
+                        
+                        setTimeout(() => {
                             area.classList.remove('pdf-clean-mode');
                             const fixStyle = document.getElementById('pdf-fix-styles');
                             if (fixStyle) fixStyle.remove();
                             window.scrollTo(0, scrollAntigo);
-                        });
-                    }, 1000);
+                        }, 1000);
+                    }, 800);
                 },
 
                 showAcaoCompleta(actId) {
