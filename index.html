@@ -1251,6 +1251,41 @@
                                 if (updatedUser) app.currentUser = updatedUser;
                             }
 
+                            // --- INTERCEPTAÇÃO: LINK DE COMPARTILHAMENTO DE APRESENTAÇÃO (GUEST) ---
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const shareId = urlParams.get('share');
+                            
+                            if (shareId && data && data.shares && data.shares[shareId]) {
+                                const shareObj = data.shares[shareId];
+                                if (Date.now() > shareObj.expiresAt) {
+                                    alert("Este link de apresentação expirou (prazo de 72h atingido).");
+                                    window.location.href = window.location.pathname; // Remove o param e força login normal
+                                    return;
+                                }
+                                
+                                // Configura a sessão restrita de Visitante
+                                app.isGuest = true;
+                                app.isAdmin = false;
+                                app.currentUser = { nome: "Visitante", matricula: "guest", abasLiberadas: [] };
+                                app.currentTab = 'analise_csv_dinamico';
+                                
+                                try {
+                                    app.analiseCSVDinamicoData = JSON.parse(shareObj.payloadData);
+                                } catch(e) {
+                                    console.error("Erro ao ler dados da Apresentação Compartilhada", e);
+                                }
+                                
+                                document.getElementById('view-login').classList.add('hidden');
+                                document.getElementById('view-app').classList.remove('hidden');
+                                
+                                // O pulo do gato: Desligamos o editMode e chamamos o Toggle, 
+                                // ele fará toda a mágica de esconder o Header e travar a tela pra gente automaticamente!
+                                app.ui.analiseEditMode = false; 
+                                app.ui.toggleEditModeAnalise(); 
+                                return; // Interrompe o fluxo normal e impede o Login de acontecer
+                            }
+                            // -----------------------------------------------------------------------
+
                             // --- AUTO-LOGIN E RENOVAÇÃO DE TELA ---
                             const todayStr = new Date().toLocaleDateString('pt-BR');
                             const savedDate = localStorage.getItem('soft_session_date');
@@ -1427,6 +1462,7 @@
             
             currentUser: null,
             isAdmin: false,
+            isGuest: false,
             currentTab: 'meu_painel',
 
             changeMonth(newMonthStr) {
@@ -8591,26 +8627,28 @@
                                 </p>
                             </div>
                             
-                            <div class="flex flex-wrap items-center justify-center gap-2 w-full xl:w-auto">
-                                <label class="bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <i class="fa-solid fa-cloud-arrow-up"></i> Importar Dados
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
-                                </label>
-                                <button onclick="app.admin.abrirModalImportacaoTripla()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-800 dark:text-teal-400 font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Inicia o assistente para unir planilhas separadas">
-                                    <i class="fa-solid fa-cubes-stacked"></i> Unir 3 Arquivos
-                                </button>
-                                <label class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importar arquivo de RH com Dias de Empresa">
-                                    <i class="fa-solid fa-user-clock"></i> Carga de RH
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
-                                </label>
-                                <label class="bg-purple-50 text-purple-600 hover:bg-purple-100 border border-purple-200 dark:bg-purple-900/30 dark:border-purple-800 dark:text-purple-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Raio-X de Pesos e Falhas.">
-                                    <i class="fa-solid fa-microscope"></i> Raio-X
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
-                                </label>
-                                ${mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                <button onclick="app.admin.exportarAnalisePDF()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-pdf mr-1"></i> Exportar PDF</button>
-                                <button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>
-                                ` : ''}
+                            <div class="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+                                    <label class="bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i> Importar Dados
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
+                                    </label>
+                                    <button onclick="app.admin.abrirModalImportacaoTripla()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 border border-teal-200 dark:bg-teal-900/30 dark:border-teal-800 dark:text-teal-400 font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Inicia o assistente para unir planilhas separadas">
+                                        <i class="fa-solid fa-cubes-stacked"></i> Unir 3 Arquivos
+                                    </button>
+                                    <label class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Importar arquivo de RH com Dias de Empresa">
+                                        <i class="fa-solid fa-user-clock"></i> Carga de RH
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                    </label>
+                                    <label class="bg-purple-50 text-purple-600 hover:bg-purple-100 border border-purple-200 dark:bg-purple-900/30 dark:border-purple-800 dark:text-purple-400 font-bold py-2.5 px-4 rounded-xl shadow-sm cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Raio-X de Pesos e Falhas.">
+                                        <i class="fa-solid fa-microscope"></i> Raio-X
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                    </label>
+                                    ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                    <button onclick="app.admin.gerarLinkCompartilhamento()" class="bg-teal-50 text-teal-600 hover:bg-teal-100 dark:bg-teal-900/30 dark:text-teal-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-share-nodes mr-1"></i> Criar Link Público (72h)</button>
+                                    <button onclick="app.admin.exportarAnalisePDF()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-pdf mr-1"></i> Exportar PDF</button>
+                                    <button onclick="app.ui.toggleEditModeAnalise()" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid ${this.analiseEditMode ? 'fa-eye' : 'fa-eye-slash'} mr-1"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Modo Apresentação'}</button>
+                                    ` : ''}
+                                </div>
                             </div>
                         </div>
                     `;
@@ -8635,13 +8673,13 @@
                         return;
                     }
 
-                    // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS (UX MODERNA)
+                    // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS E GHOST BUTTON NA APRESENTAÇÃO
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
                         html += `
                         <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999]' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
                             
                             ${this.analiseEditMode ? `
-                            <div onclick="app.ui.filtrosApresentacaoAbertos = !app.ui.filtrosApresentacaoAbertos; app.ui.renderTab('analise_csv_dinamico', true)" class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer hover:scale-110 transition-transform relative z-50">
+                            <div onclick="app.ui.filtrosApresentacaoAbertos = !app.ui.filtrosApresentacaoAbertos; app.ui.renderTab('analise_csv_dinamico', true)" class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer hover:scale-110 transition-all duration-300 relative z-50 opacity-0 hover:opacity-100">
                                 <i class="fa-solid ${this.filtrosApresentacaoAbertos ? 'fa-xmark' : 'fa-filter'}"></i>
                             </div>
                             ` : ''}
@@ -11603,6 +11641,39 @@
                 },
 
                 // NOVA FUNÇÃO: RAIO-X DE PESOS E FALHAS DA PLANILHA
+                gerarLinkCompartilhamento() {
+                    if(!app.analiseCSVDinamicoData) return;
+                    
+                    const shareId = 'shr_' + Date.now();
+                    const expiresAt = Date.now() + (72 * 60 * 60 * 1000); // 72 horas convertidas em milissegundos
+                    
+                    const payload = {
+                        id: shareId,
+                        expiresAt: expiresAt,
+                        payloadData: JSON.stringify(app.analiseCSVDinamicoData)
+                    };
+                    
+                    app.ui.showAlert("Gerando Link...", "Salvando os dados temporários na nuvem para os visitantes...", "info");
+                    
+                    firebase.database().ref('sistema_bonificacao/shares/' + shareId).set(payload).then(() => {
+                        const shareUrl = window.location.origin + window.location.pathname + '?share=' + shareId;
+                        
+                        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-share-nodes text-teal-500"></i> Link Público Gerado`;
+                        document.getElementById('modal-content').innerHTML = `
+                            <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Envie este link para convidados, clientes ou diretoria. Eles terão acesso <b>apenas ao Modo de Apresentação</b> desta tela, sem poder editar ou ver o resto do sistema. O link expira automaticamente em 72 horas.</p>
+                            <div class="p-3 bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg flex items-center justify-between gap-3 shadow-inner">
+                                <input type="text" readonly value="${shareUrl}" class="w-full bg-transparent outline-none text-xs font-mono text-slate-600 dark:text-slate-300 truncate" id="share-url-input">
+                                <button onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value); app.ui.showAlert('Copiado!', 'Link copiado para a área de transferência!', 'success');" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors shadow-sm whitespace-nowrap"><i class="fa-regular fa-copy"></i> Copiar</button>
+                            </div>
+                        `;
+                        document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Concluir</button>`;
+                        document.getElementById('global-modal').classList.remove('hidden');
+                    }).catch(err => {
+                        console.error(err);
+                        app.ui.showAlert("Erro de Conexão", "Não foi possível gerar o link na nuvem do Firebase.", "error");
+                    });
+                },
+
                 debugArquivoCSV(input) {
                     const file = input.files[0];
                     if (!file) return;
