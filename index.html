@@ -152,65 +152,6 @@
             0% { opacity: 0.5; }
             100% { opacity: 1; transform: scale(1.05); }
         }
-
-        /* ========================================================
-           EFEITOS DA CAMPANHA (DOPAMINA & GAMIFICAÇÃO)
-           ======================================================== */
-        .tab-campanha-glow {
-            background: linear-gradient(90deg, #ffd700, #ff8c00, #ff0080) !important;
-            background-size: 200% auto !important;
-            color: white !important;
-            animation: shine-tab 3s linear infinite !important;
-            border: none !important;
-            box-shadow: 0 0 10px rgba(255, 140, 0, 0.6) !important;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
-        }
-        @keyframes shine-tab {
-            to { background-position: 200% center; }
-        }
-        .ranking-podium-1 {
-            background: linear-gradient(135deg, #FFD700 0%, #FDB931 100%);
-            box-shadow: 0 10px 25px -5px rgba(255, 215, 0, 0.5);
-            border: 2px solid #FFF8DC;
-            transform: scale(1.05);
-            z-index: 10;
-        }
-        .ranking-podium-2 {
-            background: linear-gradient(135deg, #E0E0E0 0%, #BDBDBD 100%);
-            box-shadow: 0 10px 25px -5px rgba(189, 189, 189, 0.4);
-            border: 1px solid #F5F5F5;
-        }
-        .ranking-podium-3 {
-            background: linear-gradient(135deg, #CD7F32 0%, #A0522D 100%);
-            box-shadow: 0 10px 25px -5px rgba(205, 127, 50, 0.4);
-            border: 1px solid #D2B48C;
-        }
-        .trophy-float {
-            animation: float-up-down 3s ease-in-out infinite;
-        }
-        @keyframes float-up-down {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-            100% { transform: translateY(0px); }
-        }
-
-        /* Emojis Flutuantes da Vitória */
-        .floating-emoji {
-            position: fixed;
-            bottom: -50px;
-            font-size: 2.5rem;
-            animation: fly-up linear forwards;
-            z-index: 9999;
-            pointer-events: none;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));
-        }
-        @keyframes fly-up {
-            0% { transform: translateY(0) scale(0.8) rotate(0deg); opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { transform: translateY(-110vh) scale(1.5) rotate(180deg); opacity: 0; }
-        }
-
         /* ========================================================
            BARRAS DE PROGRESSO ELEGANTES (NOVO)
            ======================================================== */
@@ -1194,17 +1135,6 @@
                             if (data.laudos) app.laudos.list = Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean); else app.laudos.list = [];
                             if (data.apresentacoes) app.apresentacoesList = data.apresentacoes; else app.apresentacoesList = {};
 
-                            if (data.campanha) {
-                                app.campanhaData = data.campanha;
-                            } else {
-                                app.campanhaData = {
-                                    equipe1: { id: 'equipe1', nome: 'Equipe 1', pontos: 0, membros: [] },
-                                    equipe2: { id: 'equipe2', nome: 'Equipe 2', pontos: 0, membros: [] },
-                                    equipe3: { id: 'equipe3', nome: 'Equipe 3', pontos: 0, membros: [] },
-                                    equipe4: { id: 'equipe4', nome: 'Equipe 4', pontos: 0, membros: [] }
-                                };
-                            }
-
                             // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
                             // Monitorias
                             if (data.monitorias) {
@@ -1349,8 +1279,7 @@
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
                 saveLaudos() { return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
                 saveApresentacoes() { return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
-                saveCampanha() { return firebase.database().ref('sistema_bonificacao/campanha').set(app.campanhaData || {}); },
-                saveMonitorias() { 
+                saveMonitorias() {
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
                     return firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias || {}); 
                 },
@@ -3623,70 +3552,6 @@
                     `).join('');
                 },
                 
-                showPointsAnimation(eqName, pts) {
-                    const div = document.createElement('div');
-                    div.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm transition-all duration-500';
-                    div.innerHTML = `<div class="text-center transform scale-0 transition-transform duration-500 delay-100" id="points-anim-content"><div class="text-7xl mb-4 animate-bounce">🎉</div><h2 class="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500 drop-shadow-[0_0_20px_rgba(74,222,128,0.8)]">+${pts} PONTOS</h2><p class="text-3xl md:text-5xl text-white font-black mt-4">${eqName}</p></div>`;
-                    document.body.appendChild(div);
-                    setTimeout(() => { document.getElementById('points-anim-content').classList.replace('scale-0', 'scale-125'); }, 50);
-                    setTimeout(() => { div.style.opacity = '0'; setTimeout(()=>div.remove(), 500); }, 3000);
-                },
-
-                initTimer() {
-                    if(this.timerInterval) clearInterval(this.timerInterval);
-                    // Data do grande suspense: 01 de Setembro as 10:00 da manhã
-                    const endDate = new Date('2026-09-01T10:00:00').getTime();
-                    const update = () => {
-                        const now = new Date().getTime();
-                        const distance = endDate - now;
-                        if (distance < 0) { clearInterval(this.timerInterval); return; }
-                        const elDays = document.getElementById('cd-days');
-                        if(elDays) {
-                            elDays.innerText = String(Math.floor(distance / (1000 * 60 * 60 * 24))).padStart(2, '0');
-                            document.getElementById('cd-hours').innerText = String(Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))).padStart(2, '0');
-                            document.getElementById('cd-minutes').innerText = String(Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60))).padStart(2, '0');
-                            document.getElementById('cd-seconds').innerText = String(Math.floor((distance % (1000 * 60)) / 1000)).padStart(2, '0');
-                        } else {
-                            clearInterval(this.timerInterval);
-                        }
-                    };
-                    update();
-                    this.timerInterval = setInterval(update, 1000);
-                },
-
-                sendEmoji(eqId) {
-                    const eq = app.campanhaData[eqId];
-                    if(!eq) return;
-                    if(eq.emojiStock === undefined) eq.emojiStock = 50; // Estoque inicial
-                    if(eq.emojisSent === undefined) eq.emojisSent = 0;
-                    
-                    if(eq.emojiStock <= 0) return app.ui.showAlert("Acabou!", "Sua equipe já lançou todo o estoque de comemorações disponíveis nesta campanha.", "info");
-
-                    eq.emojiStock -= 1;
-                    eq.emojisSent += 1;
-                    
-                    document.getElementById('emoji-stock-display').textContent = eq.emojiStock;
-                    
-                    app.storage.saveCampanha().then(() => {
-                        this.playFloatingEmojis(1); // Solta 1 agora para quem apertou
-                    });
-                },
-
-                playFloatingEmojis(count) {
-                    const emojis = ['🚀', '🎉', '🔥', '🏆', '⭐', '💎', '👑'];
-                    for(let i=0; i<count; i++) {
-                        setTimeout(() => {
-                            const el = document.createElement('div');
-                            el.className = 'floating-emoji';
-                            el.innerText = emojis[Math.floor(Math.random() * emojis.length)];
-                            el.style.left = Math.random() * 90 + 5 + 'vw'; // Posição horizontal aleatória
-                            el.style.animationDuration = (Math.random() * 2 + 3) + 's'; // Velocidade entre 3 e 5 seg
-                            document.body.appendChild(el);
-                            setTimeout(() => el.remove(), 5000); // Limpa o dom
-                        }, i * 150); // Delay suave entre um emoji e outro
-                    }
-                },
-
                 showApp() {
                     document.getElementById('header-username').textContent = app.isAdmin ? 'Administração' : app.currentUser.nome;
 
@@ -13131,73 +12996,6 @@
                     const workbook = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(workbook, worksheet, `Calendario_${app.currentMonth}`);
                     XLSX.writeFile(workbook, `Soft_Calendario_${app.currentMonth}.xlsx`);
-                },
-
-                // NOVA ABA ADMIN - GESTÃO DA CAMPANHA TRIMESTRAL
-                addPontosCampanha(eqId) {
-                    const pts = parseInt(document.getElementById(`pts-add-${eqId}`).value);
-                    const comment = document.getElementById(`pts-comment-${eqId}`).value.trim();
-                    if(!pts || !comment) return app.ui.showAlert("Aviso", "Informe a pontuação e o motivo para lançar.", "error");
-
-                    const eq = app.campanhaData[eqId];
-                    if(!eq) return;
-
-                    eq.pontos += pts;
-                    if(!eq.history) eq.history = [];
-                    eq.history.push({ id: 'h_'+Date.now(), pontos: pts, comentario: comment, data: Date.now(), autor: app.currentUser ? app.currentUser.nome : 'ADM' });
-
-                    app.storage.saveCampanha().then(() => {
-                        app.ui.showAlert("Sucesso", `+${pts} pontos lançados para ${eq.nome}`, "success");
-                        app.ui.renderTab('gestao_campanha', true);
-                    });
-                },
-
-                removePontosCampanha(eqId, histId) {
-                    const eq = app.campanhaData[eqId];
-                    if(!eq || !eq.history) return;
-                    
-                    const idx = eq.history.findIndex(h => h.id === histId);
-                    if(idx > -1) {
-                        eq.pontos -= eq.history[idx].pontos;
-                        eq.history.splice(idx, 1);
-                        app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
-                    }
-                },
-
-                resetPontosCampanha(eqId) {
-                    app.ui.showConfirm("Cuidado", "Zerar totalmente a pontuação e histórico desta equipe?", `app.admin.execResetCampanha('${eqId}')`, true);
-                },
-
-                execResetCampanha(eqId) {
-                    const eq = app.campanhaData[eqId];
-                    if(eq) {
-                        eq.pontos = 0; eq.history = []; eq.emojiStock = 50; eq.emojisSent = 0; eq.emojiSymbol = '🏆';
-                        app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
-                    }
-                },
-
-                addMembroCampanha(eqId) {
-                    const matr = document.getElementById(`user-sel-${eqId}`).value;
-                    if(!matr) return;
-
-                    // Remove de outras equipes se já existir
-                    Object.values(app.campanhaData).forEach(eq => {
-                        if(eq.membros && eq.membros.includes(matr)) {
-                            eq.membros = eq.membros.filter(m => m !== matr);
-                        }
-                    });
-
-                    if(!app.campanhaData[eqId].membros) app.campanhaData[eqId].membros = [];
-                    app.campanhaData[eqId].membros.push(matr);
-
-                    app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
-                },
-
-                removeMembroCampanha(eqId, matr) {
-                    if(app.campanhaData[eqId].membros) {
-                        app.campanhaData[eqId].membros = app.campanhaData[eqId].membros.filter(m => m !== matr);
-                        app.storage.saveCampanha().then(() => app.ui.renderTab('gestao_campanha', true));
-                    }
                 },
 
                 addOperacao() {
