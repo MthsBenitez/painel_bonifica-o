@@ -1295,7 +1295,7 @@
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
                                 // Se já estiver dentro do sistema, apenas atualiza a tela suavemente
                                 app.notifications.updateBadge();
-                                const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'campanha_mes'];
+                                const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias'];
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
                                                      // CORREÇÃO: Atualiza os dados de forma fluida na mesma div,
                                                      // evitando recriar a tela toda e causar a "piscada" em branco.
@@ -1304,7 +1304,6 @@
                                                          if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
                                                          else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
                                                          else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
-                                                         else if (app.currentTab === 'campanha_mes') app.ui.renderView_CampanhaMes(viewDiv);
                                                      }
                                                  }
                             } else if (savedDate === todayStr && savedMat) {
@@ -3214,7 +3213,7 @@
 
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
-                    { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'campanha_mes', label:'🏆 Campanha Trimestral'}] },
+                    { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
@@ -3222,7 +3221,7 @@
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_campanha', label:'Gerir Campanha'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
