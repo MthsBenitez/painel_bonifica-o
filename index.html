@@ -1134,6 +1134,8 @@
                             if (data.atas) app.atasList = data.atas; else app.atasList = {};
                             if (data.laudos) app.laudos.list = Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean); else app.laudos.list = [];
                             if (data.apresentacoes) app.apresentacoesList = data.apresentacoes; else app.apresentacoesList = {};
+                            if (data.estoque) app.estoqueItems = data.estoque; else app.estoqueItems = {};
+                            if (data.estoqueLogs) app.estoqueLogs = data.estoqueLogs; else app.estoqueLogs = {};
 
                             // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
                             // Monitorias
@@ -1279,6 +1281,8 @@
                 saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
                 saveLaudos() { return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
                 saveApresentacoes() { return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
+                saveEstoque() { return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
+                saveEstoqueLogs() { return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
                 saveMonitorias() {
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
                     return firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias || {}); 
@@ -1290,6 +1294,8 @@
             },
 
             users: [],
+            estoqueItems: {},
+            estoqueLogs: {},
             monitoriasData: { ranking: [] },
             utils: {
                 playCuteSound() {
@@ -1634,7 +1640,20 @@
                     document.getElementById('act-qtd').value = act.operadores;
                     document.getElementById('act-gestor').value = act.gestor;
                     document.getElementById('act-ofensor').value = act.ofensor;
-                    document.getElementById('act-brindes').value = act.brindes;
+                    // Recupera o texto antigo tipo "5x Paçoca" ou converte número antigo
+                    let bQtd = 0, bItem = "Nenhum";
+                    if(act.brindes && act.brindes.includes('x ')) {
+                        let parts = act.brindes.split('x ');
+                        bQtd = parseInt(parts[0]) || 0;
+                        let itemName = parts[1];
+                        // Tenta achar o ID do item pelo nome salvo
+                        let foundItem = Object.values(app.estoqueItems || {}).find(i => i.nome === itemName);
+                        if(foundItem) bItem = foundItem.id;
+                    } else {
+                        bQtd = parseInt(act.brindes) || 0;
+                    }
+                    document.getElementById('act-brindes-qtd').value = bQtd;
+                    document.getElementById('act-brindes-item').value = bItem;
                     
                     const richText = document.getElementById('act-acao-rich');
                     if(richText) richText.innerHTML = act.acaoRealizada;
@@ -1781,7 +1800,7 @@
                         operadores: document.getElementById('act-qtd').value,
                         gestor: document.getElementById('act-gestor').value,
                         ofensor: document.getElementById('act-ofensor').value,
-                        brindes: document.getElementById('act-brindes').value,
+                        brindes: "0", // Temporário, será tratado abaixo
                         status: 'pendente',
                         timestamp: Date.now(),
                         photos: []
@@ -1792,7 +1811,22 @@
                     }
                     const existingAct = evtEditId ? app.actionsList[evtEditId] : null;
 
-                    // PREVENÇÃO DE DUPLICIDADE: Se o usuário está editando e re-enviando uma ação que JÁ estava aprovada, removemos o ponto antes de voltar para pendente
+                    // Tratamento do Estoque
+                    const bQtd = parseInt(document.getElementById('act-brindes-qtd').value) || 0;
+                    const bItemId = document.getElementById('act-brindes-item').value;
+                    let bName = "Brindes";
+                    
+                    if (bItemId !== "Nenhum" && bQtd > 0) {
+                        const itemEstoque = app.estoqueItems[bItemId];
+                        if (!itemEstoque) return app.ui.showAlert("Erro", "Item de estoque não encontrado.", "error");
+                        if (itemEstoque.qtd < bQtd) return app.ui.showAlert("Estoque Insuficiente", `Você tem apenas ${itemEstoque.qtd}x ${itemEstoque.nome} disponíveis no sistema.`, "error");
+                        bName = itemEstoque.nome;
+                        payload.brindes = `${bQtd}x ${bName}`;
+                    } else {
+                        payload.brindes = bQtd > 0 ? bQtd.toString() : "0";
+                    }
+
+                    // PREVENÇÃO DE DUPLICIDADE: Se o usuário está editando e re-enviando
                     if (existingAct && existingAct.status === 'aprovado') {
                         const userIdx = app.users.findIndex(x => x.matricula === app.currentUser.matricula);
                         if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[existingAct.month] && app.users[userIdx].results[existingAct.month]['g4']) {
@@ -1818,6 +1852,19 @@
                     const finalizeSubmit = () => {
                         app.actionsList[payload.id] = payload;
                         
+                        // Atualiza Estoque se houve consumo
+                        if (bItemId !== "Nenhum" && bQtd > 0 && !existingAct) {
+                            app.estoqueItems[bItemId].qtd -= bQtd;
+                            const logId = 'log_' + Date.now();
+                            app.estoqueLogs[logId] = {
+                                id: logId, itemId: bItemId, nomeItem: bName, qtd: bQtd,
+                                data: new Date().toLocaleDateString('pt-BR'), hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
+                                autor: app.currentUser.nome, acaoId: payload.id, op: payload.codigoOpe
+                            };
+                            app.storage.saveEstoque();
+                            app.storage.saveEstoqueLogs();
+                        }
+
                         // SALVAMENTO CIRÚRGICO: Salva apenas a ação específica para evitar estouro de limite (timeout) do Firebase
                         firebase.database().ref('sistema_bonificacao/actions/' + payload.id).set(payload)
                         .then(() => {
@@ -3145,12 +3192,12 @@
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -3784,6 +3831,7 @@
                                 else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                                 else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                                 else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
+                                else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
                                 else {
                                     // Fallback Cirúrgico: Se a aba guardada não existir, força uma aba segura.
                                     app.currentTab = app.isAdmin ? 'dashboard_adm' : 'meu_painel';
@@ -4154,10 +4202,19 @@
                                             <input type="hidden" id="act-acao" required>
                                         </div>
                                     </div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operadores Envolvidos *</label><input type="number" id="act-qtd" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Alinhado *</label><input type="text" id="act-gestor" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label><input type="text" id="act-ofensor" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Brindes *</label><input type="number" id="act-brindes" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operadores Envolvidos *</label><input type="number" id="act-qtd" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Alinhado *</label><input type="text" id="act-gestor" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label><input type="text" id="act-ofensor" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"></div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Brindes Aplicados (Estoque) *</label>
+                                        <div class="flex gap-2">
+                                            <input type="number" id="act-brindes-qtd" value="0" min="0" class="w-20 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none font-bold text-center">
+                                            <select id="act-brindes-item" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none cursor-pointer">
+                                                <option value="Nenhum">Nenhum Brinde</option>
+                                                ${Object.values(app.estoqueItems || {}).map(i => `<option value="${i.id}">${i.nome} (${i.qtd} disponiveis)</option>`).join('')}
+                                            </select>
+                                        </div>
+                                    </div>
                                     <div class="md:col-span-2">
                                         <div class="flex justify-between items-end mb-1.5">
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase">Anexar Evidências *</label>
@@ -5032,6 +5089,133 @@
                     
                     // ESSAS LINHAS ABAIXO FORAM AS QUE SE PERDERAM NA COLAGEM E QUEBRARAM O SISTEMA
                     html += `</tbody></table></div>`;
+                    container.innerHTML = html;
+                },
+
+                addEstoqueItem() {
+                    const nome = document.getElementById('est-novo-nome').value.trim();
+                    const qtd = parseInt(document.getElementById('est-novo-qtd').value) || 0;
+                    if(!nome || qtd < 0) return app.ui.showAlert("Aviso", "Nome inválido ou quantidade menor que zero.", "error");
+                    const id = 'item_' + Date.now();
+                    app.estoqueItems[id] = { id, nome, qtd };
+                    app.storage.saveEstoque().then(() => {
+                        app.ui.showAlert("Sucesso", "Novo insumo adicionado à dispensa.", "success");
+                        app.ui.renderTab('controle_estoque', true);
+                    });
+                },
+                updateEstoqueItem(id, operacao) {
+                    if(!app.estoqueItems[id]) return;
+                    const input = document.getElementById(`est-upd-${id}`);
+                    const val = parseInt(input.value) || 1;
+                    if(operacao === '+') app.estoqueItems[id].qtd += val;
+                    if(operacao === '-') app.estoqueItems[id].qtd = Math.max(0, app.estoqueItems[id].qtd - val);
+                    app.storage.saveEstoque().then(() => app.ui.renderTab('controle_estoque', true));
+                },
+                delEstoqueItem(id) {
+                    app.ui.showConfirm("Cuidado", "Apagar este item da prateleira permanentemente?", `delete app.estoqueItems['${id}']; app.storage.saveEstoque().then(() => app.ui.renderTab('controle_estoque', true));`, true);
+                },
+
+                renderView_ControleEstoque(container) {
+                    const itens = Object.values(app.estoqueItems || {});
+                    const logs = Object.values(app.estoqueLogs || {}).sort((a,b) => new Date(b.data.split('/').reverse().join('-') + 'T' + b.hora) - new Date(a.data.split('/').reverse().join('-') + 'T' + a.hora));
+
+                    const totalUnidades = itens.reduce((acc, i) => acc + i.qtd, 0);
+                    const itensZerados = itens.filter(i => i.qtd === 0).length;
+                    const totalConsumido = logs.reduce((acc, l) => acc + l.qtd, 0);
+
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Almoxarifado & Insumos</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de doces, salgados e itens utilizados nas ações de engajamento.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500 shadow-sm">
+                                <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-boxes-stacked"></i></div>
+                                <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Volume Atual</div><div class="text-3xl font-black text-slate-800 dark:text-white">${totalUnidades} <span class="text-sm font-medium text-slate-400">unids.</span></div></div>
+                            </div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${itensZerados > 0 ? 'border-l-red-500' : 'border-l-emerald-500'} shadow-sm">
+                                <div class="w-14 h-14 rounded-2xl ${itensZerados > 0 ? 'bg-red-50 text-red-600 dark:bg-red-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'} flex items-center justify-center text-2xl shrink-0"><i class="fa-solid ${itensZerados > 0 ? 'fa-triangle-exclamation' : 'fa-check'}"></i></div>
+                                <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Itens Zerados</div><div class="text-3xl font-black ${itensZerados > 0 ? 'text-red-500' : 'text-emerald-500'}">${itensZerados}</div></div>
+                            </div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-orange-500 shadow-sm">
+                                <div class="w-14 h-14 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-cookie-bite"></i></div>
+                                <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Consumo Total Registrado</div><div class="text-3xl font-black text-slate-800 dark:text-white">${totalConsumido} <span class="text-sm font-medium text-slate-400">unids.</span></div></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <!-- Prateleira (Cadastro) -->
+                            <div class="glass-card p-6 rounded-[2rem]">
+                                <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-100 dark:border-slate-700 pb-3 flex items-center gap-2"><i class="fa-solid fa-candy-cane text-blue-500"></i> Prateleira Principal</h3>
+                                ${app.isAdmin ? `
+                                <div class="flex gap-2 mb-6 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                    <input type="text" id="est-novo-nome" placeholder="Nome do Insumo (Ex: Paçoca)" class="flex-1 p-3 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-sm dark:bg-slate-900 dark:text-white">
+                                    <input type="number" id="est-novo-qtd" placeholder="Qtd Inicial" value="0" class="w-24 p-3 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-sm text-center font-bold dark:bg-slate-900 dark:text-white">
+                                    <button onclick="app.ui.addEstoqueItem()" class="bg-blue-600 hover:bg-blue-700 text-white w-12 rounded-xl font-bold shadow-sm transition"><i class="fa-solid fa-plus"></i></button>
+                                </div>` : ''}
+                                
+                                <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                    `;
+                    
+                    if(itens.length === 0) {
+                        html += `<div class="text-center text-slate-400 italic p-6">Nenhum item cadastrado no estoque.</div>`;
+                    } else {
+                        itens.sort((a,b) => a.nome.localeCompare(b.nome)).forEach(i => {
+                            const colorQtd = i.qtd === 0 ? 'text-red-500' : (i.qtd < 10 ? 'text-orange-500' : 'text-emerald-600');
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border ${i.qtd === 0 ? 'border-red-200' : 'border-slate-200 dark:border-slate-700'} flex flex-col sm:flex-row justify-between items-center gap-3 shadow-sm hover:shadow-md transition">
+                                    <div class="flex-1 truncate w-full text-center sm:text-left">
+                                        <span class="font-bold text-slate-800 dark:text-white text-base">${i.nome}</span>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mt-0.5">Em Estoque: <span class="${colorQtd} text-sm">${i.qtd}</span></div>
+                                    </div>
+                                    ${app.isAdmin ? `
+                                    <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <input type="number" id="est-upd-${i.id}" value="1" min="1" class="w-12 p-2 text-center text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-800 outline-none">
+                                        <button onclick="app.ui.updateEstoqueItem('${i.id}', '+')" class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white transition font-black text-sm">+</button>
+                                        <button onclick="app.ui.updateEstoqueItem('${i.id}', '-')" class="w-8 h-8 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-500 hover:text-white transition font-black text-sm">-</button>
+                                        <div class="w-px h-6 bg-slate-300 mx-1"></div>
+                                        <button onclick="app.ui.delEstoqueItem('${i.id}')" class="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition"><i class="fa-solid fa-trash"></i></button>
+                                    </div>` : ''}
+                                </div>
+                            `;
+                        });
+                    }
+
+                    html += `
+                                </div>
+                            </div>
+
+                            <!-- Histórico de Log de Saídas -->
+                            <div class="glass-card p-6 rounded-[2rem] bg-slate-50/50 dark:bg-slate-900">
+                                <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-200 dark:border-slate-700 pb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-orange-500"></i> Histórico de Consumo</h3>
+                                <div class="space-y-4 max-h-[460px] overflow-y-auto custom-scrollbar pr-2">
+                    `;
+                    
+                    if (logs.length === 0) {
+                        html += `<div class="text-center text-slate-400 italic p-6">Nenhum registro de saída encontrado. As baixas ocorrerão automaticamente ao registrar Ações Presenciais.</div>`;
+                    } else {
+                        logs.forEach(log => {
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex gap-4">
+                                    <div class="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 flex items-center justify-center font-black shrink-0 border border-orange-200 dark:border-orange-800">-${log.qtd}</div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex justify-between items-start mb-1">
+                                            <strong class="text-sm text-slate-800 dark:text-white truncate pr-2">${log.nomeItem}</strong>
+                                            <span class="text-[9px] text-slate-400 font-mono shrink-0">${log.data} ${log.hora}</span>
+                                        </div>
+                                        <div class="text-[10px] text-slate-500 uppercase font-bold tracking-widest leading-tight">Retirado por: <span class="text-blue-500">${log.autor}</span> • Op: ${log.op}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    html += `
+                                </div>
+                            </div>
+                        </div>
+                    `;
                     container.innerHTML = html;
                 },
 
