@@ -1136,6 +1136,8 @@
                             if (data.apresentacoes) app.apresentacoesList = data.apresentacoes; else app.apresentacoesList = {};
                             if (data.estoque) app.estoqueItems = data.estoque; else app.estoqueItems = {};
                             if (data.estoqueLogs) app.estoqueLogs = data.estoqueLogs; else app.estoqueLogs = {};
+                            if (data.impressoes) app.impressoesList = data.impressoes; else app.impressoesList = {};
+                            if (data.impressoesStats) app.impressoesStats = data.impressoesStats; else app.impressoesStats = { arquivos: 0, folhas: 0 };
 
                             // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
                             // Monitorias
@@ -1283,6 +1285,8 @@
                 saveApresentacoes() { return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
                 saveEstoque() { return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
                 saveEstoqueLogs() { return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
+                saveImpressoes() { return firebase.database().ref('sistema_bonificacao/impressoes').set(app.impressoesList || {}); },
+                saveImpressoesStats() { return firebase.database().ref('sistema_bonificacao/impressoesStats').set(app.impressoesStats || { arquivos: 0, folhas: 0 }); },
                 saveMonitorias() {
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
                     return firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias || {}); 
@@ -3192,12 +3196,12 @@
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -3832,6 +3836,7 @@
                                 else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                                 else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
                                 else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
+                                else if(tabId === 'impressoes') this.renderView_Impressoes(viewDiv);
                                 else {
                                     // Fallback Cirúrgico: Se a aba guardada não existir, força uma aba segura.
                                     app.currentTab = app.isAdmin ? 'dashboard_adm' : 'meu_painel';
@@ -5216,6 +5221,292 @@
                             </div>
                         </div>
                     `;
+                    container.innerHTML = html;
+                },
+
+                // --- INÍCIO: NOVAS LÓGICAS DE IMPRESSÃO ---
+                impressoes: {
+                    solicitar() {
+                        const fileInput = document.getElementById('print-file');
+                        const copias = parseInt(document.getElementById('print-copias').value) || 1;
+                        const desc = document.getElementById('print-desc').value.trim();
+
+                        if(!fileInput.files || fileInput.files.length === 0) {
+                            return app.ui.showAlert("Aviso", "Anexe um arquivo para impressão.", "error");
+                        }
+                        const file = fileInput.files[0];
+                        if(file.size > 5 * 1024 * 1024) {
+                            return app.ui.showAlert("Arquivo Muito Grande", "O arquivo deve ter no máximo 5MB para não sobrecarregar a nuvem.", "error");
+                        }
+                        if(!desc) {
+                            return app.ui.showAlert("Aviso", "Forneça uma breve descrição (ex: 'Avaliação João', 'Apostila Mod 1').", "error");
+                        }
+
+                        const btn = document.getElementById('btn-solicitar-print');
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const base64 = e.target.result;
+                            const id = 'prt_' + Date.now();
+                            app.impressoesList[id] = {
+                                id: id,
+                                autor: app.currentUser.nome,
+                                matricula: app.currentUser.matricula,
+                                fileName: file.name,
+                                fileBase64: base64,
+                                copias: copias,
+                                desc: desc,
+                                status: 'pendente',
+                                data: new Date().toLocaleString('pt-BR')
+                            };
+                            app.storage.saveImpressoes().then(() => {
+                                app.ui.showAlert("Enviado", "Sua solicitação de impressão foi encaminhada ao administrativo.", "success");
+                                app.ui.renderTab('impressoes', true);
+                                app.notifications.notify('ADM', 'Nova Impressão', `${app.currentUser.nome} solicitou ${copias} cópias de um arquivo.`, 'info');
+                            }).catch(() => {
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar para Impressão';
+                                app.ui.showAlert("Erro de Rede", "Falha ao enviar arquivo. Pode ser muito pesado.", "error");
+                            });
+                        };
+                        reader.readAsDataURL(file);
+                    },
+
+                    baixarUnico(id) {
+                        const doc = app.impressoesList[id];
+                        if(!doc) return;
+                        const link = document.createElement('a');
+                        link.href = doc.fileBase64;
+                        link.download = doc.fileName;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    },
+
+                    marcarImpresso(id) {
+                        const doc = app.impressoesList[id];
+                        if(!doc || doc.status === 'impresso') return;
+                        doc.status = 'impresso';
+                        app.impressoesStats.arquivos += 1;
+                        app.impressoesStats.folhas += (parseInt(doc.copias) || 1);
+                        
+                        app.storage.saveImpressoes();
+                        app.storage.saveImpressoesStats().then(() => {
+                            app.ui.renderTab('impressoes', true);
+                            app.notifications.notify(doc.matricula, 'Impressão Concluída', `O arquivo "${doc.fileName}" já foi impresso e está disponível.`, 'success');
+                        });
+                    },
+
+                    imprimirTudo() {
+                        const pendentes = Object.values(app.impressoesList).filter(i => i.status === 'pendente');
+                        if(pendentes.length === 0) return app.ui.showAlert("Aviso", "Nenhum arquivo na fila de impressão.", "info");
+
+                        app.ui.showConfirm("Baixar e Marcar Todos", `Isto baixará ${pendentes.length} arquivo(s) sequencialmente e marcará todos como impressos contabilizando as folhas gastas. Certifique-se de permitir o download múltiplo no navegador. Continuar?`, "app.ui.impressoes.execImprimirTudo()", false);
+                    },
+
+                    execImprimirTudo() {
+                        const pendentes = Object.values(app.impressoesList).filter(i => i.status === 'pendente');
+                        app.ui.showAlert("Processando", "Baixando arquivos em lote... Por favor, aguarde.", "info");
+
+                        pendentes.forEach((p, idx) => {
+                            setTimeout(() => {
+                                const link = document.createElement('a');
+                                link.href = p.fileBase64;
+                                link.download = p.fileName;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+
+                                p.status = 'impresso';
+                                app.impressoesStats.arquivos += 1;
+                                app.impressoesStats.folhas += (parseInt(p.copias) || 1);
+                                
+                                // No final da fila, salva e atualiza a tela
+                                if (idx === pendentes.length - 1) {
+                                    app.storage.saveImpressoes();
+                                    app.storage.saveImpressoesStats().then(() => {
+                                        app.ui.renderTab('impressoes', true);
+                                        app.ui.showAlert("Concluído", "Arquivos transferidos e estatísticas registradas.", "success");
+                                    });
+                                }
+                            }, idx * 800); // 800ms gap para o navegador não surtar com muitos downloads ao mesmo tempo
+                        });
+                    },
+
+                    delete(id) {
+                        delete app.impressoesList[id];
+                        app.storage.saveImpressoes().then(() => app.ui.renderTab('impressoes', true));
+                    }
+                },
+                // --- FIM: NOVAS LÓGICAS DE IMPRESSÃO ---
+
+                renderView_Impressoes(container) {
+                    let html = `
+                        <div class="mb-8">
+                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Centro de Impressão</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gerencie arquivos enviados para impressão centralizada.</p>
+                        </div>
+                    `;
+
+                    const listaGeral = Object.values(app.impressoesList || {}).sort((a,b) => new Date(b.data) - new Date(a.data));
+                    
+                    if (app.isAdmin) {
+                        const stats = app.impressoesStats || { arquivos: 0, folhas: 0 };
+                        const pendentes = listaGeral.filter(i => i.status === 'pendente');
+                        const historico = listaGeral.filter(i => i.status === 'impresso');
+
+                        html += `
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-orange-500 shadow-sm">
+                                    <div class="w-14 h-14 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-clock"></i></div>
+                                    <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Fila Pendente</div><div class="text-3xl font-black text-slate-800 dark:text-white">${pendentes.length} <span class="text-sm font-medium text-slate-400">arq.</span></div></div>
+                                </div>
+                                <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500 shadow-sm">
+                                    <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-file-circle-check"></i></div>
+                                    <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Arquivos Concluídos</div><div class="text-3xl font-black text-slate-800 dark:text-white">${stats.arquivos} <span class="text-sm font-medium text-slate-400">arq.</span></div></div>
+                                </div>
+                                <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-purple-500 shadow-sm">
+                                    <div class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-copy"></i></div>
+                                    <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Folhas Usadas Totais</div><div class="text-3xl font-black text-slate-800 dark:text-white">${stats.folhas} <span class="text-sm font-medium text-slate-400">folhas</span></div></div>
+                                </div>
+                            </div>
+                            
+                            <div class="glass-card p-6 rounded-[2rem] mb-8 border-t-4 border-t-blue-500">
+                                <div class="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-inbox text-orange-500 mr-2"></i> Fila Pendente</h3>
+                                    <button onclick="app.ui.impressoes.imprimirTudo()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm transition-colors text-sm"><i class="fa-solid fa-print mr-2"></i> Baixar e Marcar Todos</button>
+                                </div>
+                                <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                        `;
+
+                        if (pendentes.length === 0) {
+                            html += `<div class="text-center text-slate-400 italic py-6">Nenhum arquivo aguardando impressão.</div>`;
+                        } else {
+                            pendentes.forEach(p => {
+                                html += `
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm hover:shadow-md transition">
+                                        <div class="flex-1 w-full">
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <span class="bg-orange-100 text-orange-700 text-[9px] font-black uppercase px-2 py-0.5 rounded shadow-sm">Pendente</span>
+                                                <span class="text-[10px] text-slate-400 font-mono"><i class="fa-regular fa-clock"></i> ${p.data}</span>
+                                            </div>
+                                            <div class="font-bold text-slate-800 dark:text-white truncate" title="${p.fileName}"><i class="fa-solid fa-file-lines text-slate-400 mr-1"></i> ${p.fileName}</div>
+                                            <div class="text-xs text-slate-500 mt-1"><strong>Desc:</strong> ${p.desc}</div>
+                                            <div class="text-[10px] uppercase font-bold text-slate-400 mt-2">Enviado por: <span class="text-blue-500">${p.autor}</span></div>
+                                        </div>
+                                        <div class="flex items-center gap-3 shrink-0">
+                                            <div class="text-center px-4 border-r border-slate-200 dark:border-slate-700">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400">Cópias</div>
+                                                <div class="text-2xl font-black text-purple-600">${p.copias}x</div>
+                                            </div>
+                                            <div class="flex flex-col gap-2">
+                                                <button onclick="app.ui.impressoes.baixarUnico('${p.id}')" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm"><i class="fa-solid fa-download"></i> Baixar Arquivo</button>
+                                                <button onclick="app.ui.impressoes.marcarImpresso('${p.id}')" class="bg-green-100 text-green-700 hover:bg-green-500 hover:text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm"><i class="fa-solid fa-check"></i> Marcar Impresso</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+
+                        html += `</div></div>`;
+
+                        html += `
+                            <div class="glass-card p-6 rounded-[2rem] border-t-4 border-t-slate-300">
+                                <div class="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-clock-rotate-left text-slate-400 mr-2"></i> Histórico Resolvido</h3>
+                                </div>
+                                <div class="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                        `;
+
+                        if (historico.length === 0) {
+                            html += `<div class="text-center text-slate-400 italic py-4">Nenhum registro antigo.</div>`;
+                        } else {
+                            historico.forEach(h => {
+                                html += `
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center opacity-80">
+                                        <div class="flex-1 min-w-0 pr-4">
+                                            <div class="font-bold text-slate-600 dark:text-slate-300 text-xs truncate" title="${h.fileName}"><i class="fa-solid fa-file-lines mr-1"></i> ${h.fileName}</div>
+                                            <div class="text-[9px] text-slate-400 uppercase tracking-widest mt-1">De: ${h.autor} | Em: ${h.data}</div>
+                                        </div>
+                                        <div class="text-right shrink-0">
+                                            <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-black">${h.copias} Cópias</span>
+                                            <button onclick="app.ui.impressoes.delete('${h.id}')" class="text-slate-400 hover:text-red-500 ml-2" title="Apagar Registro"><i class="fa-solid fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+                        html += `</div></div>`;
+
+                    } else {
+                        // Visão do Usuário
+                        const minhasImpressoes = listaGeral.filter(i => i.matricula === app.currentUser.matricula);
+
+                        html += `
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                <div class="glass-card p-6 md:p-8 rounded-[2rem] h-fit border-t-4 border-t-blue-500 shadow-lg relative overflow-hidden">
+                                    <div class="absolute right-0 top-0 w-32 h-32 bg-blue-500/10 rounded-bl-full pointer-events-none"></div>
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-100 dark:border-slate-700 pb-3 flex items-center gap-2 relative z-10"><i class="fa-solid fa-paper-plane text-blue-500"></i> Solicitar Impressão</h3>
+                                    
+                                    <div class="space-y-5 relative z-10">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2">Arquivo (Qualquer formato, máx 5MB)</label>
+                                            <input type="file" id="print-file" class="w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900">
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-4">
+                                            <div class="col-span-1">
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2">Qtd. Cópias</label>
+                                                <input type="number" id="print-copias" value="1" min="1" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none text-center font-black text-blue-600 shadow-sm">
+                                            </div>
+                                            <div class="col-span-2">
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-2">Descrição / Motivo</label>
+                                                <input type="text" id="print-desc" placeholder="Ex: Avaliações Teóricas Turma B" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none text-sm shadow-sm dark:text-white">
+                                            </div>
+                                        </div>
+                                        <button id="btn-solicitar-print" onclick="app.ui.impressoes.solicitar()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-md transition-transform hover:-translate-y-0.5"><i class="fa-solid fa-paper-plane mr-2"></i> Enviar para Impressão</button>
+                                    </div>
+                                </div>
+
+                                <div class="glass-card p-6 rounded-[2rem]">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-100 dark:border-slate-700 pb-3 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> Meus Pedidos</h3>
+                                    <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                        `;
+
+                        if (minhasImpressoes.length === 0) {
+                            html += `<div class="text-center text-slate-400 italic py-8">Nenhum pedido de impressão feito ainda.</div>`;
+                        } else {
+                            minhasImpressoes.forEach(m => {
+                                const isImpresso = m.status === 'impresso';
+                                const badgeStatus = isImpresso 
+                                    ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-check"></i> Pronto</span>` 
+                                    : `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-clock"></i> Na Fila</span>`;
+                                
+                                html += `
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-3 relative ${isImpresso ? 'opacity-80' : ''}">
+                                        <div class="flex-1 min-w-0 pr-4">
+                                            <div class="flex items-center gap-2 mb-1">${badgeStatus} <span class="text-[9px] text-slate-400 font-mono">${m.data}</span></div>
+                                            <div class="font-bold text-slate-700 dark:text-slate-300 text-sm truncate" title="${m.fileName}"><i class="fa-regular fa-file-lines mr-1 text-slate-400"></i> ${m.fileName}</div>
+                                            <div class="text-xs text-slate-500 mt-1 truncate">Motivo: ${m.desc}</div>
+                                        </div>
+                                        <div class="shrink-0 flex items-center justify-between sm:block border-t border-slate-100 sm:border-0 pt-2 sm:pt-0">
+                                            <div class="text-[9px] uppercase font-bold text-slate-400 sm:text-right">Quantidade</div>
+                                            <div class="text-lg font-black text-blue-600 sm:text-right">${m.copias}x</div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+
+                        html += `
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    }
+
                     container.innerHTML = html;
                 },
 
