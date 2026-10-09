@@ -9817,9 +9817,10 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <button onclick="app.ui.desviosExpandidos = !app.ui.desviosExpandidos; app.ui._refreshComMemoriaDeScroll()" class="w-full py-4 mt-2 text-sm font-bold text-orange-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
-                                        ${app.ui.desviosExpandidos ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todos os Desvios'}
-                                    </button>` : ''}
+                            ${(arrSort.length > 5 && !this.analiseEditMode) ? `
+                            <button onclick="app.ui.tabelaAnaliticaExpandida = !app.ui.tabelaAnaliticaExpandida; app.ui._refreshComMemoriaDeScroll()" class="w-full py-4 mt-2 text-sm font-bold text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-700">
+                                ${app.ui.tabelaAnaliticaExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Tabela Completa'}
+                            </button>` : ''}
                         </details>
                         
                         ${renderChapterTitle('Evidências & Fechamento', 'Galeria de intervenções presenciais e consolidação da apresentação para o histórico permanente na nuvem.', 'fa-camera-retro', 'cyan')}
