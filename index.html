@@ -1559,6 +1559,50 @@
 
             actions: {
                 tempFiles: [], // Memória temporária das fotos selecionadas
+                brindesSelecionados: [], // Carrinho de múltiplos brindes
+                
+                addBrindeAoCarrinho() {
+                    const qtdEl = document.getElementById('act-brindes-qtd');
+                    const itemEl = document.getElementById('act-brindes-item');
+                    const qtd = parseInt(qtdEl.value) || 0;
+                    const itemId = itemEl.value;
+
+                    if (qtd <= 0 || itemId === "Nenhum") return app.ui.showAlert("Aviso", "Selecione um brinde e uma quantidade maior que zero.", "info");
+
+                    const itemEstoque = app.estoqueItems[itemId];
+                    if (!itemEstoque) return;
+
+                    // Verifica se não está pedindo mais do que tem no estoque (somando o que já tá no carrinho)
+                    const qtdNoCarrinho = this.brindesSelecionados.filter(b => b.id === itemId).reduce((acc, b) => acc + b.qtd, 0);
+                    if ((qtdNoCarrinho + qtd) > itemEstoque.qtd) {
+                        return app.ui.showAlert("Estoque Insuficiente", `Temos apenas ${itemEstoque.qtd}x ${itemEstoque.nome} no estoque. Você já colocou ${qtdNoCarrinho}x no carrinho.`, "error");
+                    }
+
+                    const idx = this.brindesSelecionados.findIndex(b => b.id === itemId);
+                    if (idx > -1) this.brindesSelecionados[idx].qtd += qtd;
+                    else this.brindesSelecionados.push({ id: itemId, nome: itemEstoque.nome, qtd: qtd });
+
+                    qtdEl.value = "0"; itemEl.value = "Nenhum";
+                    this.renderCarrinhoBrindes();
+                },
+
+                removeBrindeDoCarrinho(index) {
+                    this.brindesSelecionados.splice(index, 1);
+                    this.renderCarrinhoBrindes();
+                },
+
+                renderCarrinhoBrindes() {
+                    const container = document.getElementById('act-brindes-carrinho');
+                    if (!container) return;
+                    if (this.brindesSelecionados.length === 0) { container.innerHTML = ''; return; }
+
+                    container.innerHTML = this.brindesSelecionados.map((b, i) => `
+                        <div class="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-800/50 mb-2 mt-2">
+                            <div class="text-xs font-bold text-emerald-800 dark:text-emerald-300"><span class="bg-emerald-200 dark:bg-emerald-800 px-2 py-0.5 rounded mr-2">${b.qtd}x</span> ${b.nome}</div>
+                            <button type="button" onclick="app.actions.removeBrindeDoCarrinho(${i})" class="text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    `).join('');
+                },
                 
                 removeAllFiles() {
                     this.tempFiles = [];
@@ -1816,18 +1860,22 @@
                     const existingAct = evtEditId ? app.actionsList[evtEditId] : null;
 
                     // Tratamento do Estoque
-                    const bQtd = parseInt(document.getElementById('act-brindes-qtd').value) || 0;
-                    const bItemId = document.getElementById('act-brindes-item').value;
-                    let bName = "Brindes";
-                    
-                    if (bItemId !== "Nenhum" && bQtd > 0) {
-                        const itemEstoque = app.estoqueItems[bItemId];
-                        if (!itemEstoque) return app.ui.showAlert("Erro", "Item de estoque não encontrado.", "error");
-                        if (itemEstoque.qtd < bQtd) return app.ui.showAlert("Estoque Insuficiente", `Você tem apenas ${itemEstoque.qtd}x ${itemEstoque.nome} disponíveis no sistema.`, "error");
-                        bName = itemEstoque.nome;
-                        payload.brindes = `${bQtd}x ${bName}`;
+                    // Tratamento do Estoque (Múltiplos Brindes)
+                    if (app.actions.brindesSelecionados.length > 0) {
+                        let totalBrindesDesc = [];
+                        // Validação de segurança final antes de enviar
+                        for (let b of app.actions.brindesSelecionados) {
+                            if (!app.estoqueItems[b.id] || app.estoqueItems[b.id].qtd < b.qtd) {
+                                btn.disabled = false; btn.classList.remove('is-flying');
+                                return app.ui.showAlert("Estoque Insuficiente", `Falta estoque para ${b.nome}.`, "error");
+                            }
+                            totalBrindesDesc.push(`${b.qtd}x ${b.nome}`);
+                        }
+                        payload.brindes = totalBrindesDesc.join(' + ');
                     } else {
-                        payload.brindes = bQtd > 0 ? bQtd.toString() : "0";
+                        // Resgate caso ele digite número sem item (ex: Brindes de fora do sistema)
+                        const bQtdSola = parseInt(document.getElementById('act-brindes-qtd').value) || 0;
+                        payload.brindes = bQtdSola > 0 ? bQtdSola.toString() : "0";
                     }
 
                     // PREVENÇÃO DE DUPLICIDADE: Se o usuário está editando e re-enviando
@@ -1855,19 +1903,24 @@
 
                     const finalizeSubmit = () => {
                         app.actionsList[payload.id] = payload;
-                        
-                        // Atualiza Estoque se houve consumo
-                        if (bItemId !== "Nenhum" && bQtd > 0 && !existingAct) {
-                            app.estoqueItems[bItemId].qtd -= bQtd;
-                            const logId = 'log_' + Date.now();
-                            app.estoqueLogs[logId] = {
-                                id: logId, itemId: bItemId, nomeItem: bName, qtd: bQtd,
-                                data: new Date().toLocaleDateString('pt-BR'), hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
-                                autor: app.currentUser.nome, acaoId: payload.id, op: payload.codigoOpe
-                            };
+
+                        // Atualiza Estoque se houve consumo (Múltiplos itens do carrinho)
+                        if (app.actions.brindesSelecionados.length > 0 && !existingAct) {
+                            app.actions.brindesSelecionados.forEach((b, index) => {
+                                app.estoqueItems[b.id].qtd -= b.qtd;
+                                const logId = 'log_' + Date.now() + index;
+                                app.estoqueLogs[logId] = {
+                                    id: logId, itemId: b.id, nomeItem: b.nome, qtd: b.qtd,
+                                    data: new Date().toLocaleDateString('pt-BR'), hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
+                                    autor: app.currentUser.nome, acaoId: payload.id, op: payload.codigoOpe
+                                };
+                            });
                             app.storage.saveEstoque();
                             app.storage.saveEstoqueLogs();
                         }
+                        
+                        // Limpa o carrinho após finalizar com sucesso
+                        app.actions.brindesSelecionados = [];
 
                         // SALVAMENTO CIRÚRGICO: Salva apenas a ação específica para evitar estouro de limite (timeout) do Firebase
                         firebase.database().ref('sistema_bonificacao/actions/' + payload.id).set(payload)
@@ -4216,9 +4269,11 @@
                                             <input type="number" id="act-brindes-qtd" value="0" min="0" class="w-20 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none font-bold text-center">
                                             <select id="act-brindes-item" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none cursor-pointer">
                                                 <option value="Nenhum">Nenhum Brinde</option>
-                                                ${Object.values(app.estoqueItems || {}).map(i => `<option value="${i.id}">${i.nome} (${i.qtd} disponiveis)</option>`).join('')}
+                                                ${Object.values(app.estoqueItems || {}).map(i => `<option value="${i.id}">${i.nome} (${i.qtd} disp.)</option>`).join('')}
                                             </select>
+                                            <button type="button" onclick="app.actions.addBrindeAoCarrinho()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold w-12 rounded-xl shadow-sm transition-colors flex items-center justify-center" title="Adicionar este item ao carrinho"><i class="fa-solid fa-plus"></i></button>
                                         </div>
+                                        <div id="act-brindes-carrinho" class="empty:hidden mt-2"></div>
                                     </div>
                                     <div class="md:col-span-2">
                                         <div class="flex justify-between items-end mb-1.5">
@@ -9096,21 +9151,22 @@
                     // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS E GHOST BUTTON NA APRESENTAÇÃO
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
                         html += `
-                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999]' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
+                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999] group/apres-filter' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
                             
                             ${this.analiseEditMode ? `
-                            <div onclick="app.ui.filtrosApresentacaoAbertos = !app.ui.filtrosApresentacaoAbertos; app.ui.renderTab('analise_csv_dinamico', true)" class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer hover:scale-110 transition-all duration-300 relative z-50 opacity-0 hover:opacity-100">
-                                <i class="fa-solid ${this.filtrosApresentacaoAbertos ? 'fa-xmark' : 'fa-filter'}"></i>
+                            <div class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer transition-all duration-300 relative z-50 opacity-0 hover:opacity-100 group-hover/apres-filter:opacity-100">
+                                <i class="fa-solid fa-filter group-hover/apres-filter:hidden"></i>
+                                <i class="fa-solid fa-xmark hidden group-hover/apres-filter:block"></i>
                             </div>
                             ` : ''}
 
-                            <div class="${this.analiseEditMode ? `absolute bottom-16 left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-[2rem] shadow-2xl w-[90vw] max-w-4xl transition-all duration-300 origin-bottom-left pb-8 z-40 ${this.filtrosApresentacaoAbertos ? 'opacity-100 visible scale-100' : 'opacity-0 invisible scale-95'}` : ''}">
+                            <div class="${this.analiseEditMode ? `absolute bottom-16 left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-[2rem] shadow-2xl w-[90vw] max-w-4xl transition-all duration-300 origin-bottom-left pb-8 z-40 opacity-0 invisible scale-95 group-hover/apres-filter:opacity-100 group-hover/apres-filter:visible group-hover/apres-filter:scale-100` : ''}">
                                 ${!this.analiseEditMode ? btnHideCode : ''}
                                 <div class="flex justify-between items-center mb-4">
                                     <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
                                     <div class="flex gap-2">
                                         <button onclick="app.ui.openGerenciarBasesModal()" class="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-database mr-1"></i> Gerenciar Bases</button>
-                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui.renderTab(\\'analise_csv_dinamico\\', true)', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui._refreshComMemoriaDeScroll()', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
                                     </div>
                                 </div>
                                 
@@ -9118,9 +9174,9 @@
                                     <div>
                                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtro de Cargo:</div>
                                         <div class="flex flex-wrap gap-2">
-                                            <button onclick="app.ui.analiseFiltroCargo=''; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${!app.ui.analiseFiltroCargo ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Todos</button>
-                                            <button onclick="app.ui.analiseFiltroCargo='Monitor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Monitor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Monitores</button>
-                                            <button onclick="app.ui.analiseFiltroCargo='Supervisor'; app.admin.gerarInteligenciaCSV(); app.ui.renderTab('analise_csv_dinamico', true)" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Supervisor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Sup.</button>
+                                            <button onclick="app.ui.analiseFiltroCargo=''; app.admin.gerarInteligenciaCSV(); app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${!app.ui.analiseFiltroCargo ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Todos</button>
+                                            <button onclick="app.ui.analiseFiltroCargo='Monitor'; app.admin.gerarInteligenciaCSV(); app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Monitor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Monitores</button>
+                                            <button onclick="app.ui.analiseFiltroCargo='Supervisor'; app.admin.gerarInteligenciaCSV(); app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${app.ui.analiseFiltroCargo === 'Supervisor' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600'}">Sup.</button>
                                         </div>
                                     </div>
                                     <div>
@@ -9433,8 +9489,8 @@
                                         `}).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhum desvio comum registrado.</div>'}
                                     </div>
                                     ${(data.falhasComunsArray && data.falhasComunsArray.length > 5 && !this.analiseEditMode) ? `
-                                    <button onclick="app.ui.desviosExpandidos = !app.ui.desviosExpandidos; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-orange-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
-                                        ${app.ui.desviosExpandidos ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todos os Desvios'}
+                                    <button onclick="app.ui.criticasExpandidas = !app.ui.criticasExpandidas; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-red-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
+                                        ${app.ui.criticasExpandidas ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todas as Críticas'}
                                     </button>` : ''}
                                 </div>
                             </details>
@@ -9466,8 +9522,9 @@
                                         `}).join('') : '<div class="text-xs text-slate-400 italic text-center py-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700/50">Nenhuma falha crítica registrada. Parabéns à equipe!</div>'}
                                     </div>
                                     ${(data.falhasCriticasArray && data.falhasCriticasArray.length > 5 && !this.analiseEditMode) ? `
-                                    <button onclick="app.ui.criticasExpandidas = !app.ui.criticasExpandidas; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-red-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
-                                        ${app.ui.criticasExpandidas ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todas as Críticas'}
+                                    ${(arrSort.length > 5) ? `
+                                    <button onclick="app.ui.tabelaAnaliticaExpandida = !app.ui.tabelaAnaliticaExpandida; app.ui._refreshComMemoriaDeScroll()" class="w-full py-4 mt-2 text-sm font-bold text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-700">
+                                        ${app.ui.tabelaAnaliticaExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Tabela Completa'}
                                     </button>` : ''}
                                 </div>
                                 </div>
@@ -9761,10 +9818,9 @@
                                     </tbody>
                                 </table>
                             </div>
-                            ${(arrSort.length > 5) ? `
-                            <button onclick="app.ui.tabelaAnaliticaExpandida = !app.ui.tabelaAnaliticaExpandida; app.ui.renderTab('analise_csv_dinamico', true)" class="w-full py-4 mt-2 text-sm font-bold text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-200 dark:border-slate-700">
-                                ${app.ui.tabelaAnaliticaExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Tabela Completa'}
-                            </button>` : ''}
+                            <button onclick="app.ui.desviosExpandidos = !app.ui.desviosExpandidos; app.ui._refreshComMemoriaDeScroll()" class="w-full py-4 mt-2 text-sm font-bold text-orange-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-100 dark:border-slate-700">
+                                        ${app.ui.desviosExpandidos ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas o Top 5' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todos os Desvios'}
+                                    </button>` : ''}
                         </details>
                         
                         ${renderChapterTitle('Evidências & Fechamento', 'Galeria de intervenções presenciais e consolidação da apresentação para o histórico permanente na nuvem.', 'fa-camera-retro', 'cyan')}
