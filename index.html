@@ -6666,9 +6666,51 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                        `;
+
+                        // NOVO CAPÍTULO: ASSUNTOS (TEMAS DE ATENDIMENTO)
+                        if (data.assuntosDisponiveis && data.assuntosDisponiveis.length > 0) {
+                            html += renderChapterTitle('Pareto Temático (Assuntos)', 'Mapeamento do impacto e volumetria das falhas de acordo com o motivo do contato do cliente.', 'fa-tags', 'pink');
+                            html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 hideable-box relative animate-fade-in">${btnHideCode}`;
                             
-                            <!-- TABELA INDIVIDUAL (PERFORMANCE OPERACIONAL) -->
-                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
+                            const assuntosArr = Object.entries(data.assuntosDistribuicao).map(([nome, d]) => ({ nome, ...d })).sort((a,b) => b.count - a.count);
+                            
+                            assuntosArr.forEach((assunto, i) => {
+                                const hideClass = (!app.ui.assuntosExpandidos && i > 5 && !this.analiseEditMode) ? 'hidden' : '';
+                                const temFalhaCritica = assunto.falhasCriticas > 0;
+                                
+                                html += `
+                                <div class="${hideClass} bg-white dark:bg-slate-800 p-6 rounded-3xl border-t-4 border-t-pink-500 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden group">
+                                    <div class="absolute -right-4 -bottom-4 text-pink-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-tag"></i></div>
+                                    <div class="flex justify-between items-start mb-4 relative z-10">
+                                        <h4 class="font-extrabold text-slate-800 dark:text-white text-base leading-tight pr-4">${assunto.nome}</h4>
+                                        <div class="text-xs font-black bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 px-2 py-1 rounded-lg border border-pink-200 dark:border-pink-800 shrink-0 shadow-sm">${assunto.count}x</div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3 relative z-10">
+                                        <div class="bg-orange-50 dark:bg-orange-900/20 p-2.5 rounded-xl border border-orange-100 dark:border-orange-900/50">
+                                            <div class="text-[9px] uppercase font-bold text-orange-600 mb-1">Desvios de Proced.</div>
+                                            <div class="font-black text-orange-600 text-lg">${assunto.falhasComuns}</div>
+                                        </div>
+                                        <div class="bg-red-50 dark:bg-red-900/20 p-2.5 rounded-xl border border-red-100 dark:border-red-900/50">
+                                            <div class="text-[9px] uppercase font-bold text-red-600 mb-1">Falhas Críticas</div>
+                                            <div class="font-black text-red-600 text-lg ${temFalhaCritica ? 'animate-pulse' : ''}">${assunto.falhasCriticas}</div>
+                                        </div>
+                                    </div>
+                                </div>`;
+                            });
+                            
+                            if (assuntosArr.length > 6 && !this.analiseEditMode) {
+                                html += `<button onclick="app.ui.assuntosExpandidos = !app.ui.assuntosExpandidos; app.ui._refreshComMemoriaDeScroll()" class="col-span-1 md:col-span-2 lg:col-span-3 py-4 mt-2 text-sm font-bold text-pink-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-200 dark:border-slate-700">
+                                    ${app.ui.assuntosExpandidos ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas Principais' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todos os Assuntos'}
+                                </button>`;
+                            }
+                            html += `</div>`;
+                        }
+
+                        html += `
+                        <!-- TABELA INDIVIDUAL (PERFORMANCE OPERACIONAL) -->
+                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
                                 <div class="flex justify-between items-center mb-6">
                                     <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2">
                                         <i class="fa-solid fa-users text-green-500"></i> Performance Operacional (Individual)
@@ -6836,6 +6878,7 @@
                                                     <th class="py-3 px-4">Monitor</th>
                                                     <th class="py-3 px-4">Operador Avaliado</th>
                                                     <th class="py-3 px-4 text-center">Nota</th>
+                                                    <th class="py-3 px-4 text-center">Assunto</th>
                                                     <th class="py-3 px-4 text-center">Status Feedback</th>
                                                     <th class="py-3 px-4">Operação</th>
                                                     <th class="py-3 px-4 text-right">Data</th>
@@ -6850,6 +6893,7 @@
                                                         <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
                                                         <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
                                                         <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                        <td class="py-3 px-4 text-center text-xs text-slate-500 max-w-[120px] truncate" title="${linha.ASSUNTO || linha.assunto || ''}">${linha.ASSUNTO || linha.assunto || '-'}</td>
                                                         <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
                                                         <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                         <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
@@ -6970,6 +7014,7 @@
                                                     <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                                         <th class="py-3 px-4">Operador Avaliado</th>
                                                         <th class="py-3 px-4 text-center">Nota</th>
+                                                        <th class="py-3 px-4 text-center">Assunto</th>
                                                         <th class="py-3 px-4 text-center">Status Feedback</th>
                                                         <th class="py-3 px-4">Operação</th>
                                                         <th class="py-3 px-4 text-right">Data</th>
@@ -6983,6 +7028,7 @@
                                                         <tr class="linha-bruta-user ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
                                                             <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
                                                             <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                            <td class="py-3 px-4 text-center text-xs text-slate-500 max-w-[120px] truncate" title="${linha.ASSUNTO || linha.assunto || ''}">${linha.ASSUNTO || linha.assunto || '-'}</td>
                                                             <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
                                                             <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                             <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
@@ -7778,6 +7824,17 @@
                         this.analiseFiltroMaturidade = this.analiseFiltroMaturidade.filter(m => m !== maturidade);
                     } else {
                         this.analiseFiltroMaturidade.push(maturidade);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                toggleAssuntoFiltro(assunto) {
+                    if (!this.analiseFiltroAssunto) this.analiseFiltroAssunto = [];
+                    if (this.analiseFiltroAssunto.includes(assunto)) {
+                        this.analiseFiltroAssunto = this.analiseFiltroAssunto.filter(a => a !== assunto);
+                    } else {
+                        this.analiseFiltroAssunto.push(assunto);
                     }
                     app.admin.gerarInteligenciaCSV();
                     this._refreshComMemoriaDeScroll();
@@ -9220,6 +9277,18 @@
                                             }).join('')}
                                         </div>
                                     </div>
+
+                                    ${data.assuntosDisponiveis && data.assuntosDisponiveis.length > 0 ? `
+                                    <div class="xl:col-span-5">
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar por Assunto / Tema:</div>
+                                        <div class="flex flex-wrap gap-2 max-h-20 overflow-y-auto custom-scrollbar pr-2">
+                                            ${data.assuntosDisponiveis.map(a => {
+                                                const isActive = app.ui.analiseFiltroAssunto && app.ui.analiseFiltroAssunto.includes(a);
+                                                const btnClass = isActive ? 'bg-pink-600 text-white border-pink-600 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-pink-300 dark:hover:border-pink-600';
+                                                return `<button onclick="app.ui.toggleAssuntoFiltro('${a}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">${a}</button>`;
+                                            }).join('')}
+                                        </div>
+                                    </div>` : ''}
                                 </div>
                             </div>
                         </div>`;
@@ -11326,7 +11395,8 @@
                                     nota: isNaN(notaFinalLida) ? 'N/A' : notaFinalLida,
                                     status: String(getValByKeyword(row, 'STATUS') || '-'),
                                     operacao: operacao || 'PADRÃO',
-                                    data: dataFmt
+                                    data: dataFmt,
+                                    assunto: colAssunto ? String(row[colAssunto]).trim() : ''
                                 });
                             });
             
@@ -11591,11 +11661,12 @@
                                 let linhaSimulada = {
                                     "DATA": dataFormatada,
                                     "NOME": operadorFmt,
-                                    "MONITOR": isRegisteredMonitor ? userObj.nome : monitorStr,
+                                    "MONITOR": monitorStr,
                                     "CARGO_AVALIADOR": cargoAvaliador,
                                     "NOTA": notaFormatada,
                                     "STATUS": statusFeedbackLido,
-                                    "OPERACAO": setorIlha
+                                    "OPERACAO": setorIlha,
+                                    "ASSUNTO": assuntoLidoTriplo
                                 };
 
                                 perguntasDados.forEach(qRow => {
@@ -11808,6 +11879,7 @@
                                 
                                 let formNameRaw = String(row[findKey(['FORMULARIO', 'AVALIACAO', 'AVALIAÇÃO'])] || '').trim();
                                 let cargoAvaliador = formNameRaw.toUpperCase().endsWith('SUPER,') ? 'Supervisor' : 'Monitor';
+                                let assuntoLidoTriplo = String(row[findKey(['ASSUNTO', 'TEMA', 'MOTIVO', 'SERVICO'])] || '').trim();
 
                                 let notaStr = String(row[findKey(['NOTA', 'PONTUACAO'])] || '0').replace(',', '.').replace('%', '');
                                 let notaFormatada = parseFloat(notaStr);
@@ -12664,6 +12736,7 @@
 
                     const mesesDisp = new Set();
                     const ciclosDisp = new Set();
+                    const assuntosDisp = new Set();
                     relatoriosAtivos.forEach(rel => {
                         rel.rows.forEach(row => {
                             const keys = Object.keys(row);
@@ -12734,6 +12807,7 @@
                         const colDataAudit = chaves.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
                         const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) || 'NOTA';
                         const colStatus = chaves.find(k => k.trim().toUpperCase().includes('STATUS') || k.trim().toUpperCase().includes('SITUA')) || 'STATUS';
+                        const colAssunto = chaves.find(k => ['ASSUNTO', 'TEMA', 'MOTIVO', 'SERVICO'].some(kw => k.trim().toUpperCase().includes(kw)));
 
                         const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
                         
@@ -12792,6 +12866,7 @@
                             let weekStr = dtObj ? app.utils.getWeekNumber(dtObj).toString() : null;
                             let filtrosCiclo = app.ui.analiseFiltroCiclo || [];
                             let filtrosMaturidade = app.ui.analiseFiltroMaturidade || [];
+                            let filtrosAssunto = app.ui.analiseFiltroAssunto || [];
                             let cargoFiltro = app.ui.analiseFiltroCargo || ''; // NOVO FILTRO APLICADO
 
                             let diasCasa = app.utils.getTempoCasaDoOperador(opNomeDetalhe);
@@ -12805,10 +12880,19 @@
                                 }
                             }
 
+                            let assuntoBruto = String(row['ASSUNTO'] || row['TEMA'] || row['MOTIVO'] || '').trim();
+
                             if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
                             if (filtrosCiclo.length > 0 && weekStr && !filtrosCiclo.includes(weekStr)) return;
                             if (filtrosMaturidade.length > 0 && !filtrosMaturidade.includes(nivelMatStr)) return;
                             if (cargoFiltro && row['CARGO_AVALIADOR'] && row['CARGO_AVALIADOR'] !== cargoFiltro) return; // TRAVA DE SEGURANÇA
+                            if (filtrosAssunto.length > 0 && assuntoBruto && !filtrosAssunto.includes(assuntoBruto)) return;
+
+                            if (assuntoBruto) {
+                                assuntosDisp.add(assuntoBruto);
+                                if (!data.assuntosDistribuicao[assuntoBruto]) data.assuntosDistribuicao[assuntoBruto] = { count: 0, falhasComuns: 0, falhasCriticas: 0 };
+                                data.assuntosDistribuicao[assuntoBruto].count++;
+                            }
                             
                             let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
 
@@ -12877,6 +12961,7 @@
                                     data.falhasComuns[cleanGap].count += 1;
                                     data.falhasComuns[cleanGap].operadores[op] = (data.falhasComuns[cleanGap].operadores[op] || 0) + 1;
                                     if (mesRef && data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasNormais++;
+                                    if (assuntoBruto) data.assuntosDistribuicao[assuntoBruto].falhasComuns++;
                                 }
                             });
 
@@ -12890,6 +12975,7 @@
                                     data.falhasCriticas[cleanGap].count += 1;
                                     data.falhasCriticas[cleanGap].operadores[op] = (data.falhasCriticas[cleanGap].operadores[op] || 0) + 1;
                                     if (mesRef && data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasCriticas++;
+                                    if (assuntoBruto) data.assuntosDistribuicao[assuntoBruto].falhasCriticas++;
                                 }
                             });
 
@@ -12956,6 +13042,7 @@
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => parseFloat(b.mediaNota) - parseFloat(a.mediaNota));
+                    data.assuntosDisponiveis = Array.from(assuntosDisp).sort();
 
                     app.analiseCSVDinamicoData.consolidado = data;
                 },
