@@ -9894,21 +9894,13 @@
                         
                         ${renderChapterTitle('Evidências & Fechamento', 'Galeria de intervenções presenciais e consolidação da apresentação para o histórico permanente na nuvem.', 'fa-camera-retro', 'cyan')}
                         <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
-                        <div class="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
+                        <div class="mb-8 grid grid-cols-1 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
                             <!-- Painel Adicionar Ações -->
-                            <div class="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center items-center text-center bg-slate-50/50 dark:bg-slate-800/30">
+                            <div class="glass-card p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center items-center text-center bg-slate-50/50 dark:bg-slate-800/30 w-full">
                                 <i class="fa-solid fa-camera-retro text-4xl text-blue-400 mb-3"></i>
                                 <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Galeria de Ações Validadas</h3>
-                                <p class="text-xs text-slate-500 mb-4 max-w-sm">Adicione as fotos das ações e intervenções presenciais para exibi-las lindamente na apresentação final.</p>
-                                <button onclick="app.admin.openAcoesSelectorModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Inserir Ação Presencial</button>
-                            </div>
-                            
-                            <!-- Painel Salvar Apresentação -->
-                            <div class="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center items-center text-center bg-slate-50/50 dark:bg-slate-800/30">
-                                <i class="fa-solid fa-floppy-disk text-4xl text-emerald-400 mb-3"></i>
-                                <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Salvar no Banco de Dados</h3>
-                                <p class="text-xs text-slate-500 mb-4 max-w-sm">Grave esta análise com seus comentários em uma pasta segura para acessar a qualquer momento no futuro.</p>
-                                <button onclick="app.admin.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-cloud-arrow-up"></i> Arquivar Apresentação</button>
+                                <p class="text-xs text-slate-500 mb-4 max-w-lg">Vincule as ações presenciais aprovadas no mês a esta apresentação para exibir as evidências fotográficas à diretoria e aos operadores durante a reunião.</p>
+                                <button onclick="app.admin.openAcoesSelectorModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md text-sm transition-transform hover:-translate-y-1"><i class="fa-solid fa-plus mr-2"></i> Inserir Ações Presenciais</button>
                             </div>
                         </div>
 
@@ -12376,7 +12368,7 @@
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
-                        <button onclick="app.admin.executeSaveApresentacao()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-check mr-1"></i> Salvar Projeto</button>
+                        <button onclick="app.admin.executeSaveApresentacao(event)" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center min-w-[180px]"><i class="fa-solid fa-check mr-1"></i> Salvar Projeto</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
@@ -12387,28 +12379,56 @@
 
                     if(!op || !mes || !ano) return app.ui.showAlert("Atenção", "Preencha a Operação, o Mês e o Ano para prosseguir.", "error");
 
-                    const id = 'apr_' + Date.now();
-                    const nome = `${mes} / ${ano}`;
-                    const pasta = op;
+                    // Adiciona o Loading Dinâmico para o botão para evitar congelamento visual
+                    const btnSave = event ? event.currentTarget : null;
+                    if(btnSave) {
+                        btnSave.disabled = true;
+                        btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Compactando e Salvando...';
+                        btnSave.classList.add('opacity-70', 'cursor-not-allowed');
+                    }
 
-                    const payload = {
-                        id: id,
-                        nome: nome,
-                        pasta: pasta,
-                        dataStr: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
-                        timestamp: Date.now(),
-                        // Salva uma cópia EXATA do estado atual da análise no cofre
-                        payloadData: JSON.stringify(app.analiseCSVDinamicoData)
-                    };
+                    // SetTimeout de 100ms permite que o DOM (interface do navegador) atualize o botão ANTES do processador começar a travar gerando o JSON
+                    setTimeout(() => {
+                        try {
+                            const id = 'apr_' + Date.now();
+                            const nome = `${mes} / ${ano}`;
+                            const pasta = op;
 
-                    if(!app.apresentacoesList) app.apresentacoesList = {};
-                    app.apresentacoesList[id] = payload;
+                            const payload = {
+                                id: id,
+                                nome: nome,
+                                pasta: pasta,
+                                dataStr: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                                timestamp: Date.now(),
+                                payloadData: JSON.stringify(app.analiseCSVDinamicoData)
+                            };
 
-                    app.storage.saveApresentacoes().then(() => {
-                        document.getElementById('global-modal').classList.add('hidden');
-                        app.ui.renderTab('analise_csv_dinamico', true); // Recarrega a tela para a nova pasta surgir instantaneamente
-                        app.ui.showAlert("Projeto Protegido", "Sua apresentação foi arquivada e estruturada com sucesso no catálogo de nuvem local!", "success");
-                    });
+                            // Válvula de segurança: Firebase Realtime recusa strings maiores que 10MB
+                            const stringSize = new Blob([payload.payloadData]).size;
+                            if(stringSize > 9 * 1024 * 1024) {
+                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                                return app.ui.showAlert("Base de Dados Muito Pesada", `Sua análise possui mais de ${Math.round(stringSize / 1024 / 1024)}MB de dados brutos. O banco de dados em nuvem rejeitou a conexão por segurança.<br><br><b>Como resolver:</b> Clique na engrenagem "Controles e Filtros" e apague relatórios antigos da memória antes de tentar salvar a apresentação.`, "error");
+                            }
+
+                            if(!app.apresentacoesList) app.apresentacoesList = {};
+                            app.apresentacoesList[id] = payload;
+
+                            app.storage.saveApresentacoes().then(() => {
+                                document.getElementById('global-modal').classList.add('hidden');
+                                app.ui.renderTab('analise_csv_dinamico', true); 
+                                app.ui.showAlert("Projeto Protegido", "Sua apresentação foi arquivada na nuvem e está disponível para todos os gestores!", "success");
+                            }).catch(err => {
+                                console.error(err);
+                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                                app.ui.showAlert("Erro de Conexão", "Sua internet pode ter oscilado no momento do envio ou o Firebase recusou a transação.", "error");
+                            });
+
+                        } catch(error) {
+                            console.error(error);
+                            if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                            app.ui.showAlert("Erro Crítico", "Falha de memória no navegador ao tentar empacotar as planilhas. Recarregue a página.", "error");
+                        }
+                    }, 100);
                 },
 
                 renderPastasApresentacoes() {
@@ -14070,9 +14090,12 @@
                         <div id="apresentacao-topo-actions" class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Média Evolução Mensal & Insights Gerais</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gere sua apresentação automaticamente e exporte para o Canva.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gere sua apresentação automaticamente, salve e exporte para o Canva.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-3">
+                                <button onclick="app.admin.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Salvar na Nuvem
+                                </button>
                                 <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-file-excel text-lg"></i> Importar Planilha Amil
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarApresentacaoMonitorias(this)" onclick="this.value = null">
@@ -14081,7 +14104,7 @@
                                     <i class="fa-solid fa-expand text-lg"></i> Apresentar / Imprimir
                                 </button>
                                 <button onclick="app.admin.exportarApresentacaoPDF()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF (Adaptável)
+                                    <i class="fa-solid fa-file-pdf text-lg"></i> Exportar PDF
                                 </button>
                             </div>
                         </div>
