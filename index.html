@@ -11396,7 +11396,7 @@
                                     status: String(getValByKeyword(row, 'STATUS') || '-'),
                                     operacao: operacao || 'PADRÃO',
                                     data: dataFmt,
-                                    assunto: colAssunto ? String(row[colAssunto]).trim() : ''
+                                    ASSUNTO: colAssunto ? String(row[colAssunto]).trim() : ''
                                 });
                             });
             
@@ -11879,7 +11879,8 @@
                                 
                                 let formNameRaw = String(row[findKey(['FORMULARIO', 'AVALIACAO', 'AVALIAÇÃO'])] || '').trim();
                                 let cargoAvaliador = formNameRaw.toUpperCase().endsWith('SUPER,') ? 'Supervisor' : 'Monitor';
-                                let assuntoLidoTriplo = String(row[findKey(['ASSUNTO', 'TEMA', 'MOTIVO', 'SERVICO'])] || '').trim();
+                                const keyAssuntoT = findKey(['ASSUNTO', 'TEMA', 'MOTIVO', 'SERVICO']);
+                                let assuntoLidoTriplo = keyAssuntoT ? String(row[keyAssuntoT]).trim() : '';
 
                                 let notaStr = String(row[findKey(['NOTA', 'PONTUACAO'])] || '0').replace(',', '.').replace('%', '');
                                 let notaFormatada = parseFloat(notaStr);
@@ -12793,7 +12794,8 @@
                         customTitle: oldCustomTitle,
                         titleColor: oldTitleColor,
                         chapterCustomData: oldChapterCustomData, // <--- DEVOLVE PRA ESTRUTURA BLINDADA
-                        notasDistribuicao: {} // <--- NOVO: Armazena a contagem exata de cada nota
+                        notasDistribuicao: {}, // <--- NOVO: Armazena a contagem exata de cada nota
+                        assuntosDistribuicao: {} // <--- CORREÇÃO: A "estante" mestra que estava faltando para as caixinhas!
                     };
                     relatoriosAtivos.forEach(relatorio => {
                         const rows = relatorio.rows;
@@ -12880,7 +12882,7 @@
                                 }
                             }
 
-                            let assuntoBruto = String(row['ASSUNTO'] || row['TEMA'] || row['MOTIVO'] || '').trim();
+                            let assuntoBruto = String(row['ASSUNTO'] || row['assunto'] || '').trim();
 
                             if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
                             if (filtrosCiclo.length > 0 && weekStr && !filtrosCiclo.includes(weekStr)) return;
