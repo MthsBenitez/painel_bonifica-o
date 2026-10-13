@@ -9175,9 +9175,12 @@
                                     </div>
                                 </div>
 
-                                <!-- BOTÃO PRIMÁRIO MODO APRESENTAÇÃO -->
+                                <!-- BOTÃO DE SALVAR NA NUVEM E MODO APRESENTAÇÃO -->
                                 ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                <button onclick="app.ui.toggleEditModeAnalise()" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                <button onclick="app.admin.executeSaveApresentacao(event)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap min-w-[180px] ${this.analiseEditMode ? 'hidden' : ''}">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Salvar Projeto
+                                </button>
+                                <button onclick="app.ui.toggleEditModeAnalise()" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap min-w-[180px]">
                                     <i class="fa-solid ${this.analiseEditMode ? 'fa-eye-slash' : 'fa-play'}"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Apresentar'}
                                 </button>
                                 ` : ''}
@@ -12372,14 +12375,7 @@
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
-                executeSaveApresentacao() {
-                    const op = document.getElementById('save-apres-op').value.trim();
-                    const mes = document.getElementById('save-apres-mes').value;
-                    const ano = document.getElementById('save-apres-ano').value;
-
-                    if(!op || !mes || !ano) return app.ui.showAlert("Atenção", "Preencha a Operação, o Mês e o Ano para prosseguir.", "error");
-
-                    // Adiciona o Loading Dinâmico para o botão para evitar congelamento visual
+                executeSaveApresentacao(event) {
                     const btnSave = event ? event.currentTarget : null;
                     if(btnSave) {
                         btnSave.disabled = true;
@@ -12387,54 +12383,63 @@
                         btnSave.classList.add('opacity-70', 'cursor-not-allowed');
                     }
 
-                    // SetTimeout de 100ms permite que o DOM (interface do navegador) atualize o botão ANTES do processador começar a travar gerando o JSON
+                    // SetTimeout obriga o navegador a desenhar o "Carregando" na tela ANTES de travar o cérebro processando os dados
                     setTimeout(() => {
                         try {
+                            const dataAtual = new Date();
                             const id = 'apr_' + Date.now();
-                            const nome = `${mes} / ${ano}`;
-                            const pasta = op;
+                            const nome = `${app.ui.formatMonthLabel(app.currentMonth)} (Salvo)`;
+                            // O nome da pasta será o título customizado da Apresentação
+                            const pasta = app.analiseCSVDinamicoData.consolidado.customTitle || 'Apresentação Salva';
 
                             const payload = {
                                 id: id,
                                 nome: nome,
                                 pasta: pasta,
-                                dataStr: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                                dataStr: dataAtual.toLocaleDateString('pt-BR') + ' às ' + dataAtual.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
                                 timestamp: Date.now(),
+                                allowedUsers: [], // Array de matriculas permitidas a visualizar (novo sistema de compartilhamento)
                                 payloadData: JSON.stringify(app.analiseCSVDinamicoData)
                             };
 
-                            // Válvula de segurança: Firebase Realtime recusa strings maiores que 10MB
+                            // Proteção da Nuvem: O Firebase rejeita textos com mais de 10MB
                             const stringSize = new Blob([payload.payloadData]).size;
                             if(stringSize > 9 * 1024 * 1024) {
-                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
-                                return app.ui.showAlert("Base de Dados Muito Pesada", `Sua análise possui mais de ${Math.round(stringSize / 1024 / 1024)}MB de dados brutos. O banco de dados em nuvem rejeitou a conexão por segurança.<br><br><b>Como resolver:</b> Clique na engrenagem "Controles e Filtros" e apague relatórios antigos da memória antes de tentar salvar a apresentação.`, "error");
+                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                                return app.ui.showAlert("Projeto Muito Pesado", `Sua análise possui mais de ${Math.round(stringSize / 1024 / 1024)}MB de dados brutos. O banco de dados em nuvem rejeitou a conexão por segurança.<br><br><b>Dica:</b> Apague relatórios velhos no botão "Gerenciar Bases" antes de salvar esta apresentação final.`, "error");
                             }
 
                             if(!app.apresentacoesList) app.apresentacoesList = {};
                             app.apresentacoesList[id] = payload;
 
                             app.storage.saveApresentacoes().then(() => {
-                                document.getElementById('global-modal').classList.add('hidden');
+                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
                                 app.ui.renderTab('analise_csv_dinamico', true); 
-                                app.ui.showAlert("Projeto Protegido", "Sua apresentação foi arquivada na nuvem e está disponível para todos os gestores!", "success");
+                                app.ui.showAlert("Apresentação Salva!", "Ela agora está na nuvem e disponível na tela inicial desta aba. Role para baixo para encontrá-la e usar o botão de 'Compartilhar' se quiser liberar o acesso para sua equipe.", "success");
                             }).catch(err => {
                                 console.error(err);
-                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
-                                app.ui.showAlert("Erro de Conexão", "Sua internet pode ter oscilado no momento do envio ou o Firebase recusou a transação.", "error");
+                                if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                                app.ui.showAlert("Erro de Conexão", "Sua internet pode ter oscilado ou o Firebase bloqueou a transação. Tente novamente.", "error");
                             });
 
                         } catch(error) {
                             console.error(error);
-                            if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
-                            app.ui.showAlert("Erro Crítico", "Falha de memória no navegador ao tentar empacotar as planilhas. Recarregue a página.", "error");
+                            if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                            app.ui.showAlert("Erro Crítico", "Ocorreu um problema ao empacotar as planilhas.", "error");
                         }
                     }, 100);
                 },
 
                 renderPastasApresentacoes() {
-                    const lista = Object.values(app.apresentacoesList || {}).sort((a,b) => b.timestamp - a.timestamp);
+                    let lista = Object.values(app.apresentacoesList || {}).sort((a,b) => b.timestamp - a.timestamp);
+                    
+                    // SEGURANÇA: Se não for administrador, filtra a lista para mostrar APENAS o que foi liberado para a matrícula dele
+                    if (!app.isAdmin && app.currentUser) {
+                        lista = lista.filter(a => a.allowedUsers && a.allowedUsers.includes(app.currentUser.matricula));
+                    }
+
                     if(lista.length === 0) {
-                        return `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-8 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação salva no banco de dados.</div>`;
+                        return `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-8 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação disponível na nuvem.</div>`;
                     }
 
                     const pastas = {};
@@ -12446,20 +12451,25 @@
                     let html = '';
                     Object.keys(pastas).sort().forEach(nomePasta => {
                         html += `
-                            <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col">
-                                <div class="bg-blue-50 dark:bg-blue-900/20 px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                            <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[350px]">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
                                     <i class="fa-solid fa-folder-open text-blue-500 text-xl"></i>
                                     <h3 class="font-bold text-slate-800 dark:text-white truncate">${nomePasta}</h3>
                                     <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2 py-0.5 rounded-full font-black">${pastas[nomePasta].length}</span>
                                 </div>
-                                <div class="p-4 space-y-2 flex-1 overflow-y-auto max-h-64 custom-scrollbar">
+                                <div class="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     ${pastas[nomePasta].map(apr => `
                                         <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group transition-colors hover:border-blue-300">
                                             <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${apr.id}')">
                                                 <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors">${apr.nome}</div>
-                                                <div class="text-[10px] text-slate-400 mt-0.5"><i class="fa-regular fa-clock"></i> ${apr.dataStr}</div>
+                                                <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                                                    <span><i class="fa-regular fa-clock"></i> ${apr.dataStr}</span>${app.isAdmin && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 text-teal-700 px-1.5 rounded font-bold border border-teal-200"><i class="fa-solid fa-users"></i> ${apr.allowedUsers.length} liberados</span>` : ''}
+                                                </div>
                                             </div>
-                                            <button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shrink-0"><i class="fa-solid fa-trash text-xs"></i></button>
+                                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                                ${app.isAdmin ? `<button onclick="app.admin.openShareApresentacaoModal('${apr.id}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Compartilhar / Liberar Acesso"><i class="fa-solid fa-user-plus text-xs"></i></button>` : ''}
+                                                ${app.isAdmin ? `<button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+                                            </div>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -12467,6 +12477,62 @@
                         `;
                     });
                     return html;
+                },
+
+                openShareApresentacaoModal(id) {
+                    const apr = app.apresentacoesList[id];
+                    if(!apr) return;
+                    
+                    const allowed = apr.allowedUsers || [];
+                    
+                    // Monta a lista de caixinhas para marcar/desmarcar
+                    let userCheckboxes = app.users.map(u => {
+                        const isChecked = allowed.includes(u.matricula) ? 'checked' : '';
+                        return `
+                            <label class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-teal-500 transition-colors">
+                                <input type="checkbox" value="${u.matricula}" class="share-user-check w-5 h-5 accent-teal-600" ${isChecked}>
+                                <div>
+                                    <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${u.nome}</div>
+                                    <div class="text-[10px] text-slate-500 uppercase tracking-widest">${u.matricula}</div>
+                                </div>
+                            </label>
+                        `;
+                    }).join('');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users text-teal-500"></i> Compartilhar Apresentação`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Selecione os colaboradores que poderão visualizar esta apresentação específica (<strong>${apr.nome}</strong>) na aba Analítica deles. Eles poderão visualizar e interagir com os gráficos, mas não poderão alterar os dados.</p>
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Equipe Operacional</span>
+                            <button type="button" onclick="app.ui.toggleAllTabs('share-user-check')" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Todos</button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-2" id="share-users-container">
+                            ${userCheckboxes}
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Cancelar</button>
+                        <button onclick="app.admin.saveShareApresentacao('${id}')" class="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Permissões</button>
+                    `;
+                    
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-2xl'); // Modal mais larguinho para caber os botões
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                saveShareApresentacao(id) {
+                    const checkboxes = document.querySelectorAll('.share-user-check:checked');
+                    const allowedUsers = Array.from(checkboxes).map(cb => cb.value);
+                    
+                    if (app.apresentacoesList[id]) {
+                        app.apresentacoesList[id].allowedUsers = allowedUsers;
+                        app.storage.saveApresentacoes().then(() => {
+                            document.getElementById('global-modal').classList.add('hidden');
+                            app.ui.renderTab('analise_csv_dinamico', true);
+                            app.ui.showAlert("Liberado com Sucesso", "Os usuários marcados agora podem acessar essa apresentação na aba Analítico Operação deles.", "success");
+                        });
+                    }
                 },
 
                 loadApresentacaoFromDB(id) {
