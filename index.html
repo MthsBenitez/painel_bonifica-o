@@ -6641,7 +6641,6 @@
                                 </div>
                             </div>
 
-                            <!-- PAINEL GLOBAL -->
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative overflow-hidden border-t-4 border-t-blue-500 shadow-md">
                                 <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
                                     <i class="fa-solid fa-globe text-blue-500"></i> Desempenho Global da Equipe
@@ -6670,58 +6669,14 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        `;
-
-                        // NOVO CAPÍTULO: ASSUNTOS (TEMAS DE ATENDIMENTO)
-                        if (data.assuntosDisponiveis && data.assuntosDisponiveis.length > 0) {
-                            html += renderChapterTitle('Pareto Temático (Assuntos)', 'Mapeamento do impacto e volumetria das falhas de acordo com o motivo do contato do cliente.', 'fa-tags', 'pink');
-                            html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 hideable-box relative animate-fade-in">${btnHideCode}`;
                             
-                            const assuntosArr = Object.entries(data.assuntosDistribuicao).map(([nome, d]) => ({ nome, ...d })).sort((a,b) => b.count - a.count);
-                            
-                            assuntosArr.forEach((assunto, i) => {
-                                const hideClass = (!app.ui.assuntosExpandidos && i > 5 && !this.analiseEditMode) ? 'hidden' : '';
-                                const temFalhaCritica = assunto.falhasCriticas > 0;
-                                
-                                html += `
-                                <div class="${hideClass} bg-white dark:bg-slate-800 p-6 rounded-3xl border-t-4 border-t-pink-500 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden group">
-                                    <div class="absolute -right-4 -bottom-4 text-pink-500/10 text-7xl pointer-events-none group-hover:scale-110 transition-transform"><i class="fa-solid fa-tag"></i></div>
-                                    <div class="flex justify-between items-start mb-4 relative z-10">
-                                        <h4 class="font-extrabold text-slate-800 dark:text-white text-base leading-tight pr-4">${assunto.nome}</h4>
-                                        <div class="text-xs font-black bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 px-2 py-1 rounded-lg border border-pink-200 dark:border-pink-800 shrink-0 shadow-sm">${assunto.count}x</div>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-3 relative z-10">
-                                        <div class="bg-orange-50 dark:bg-orange-900/20 p-2.5 rounded-xl border border-orange-100 dark:border-orange-900/50">
-                                            <div class="text-[9px] uppercase font-bold text-orange-600 mb-1">Desvios de Proced.</div>
-                                            <div class="font-black text-orange-600 text-lg">${assunto.falhasComuns}</div>
-                                        </div>
-                                        <div class="bg-red-50 dark:bg-red-900/20 p-2.5 rounded-xl border border-red-100 dark:border-red-900/50">
-                                            <div class="text-[9px] uppercase font-bold text-red-600 mb-1">Falhas Críticas</div>
-                                            <div class="font-black text-red-600 text-lg ${temFalhaCritica ? 'animate-pulse' : ''}">${assunto.falhasCriticas}</div>
-                                        </div>
-                                    </div>
-                                </div>`;
-                            });
-                            
-                            if (assuntosArr.length > 6 && !this.analiseEditMode) {
-                                html += `<button onclick="app.ui.assuntosExpandidos = !app.ui.assuntosExpandidos; app.ui._refreshComMemoriaDeScroll()" class="col-span-1 md:col-span-2 lg:col-span-3 py-4 mt-2 text-sm font-bold text-pink-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-t border-slate-200 dark:border-slate-700">
-                                    ${app.ui.assuntosExpandidos ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver Apenas Principais' : '<i class="fa-solid fa-chevron-down mr-2"></i> Expandir Todos os Assuntos'}
-                                </button>`;
-                            }
-                            html += `</div>`;
-                        }
-
-                        html += `
-                        <!-- TABELA INDIVIDUAL (PERFORMANCE OPERACIONAL) -->
-                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
+                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
                                 <div class="flex justify-between items-center mb-6">
                                     <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2">
                                         <i class="fa-solid fa-users text-green-500"></i> Performance Operacional (Individual)
                                     </h3>
                                     <button onclick="app.admin.openAliasModal()" class="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-bold py-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-colors"><i class="fa-solid fa-link text-blue-500"></i> Vincular Nomes</button>
                                 </div>
-
                                 <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
                                     <table class="w-full text-left border-collapse min-w-[800px]">
                                         <thead class="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -6736,7 +6691,7 @@
                                                 <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Pend. FB</th>
                                             </tr>
                                         </thead>
-                                        <tbody>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
                         `;
                         
                         rankingArray.sort((a,b) => b.total - a.total).forEach(r => {
@@ -6803,8 +6758,7 @@
                             </div>
                         `;
                     }
-                    
-                    // --- VISÃO DETALHADA GLASSMORPHISM 3D (ADMIN) ---
+
                     if (app.isAdmin && state.detalhes && state.detalhes.linhas) {
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
@@ -6815,7 +6769,6 @@
                                     <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico da Importação
                                 </h3>
                 
-                                <!-- Cartões 3D Topo -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
                                     <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
                                         <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
@@ -6823,7 +6776,7 @@
                                         <p class="text-xs text-slate-500">Média geral baseada em todas as notas computadas no arquivo importado.</p>
                                     </div>
                 
-                                    <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-48 overflow-y-auto'}">
+                                    <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform custom-scrollbar max-h-48 overflow-y-auto">
                                         <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
                                         <div class="space-y-4">
                                             ${state.detalhes.colaboradores ? state.detalhes.colaboradores.map((op, idx) => {
@@ -6840,7 +6793,7 @@
                                                 <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                                                     <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
                                                         <div class="flex flex-col">
-                                                            <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}. ${op.nome}</span>
+                                                            <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}.${op.nome}</span>
                                                             <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">${op.qtd} Avaliações Mapeadas</span>
                                                         </div>
                                                         <span class="font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Geral Absoluta">${op.media}</span>
@@ -6862,7 +6815,6 @@
                                     </div>
                                 </div>
                 
-                                <!-- Tabela Linha por Linha Glassmorphism 3D -->
                                 <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
                                     <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                         <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
@@ -6875,14 +6827,13 @@
                                             <button onclick="app.ui.filterPendingRows('linha-bruta', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-colors">Só Pendentes</button>
                                         </div>
                                     </div>
-                                    <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[500px]'}">
+                                    <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
                                         <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
                                             <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
                                                 <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                                     <th class="py-3 px-4">Monitor</th>
                                                     <th class="py-3 px-4">Operador Avaliado</th>
                                                     <th class="py-3 px-4 text-center">Nota</th>
-                                                    <th class="py-3 px-4 text-center">Assunto</th>
                                                     <th class="py-3 px-4 text-center">Status Feedback</th>
                                                     <th class="py-3 px-4">Operação</th>
                                                     <th class="py-3 px-4 text-right">Data</th>
@@ -6897,7 +6848,6 @@
                                                         <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
                                                         <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
                                                         <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
-                                                        <td class="py-3 px-4 text-center text-xs text-slate-500 max-w-[120px] truncate" title="${linha.ASSUNTO || linha.assunto || ''}">${linha.ASSUNTO || linha.assunto || '-'}</td>
                                                         <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
                                                         <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                         <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
@@ -6912,142 +6862,6 @@
                         `;
                     }
                     
-                    // --- VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
-                    if (!app.isAdmin && state.detalhes && state.detalhes.linhas) {
-                        const userMatricula = app.currentUser.matricula;
-                        const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
-                        
-                        if (minhasLinhas.length > 0) {
-                            // --- Cálculo do Cruzamento Analítico para o Usuário ---
-                            const operadoresDesteMonitor = [...new Set(minhasLinhas.map(l => l.operador))];
-                            let userColaboradoresData = [];
-                            let somaMinhasNotas = 0;
-                            let countMinhasNotas = 0;
-
-                            operadoresDesteMonitor.forEach(opNome => {
-                                const todasLinhasOp = state.detalhes.linhas.filter(l => l.operador === opNome && typeof l.nota === 'number');
-                                const minhasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor === userMatricula);
-                                const outrasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor !== userMatricula);
-
-                                minhasLinhasOp.forEach(l => { somaMinhasNotas += l.nota; countMinhasNotas++; });
-
-                                const mediaMinha = minhasLinhasOp.length > 0 ? (minhasLinhasOp.reduce((a,b)=>a+b.nota,0)/minhasLinhasOp.length).toFixed(1) : '-';
-                                const mediaOutros = outrasLinhasOp.length > 0 ? (outrasLinhasOp.reduce((a,b)=>a+b.nota,0)/outrasLinhasOp.length).toFixed(1) : '-';
-                                const mediaTotal = todasLinhasOp.length > 0 ? (todasLinhasOp.reduce((a,b)=>a+b.nota,0)/todasLinhasOp.length).toFixed(1) : '-';
-
-                                userColaboradoresData.push({
-                                    nome: opNome,
-                                    minhasAvals: minhasLinhasOp.length,
-                                    mediaMinha,
-                                    mediaOutros,
-                                    mediaTotal
-                                });
-                            });
-
-                            const userMediaGeral = countMinhasNotas > 0 ? (somaMinhasNotas / countMinhasNotas).toFixed(1) : 0;
-
-                            userColaboradoresData.sort((a, b) => {
-                                let valA = a.mediaTotal === '-' ? 1000 : parseFloat(a.mediaTotal);
-                                let valB = b.mediaTotal === '-' ? 1000 : parseFloat(b.mediaTotal);
-                                return valA - valB;
-                            });
-                            
-                            html += `
-                                <div class="mb-4 mt-8 flex justify-between items-end">
-                                    <div>
-                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">O que a plataforma leu sobre você?</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Este é o espelho exato do relatório de monitorias que foi validado neste mês.</p>
-                                    </div>
-                                </div>
-                                <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
-                                    <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                                    
-                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
-                                        <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico (Meus Operadores)
-                                    </h3>
-                                    
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
-                                        <!-- Card Média -->
-                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
-                                            <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Minha Média Aplicada (Mês)</div>
-                                            <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${userMediaGeral}</div>
-                                            <p class="text-xs text-slate-500">Média geral das ${countMinhasNotas} notas aplicadas por você.</p>
-                                        </div>
-                    
-                                        <!-- Cruzamento -->
-                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-48 overflow-y-auto'}">
-                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento (Você x Outros Monitores)</div>
-                                            <div class="space-y-4">
-                                                ${userColaboradoresData.map((op, idx) => `
-                                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                                                        <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
-                                                            <div class="flex flex-col">
-                                                                <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}. ${op.nome}</span>
-                                                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Média Geral Absoluta</span>
-                                                            </div>
-                                                            <span class="font-black ${op.mediaTotal !== '-' && parseFloat(op.mediaTotal) < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Total">${op.mediaTotal}</span>
-                                                        </div>
-                                                        <div class="grid grid-cols-2 gap-2 text-center">
-                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
-                                                                <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Sua Média</div>
-                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaMinha}</div>
-                                                            </div>
-                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
-                                                                <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Outros Sup.</div>
-                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaOutros}</div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                `).join('')}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Tabela de Lidas User -->
-                                    <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
-                                        <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
-                                            <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
-                                            <div class="flex gap-2">
-                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
-                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
-                                            </div>
-                                        </div>
-                                        <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[400px]'}">
-                                            <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
-                                                <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
-                                                    <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                                        <th class="py-3 px-4">Operador Avaliado</th>
-                                                        <th class="py-3 px-4 text-center">Nota</th>
-                                                        <th class="py-3 px-4 text-center">Assunto</th>
-                                                        <th class="py-3 px-4 text-center">Status Feedback</th>
-                                                        <th class="py-3 px-4">Operação</th>
-                                                        <th class="py-3 px-4 text-right">Data</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                    ${minhasLinhas.map(linha => {
-                                                        const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
-                                                        const pendClass = !isAplicado ? 'fb-pendente' : '';
-                                                        return `
-                                                        <tr class="linha-bruta-user ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
-                                                            <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
-                                                            <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
-                                                            <td class="py-3 px-4 text-center text-xs text-slate-500 max-w-[120px] truncate" title="${linha.ASSUNTO || linha.assunto || ''}">${linha.ASSUNTO || linha.assunto || '-'}</td>
-                                                            <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
-                                                            <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
-                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
-                                                        </tr>
-                                                        `;
-                                                    }).join('')}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                    }
-
                     container.innerHTML = html;
                 },
 
