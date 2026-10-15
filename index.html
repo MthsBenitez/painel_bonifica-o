@@ -8931,19 +8931,15 @@
                         return chapterHtml;
                     };
 
-                    // CÁLCULO DE PORCENTAGEM EXATA DE FALHAS TOTAIS E BLINDAGEM DE ARRAYS
+                    // CÁLCULO DE PORCENTAGEM EXATA DE FALHAS TOTAIS
                     let totalPerguntasGlobais = 0;
                     if (data && data.operadores) {
                         Object.values(data.operadores).forEach(op => {
-                            if (op.avaliacoes) {
-                                op.avaliacoes.forEach(av => {
-                                    if (av.perguntas) totalPerguntasGlobais += av.perguntas.length;
-                                });
-                            }
+                            op.avaliacoes.forEach(av => totalPerguntasGlobais += av.perguntas.length);
                         });
                     }
-                    const totalFalhasNormais = (data && data.falhasComunsArray) ? data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0) : 0;
-                    const totalFalhasCriticas = (data && data.falhasCriticasArray) ? data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0) : 0;
+                    const totalFalhasNormais = data ? data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0) : 0;
+                    const totalFalhasCriticas = data ? data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0) : 0;
                     const somaTodosErros = totalFalhasNormais + totalFalhasCriticas;
                     const pctErros = totalPerguntasGlobais > 0 ? ((somaTodosErros / totalPerguntasGlobais) * 100).toFixed(1) : 0;
                     const pctAcertos = totalPerguntasGlobais > 0 ? (100 - pctErros).toFixed(1) : 0;
@@ -9066,8 +9062,7 @@
                         </div>
                     `;
 
-                    // TRAVA DE TELA EM BRANCO: Se faltar dados processados ou não houver relatórios, exibe a tela de importação em vez de tela branca.
-                    if (!data || !mainData || !mainData.relatorios || mainData.relatorios.length === 0) {
+                    if (!data) {
                         html += `
                         <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10 mb-10">
                             <i class="fa-solid fa-magnifying-glass-chart text-5xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i>
@@ -10048,9 +10043,8 @@
                             console.error("Erro critico na renderizacao dos graficos", globalErr);
                         }
                     }, 300);
-                } // <--- ESTA É A CHAVE QUE O EDITOR ENGOLIU (Ela fecha o bloco IF principal desta tela)
-                },
-            
+                } // <--- ESTA É A CHAVE MÁGICA QUE FALTAVA (Fecha o bloco if do mainData)
+            },
                 renderView_PesquisasAnatel(container) {
                     if(!app.anatelData) app.anatelData = { registros: [], canceladasNovas: [] };
                     const reg = app.anatelData.registros || [];
