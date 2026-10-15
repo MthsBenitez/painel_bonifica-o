@@ -9905,11 +9905,11 @@
                                 if (!data || !data.mesesEvolutivo) return [];
                                 return activeMonthsForEvol.map(m => {
                                     const mObj = data.mesesEvolutivo[m] || { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0 };
-                                    if (cardId === 'totalLinhas') return mObj.totalLinhas || 0;
-                                    if (cardId === 'conformidadePct') return mObj.totalLinhas > 0 ? parseFloat(((mObj.totalNotas100 / mObj.totalLinhas) * 100).toFixed(1)) : 0;
-                                    if (cardId === 'mediaTotal') return mObj.count > 0 ? parseFloat((mObj.soma / mObj.count).toFixed(2)) : 0;
-                                    if (cardId === 'desviosTotais') return mObj.falhasNormais || 0;
-                                    if (cardId === 'falhasCriticas') return mObj.falhasCriticas || 0;
+                                    if(cardId === 'totalLinhas') return mObj.totalLinhas || 0;
+                                    if(cardId === 'conformidadePct') return mObj.totalLinhas > 0 ? parseFloat(((mObj.totalNotas100 / mObj.totalLinhas) * 100).toFixed(1)) : 0;
+                                    if(cardId === 'mediaTotal') return mObj.count > 0 ? parseFloat((mObj.soma / mObj.count).toFixed(2)) : 0;
+                                    if(cardId === 'desviosTotais') return mObj.falhasNormais || 0;
+                                    if(cardId === 'falhasCriticas') return mObj.falhasCriticas || 0;
                                     return 0;
                                 });
                             };
@@ -9917,8 +9917,8 @@
                             const initFlipChart = (id, colorHex) => {
                                 try {
                                     const ctx = document.getElementById(`flip-chart-${id}`);
-                                    if (!ctx) return;
-                                    if (window[`chart_${id}`]) window[`chart_${id}`].destroy();
+                                    if(!ctx) return;
+                                    if(window[`chart_${id}`]) window[`chart_${id}`].destroy();
                                     
                                     let cData = getChartData(id).map(v => isNaN(v) ? 0 : v);
                                     let cLabels = [...labelsEvol];
@@ -9941,27 +9941,14 @@
                                         type: 'line',
                                         data: {
                                             labels: cLabels,
-                                            datasets: [{ 
-                                                data: cData, 
-                                                borderColor: colorHex, 
-                                                borderWidth: 2, 
-                                                pointBackgroundColor: colorHex, 
-                                                pointRadius: 2, 
-                                                tension: 0.3 
-                                            }]
+                                            datasets: [{ data: cData, borderColor: colorHex, borderWidth: 2, pointBackgroundColor: colorHex, pointRadius: 2, tension: 0.3 }]
                                         },
                                         options: {
                                             animation: false, 
                                             responsive: true, 
                                             maintainAspectRatio: false,
-                                            plugins: { 
-                                                legend: { display: false }, 
-                                                tooltip: { titleFont: { size: 9 }, bodyFont: { size: 10, weight: 'bold' }, padding: 6 } 
-                                            },
-                                            scales: { 
-                                                x: { display: false }, 
-                                                y: { display: false, min: yMin } 
-                                            }
+                                            plugins: { legend: { display: false }, tooltip: {titleFont:{size:9}, bodyFont:{size:10, weight:'bold'}, padding: 6} },
+                                            scales: { x: { display: false }, y: { display: false, min: yMin } }
                                         }
                                     });
                                 } catch(err) {
@@ -10043,8 +10030,8 @@
                             console.error("Erro critico na renderizacao dos graficos", globalErr);
                         }
                     }, 300);
-                } // <--- ESTA É A CHAVE MÁGICA QUE FALTAVA (Fecha o bloco if do mainData)
-            },
+                },
+
                 renderView_PesquisasAnatel(container) {
                     if(!app.anatelData) app.anatelData = { registros: [], canceladasNovas: [] };
                     const reg = app.anatelData.registros || [];
