@@ -10043,8 +10043,9 @@
                             console.error("Erro critico na renderizacao dos graficos", globalErr);
                         }
                     }, 300);
-                } // <--- ESTA É A CHAVE MÁGICA QUE FALTAVA (Fecha o bloco if do mainData)
-            },
+                } // <--- ESTA É A CHAVE QUE O EDITOR ENGOLIU (Ela fecha o bloco IF principal desta tela)
+                },
+            
                 renderView_PesquisasAnatel(container) {
                     if(!app.anatelData) app.anatelData = { registros: [], canceladasNovas: [] };
                     const reg = app.anatelData.registros || [];
