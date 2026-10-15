@@ -7063,12 +7063,9 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
                                                     ${minhasLinhas.map(linha => {
-                                                        const statusLimpo = String(linha.status || '').toLowerCase().replace(/_/g, ' ');
-                                                        const isAplicado = statusLimpo.includes('aplicado') && !statusLimpo.includes('nao') && !statusLimpo.includes('não');
-                                                        const isNaoAplicado = statusLimpo.includes('nao aplicado') || statusLimpo.includes('não aplicado');
-                                                        const pendClass = (!isAplicado && !isNaoAplicado) ? 'fb-pendente' : '';
+                                                        const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
+                                                        const pendClass = !isAplicado ? 'fb-pendente' : '';
                                                         return `
                                                         <tr class="linha-bruta-user ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
                                                             <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
@@ -7596,38 +7593,19 @@
                 evolutivoFiltroMes: [], // Variável para o filtro exclusivo do gráfico de evolução
 
                 // MEMÓRIA DE ROLAGEM: Preserva o Scroll e Evita a "Piscada" da Tela
-                // MEMÓRIA DE ROLAGEM: Preserva o Scroll e Evita a "Piscada" da Tela
                 _refreshComMemoriaDeScroll() {
                     const scrollY = window.scrollY;
                     const container = document.getElementById('view-container-analise_csv_dinamico');
                     
                     if (container) {
-                        // Trava a altura atual do container para a tela não colapsar
-                        const currHeight = container.getBoundingClientRect().height;
-                        container.style.minHeight = currHeight + 'px';
-                        // Remove animação inicial para não dar flash branco
-                        container.classList.remove('animate-fade-in');
-                        
+                        // Atualiza apenas o conteúdo internamente e instantaneamente (sem skeleton loader)
                         this.renderView_AnaliseCSVDinamico(container);
-                        
-                        // Usa requestAnimationFrame para casar a rolagem EXATAMENTE no momento que o navegador redesenha a tela
-                        requestAnimationFrame(() => {
-                            window.scrollTo({ top: scrollY, behavior: 'instant' });
-                            container.style.minHeight = ''; // Libera a trava
-                        });
+                        // Como a troca é síncrona, a tela não encolhe e mantemos a posição original milimetricamente
+                        window.scrollTo({ top: scrollY, behavior: 'instant' });
                     } else {
+                        // Fallback de segurança se a tela por algum motivo não existir no HTML ainda
                         this.renderTab('analise_csv_dinamico', true);
                     }
-                },
-
-                toggleChapterVisibility(idKey) {
-                    if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData) app.analiseCSVDinamicoData.consolidado.chapterCustomData = {};
-                    if(!app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey]) app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey] = {};
-                    
-                    const current = app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey].hidden;
-                    app.analiseCSVDinamicoData.consolidado.chapterCustomData[idKey].hidden = !current;
-                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);
-                    this._refreshComMemoriaDeScroll();
                 },
 
                 toggleMesFiltro(mes) {
@@ -8339,9 +8317,8 @@
 
                     const info = data.notasDistribuicao[notaKey];
                     const notaNum = parseFloat(notaKey);
-                    // CORTES ATUALIZADOS DO MODAL DA NOTA
-                    const corTheme = notaNum < 70 ? 'red' : (notaNum < 85 ? 'orange' : 'emerald');
-                    const corHex = notaNum < 70 ? '#ef4444' : (notaNum < 85 ? '#f97316' : '#10b981');
+                    const corTheme = notaNum < 80 ? 'red' : (notaNum < 95 ? 'orange' : 'green');
+                    const corHex = notaNum < 80 ? '#ef4444' : (notaNum < 95 ? '#f97316' : '#22c55e');
 
                     let mesesOrd = data.mesesDisponiveis || [];
                     let chartLabels = mesesOrd.map(m => app.ui.formatMonthLabel(m).substring(0,3));
@@ -8501,27 +8478,31 @@
                     }
                     htmlList += `</div>`;
 
-                    // --- NOVA LÓGICA DO GRÁFICO EVOLUTIVO DO QUADRANTE (VOLUME DE PESSOAS) ---
+                    // --- NOVA LÓGICA DO GRÁFICO EVOLUTIVO DO QUADRANTE ---
                     let mesesOrd = data.mesesDisponiveis || [];
                     let chartLabels = mesesOrd.map(m => app.ui.formatMonthLabel(m).substring(0,3));
                     let chartData = [];
 
                     mesesOrd.forEach(mes => {
+                        let somaMes = 0;
                         let countMes = 0;
                         lista.forEach(op => {
                             if(data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes]) {
                                 let dMes = data.operadoresEvolutivo[op.nome][mes];
-                                if(dMes.count > 0) countMes++; // Conta 1 pessoa se ela tiver avaliação naquele mês
+                                if(dMes.count > 0) {
+                                    somaMes += (dMes.soma / dMes.count);
+                                    countMes++;
+                                }
                             }
                         });
-                        chartData.push(countMes); // Gráfico joga pra tela o Volume Absoluto
+                        chartData.push(countMes > 0 ? parseFloat((somaMes / countMes).toFixed(2)) : 0);
                     });
 
                     let chartHtml = '';
                     if(chartData.length > 1) {
                         chartHtml = `
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
-                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Volume Histórico de Pessoas no Quadrante</h4>
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução Média Histórica do Quadrante</h4>
                                 <div class="w-full h-32 relative"><canvas id="quadrante-chart-canvas"></canvas></div>
                             </div>
                         `;
@@ -8736,41 +8717,8 @@
                     }
                     htmlList += `</div>`;
 
-                    // --- NOVO GRÁFICO EVOLUTIVO DE VOLUME DE PESSOAS NA MATURIDADE ---
-                    let mesesOrd = data.mesesDisponiveis || [];
-                    let chartLabels = mesesOrd.map(m => app.ui.formatMonthLabel(m).substring(0,3));
-                    let chartData = [];
-
-                    mesesOrd.forEach(mes => {
-                        let countMes = 0;
-                        lista.forEach(op => {
-                            if(data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes]) {
-                                let dMes = data.operadoresEvolutivo[op.nome][mes];
-                                if(dMes.count > 0) countMes++; 
-                            }
-                        });
-                        chartData.push(countMes);
-                    });
-
-                    let chartHtml = '';
-                    if(chartData.length > 1) {
-                        chartHtml = `
-                            <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
-                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Histórico de Pessoas Neste Nível</h4>
-                                <div class="w-full h-32 relative"><canvas id="maturidade-chart-canvas"></canvas></div>
-                            </div>
-                        `;
-                    }
-
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon}${cor}"></i> Nível de Maturidade: ${nivel}`;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
-                            <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
-                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total de Operadores: ${lista.length}</p>
-                        </div>
-                        ${chartHtml}
-                        ${htmlList}
-                    `;
                         <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
                             <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total de Operadores: ${lista.length}</p>
@@ -8899,6 +8847,7 @@
                             purple: { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/50', light: 'text-purple-300' },
                             cyan: { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/50', light: 'text-cyan-300' }
                         };
+                        // Em modo de apresentação forçamos as cores do tema escuro para garantir contraste
                         const t = (this.analiseEditMode ? themes[theme] : null) || { 
                             bg: `bg-${theme}-100 dark:bg-${theme}-900/40`, 
                             text: `text-${theme}-600 dark:text-${theme}-400`, 
@@ -8906,40 +8855,29 @@
                             light: `text-${theme}-500 dark:text-${theme}-400` 
                         };
                         
+                        // ID Seguro e Leitura do Cofre
                         const idKey = title.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                         if (!data.chapterCustomData) data.chapterCustomData = {};
-                        const isHidden = data.chapterCustomData[idKey]?.hidden;
-
-                        // Se não estiver editando e o capítulo estiver oculto, mata todo o render do Bloco!
-                        if (isHidden && !this.analiseEditMode) return `<div class="hidden">`;
-
                         const exibT = data.chapterCustomData[idKey]?.t || title;
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
+
                         const onInputT = `app.ui.saveChapterData('${idKey}', 't', this.innerText)`;
                         const onInputS = `app.ui.saveChapterData('${idKey}', 's', this.innerText)`;
-                        const numStr = isHidden ? `<i class="fa-solid fa-eye-slash text-red-500" title="Oculto"></i>` : `Capítulo ${chapterCount++}`;
 
-                        let chapterHtml = `</div><div class="chapter-wrapper relative w-full ${isHidden ? 'opacity-40 grayscale' : ''}">`;
-                        
-                        if (this.analiseEditMode) {
-                            chapterHtml += `<button onclick="app.ui.toggleChapterVisibility('${idKey}')" class="absolute top-20 right-4 md:right-10 z-50 bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700 rounded-full w-12 h-12 flex items-center justify-center hover:scale-110 transition-transform"><i class="fa-solid ${isHidden ? 'fa-eye-slash text-red-500' : 'fa-eye text-blue-500'} text-xl"></i></button>`;
-                        }
-
-                        chapterHtml += `
+                        return `
                             <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 chapter-marker">
                                 <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_0_20px_rgba(0,0,0,0.2)] border${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
                                     <i class="fa-solid ${icon} text-3xl drop-shadow-md"></i>
                                 </div>
                                 <div class="flex items-center gap-3 mb-2 opacity-80">
                                     <div class="h-px w-12 ${t.bg}"></div>
-                                    <div class="text-[10px] font-black uppercase tracking-widest ${t.light}">${numStr}</div>
+                                    <div class="text-[10px] font-black uppercase tracking-widest ${t.light}">Capítulo ${chapterCount++}</div>
                                     <div class="h-px w-12 ${t.bg}"></div>
                                 </div>
-                                <h2 contenteditable="${this.analiseEditMode ? 'true' : 'false'}" oninput="${onInputT}" onblur="${onInputT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-lg outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
-                                <p contenteditable="${this.analiseEditMode ? 'true' : 'false'}" oninput="${onInputS}" onblur="${onInputS}" class="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
+                                <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputT}" onblur="${onInputT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-lg outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
+                                <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputS}" onblur="${onInputS}" class="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
                             </div>
                         `;
-                        return chapterHtml;
                     };
 
                     // CÁLCULO DE PORCENTAGEM EXATA DE FALHAS TOTAIS
@@ -9659,16 +9597,14 @@
                     if (data.notasDistribuicao) {
                         html += renderChapterTitle('Distribuição de Notas', 'Visão quantitativa de todas as notas absolutas aplicadas na operação e sua recorrência.', 'fa-ranking-star', 'orange');
                         
-                        // ORDENADO DA MAIOR NOTA PARA A MENOR
-                        const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(b) - parseFloat(a));
+                        const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(a) - parseFloat(b));
                         
                         let notasCards = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 relative z-10 hideable-box animate-fade-in">${btnHideCode}`;
                         
                         notasOrdenadas.forEach(notaKey => {
                             const info = data.notasDistribuicao[notaKey];
                             const notaNum = parseFloat(notaKey);
-                            // CORTES DE CORES ATUALIZADOS: >= 85 Fica Verde/Emerald
-                            const corTheme = notaNum < 70 ? 'red' : (notaNum < 85 ? 'orange' : 'emerald');
+                            const corTheme = notaNum < 80 ? 'red' : (notaNum < 95 ? 'orange' : 'green');
                             const pctAparicao = data.totalLinhas > 0 ? ((info.count / data.totalLinhas) * 100).toFixed(1) : 0;
                             
                             notasCards += `
@@ -9891,11 +9827,11 @@
                                     </div>
                                     ` : '<div class="text-center text-slate-400 py-10 border-dashed border-2 rounded-2xl bg-slate-50 dark:bg-slate-900/50">Nenhuma imagem cadastrada nestas ações.</div>'}
                                 </div>
-                            </details>
-                        </div>
-                    `;
+                            `;
+                        }
 
-                    html += `</div></div>`; // Fecha a chapter-wrapper final e a div do flex principal
+                        html += ``; // Reabertura da variável para finalizar
+                
                     container.innerHTML = html;
 
                     // CARREGAMENTO SEGURO DOS GRÁFICOS
