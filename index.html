@@ -3255,14 +3255,14 @@
 
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
-                    { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}] },
+                    { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Anatel'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'impressoes', label:'Solicitar Impressão'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -9980,14 +9980,92 @@
                 },
 
                 renderView_PesquisasAnatel(container) {
-                    if(!app.anatelData) app.anatelData = { registros: [], canceladasNovas: [] };
-                    const reg = app.anatelData.registros || [];
-                    const canc = app.anatelData.canceladasNovas || [];
+                    // Inicializa a árvore de Projetos caso não exista
+                    if (!app.anatelData) app.anatelData = { projetos: {}, projetoAtivo: null };
+                    
+                    // ==========================================
+                    // Módulo de Migração de Dados Antigos (Legado)
+                    // ==========================================
+                    if (!app.anatelData.projetos) {
+                        let legados = { registros: app.anatelData.registros || [], canceladasNovas: app.anatelData.canceladasNovas || [] };
+                        app.anatelData = { projetos: {}, projetoAtivo: null };
+                        
+                        if (legados.registros.length > 0 || legados.canceladasNovas.length > 0) {
+                            app.anatelData.projetos['proj_legado'] = { 
+                                id: 'proj_legado', 
+                                nome: 'Projeto Recuperado', 
+                                meta: 10, 
+                                registros: legados.registros, 
+                                canceladasNovas: legados.canceladasNovas 
+                            };
+                        }
+                        // Limpa chaves antigas
+                        delete app.anatelData.registros;
+                        delete app.anatelData.canceladasNovas;
+                        app.storage.saveAnatel();
+                    }
+
+                    // Verifica se existe um projeto ativo aberto na memória
+                    if (!app.anatelData.projetoAtivo || !app.anatelData.projetos[app.anatelData.projetoAtivo]) {
+                        // ==========================================
+                        // TELA 1: LOBBY DE PROJETOS (VISÃO RAIZ)
+                        // ==========================================
+                        let htmlLobby = `
+                            <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
+                                <div class="w-full xl:w-auto">
+                                    <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Projetos Kantar</h2>
+                                    <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gerencie múltiplos arquivos de pesquisa divididos por projetos isolados.</p>
+                                </div>
+                                ${app.isAdmin ? `
+                                <div class="flex gap-2">
+                                    <button onclick="app.admin.kantarCriarProjeto()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm">
+                                        <i class="fa-solid fa-folder-plus"></i> Novo Projeto
+                                    </button>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        `;
+
+                        const projs = Object.values(app.anatelData.projetos);
+                        
+                        if (projs.length === 0) {
+                            htmlLobby += `<div class="col-span-1 md:col-span-3 p-12 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-folder-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-pulse"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Nenhum projeto cadastrado</h3><p class="text-slate-500 text-sm">Clique em Novo Projeto para iniciar a importação dos seus arquivos.</p></div>`;
+                        } else {
+                            projs.sort((a, b) => b.id.localeCompare(a.id)).forEach(p => {
+                                const qReals = (p.registros || []).reduce((a,b)=>a+b.realizadas, 0);
+                                htmlLobby += `
+                                    <div class="glass-card p-6 rounded-3xl shadow-sm hover:shadow-md border-t-4 border-t-blue-500 hover:border-blue-400 transition-all cursor-pointer group flex flex-col relative" onclick="app.admin.kantarAbrirProjeto('${p.id}')">
+                                        ${app.isAdmin ? `<button onclick="event.stopPropagation(); app.admin.kantarExcluirProjeto('${p.id}')" class="absolute top-5 right-5 text-slate-300 hover:text-red-500 transition-colors z-10" title="Apagar Projeto"><i class="fa-solid fa-trash"></i></button>` : ''}
+                                        <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors"><i class="fa-solid fa-chart-pie"></i></div>
+                                        <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1 truncate pr-6">${p.nome}</h3>
+                                        <p class="text-xs text-slate-500 font-bold tracking-widest uppercase mb-4">Meta Exigida: <span class="text-blue-500">${p.meta}%</span></p>
+                                        <div class="mt-auto border-t border-slate-100 dark:border-slate-700 pt-3 text-xs font-medium text-slate-500 flex justify-between items-center">
+                                            <span><i class="fa-solid fa-list-ol mr-1"></i> ${qReals} Pesquisas Base</span>
+                                            <i class="fa-solid fa-arrow-right text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+                        htmlLobby += `</div>`;
+                        container.innerHTML = htmlLobby;
+                        return;
+                    }
+
+                    // ==========================================
+                    // TELA 2: DASHBOARD DO PROJETO ATIVO
+                    // ==========================================
+                    const projeto = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    const metaProj = projeto.meta || 10;
+                    
+                    const reg = projeto.registros || [];
+                    const canc = projeto.canceladasNovas || [];
                     
                     let totalRealizadas = 0; let totalEscuta = 0; let totalCancFor = 0; let totalCancCq = 0; let totalNovasCanc = 0;
                     const operadoresMap = {}; const campanhasMap = {};
                     
-                    // Lendo registros padrão HSR
+                    // Lendo registros padrão da Kantar
                     reg.forEach(r => {
                         totalRealizadas += r.realizadas; totalEscuta += r.escuta; totalCancFor += r.cancFor; totalCancCq += r.cancCq;
                         
@@ -10013,13 +10091,16 @@
                     const totalMonitoriasRealizadas = totalEscuta + totalNovasCanc;
                     const pctComCanceladas = totalRealizadas > 0 ? ((totalMonitoriasRealizadas / totalRealizadas) * 100).toFixed(1) : 0;
                     
-                    const textoPronto = `Atualmente temos ${totalRealizadas} pesquisas realizadas e ${totalMonitoriasRealizadas} monitorias, representando ${pctComCanceladas}% do total de pesquisas.\n${totalEscuta} validadas pelo portal HSR e ${totalNovasCanc} canceladas, impossibilitando a validação.`;
+                    const textoPronto = `Projeto: ${projeto.nome}\nAtualmente temos ${totalRealizadas} pesquisas realizadas e ${totalMonitoriasRealizadas} monitorias, representando ${pctComCanceladas}% do total de pesquisas.\n${totalEscuta} validadas pelo portal HSR e ${totalNovasCanc} canceladas, impossibilitando a validação.`;
                     
                     let html = `
+                        <div class="mb-4">
+                            <button onclick="app.admin.kantarVoltarLobby()" class="text-blue-500 font-bold text-sm mb-4 hover:underline"><i class="fa-solid fa-arrow-left"></i> Voltar para Projetos</button>
+                        </div>
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
                             <div class="w-full xl:w-auto">
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Report Interno Anatel</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Visão consolidada de qualidade e cancelamentos.</p>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Kantar: ${projeto.nome}</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Visão consolidada de qualidade e cancelamentos deste projeto.</p>
                             </div>
                     `;
 
@@ -10027,27 +10108,39 @@
                     if(app.isAdmin) {
                         html += `
                             <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 w-full xl:w-auto">
-                                <button onclick="app.admin.limparAnatel()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1"></i> Limpar Tudo</button>
+                                <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl shadow-sm">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase">Meta Global (%):</label>
+                                    <input type="number" value="${metaProj}" onchange="app.admin.kantarAtualizarMeta(this.value)" class="w-16 p-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-sm font-black text-blue-600 text-center outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                                </div>
+                                <button onclick="app.admin.limparKantarProjeto()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-slate-800 dark:text-red-400 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors shadow-sm whitespace-nowrap"><i class="fa-solid fa-eraser mr-1"></i> Esvaziar Projeto</button>
                                 <label class="bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-file-csv"></i> Canceladas S/ Valid.
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarAnatelCanceladas(this)" onclick="this.value = null">
+                                    <i class="fa-solid fa-file-csv"></i> Importar Canceladas S/ Valid.
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarKantarCanceladas(this)" onclick="this.value = null">
                                 </label>
                                 <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-file-excel"></i> Relatórios Padrão
-                                    <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarAnatelFiles(this)" onclick="this.value = null">
+                                    <i class="fa-solid fa-file-excel"></i> Importar Relatórios Padrão
+                                    <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarKantarPadrao(this)" onclick="this.value = null">
                                 </label>
+                            </div>
+                        `;
+                    } else {
+                        // Visão do usuário padrão (Mostra a meta apenas como leitura)
+                        html += `
+                            <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl shadow-sm">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase">Meta Exigida:</span>
+                                <span class="text-sm font-black text-blue-600">${metaProj}%</span>
                             </div>
                         `;
                     }
                     html += `</div>`;
                     
                     if (reg.length === 0 && canc.length === 0) {
-                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-file-excel text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Nenhum dado disponível</h3><p class="text-slate-400 text-sm max-w-md mx-auto">Os dados aparecerão aqui quando forem importados pela administração.</p></div>`;
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-box-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Projeto Vazio</h3><p class="text-slate-400 text-sm max-w-md mx-auto">Utilize os botões acima para importar as planilhas da Kantar para dentro deste projeto.</p></div>`;
                         container.innerHTML = html;
                         return;
                     }
                     
-                    // Cartões 3D Magnéticos (com alinhamento e textos otimizados)
+                    // Cartões 3D Magnéticos do Projeto
                     html += `
                         <div class="grid grid-cols-2 xl:grid-cols-5 gap-6 mb-10">
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn">
@@ -10065,8 +10158,8 @@
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn relative overflow-hidden">
                                 <div class="absolute right-0 top-0 w-16 h-16 bg-green-500/10 rounded-bl-full pointer-events-none"></div>
-                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">% Monitorado (Meta 10%)</div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white">${pctComCanceladas}%</div>
+                                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">% Monitorado (Meta ${metaProj}%)</div>
+                                <div class="text-3xl font-black ${pctComCanceladas < metaProj ? 'text-red-500' : 'text-slate-800 dark:text-white'}">${pctComCanceladas}%</div>
                             </div>
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn">
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">Canc. Totais (FOR+CQ)</div>
@@ -10074,34 +10167,57 @@
                             </div>
                         </div>
                         
+                        <!-- Resumo Textual -->
                         <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl mb-10 relative border border-slate-200 dark:border-slate-700 shadow-sm">
-                            <button onclick="navigator.clipboard.writeText(document.getElementById('anatel-copy-text').innerText); app.ui.showAlert('Copiado', 'Texto copiado para a área de transferência.', 'success')" class="absolute top-4 right-4 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-regular fa-copy mr-1"></i> Copiar Texto</button>
+                            <button onclick="navigator.clipboard.writeText(document.getElementById('kantar-copy-text').innerText); app.ui.showAlert('Copiado', 'Texto copiado para a área de transferência.', 'success')" class="absolute top-4 right-4 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-regular fa-copy mr-1"></i> Copiar Texto</button>
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-3 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-align-left text-slate-400"></i> Resumo para Relatório</h3>
-                            <div id="anatel-copy-text" class="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-pre-wrap leading-relaxed">${textoPronto}</div>
+                            <div id="kantar-copy-text" class="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-pre-wrap leading-relaxed">${textoPronto}</div>
                         </div>
                         
-                        <!-- Layout 100% (Campanha acima, Detalhamento abaixo) -->
+                        <!-- TABELA POR CAMPANHA COM AÇÕES -->
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-8">
-                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider"><i class="fa-solid fa-layer-group text-slate-400"></i> Por Campanha</h3>
+                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider"><i class="fa-solid fa-layer-group text-slate-400"></i> Por Campanha (Arquivos Individuais)</h3>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
-                                    <tr><th class="p-4 rounded-tl-xl">Campanha</th><th class="p-4 text-center">Real.</th><th class="p-4 text-center">Validadas</th><th class="p-4 text-right rounded-tr-xl">% Mon.</th>${app.isAdmin ? '<th class="p-4 text-center">Ação</th>' : ''}</tr>
+                                    <tr>
+                                        <th class="p-4 rounded-tl-xl">Campanha</th>
+                                        <th class="p-4 text-center">Realizadas</th>
+                                        <th class="p-4 text-center">Validadas</th>
+                                        <th class="p-4 text-center">% Monitorado</th>
+                                        <th class="p-4 text-center">Falta (Meta ${metaProj}%)</th>
+                                        ${app.isAdmin ? '<th class="p-4 text-center rounded-tr-xl">Gerenciar Arquivo</th>' : ''}
+                                    </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
                     `;
                     
-                    // Restaura a trava para exibir apenas campanhas que possuem pesquisas realizadas no Relatório Padrão
                     const campanhasExibir = Object.values(campanhasMap).filter(c => c.realizadas > 0).sort((a,b) => b.realizadas - a.realizadas);
                     
                     campanhasExibir.forEach(c => {
-                        const pct = c.realizadas > 0 ? ((c.escuta / c.realizadas) * 100).toFixed(1) : 0;
+                        const pct = c.realizadas > 0 ? (((c.escuta + c.novasCanc) / c.realizadas) * 100).toFixed(1) : 0;
+                        
+                        // Cálculo Matemático da Meta da Campanha
+                        const metaValidadasC = Math.ceil(c.realizadas * (metaProj / 100));
+                        const faltaValidadasC = Math.max(0, metaValidadasC - (c.escuta + c.novasCanc));
+                        
                         html += `
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <td class="p-4 font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]" title="${c.nome}">${c.nome}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.realizadas}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.escuta}</td>
-                                <td class="p-4 text-right font-black text-slate-600 dark:text-slate-300">${pct}%</td>
-                                ${app.isAdmin ? `<td class="p-4 text-center"><button onclick="app.admin.renomearCampanhaAnatel('${c.nome}')" class="text-slate-400 hover:text-slate-800 dark:hover:text-white bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 p-2 rounded-lg transition shadow-sm" title="Renomear Campanha"><i class="fa-solid fa-pen"></i></button></td>` : ''}
+                                <td class="p-4 text-center font-black ${pct < metaProj ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}">${pct}%</td>
+                                <td class="p-4 text-center font-bold ${faltaValidadasC > 0 ? 'text-orange-500' : 'text-green-500'}">${faltaValidadasC}</td>
+                                ${app.isAdmin ? `
+                                <td class="p-4 text-center space-x-2">
+                                    <label class="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-lg cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1" title="Substituir Base da Campanha">
+                                        <i class="fa-solid fa-file-arrow-up"></i> Atualizar
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarKantarPadrao(this, '${c.nome}')" onclick="this.value = null">
+                                    </label>
+                                    <button onclick="app.admin.kantarExcluirCampanha('${c.nome}')" class="bg-red-100 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Excluir Campanha do Projeto">
+                                        <i class="fa-solid fa-trash"></i> Excluir
+                                    </button>
+                                </td>
+                                ` : ''}
                             </tr>
                         `;
                     });
@@ -10111,10 +10227,11 @@
                             </table>
                         </div>
                         
+                        <!-- TABELA POR ENTREVISTADOR -->
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-6">
                             <div class="flex justify-between items-center mb-6">
                                 <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-headset text-slate-400"></i> Detalhamento por Entrevistador</h3>
-                                ${app.isAdmin ? `<button onclick="app.admin.exportAnatelDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Extrair Tabela</button>` : ''}
+                                ${app.isAdmin ? `<button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Extrair Tabela</button>` : ''}
                             </div>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
@@ -10122,8 +10239,9 @@
                                         <th class="p-4 rounded-tl-xl cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('nome')">Nome do Operador <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
                                         <th class="p-4 text-center cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('realizadas')">Realizadas <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
                                         <th class="p-4 text-center cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('escuta')">Validadas <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
-                                        <th class="p-4 text-center cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('novasCanc')">Canc. S/ Validação <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
-                                        <th class="p-4 text-center cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('pct')">% Monitorado (Meta 10%) <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
+                                        <th class="p-4 text-center cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('novasCanc')">Canc. <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
+                                        <th class="p-4 text-center bg-orange-50 dark:bg-orange-900/10 text-orange-600 cursor-pointer hover:text-orange-800 transition-colors" onclick="app.ui.sortAnatelTable('falta')">Falta (Meta ${metaProj}%) <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
+                                        <th class="p-4 text-center cursor-pointer hover:text-slate-800 dark:hover:text-white transition-colors" onclick="app.ui.sortAnatelTable('pct')">% Atingido <i class="fa-solid fa-sort opacity-50 ml-1"></i></th>
                                         <th class="p-4 text-center rounded-tr-xl">Detalhes</th>
                                     </tr>
                                 </thead>
@@ -10133,12 +10251,13 @@
                     let opsArray = Object.values(operadoresMap);
                     
                     opsArray.forEach(o => {
-                        // Trava: Se a Escuta (Validada) for 0, a porcentagem fica zerada, 
-                        // ignorando as canceladas para não gerar falso positivo.
-                        if (o.escuta === 0) {
+                        if (o.realizadas === 0) {
                             o.pct = 0;
+                            o.falta = 0;
                         } else {
-                            o.pct = o.realizadas > 0 ? (((o.escuta + o.novasCanc) / o.realizadas) * 100) : 0;
+                            o.pct = (((o.escuta + o.novasCanc) / o.realizadas) * 100);
+                            let metaValidadas = Math.ceil(o.realizadas * (metaProj / 100));
+                            o.falta = Math.max(0, metaValidadas - (o.escuta + o.novasCanc));
                         }
                     });
 
@@ -10147,21 +10266,22 @@
                         if (a.pct === 0 && b.pct !== 0) return -1;
                         if (b.pct === 0 && a.pct !== 0) return 1;
 
-                        let valA = a[app.ui.anatelSortCol]; let valB = b[app.ui.anatelSortCol];
+                        let valA = a[app.ui.anatelSortCol || 'realizadas']; let valB = b[app.ui.anatelSortCol || 'realizadas'];
                         if(typeof valA === 'string') return app.ui.anatelSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
                         return app.ui.anatelSortDir === 'asc' ? valA - valB : valB - valA;
                     });
 
                     opsArray.forEach(o => {
                         const pctFormatado = o.pct.toFixed(1);
-                        const isZero = o.pct === 0; // Verifica se está zerado
+                        const isZero = o.pct === 0; 
+                        const isRed = o.pct > 0 && o.pct < metaProj;
                         const btnDisabled = o.novasCanc === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer';
                         
-                        // Cores condicionais baseadas no 0%
                         const trClass = isZero ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-700/30';
                         const nameColor = isZero ? 'text-red-700 dark:text-red-400' : 'text-slate-700 dark:text-slate-300';
                         const iconColor = isZero ? 'text-red-500' : 'text-slate-300 dark:text-slate-600';
-                        const pctColor = isZero ? 'text-red-600 font-black' : 'text-slate-600 dark:text-slate-300';
+                        const pctColor = isZero ? 'text-red-600 font-black' : (isRed ? 'text-red-500 font-bold' : 'text-slate-600 dark:text-slate-300 font-black');
+                        const faltaColor = o.falta > 0 ? 'text-orange-500 font-black' : 'text-green-500 font-bold';
                         
                         html += `
                             <tr class="${trClass} transition-colors border-b border-slate-100 dark:border-slate-800/50">
@@ -10169,9 +10289,10 @@
                                 <td class="p-4 text-center font-black dark:text-slate-400">${o.realizadas}</td>
                                 <td class="p-4 text-center font-black ${isZero ? 'text-red-600' : 'text-slate-600 dark:text-slate-300'}">${o.escuta}</td>
                                 <td class="p-4 text-center font-black text-slate-500 dark:text-slate-400">${o.novasCanc > 0 ? '+'+o.novasCanc : '-'}</td>
-                                <td class="p-4 text-center font-black ${pctColor}">${pctFormatado}%</td>
+                                <td class="p-4 text-center bg-orange-50/50 dark:bg-orange-900/10 ${faltaColor}">${o.falta}</td>
+                                <td class="p-4 text-center ${pctColor}">${pctFormatado}%</td>
                                 <td class="p-4 text-center">
-                                    <button onclick="app.admin.verMotivosCanceladas('${encodeURIComponent(o.nome)}')" class="bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2 rounded-lg text-[10px] font-bold transition-colors shadow-sm border border-slate-200 dark:border-slate-600 ${btnDisabled}" ${o.novasCanc === 0 ? 'disabled' : ''}><i class="fa-solid fa-eye mr-1"></i> Motivos</button>
+                                    <button onclick="app.admin.verMotivosCanceladasKantar('${encodeURIComponent(o.nome)}')" class="bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2 rounded-lg text-[10px] font-bold transition-colors shadow-sm border border-slate-200 dark:border-slate-600 ${btnDisabled}" ${o.novasCanc === 0 ? 'disabled' : ''}><i class="fa-solid fa-eye mr-1"></i> Motivos</button>
                                 </td>
                             </tr>
                         `;
@@ -10466,44 +10587,74 @@
                     input.value = ''; // Limpa o input
                 },
                 
-                limparAnatel() {
-                    app.ui.showConfirm("Zerar Dados", "Isso apagará TODAS as planilhas Anatel (Padrão e Canceladas sem validação) já carregadas. Continuar?", "app.anatelData = { registros: [], canceladasNovas: [] }; app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));", true);
-                },
-                
-                renomearCampanhaAnatel(oldName) {
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-pen text-blue-500"></i> Renomear Campanha`;
+                // ==========================================
+                // GESTÃO DE PROJETOS KANTAR (NOVO MÓDULO)
+                // ==========================================
+                kantarCriarProjeto() {
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-folder-plus text-blue-500"></i> Criar Novo Projeto Kantar`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="mb-3 text-slate-600 dark:text-slate-300">Digite o novo nome para a campanha <strong>${oldName}</strong>:</p>
-                        <input type="text" id="rename-camp-input" value="${oldName}" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm">
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Insira o nome do projeto (ex: Kantar Setembro) e a meta percentual padrão:</p>
+                        <div class="space-y-4">
+                            <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome do Projeto</label><input type="text" id="k-proj-nome" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm"></div>
+                            <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Meta (%)</label><input type="number" id="k-proj-meta" value="10" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm"></div>
+                        </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
-                        <button onclick="app.admin.execRenomearCampanhaAnatel('${oldName}')" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow-md">Salvar</button>
+                        <button onclick="app.admin.execKantarCriarProjeto()" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow-md">Criar Projeto</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
-
-                execRenomearCampanhaAnatel(oldName) {
-                    const newName = document.getElementById('rename-camp-input').value.trim();
-                    if(!newName || newName === oldName) return document.getElementById('global-modal').classList.add('hidden');
+                execKantarCriarProjeto() {
+                    const nome = document.getElementById('k-proj-nome').value.trim();
+                    const meta = parseFloat(document.getElementById('k-proj-meta').value) || 10;
+                    if(!nome) return app.ui.showAlert('Aviso', 'Nome é obrigatório', 'error');
                     
-                    if(app.anatelData.registros) {
-                        app.anatelData.registros.forEach(r => { if(r.campanha === oldName) r.campanha = newName; });
-                    }
-                    if(app.anatelData.canceladasNovas) {
-                        app.anatelData.canceladasNovas.forEach(r => { if(r.campanha === oldName) r.campanha = newName; });
-                    }
+                    const id = 'proj_' + Date.now();
+                    if(!app.anatelData.projetos) app.anatelData.projetos = {};
+                    app.anatelData.projetos[id] = { id, nome, meta, registros: [], canceladasNovas: [] };
                     
                     app.storage.saveAnatel().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.renderTab('pesquisas_anatel', true);
-                        app.ui.showAlert("Sucesso", "Campanha renomeada com sucesso em todos os registros.", "success");
+                        app.ui.showAlert('Sucesso', 'Projeto criado com sucesso!', 'success');
                     });
                 },
-
-                verMotivosCanceladas(nomeEncoded) {
+                kantarAbrirProjeto(id) {
+                    app.anatelData.projetoAtivo = id;
+                    app.ui.renderTab('pesquisas_anatel', true);
+                },
+                kantarVoltarLobby() {
+                    app.anatelData.projetoAtivo = null;
+                    app.ui.renderTab('pesquisas_anatel', true);
+                },
+                kantarExcluirProjeto(id) {
+                    app.ui.showConfirm("Cuidado!", "Tem certeza que deseja excluir todo este projeto e suas planilhas importadas? Não tem volta.", `delete app.anatelData.projetos['${id}']; app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));`, true);
+                },
+                kantarAtualizarMeta(val) {
+                    if (!app.anatelData.projetoAtivo) return;
+                    app.anatelData.projetos[app.anatelData.projetoAtivo].meta = parseFloat(val) || 10;
+                    app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));
+                },
+                limparKantarProjeto() {
+                    if (!app.anatelData.projetoAtivo) return;
+                    app.ui.showConfirm("Zerar Dados", "Isso apagará TODAS as planilhas (Padrão e Canceladas) de DENTRO DESTE PROJETO. Continuar?", `app.anatelData.projetos[app.anatelData.projetoAtivo].registros = []; app.anatelData.projetos[app.anatelData.projetoAtivo].canceladasNovas = []; app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));`, true);
+                },
+                kantarExcluirCampanha(nomeCampanha) {
+                    if (!app.anatelData.projetoAtivo) return;
+                    app.ui.showConfirm("Excluir Campanha", `Isso removerá apenas a campanha <b>${nomeCampanha}</b> deste projeto. Continuar?`, `app.admin.execKantarExcluirCampanha('${nomeCampanha}')`, true);
+                },
+                execKantarExcluirCampanha(nomeCampanha) {
+                    let proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    proj.registros = proj.registros.filter(r => r.campanha !== nomeCampanha);
+                    proj.canceladasNovas = proj.canceladasNovas.filter(c => c.campanha !== nomeCampanha);
+                    app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));
+                },
+                
+                verMotivosCanceladasKantar(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
-                    const canc = app.anatelData.canceladasNovas || [];
+                    const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    const canc = proj.canceladasNovas || [];
                     const motivos = canc.filter(c => c.entrevistador === nome).map(c => c.motivo);
                     
                     if(motivos.length === 0) return;
@@ -10523,14 +10674,15 @@
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
-                processarAnatelCanceladas(input) {
+                processarKantarCanceladas(input) {
+                    if (!app.anatelData.projetoAtivo) return;
                     const file = input.files[0];
                     if (!file) return;
 
-                    if(!app.anatelData) app.anatelData = { registros: [], canceladasNovas: [] };
-                    if(!app.anatelData.canceladasNovas) app.anatelData.canceladasNovas = [];
+                    const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    if(!proj.canceladasNovas) proj.canceladasNovas = [];
 
-                    app.ui.showAlert("Lendo...", "Processando as monitorias canceladas sem validação...", "info");
+                    app.ui.showAlert("Lendo...", "Processando as monitorias canceladas sem validação para este projeto...", "info");
 
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -10543,9 +10695,7 @@
 
                             let count = 0;
                             jsonData.forEach(row => {
-                                // Busca ESTRITA pela coluna "Entrevistador" para não pegar "Nome do Cliente" por acidente
-                                const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || 
-                                                             Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
+                                const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
                                 const keyCampanha = Object.keys(row).find(k => {
                                     const up = k.trim().toUpperCase();
                                     return up.includes('JOB') || up.includes('CAMPANHA') || up.includes('PROJETO');
@@ -10565,19 +10715,14 @@
                                 let qtd = keyQtd ? (parseInt(row[keyQtd]) || 1) : 1;
 
                                 if (entrevistador && entrevistador !== '0' && entrevistador !== 'Não Identificado') {
-                                    app.anatelData.canceladasNovas.push({
-                                        campanha: campanha,
-                                        entrevistador: entrevistador,
-                                        motivo: motivo,
-                                        qtd: qtd
-                                    });
+                                    proj.canceladasNovas.push({ campanha: campanha, entrevistador: entrevistador, motivo: motivo, qtd: qtd });
                                     count++;
                                 }
                             });
 
                             app.storage.saveAnatel().then(() => {
                                 app.ui.renderTab('pesquisas_anatel', true);
-                                app.ui.showAlert("Importação Inteligente", `${count} monitorias canceladas s/ validação lidas e agregadas ao sistema geral!`, "success");
+                                app.ui.showAlert("Importação Concluída", `${count} canceladas integradas ao projeto!`, "success");
                             });
 
                         } catch (err) {
@@ -10589,11 +10734,14 @@
                     input.value = '';
                 },
 
-                exportAnatelDetalhado() {
-                    if(!app.anatelData || !app.anatelData.registros) return app.ui.showAlert("Erro", "Sem dados para exportar.", "error");
+                exportKantarDetalhado() {
+                    if(!app.anatelData.projetoAtivo) return;
+                    const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    const metaProj = proj.meta || 10;
+                    const reg = proj.registros || [];
+                    const canc = proj.canceladasNovas || [];
+                    if(reg.length === 0) return app.ui.showAlert("Erro", "Sem dados para exportar.", "error");
 
-                    const reg = app.anatelData.registros || [];
-                    const canc = app.anatelData.canceladasNovas || [];
                     const operadoresMap = {};
 
                     reg.forEach(r => {
@@ -10610,9 +10758,11 @@
                     });
 
                     const rows = Object.values(operadoresMap).map(o => {
-                        let pct = 0;
-                        if (o.escuta > 0 && o.realizadas > 0) {
+                        let pct = 0; let falta = 0;
+                        if (o.realizadas > 0) {
                             pct = (((o.escuta + o.novasCanc) / o.realizadas) * 100).toFixed(2);
+                            let metaValidadas = Math.ceil(o.realizadas * (metaProj / 100));
+                            falta = Math.max(0, metaValidadas - (o.escuta + o.novasCanc));
                         }
                         return {
                             "Operador": o.nome,
@@ -10621,38 +10771,40 @@
                             "Canceladas S/ Valid.": o.novasCanc,
                             "Canceladas FOR": o.cancFor,
                             "Canceladas CQ": o.cancCq,
+                            "Falta p/ Meta": falta,
                             "% Monitorado": pct + "%"
                         };
                     });
 
-                    // Força 0% no topo igual na tela
-                    rows.sort((a,b) => {
-                        const pctA = parseFloat(a["% Monitorado"]);
-                        const pctB = parseFloat(b["% Monitorado"]);
-                        if(pctA === 0 && pctB !== 0) return -1;
-                        if(pctB === 0 && pctA !== 0) return 1;
-                        return b["Total Realizadas"] - a["Total Realizadas"];
-                    });
+                    rows.sort((a,b) => b["Total Realizadas"] - a["Total Realizadas"]);
 
                     const worksheet = XLSX.utils.json_to_sheet(rows);
                     const workbook = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(workbook, worksheet, "Detalhamento_Anatel");
-                    XLSX.writeFile(workbook, `Anatel_Detalhamento_${new Date().toISOString().split('T')[0]}.xlsx`);
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "Detalhamento_Kantar");
+                    XLSX.writeFile(workbook, `Kantar_${proj.nome.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
                 },
 
-                processarAnatelFiles(input) {
+                processarKantarPadrao(input, updateCampanhaNome = null) {
+                    if (!app.anatelData.projetoAtivo) return;
                     const files = Array.from(input.files);
                     if (files.length === 0) return;
                     
-                    if(!app.anatelData || !app.anatelData.registros) app.anatelData = { registros: [], canceladasNovas: [] };
+                    const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    if(!proj.registros) proj.registros = [];
                     
-                    app.ui.showAlert("Processando...", "Lendo relatórios Padrão HSR. Como as planilhas podem ser pesadas, isso levará alguns segundos...", "info");
+                    app.ui.showAlert("Processando...", "Lendo relatórios Padrão. Isso levará alguns segundos...", "info");
                     
                     let processedCount = 0;
                     
+                    // Se for atualização de campanha, removemos a campanha antiga primeiro
+                    if (updateCampanhaNome) {
+                        proj.registros = proj.registros.filter(r => r.campanha !== updateCampanhaNome);
+                    }
+                    
                     files.forEach(file => {
                         const reader = new FileReader();
-                        const campanhaName = file.name.replace(/\.[^/.]+$/, ""); 
+                        // Se não forneceu um nome para atualizar, usa o nome do arquivo
+                        const campanhaName = updateCampanhaNome ? updateCampanhaNome : file.name.replace(/\.[^/.]+$/, ""); 
                         
                         reader.onload = (e) => {
                             try {
@@ -10663,31 +10815,23 @@
                                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
                                 
                                 jsonData.forEach(row => {
-                                    // Busca ESTRITA pela coluna "Entrevistador" para não pegar "Nome do Cliente" por acidente
-                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || 
-                                                             Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
+                                    const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
                                     let entrevistador = keyEntrevistador ? row[keyEntrevistador] : '';
                                     if (!entrevistador) return;
                                     
-                                    // Limpa sufixos sistêmicos
                                     entrevistador = entrevistador.toString().replace(/_SOFT$/i, '').trim();
                                     
-                                    // Radar Inteligente (Aceita Múltiplas Nomenclaturas)
                                     const keyRealizadas = Object.keys(row).find(k => {
-                                        const up = k.trim().toUpperCase();
-                                        return up.includes('REALIZADA') || up.includes('TOTAL') || up.includes('QTD');
+                                        const up = k.trim().toUpperCase(); return up.includes('REALIZADA') || up.includes('TOTAL') || up.includes('QTD');
                                     });
                                     const keyEscuta = Object.keys(row).find(k => {
-                                        const up = k.trim().toUpperCase();
-                                        return up.includes('VERIFICADAS (FOR)') || up.includes('VERIFICADA') || up.includes('ESCUTA') || up.includes('VALIDADA') || up.includes('SUCESSO');
+                                        const up = k.trim().toUpperCase(); return up.includes('VERIFICADAS (FOR)') || up.includes('VERIFICADA') || up.includes('ESCUTA') || up.includes('VALIDADA') || up.includes('SUCESSO');
                                     });
                                     const keyCancFor = Object.keys(row).find(k => {
-                                        const up = k.trim().toUpperCase();
-                                        return up.includes('CANCELADAS (TOTAL)') || up.includes('CANCELADA (TOTAL)') || (up.includes('FOR') && (up.includes('CANC') || up.includes('INV'))) || up === 'CANCELADAS';
+                                        const up = k.trim().toUpperCase(); return up.includes('CANCELADAS (TOTAL)') || up.includes('CANCELADA (TOTAL)') || (up.includes('FOR') && (up.includes('CANC') || up.includes('INV'))) || up === 'CANCELADAS';
                                     });
                                     const keyCancCq = Object.keys(row).find(k => {
-                                        const up = k.trim().toUpperCase();
-                                        return (up.includes('CQ') || up.includes('QUALIDADE')) && (up.includes('CANC') || up.includes('INV'));
+                                        const up = k.trim().toUpperCase(); return (up.includes('CQ') || up.includes('QUALIDADE')) && (up.includes('CANC') || up.includes('INV'));
                                     });
                                     
                                     const realizadas = keyRealizadas ? (parseInt(row[keyRealizadas]) || 0) : 0;
@@ -10695,14 +10839,7 @@
                                     const cancFor = keyCancFor ? (parseInt(row[keyCancFor]) || 0) : 0;
                                     const cancCq = keyCancCq ? (parseInt(row[keyCancCq]) || 0) : 0;
                                     
-                                    app.anatelData.registros.push({
-                                        campanha: campanhaName,
-                                        entrevistador: entrevistador,
-                                        realizadas: realizadas,
-                                        escuta: escuta,
-                                        cancFor: cancFor,
-                                        cancCq: cancCq
-                                    });
+                                    proj.registros.push({ campanha: campanhaName, entrevistador: entrevistador, realizadas: realizadas, escuta: escuta, cancFor: cancFor, cancCq: cancCq });
                                 });
                             } catch (err) {
                                 console.error("Erro na conversão:", err);
@@ -10712,7 +10849,7 @@
                             if (processedCount === files.length) {
                                 app.storage.saveAnatel().then(() => {
                                     app.ui.renderTab('pesquisas_anatel', true);
-                                    app.ui.showAlert("Importação Concluída", "Tabelas Padrão integradas com sucesso. Seu relatório de Validadas foi atualizado.", "success");
+                                    app.ui.showAlert("Importação Concluída", "Planilhas integradas com sucesso ao projeto.", "success");
                                 });
                             }
                         };
