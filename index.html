@@ -10124,16 +10124,36 @@
                             htmlLobby += `<div class="col-span-1 md:col-span-3 p-12 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-folder-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-pulse"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Nenhum projeto cadastrado</h3><p class="text-slate-500 text-sm">Clique em Novo Projeto para iniciar a importação dos seus arquivos.</p></div>`;
                         } else {
                             projs.sort((a, b) => b.id.localeCompare(a.id)).forEach(p => {
-                                const qReals = (p.registros || []).reduce((a,b)=>a+b.realizadas, 0);
+                                let qReals = 0; let qEscuta = 0; let qCanc = 0;
+                                if(p.registros) p.registros.forEach(r => { qReals += (r.realizadas||0); qEscuta += (r.escuta||0); });
+                                if(p.canceladasNovas) p.canceladasNovas.forEach(c => { qCanc += (c.qtd||0); });
+                                
+                                let qTotalAuditado = qEscuta + qCanc;
+                                let pctProgresso = qReals > 0 ? ((qTotalAuditado / qReals) * 100).toFixed(1) : 0;
+                                let metaAbsoluta = Math.ceil(qReals * ((p.meta||10)/100));
+                                let falta = Math.max(0, metaAbsoluta - qTotalAuditado);
+                                let corProgresso = parseFloat(pctProgresso) >= (p.meta||10) ? 'bg-green-500' : 'bg-blue-500';
+                                let corTexto = parseFloat(pctProgresso) >= (p.meta||10) ? 'text-green-600 dark:text-green-400' : 'text-slate-800 dark:text-white';
+
                                 htmlLobby += `
                                     <div class="glass-card p-6 rounded-3xl shadow-sm hover:shadow-md border-t-4 border-t-blue-500 hover:border-blue-400 transition-all cursor-pointer group flex flex-col relative" onclick="app.admin.kantarAbrirProjeto('${p.id}')">
                                         ${app.isAdmin ? `<button onclick="event.stopPropagation(); app.admin.kantarExcluirProjeto('${p.id}')" class="absolute top-5 right-5 text-slate-300 hover:text-red-500 transition-colors z-10" title="Apagar Projeto"><i class="fa-solid fa-trash"></i></button>` : ''}
                                         <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors"><i class="fa-solid fa-chart-pie"></i></div>
-                                        <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1 truncate pr-6">${p.nome}</h3>
-                                        <p class="text-xs text-slate-500 font-bold tracking-widest uppercase mb-4">Meta Exigida: <span class="text-blue-500">${p.meta}%</span></p>
-                                        <div class="mt-auto border-t border-slate-100 dark:border-slate-700 pt-3 text-xs font-medium text-slate-500 flex justify-between items-center">
-                                            <span><i class="fa-solid fa-list-ol mr-1"></i> ${qReals} Pesquisas Base</span>
-                                            <i class="fa-solid fa-arrow-right text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                        <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1 truncate pr-6" title="${p.nome}">${p.nome}</h3>
+                                        <p class="text-xs text-slate-500 font-bold tracking-widest uppercase mb-3">Pesquisas Base: <span class="text-blue-500">${qReals}</span></p>
+                                        
+                                        <div class="mt-auto border-t border-slate-100 dark:border-slate-700 pt-3 flex flex-col gap-2 relative z-10">
+                                            <div class="flex justify-between items-end">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Progresso (Meta ${p.meta}%)</span>
+                                                <span class="font-black text-sm ${corTexto}">${pctProgresso}%</span>
+                                            </div>
+                                            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div class="h-full ${corProgresso} rounded-full" style="width: ${Math.min(100, pctProgresso)}%"></div>
+                                            </div>
+                                            <div class="flex justify-between items-center text-[10px] text-slate-400 font-medium mt-1">
+                                                <span>${qTotalAuditado} Validadas</span>
+                                                <span>Faltam: <strong class="${falta > 0 ? 'text-orange-500' : 'text-green-500'}">${falta}</strong></span>
+                                            </div>
                                         </div>
                                     </div>
                                 `;
@@ -10304,6 +10324,9 @@
                                         <i class="fa-solid fa-file-arrow-up"></i> Atualizar
                                         <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarKantarPadrao(this, '${c.nome}')" onclick="this.value = null">
                                     </label>
+                                    <button onclick="event.stopPropagation(); app.admin.kantarRenomearCampanhaPrompt('${c.nome}')" class="bg-indigo-100 text-indigo-600 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Renomear Nome da Campanha">
+                                        <i class="fa-solid fa-pen"></i> Editar
+                                    </button>
                                     <button onclick="app.admin.kantarExcluirCampanha('${c.nome}')" class="bg-red-100 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Excluir Campanha do Projeto">
                                         <i class="fa-solid fa-trash"></i> Excluir
                                     </button>
@@ -10740,6 +10763,40 @@
                     proj.registros = proj.registros.filter(r => r.campanha !== nomeCampanha);
                     proj.canceladasNovas = proj.canceladasNovas.filter(c => c.campanha !== nomeCampanha);
                     app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));
+                },
+
+                kantarRenomearCampanhaPrompt(nomeAntigo) {
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-pen text-indigo-500"></i> Renomear Campanha`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="mb-3 text-slate-600 dark:text-slate-300">Digite o novo nome para a campanha <b>${nomeAntigo}</b>:</p>
+                        <input type="text" id="rename-camp-input" value="${nomeAntigo}" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-indigo-500 shadow-sm transition-all">
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="app.admin.execKantarRenomearCampanha('${nomeAntigo}')" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition-transform hover:-translate-y-0.5">Salvar Nome</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                    // Foca no input e já deixa o texto pré-selecionado para agilidade
+                    setTimeout(() => { const input = document.getElementById('rename-camp-input'); input.focus(); input.select(); }, 100);
+                },
+
+                execKantarRenomearCampanha(nomeAntigo) {
+                    const novoNome = document.getElementById('rename-camp-input').value.trim();
+                    if(!novoNome || novoNome === nomeAntigo) {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        return;
+                    }
+                    let proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    
+                    // Varre as duas bases e aplica o novo nome em massa
+                    if(proj.registros) proj.registros.forEach(r => { if(r.campanha === nomeAntigo) r.campanha = novoNome; });
+                    if(proj.canceladasNovas) proj.canceladasNovas.forEach(c => { if(c.campanha === nomeAntigo) c.campanha = novoNome; });
+                    
+                    app.storage.saveAnatel().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.renderTab('pesquisas_anatel', true);
+                        app.ui.showAlert("Renomeada", `A campanha <b>${nomeAntigo}</b> agora se chama <b>${novoNome}</b> em todos os registros!`, "success");
+                    });
                 },
                 
                 verMotivosCanceladasKantar(nomeEncoded) {
