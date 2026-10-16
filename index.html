@@ -3261,7 +3261,7 @@
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'impressoes', label:'Solicitar Impressão'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
@@ -3402,6 +3402,10 @@
                     
                     // É esta linha que carrega os usuários do Banco de Dados!
                     app.storage.init(); 
+                    
+                    // Resgata os dados da nova tela do HD
+                    localforage.getItem('soft_visao_geral').then(data => { if(data) app.visaoGeralData = data; });
+                
                     // -----------------------------------------------------
                     
                     document.getElementById('view-login').classList.remove('hidden');
@@ -3873,6 +3877,7 @@
                             try {
                                 if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
                                 else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
+                                else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
                                 else if(tabId === 'cadastros') this.renderView_Cadastros(viewDiv);
                                 else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
                                 else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
@@ -5081,6 +5086,92 @@
                                 }
                             }, 150);
                         },
+
+                renderView_AnaliticoVisaoGeral(container) {
+                    if(!app.isAdmin) return;
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    let html = `
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Geral Setorial (RH vs Qualidade)</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Cenário macro de produtividade de avaliações e saúde operacional.</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV de Qualidade
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVVisaoGeral(this)" onclick="this.value = null">
+                                </label>
+                            </div>
+                        </div>
+                    `;
+
+                    if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
+                            <i class="fa-solid fa-chart-line text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
+                            <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Aguardando Importação</h3>
+                            <p class="text-slate-400 text-sm max-w-md mx-auto">Para montar o Dashboard, primeiro garanta que você já importou a <b>Base de RH</b> na aba 'Controle de Equipe', em seguida importe o <b>CSV de Qualidade</b> usando o botão acima.</p>
+                        </div>`;
+                    } else {
+                        const headcounts = app.config.headcountRH || {};
+                        const qualidade = app.visaoGeralData; // Traz: { "SETOR X": { count: 15, somaNotas: 1250 } }
+                        
+                        // Prepara um array combinando os dois mundos (RH + Qualidade)
+                        let relatorioFinal = [];
+                        Object.keys(headcounts).forEach(setor => {
+                            const hCount = headcounts[setor];
+                            const meta = hCount * 2;
+                            const dQualidade = qualidade[setor] || { count: 0, somaNotas: 0 };
+                            const realizadas = dQualidade.count;
+                            const pctMeta = meta > 0 ? ((realizadas / meta) * 100).toFixed(1) : 0;
+                            const mediaNota = realizadas > 0 ? (dQualidade.somaNotas / realizadas).toFixed(2) : '0.00';
+                            
+                            relatorioFinal.push({ setor, hCount, meta, realizadas, pctMeta, mediaNota });
+                        });
+
+                        // Renderiza o Dashboard com os Cards
+                        html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">`;
+                        
+                        relatorioFinal.sort((a,b) => b.hCount - a.hCount).forEach(r => {
+                            const color = parseFloat(r.pctMeta) >= 100 ? 'emerald' : (parseFloat(r.pctMeta) >= 80 ? 'blue' : 'orange');
+                            const mediaColor = parseFloat(r.mediaNota) >= 90 ? 'text-green-500' : (parseFloat(r.mediaNota) >= 80 ? 'text-blue-500' : 'text-red-500');
+
+                            html += `
+                                <div class="glass-card rounded-3xl p-6 shadow-sm border-t-4 border-t-${color}-500 hover:-translate-y-1 transition-transform flex flex-col h-full bg-white dark:bg-slate-800 relative overflow-hidden">
+                                    <div class="absolute -right-4 -top-4 text-${color}-500/10 text-7xl pointer-events-none"><i class="fa-solid fa-briefcase"></i></div>
+                                    
+                                    <div class="flex justify-between items-start mb-4 relative z-10">
+                                        <h3 class="font-black text-lg text-slate-800 dark:text-white truncate max-w-[70%]" title="${r.setor}">${r.setor}</h3>
+                                        <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-bold px-2 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-600"><i class="fa-solid fa-users mr-1"></i> ${r.hCount} Op.</span>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-3 mb-5 relative z-10">
+                                        <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-3 border border-slate-100 dark:border-slate-700">
+                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Média de Nota</div>
+                                            <div class="text-2xl font-black ${mediaColor}">${r.mediaNota}</div>
+                                        </div>
+                                        <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-3 border border-slate-100 dark:border-slate-700">
+                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Atingimento (Qtd)</div>
+                                            <div class="text-xl font-black text-slate-700 dark:text-slate-200">${r.realizadas} <span class="text-xs text-slate-400 font-medium">/ ${r.meta}</span></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-auto relative z-10 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                        <div class="flex justify-between items-center mb-1.5">
+                                            <span class="text-[10px] font-bold text-slate-500 uppercase">Atingimento Meta</span>
+                                            <span class="text-xs font-black text-${color}-600 dark:text-${color}-400">${r.pctMeta}%</span>
+                                        </div>
+                                        <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div class="h-full bg-${color}-500 rounded-full" style="width: ${Math.min(100, parseFloat(r.pctMeta))}%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
+                    }
+
+                    container.innerHTML = html;
+                },
 
                 renderView_Cadastros(container) {
                     if(!app.isAdmin) return;
@@ -12033,6 +12124,70 @@
                     });
                 },
 
+                processarCSVVisaoGeral(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    // Verifica se a base de RH foi importada
+                    if (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0) {
+                        return app.ui.showAlert("Etapa Pendente", "Por favor, vá até a aba 'Gestão da Equipe' (ou Controle de Importação) e importe primeiro a <b>Base de RH</b> para o sistema saber a quantidade de pessoas em cada setor.", "error");
+                    }
+
+                    app.ui.showAlert("Analisando Qualidade...", "Lendo avaliações e cruzando com o Headcount do RH...", "info");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
+                            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+
+                            if (rows.length === 0) return app.ui.showAlert("Erro", "O CSV de Monitorias está vazio.", "error");
+
+                            app.visaoGeralData = {}; // Zera os dados velhos
+
+                            rows.forEach(row => {
+                                const getVal = (keywords) => {
+                                    const key = Object.keys(row).find(k => {
+                                        const norm = k.toUpperCase().replace(/[^A-Z]/g, '');
+                                        return keywords.some(kw => norm.includes(kw));
+                                    });
+                                    return key ? row[key] : undefined;
+                                };
+
+                                const setor = getVal(['OPERACAO', 'SETOR', 'ILHA', 'CAMPANHA']);
+                                const notaRaw = getVal(['NOTAMONITORIA', 'NOTA', 'RESULTADO', 'PONTUACAO']);
+
+                                if (setor && typeof setor === 'string' && notaRaw !== undefined && notaRaw !== "") {
+                                    const setorLimpo = setor.trim().toUpperCase();
+                                    let notaFormatada = typeof notaRaw === 'string' ? parseFloat(notaRaw.replace(',', '.')) : parseFloat(notaRaw);
+                                    
+                                    if (!isNaN(notaFormatada)) {
+                                        if (!app.visaoGeralData[setorLimpo]) {
+                                            app.visaoGeralData[setorLimpo] = { count: 0, somaNotas: 0 };
+                                        }
+                                        app.visaoGeralData[setorLimpo].count++;
+                                        app.visaoGeralData[setorLimpo].somaNotas += notaFormatada;
+                                    }
+                                }
+                            });
+
+                            // Salva e recarrega
+                            localforage.setItem('soft_visao_geral', app.visaoGeralData).then(() => {
+                                app.ui.showAlert("Triangulação Concluída!", "O sistema cruzou com sucesso a quantidade de funcionários do RH com as monitorias deste CSV.", "success");
+                                app.ui.renderTab('analitico_visao_geral', true);
+                            });
+
+                        } catch (err) {
+                            console.error("Erro na leitura da Qualidade:", err);
+                            app.ui.showAlert("Erro Crítico", "Falha ao identificar as colunas 'Operação' e 'Nota' no arquivo CSV de Qualidade.", "error");
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                    input.value = ''; // Limpa o input
+                },
+
                 processarTempoDeCasa(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -12051,13 +12206,15 @@
 
                             // FORÇA A LIMPEZA DA MEMÓRIA: Apaga o arquivo antigo e cria um novo zerado
                             app.config.tempoDeCasa = {};
+                            app.config.headcountRH = {}; // Novo cofre para contar pessoas por setor
                             let contagem = 0;
 
                             rows.forEach(row => {
-                                // Função para lidar com problemas de codificação ("MATRÃCULA")
-                                const getVal = (keywords) => {
+                                // Função para lidar com problemas de codificação
+                                const getVal = (keywords, exactMatch = false) => {
                                     const key = Object.keys(row).find(k => {
-                                        const norm = k.toUpperCase().replace(/[^A-Z]/g, ''); // Remove acentos bizarros
+                                        if (exactMatch) return keywords.includes(k);
+                                        const norm = k.toUpperCase().replace(/[^A-Z]/g, '');
                                         return keywords.some(kw => norm.includes(kw));
                                     });
                                     return key ? row[key] : undefined;
@@ -12066,6 +12223,16 @@
                                 const mat = getVal(['MATRICULA', 'MATR', 'LOGIN']);
                                 const nome = getVal(['NOME', 'COLABORADOR', 'OPERADOR']);
                                 const dias = getVal(['DIAS', 'EMPRESA', 'TEMPO']);
+                                
+                                // Captura a coluna exata ou aproximações
+                                const setor = getVal(['OPERAÃ‡ÃƒO/SETOR', 'OPERAÇÃO/SETOR', 'OPERACAO', 'SETOR'], true) || getVal(['OPERACAO', 'SETOR']);
+
+                                if (setor && typeof setor === 'string') {
+                                    const setorLimpo = setor.trim().toUpperCase();
+                                    if (setorLimpo !== "") {
+                                        app.config.headcountRH[setorLimpo] = (app.config.headcountRH[setorLimpo] || 0) + 1;
+                                    }
+                                }
 
                                 if (dias !== undefined && dias !== "") {
                                     const diasInt = parseInt(dias) || 0;
