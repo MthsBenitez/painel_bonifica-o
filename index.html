@@ -8575,25 +8575,23 @@
                     let chartData = [];
 
                     mesesOrd.forEach(mes => {
-                        let somaMes = 0;
                         let countMes = 0;
                         lista.forEach(op => {
                             if(data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes]) {
                                 let dMes = data.operadoresEvolutivo[op.nome][mes];
                                 if(dMes.count > 0) {
-                                    somaMes += (dMes.soma / dMes.count);
                                     countMes++;
                                 }
                             }
                         });
-                        chartData.push(countMes > 0 ? parseFloat((somaMes / countMes).toFixed(2)) : 0);
+                        chartData.push(countMes);
                     });
 
                     let chartHtml = '';
                     if(chartData.length > 1) {
                         chartHtml = `
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
-                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução Média Histórica do Quadrante</h4>
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução de Operadores Enquadrados</h4>
                                 <div class="w-full h-32 relative"><canvas id="quadrante-chart-canvas"></canvas></div>
                             </div>
                         `;
@@ -9562,7 +9560,23 @@
                         html += `
                             <div class="hideable-box relative mb-8 animate-fade-in glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-emerald-500 shadow-sm bg-slate-50 dark:bg-slate-900">
                                 ${btnHideCode}
-                                ${!this.analiseEditMode ? `<button onclick="window.abrirConfigMaturidade()" class="absolute top-6 right-6 text-slate-400 hover:text-emerald-500 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-2"><i class="fa-solid fa-gear"></i> Configurar Níveis</button>` : ''}
+                                ${!this.analiseEditMode ? `
+                                    <div class="absolute top-4 right-4 flex gap-2 z-20">
+                                        <div class="flex items-center bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm gap-1">
+                                            <div class="flex items-center gap-1.5 px-2 border-r border-slate-100 dark:border-slate-700">
+                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ramp-Up até:</span>
+                                                <input type="number" id="inline-mat-ramp" value="${matStats[0].maxDias}" class="w-10 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded text-center text-xs font-black text-slate-700 dark:text-white outline-none focus:border-emerald-500">
+                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">d.</span>
+                                            </div>
+                                            <div class="flex items-center gap-1.5 px-2">
+                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Júnior até:</span>
+                                                <input type="number" id="inline-mat-jr" value="${matStats[1].maxDias}" class="w-10 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded text-center text-xs font-black text-slate-700 dark:text-white outline-none focus:border-emerald-500">
+                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">d.</span>
+                                            </div>
+                                            <button onclick="app.ui.salvarMaturidadeInline()" class="ml-1 bg-emerald-500 hover:bg-emerald-600 text-white w-7 h-7 rounded flex items-center justify-center transition-colors shadow-sm" title="Salvar e Recalcular"><i class="fa-solid fa-check text-[10px]"></i></button>
+                                        </div>
+                                    </div>
+                                ` : ''}
                                 
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
                                     <!-- Cartões Dinâmicos de Quadrante -->
@@ -9580,7 +9594,7 @@
                             let textDias = index === 0 ? `Até ${st.maxDias} dias` : (index === matStats.length - 1 ? `Mais de ${matStats[index-1].maxDias} dias` : `De ${matStats[index-1].maxDias + 1} a ${st.maxDias} dias`);
                             
                             html += `
-                                <div onclick="app.ui.openMaturidadeModal('${st.nome}')" class="bg-white dark:bg-slate-800 rounded-2xl p-5 border ${cBorder} shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:border-${st.cor}-400">
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border ${cBorder} shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:border-${st.cor}-400">
                                     <div class="absolute -right-3 -bottom-3 text-6xl ${cIcon} group-hover:scale-110 transition-transform"><i class="fa-solid ${st.icone}"></i></div>
                                     <div class="flex justify-between items-start mb-2 relative z-10">
                                         <div>
@@ -9615,80 +9629,11 @@
                         </div>`;
                     }
                     
-                    // Injeção da Função Global do Modal de Edição (Apenas instanciado se precisar)
-                    if (!window.abrirConfigMaturidade) {
-                        window.abrirConfigMaturidade = () => {
-                            let currConfig = app.analiseCSVDinamicoData.consolidado.matConfig;
-                            
-                            let htmlInputs = currConfig.map((c, i) => `
-                                <div class="flex flex-wrap gap-2 mb-3 items-center bg-slate-50 dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                                    <div class="w-full flex justify-between items-center mb-1">
-                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nível ${i+1}</span>
-                                        ${i > 0 ? `<button onclick="app.analiseCSVDinamicoData.consolidado.matConfig.splice(${i}, 1); window.abrirConfigMaturidade()" class="text-red-500 hover:text-red-700 text-xs"><i class="fa-solid fa-trash"></i> Excluir</button>` : ''}
-                                    </div>
-                                    <input type="text" id="mat-cfg-nome-${i}" value="${c.nome}" class="flex-1 min-w-[100px] p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold outline-none dark:text-white shadow-sm" placeholder="Nome">
-                                    <input type="number" id="mat-cfg-dias-${i}" value="${c.maxDias}" class="w-20 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold text-center outline-none dark:text-white shadow-sm" placeholder="Máx Dias">
-                                    <select id="mat-cfg-cor-${i}" class="w-28 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold outline-none dark:text-white cursor-pointer shadow-sm">
-                                        <option value="slate" ${c.cor=='slate'?'selected':''}>⚪ Cinza</option>
-                                        <option value="blue" ${c.cor=='blue'?'selected':''}>🔵 Azul</option>
-                                        <option value="emerald" ${c.cor=='emerald'?'selected':''}>🟢 Verde</option>
-                                        <option value="orange" ${c.cor=='orange'?'selected':''}>🟠 Laranja</option>
-                                        <option value="red" ${c.cor=='red'?'selected':''}>🔴 Vermelho</option>
-                                        <option value="purple" ${c.cor=='purple'?'selected':''}>🟣 Roxo</option>
-                                        <option value="teal" ${c.cor=='teal'?'selected':''}>🌊 Turquesa</option>
-                                    </select>
-                                    <select id="mat-cfg-icone-${i}" class="w-28 p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold outline-none dark:text-white cursor-pointer shadow-sm">
-                                        <option value="fa-seedling" ${c.icone=='fa-seedling'?'selected':''}>🌱 Broto</option>
-                                        <option value="fa-baby" ${c.icone=='fa-baby'?'selected':''}>👶 Iniciante</option>
-                                        <option value="fa-child-reaching" ${c.icone=='fa-child-reaching'?'selected':''}>👦 Aprendiz</option>
-                                        <option value="fa-person-running" ${c.icone=='fa-person-running'?'selected':''}>🏃 Em Ação</option>
-                                        <option value="fa-user-ninja" ${c.icone=='fa-user-ninja'?'selected':''}>🥷 Ninja</option>
-                                        <option value="fa-star" ${c.icone=='fa-star'?'selected':''}>⭐ Estrela</option>
-                                        <option value="fa-crown" ${c.icone=='fa-crown'?'selected':''}>👑 Coroa</option>
-                                        <option value="fa-fire" ${c.icone=='fa-fire'?'selected':''}>🔥 Fogo</option>
-                                        <option value="fa-rocket" ${c.icone=='fa-rocket'?'selected':''}>🚀 Foguete</option>
-                                    </select>
-                                </div>
-                            `).join('');
-
-                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-seedling text-emerald-500"></i> Configurar Ciclo de Maturidade`;
-                            document.getElementById('modal-content').innerHTML = `
-                                <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Defina as faixas de tempo de casa. Atenção aos dias: o sistema lerá do menor para o maior. Ex: Se definir Nível 1 até 90 dias, e Nível 2 até 180, o sistema enquadrará quem tem 100 dias no Nível 2.</p>
-                                <div id="mat-cfg-container" class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">${htmlInputs}</div>
-                                <button onclick="app.analiseCSVDinamicoData.consolidado.matConfig.push({id: 'm'+Date.now(), nome: 'Novo Nível', maxDias: 999, cor: 'slate', icone: 'fa-star'}); window.abrirConfigMaturidade()" class="mt-4 w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-white px-4 py-3 rounded-xl text-xs font-bold transition-colors border border-dashed border-slate-300 dark:border-slate-600"><i class="fa-solid fa-plus mr-1"></i> Adicionar Nível de Tempo</button>
-                            `;
-                            document.getElementById('modal-actions').innerHTML = `
-                                <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition-colors">Cancelar</button>
-                                <button onclick="window.salvarConfigMaturidade()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md transition-transform hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar e Recalcular</button>
-                            `;
-                            document.getElementById('global-modal').classList.remove('hidden');
-                        };
-
-                        window.salvarConfigMaturidade = () => {
-                            let currConfig = app.analiseCSVDinamicoData.consolidado.matConfig;
-                            currConfig.forEach((c, i) => {
-                                c.nome = document.getElementById('mat-cfg-nome-'+i).value;
-                                c.maxDias = parseInt(document.getElementById('mat-cfg-dias-'+i).value) || 9999;
-                                c.cor = document.getElementById('mat-cfg-cor-'+i).value;
-                                c.icone = document.getElementById('mat-cfg-icone-'+i).value;
-                            });
-                            
-                            // Ordena pelas faixas de dia crescentemente para a matemática não quebrar
-                            currConfig.sort((a,b) => a.maxDias - b.maxDias);
-                            
-                            // Salva na memória do HD e dá F5 virtual
-                            localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).then(() => {
-                                document.getElementById('global-modal').classList.add('hidden');
-                                app.ui.showAlert("Atualizado", "A régua de maturidade foi salva e os operadores re-enquadrados com sucesso.", "success");
-                                app.ui.renderTab('analise_csv_dinamico', true);
-                            });
-                        };
-                    }
                     // NOVO CAPÍTULO: DISTRIBUIÇÃO E FREQUÊNCIA DE NOTAS
                     if (data.notasDistribuicao) {
                         html += renderChapterTitle('Distribuição de Notas', 'Visão quantitativa de todas as notas absolutas aplicadas na operação e sua recorrência.', 'fa-ranking-star', 'orange');
                         
-                        const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(a) - parseFloat(b));
+                        const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(b) - parseFloat(a));
                         
                         let notasCards = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 relative z-10 hideable-box animate-fade-in">${btnHideCode}`;
                         
@@ -12959,23 +12904,29 @@
                 },
 
                 aplicarMelhoriasUX() {
-                    document.querySelectorAll('.chapter-marker h2, .chapter-marker h3').forEach(title => {
-                        if (!title.querySelector('.btn-hide-chapter')) {
+                    document.querySelectorAll('.chapter-marker').forEach(chapter => {
+                        if (!chapter.querySelector('.btn-hide-chapter')) {
                             const btn = document.createElement('button');
-                            btn.className = 'btn-hide-chapter ml-4 px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-500 rounded-lg text-[10px] uppercase tracking-widest font-bold hover:bg-slate-300 transition-colors inline-flex items-center gap-1 shadow-sm';
-                            btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Ocultar do Relatório';
+                            btn.className = 'btn-hide-chapter absolute top-2 right-2 w-8 h-8 bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-blue-500 rounded-full flex items-center justify-center transition-all shadow-sm border border-slate-200 dark:border-slate-700 z-50';
+                            btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+                            btn.title = "Ocultar do Relatório (PDF)";
                             btn.onclick = (e) => {
-                                const chapter = e.target.closest('.chapter-marker');
-                                chapter.classList.toggle('opacity-30');
-                                chapter.classList.toggle('hidden-in-print');
-                                const isHidden = chapter.classList.contains('hidden-in-print');
-                                e.target.innerHTML = isHidden ? '<i class="fa-solid fa-eye"></i> Restaurar Visibilidade' : '<i class="fa-solid fa-eye-slash"></i> Ocultar do Relatório';
-                                e.target.classList.toggle('bg-blue-100');
-                                e.target.classList.toggle('text-blue-600');
-                                e.target.classList.toggle('bg-slate-200');
-                                e.target.classList.toggle('text-slate-500');
+                                const targetChapter = e.target.closest('.chapter-marker');
+                                targetChapter.classList.toggle('opacity-30');
+                                targetChapter.classList.toggle('hidden-in-print');
+                                const isHidden = targetChapter.classList.contains('hidden-in-print');
+                                const iconElement = btn.querySelector('i');
+                                if (isHidden) {
+                                    iconElement.classList.replace('fa-eye-slash', 'fa-eye');
+                                    btn.classList.add('text-blue-600', 'bg-blue-100');
+                                    btn.title = "Restaurar Visibilidade";
+                                } else {
+                                    iconElement.classList.replace('fa-eye', 'fa-eye-slash');
+                                    btn.classList.remove('text-blue-600', 'bg-blue-100');
+                                    btn.title = "Ocultar do Relatório (PDF)";
+                                }
                             };
-                            title.appendChild(btn);
+                            chapter.appendChild(btn);
                         }
                     });
 
@@ -12984,32 +12935,6 @@
                         style.id = 'css-hide-chapters';
                         style.innerHTML = `@media print { .hidden-in-print { display: none !important; } }`;
                         document.head.appendChild(style);
-                    }
-
-                    const matBox = document.querySelector('.chapter-marker:has(h2:contains("Ciclo de Maturidade"))') || document.querySelector('.chapter-marker'); 
-                    if (!document.getElementById('inline-mat-editor')) {
-                        const topBar = document.getElementById('apresentacao-topo-actions') || document.querySelector('.overflow-x-auto.w-full');
-                        if(topBar) {
-                            const editorHTML = document.createElement('div');
-                            editorHTML.id = 'inline-mat-editor';
-                            editorHTML.className = "flex flex-wrap gap-3 items-center bg-indigo-50 dark:bg-indigo-900/30 p-3 rounded-xl border border-indigo-200 dark:border-indigo-700 mb-6 shadow-sm";
-                            editorHTML.innerHTML = `
-                                <div class="w-8 h-8 bg-indigo-500 text-white rounded-lg flex items-center justify-center shadow-sm"><i class="fa-solid fa-sliders"></i></div>
-                                <span class="text-[11px] font-black text-indigo-800 dark:text-indigo-300 uppercase tracking-widest mr-2">Configurar Maturidade:</span>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Ramp-Up até:</span>
-                                    <input type="number" id="inline-mat-ramp" placeholder="Dias" value="90" class="w-16 p-2 bg-white dark:bg-slate-800 border border-slate-300 rounded-lg text-xs text-center font-bold outline-none focus:border-indigo-500 dark:text-white">
-                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">dias</span>
-                                </div>
-                                <div class="flex items-center gap-2 border-l border-indigo-200 dark:border-indigo-700 pl-3">
-                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Júnior até:</span>
-                                    <input type="number" id="inline-mat-jr" placeholder="Dias" value="180" class="w-16 p-2 bg-white dark:bg-slate-800 border border-slate-300 rounded-lg text-xs text-center font-bold outline-none focus:border-indigo-500 dark:text-white">
-                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">dias</span>
-                                </div>
-                                <button onclick="app.admin.salvarMaturidadeInline()" class="ml-auto bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-arrows-rotate mr-1"></i> Recalcular Níveis</button>
-                            `;
-                            topBar.parentNode.insertBefore(editorHTML, topBar.nextSibling);
-                        }
                     }
                 },
 
