@@ -8652,6 +8652,23 @@
                             });
                         }
 
+                    // --- GRÁFICO DE MOTIVOS DE CONTATO ---
+                        if (data.assuntosDistribuicao && Object.keys(data.assuntosDistribuicao).length > 0) {
+                            const ctxMotivos = document.getElementById('chart-motivos-canvas');
+                            if (ctxMotivos) {
+                                if (window.chartMotivos) window.chartMotivos.destroy();
+                                const assuntosArray = Object.entries(data.assuntosDistribuicao).map(([n, i]) => ({nome: n, count: i.count})).sort((a,b) => b.count - a.count);
+                                window.chartMotivos = new Chart(ctxMotivos, {
+                                    type: 'bar',
+                                    data: {
+                                        labels: assuntosArray.map(a => a.nome.length > 20 ? a.nome.substring(0,20)+'...' : a.nome),
+                                        datasets: [{ label: 'Volume', data: assuntosArray.map(a => a.count), backgroundColor: '#ec4899', borderRadius: 4 }]
+                                    },
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, grid: { color: isDark ? '#334155' : '#e2e8f0' } }, x: { grid: { display: false }, ticks: { color: textColor, font: {size: 10} } } } }
+                                });
+                            }
+                        }
+
                         // --- GRÁFICO QUADRANTE DO MODAL ---
                         if(chartData.length > 1) {
                             if(window.quadranteChart) window.quadranteChart.destroy();
@@ -9633,6 +9650,66 @@
                                 </div>
                             </div>
                         </div>`;
+                    }
+                    
+                    // --- NOVO CAPÍTULO: MOTIVOS DE CONTATO (ASSUNTOS) ---
+                    if (data.assuntosDistribuicao && Object.keys(data.assuntosDistribuicao).length > 0) {
+                        html += renderChapterTitle('Motivos de Contato', 'Análise detalhada por assunto ou tema abordado nas monitorias, listando ofensores e médias por tipo de ligação.', 'fa-tags', 'pink');
+                        
+                        const assuntosArray = Object.entries(data.assuntosDistribuicao)
+                            .map(([nome, info]) => ({ nome, ...info }))
+                            .sort((a, b) => b.count - a.count); // Maior pro menor
+
+                        // Área do Gráfico de Barras
+                        html += `
+                            <div class="hideable-box relative mb-8 animate-fade-in glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-pink-500 shadow-sm bg-white dark:bg-slate-800">
+                                ${btnHideCode}
+                                <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <i class="fa-solid fa-chart-column text-pink-500"></i> Volume por Assunto
+                                </h3>
+                                <div class="w-full h-64 relative"><canvas id="chart-motivos-canvas"></canvas></div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8 hideable-box relative animate-fade-in">
+                        `;
+
+                        // Cartões Individuais por Assunto
+                        assuntosArray.forEach(assunto => {
+                            const mediaAssunto = assunto.count > 0 ? (assunto.somaNotas / assunto.count).toFixed(2) : '0.00';
+                            const pctAssunto = data.totalLinhas > 0 ? ((assunto.count / data.totalLinhas) * 100).toFixed(1) : 0;
+                            const corMedia = parseFloat(mediaAssunto) < 85 ? 'text-red-500' : 'text-green-500';
+
+                            const topDesvios = Object.entries(assunto.falhasComunsList || {}).sort((a,b)=>b[1]-a[1]).slice(0,2);
+                            const topCriticas = Object.entries(assunto.falhasCriticasList || {}).sort((a,b)=>b[1]-a[1]).slice(0,2);
+
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow flex flex-col relative overflow-hidden group">
+                                    <div class="absolute -right-4 -top-4 w-16 h-16 bg-pink-500/10 rounded-full blur-xl pointer-events-none transition-transform group-hover:scale-125"></div>
+                                    
+                                    <div class="flex justify-between items-start mb-3 border-b border-slate-100 dark:border-slate-700/50 pb-3 relative z-10">
+                                        <div>
+                                            <h4 class="font-extrabold text-slate-800 dark:text-white text-base leading-tight mb-1 pr-2" title="${assunto.nome}">${assunto.nome}</h4>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">${assunto.count} Avaliações (${pctAssunto}%)</span>
+                                        </div>
+                                        <div class="text-right shrink-0">
+                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Média Nota</div>
+                                            <div class="font-black text-xl ${corMedia}">${mediaAssunto}</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex-1 flex flex-col gap-2 relative z-10">
+                                        <div class="bg-orange-50 dark:bg-orange-900/10 p-2.5 rounded-lg border border-orange-100 dark:border-orange-800/30 flex-1">
+                                            <div class="text-[9px] font-black uppercase text-orange-600 mb-1.5"><i class="fa-solid fa-layer-group"></i> Desvios Frequentes</div>
+                                            ${topDesvios.length > 0 ? topDesvios.map(d => `<div class="text-[10px] text-slate-700 dark:text-slate-300 truncate"><span class="text-orange-500 font-bold mr-1">${d[1]}x</span>${d[0]}</div>`).join('') : '<div class="text-[10px] text-slate-500 italic">Sem desvios normais.</div>'}
+                                        </div>
+                                        <div class="bg-red-50 dark:bg-red-900/10 p-2.5 rounded-lg border border-red-100 dark:border-red-800/30 flex-1">
+                                            <div class="text-[9px] font-black uppercase text-red-600 mb-1.5"><i class="fa-solid fa-circle-exclamation"></i> Falhas Críticas</div>
+                                            ${topCriticas.length > 0 ? topCriticas.map(c => `<div class="text-[10px] text-slate-700 dark:text-slate-300 truncate"><span class="text-red-500 font-bold mr-1">${c[1]}x</span>${c[0]}</div>`).join('') : '<div class="text-[10px] text-slate-500 italic">Sem falhas críticas. Parabéns!</div>'}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
                     }
                     
                     // NOVO CAPÍTULO: DISTRIBUIÇÃO E FREQUÊNCIA DE NOTAS
@@ -13269,8 +13346,11 @@
 
                             if (assuntoBruto) {
                                 assuntosDisp.add(assuntoBruto);
-                                if (!data.assuntosDistribuicao[assuntoBruto]) data.assuntosDistribuicao[assuntoBruto] = { count: 0, falhasComuns: 0, falhasCriticas: 0 };
+                                if (!data.assuntosDistribuicao[assuntoBruto]) {
+                                    data.assuntosDistribuicao[assuntoBruto] = { count: 0, somaNotas: 0, falhasComunsList: {}, falhasCriticasList: {} };
+                                }
                                 data.assuntosDistribuicao[assuntoBruto].count++;
+                                data.assuntosDistribuicao[assuntoBruto].somaNotas += nota;
                             }
                             
                             let dataFmt = (dtObj && !isNaN(dtObj)) ? `${String(dtObj.getDate()).padStart(2,'0')}/${String(dtObj.getMonth() + 1).padStart(2,'0')}/${dtObj.getFullYear()}` : String(dataRaw || 'S/D');
@@ -13343,7 +13423,9 @@
                                         data.falhasComuns[cleanGap].historicoMeses[mesRef] = (data.falhasComuns[cleanGap].historicoMeses[mesRef] || 0) + 1;
                                         if (data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasNormais++;
                                     }
-                                    if (assuntoBruto) data.assuntosDistribuicao[assuntoBruto].falhasComuns++;
+                                    if (assuntoBruto) {
+                                        data.assuntosDistribuicao[assuntoBruto].falhasComunsList[cleanGap] = (data.assuntosDistribuicao[assuntoBruto].falhasComunsList[cleanGap] || 0) + 1;
+                                    }
                                 }
                             });
 
@@ -13360,7 +13442,9 @@
                                         data.falhasCriticas[cleanGap].historicoMeses[mesRef] = (data.falhasCriticas[cleanGap].historicoMeses[mesRef] || 0) + 1;
                                         if (data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasCriticas++;
                                     }
-                                    if (assuntoBruto) data.assuntosDistribuicao[assuntoBruto].falhasCriticas++;
+                                    if (assuntoBruto) {
+                                        data.assuntosDistribuicao[assuntoBruto].falhasCriticasList[cleanGap] = (data.assuntosDistribuicao[assuntoBruto].falhasCriticasList[cleanGap] || 0) + 1;
+                                    }
                                 }
                             });
 
