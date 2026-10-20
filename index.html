@@ -12958,6 +12958,166 @@
                     app.ui.showAlert("Concluído!", "Dados importados e salvos localmente. O sistema atualizou as médias de operadores e isolou as perguntas no consolidado geral.", "success");
                 },
 
+                aplicarMelhoriasUX() {
+                    document.querySelectorAll('.chapter-marker h2, .chapter-marker h3').forEach(title => {
+                        if (!title.querySelector('.btn-hide-chapter')) {
+                            const btn = document.createElement('button');
+                            btn.className = 'btn-hide-chapter ml-4 px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-500 rounded-lg text-[10px] uppercase tracking-widest font-bold hover:bg-slate-300 transition-colors inline-flex items-center gap-1 shadow-sm';
+                            btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Ocultar do Relatório';
+                            btn.onclick = (e) => {
+                                const chapter = e.target.closest('.chapter-marker');
+                                chapter.classList.toggle('opacity-30');
+                                chapter.classList.toggle('hidden-in-print');
+                                const isHidden = chapter.classList.contains('hidden-in-print');
+                                e.target.innerHTML = isHidden ? '<i class="fa-solid fa-eye"></i> Restaurar Visibilidade' : '<i class="fa-solid fa-eye-slash"></i> Ocultar do Relatório';
+                                e.target.classList.toggle('bg-blue-100');
+                                e.target.classList.toggle('text-blue-600');
+                                e.target.classList.toggle('bg-slate-200');
+                                e.target.classList.toggle('text-slate-500');
+                            };
+                            title.appendChild(btn);
+                        }
+                    });
+
+                    if(!document.getElementById('css-hide-chapters')) {
+                        const style = document.createElement('style');
+                        style.id = 'css-hide-chapters';
+                        style.innerHTML = `@media print { .hidden-in-print { display: none !important; } }`;
+                        document.head.appendChild(style);
+                    }
+
+                    const matBox = document.querySelector('.chapter-marker:has(h2:contains("Ciclo de Maturidade"))') || document.querySelector('.chapter-marker'); 
+                    if (!document.getElementById('inline-mat-editor')) {
+                        const topBar = document.getElementById('apresentacao-topo-actions') || document.querySelector('.overflow-x-auto.w-full');
+                        if(topBar) {
+                            const editorHTML = document.createElement('div');
+                            editorHTML.id = 'inline-mat-editor';
+                            editorHTML.className = "flex flex-wrap gap-3 items-center bg-indigo-50 dark:bg-indigo-900/30 p-3 rounded-xl border border-indigo-200 dark:border-indigo-700 mb-6 shadow-sm";
+                            editorHTML.innerHTML = `
+                                <div class="w-8 h-8 bg-indigo-500 text-white rounded-lg flex items-center justify-center shadow-sm"><i class="fa-solid fa-sliders"></i></div>
+                                <span class="text-[11px] font-black text-indigo-800 dark:text-indigo-300 uppercase tracking-widest mr-2">Configurar Maturidade:</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Ramp-Up até:</span>
+                                    <input type="number" id="inline-mat-ramp" placeholder="Dias" value="90" class="w-16 p-2 bg-white dark:bg-slate-800 border border-slate-300 rounded-lg text-xs text-center font-bold outline-none focus:border-indigo-500 dark:text-white">
+                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">dias</span>
+                                </div>
+                                <div class="flex items-center gap-2 border-l border-indigo-200 dark:border-indigo-700 pl-3">
+                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Júnior até:</span>
+                                    <input type="number" id="inline-mat-jr" placeholder="Dias" value="180" class="w-16 p-2 bg-white dark:bg-slate-800 border border-slate-300 rounded-lg text-xs text-center font-bold outline-none focus:border-indigo-500 dark:text-white">
+                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">dias</span>
+                                </div>
+                                <button onclick="app.admin.salvarMaturidadeInline()" class="ml-auto bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all transform hover:-translate-y-0.5"><i class="fa-solid fa-arrows-rotate mr-1"></i> Recalcular Níveis</button>
+                            `;
+                            topBar.parentNode.insertBefore(editorHTML, topBar.nextSibling);
+                        }
+                    }
+                },
+
+                salvarMaturidadeInline() {
+                    const r = parseInt(document.getElementById('inline-mat-ramp').value) || 90;
+                    const j = parseInt(document.getElementById('inline-mat-jr').value) || 180;
+                    if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                        app.analiseCSVDinamicoData.consolidado.matConfig = [
+                            { id: 'm1', nome: 'Ramp-Up', maxDias: r },
+                            { id: 'm2', nome: 'Júnior', maxDias: j },
+                            { id: 'm3', nome: 'Pleno', maxDias: 365 },
+                            { id: 'm4', nome: 'Veterano', maxDias: 99999 }
+                        ];
+                        app.ui.showAlert("Níveis Atualizados", "A matriz de maturidade foi recalculada baseada nos novos dias.", "success");
+                        this.gerarInteligenciaCSV();
+                        app.ui.renderTab('analise_csv_dinamico', true);
+                    }
+                },
+
+                abrirDetalheFalhaGrafico(nomeFalha, ehCritica = false) {
+                    const dataObj = app.analiseCSVDinamicoData.consolidado;
+                    const falha = ehCritica ? dataObj.falhasCriticasArray.find(f => f.nome === nomeFalha) : dataObj.falhasComunsArray.find(f => f.nome === nomeFalha);
+                    
+                    if(!falha || !falha.historicoMeses || Object.keys(falha.historicoMeses).length === 0) {
+                        return app.ui.showAlert("Sem Histórico", "Não há dados evolutivos em meses anteriores suficientes para traçar a linha desta falha.", "info");
+                    }
+
+                    const meses = dataObj.mesesDisponiveis;
+                    const valores = meses.map(m => falha.historicoMeses[m] || 0);
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-area ${ehCritica ? 'text-red-500' : 'text-orange-500'}"></i> Evolução: ${nomeFalha}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="w-full h-64 relative bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mt-2">
+                            <canvas id="falha-historico-canvas"></canvas>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-800 text-white hover:bg-black rounded-xl font-bold w-full shadow-md">Fechar Estatística</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+
+                    setTimeout(() => {
+                        const ctx = document.getElementById('falha-historico-canvas');
+                        if (window.falhaChart) window.falhaChart.destroy();
+                        window.falhaChart = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: meses.map(m => app.ui.formatMonthLabel(m)),
+                                datasets: [{
+                                    label: 'Volume de Erros',
+                                    data: valores,
+                                    borderColor: ehCritica ? '#ef4444' : '#f59e0b',
+                                    backgroundColor: ehCritica ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                    borderWidth: 3,
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointBackgroundColor: ehCritica ? '#ef4444' : '#f59e0b'
+                                }]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        });
+                    }, 100);
+                },
+
+                mostrarEvolucaoQuadrante(quadranteNum) {
+                    const dataObj = app.analiseCSVDinamicoData.consolidado;
+                    if(!dataObj.quadrantesEvolutivo) return;
+
+                    const meses = dataObj.mesesDisponiveis;
+                    const key = 'q' + quadranteNum;
+                    const valores = meses.map(m => dataObj.quadrantesEvolutivo[m][key] || 0);
+                    
+                    const configQ = { 
+                        1: { n: "Engajados / Estrelas", c: "#10b981", bg: "rgba(16, 185, 129, 0.2)" }, 
+                        2: { n: "Ofensores / Atenção", c: "#ef4444", bg: "rgba(239, 68, 68, 0.2)" }, 
+                        3: { n: "Potenciais / Ocultos", c: "#f59e0b", bg: "rgba(245, 158, 11, 0.2)" }, 
+                        4: { n: "Baixo Impacto / Risco", c: "#64748b", bg: "rgba(100, 116, 139, 0.2)" } 
+                    };
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users-rays" style="color: ${configQ[quadranteNum].c}"></i> Evolução: Quadrante ${quadranteNum} (${configQ[quadranteNum].n})`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-sm text-slate-500 mb-4 leading-relaxed">Acompanhe se a quantidade de operadores que caem neste perfil comportamental está aumentando ou diminuindo com o passar dos meses.</p>
+                        <div class="w-full h-64 relative bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+                            <canvas id="quadrante-historico-canvas"></canvas>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold w-full shadow-md">Voltar ao Painel</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+
+                    setTimeout(() => {
+                        const ctx = document.getElementById('quadrante-historico-canvas');
+                        if (window.quadChart) window.quadChart.destroy();
+                        window.quadChart = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: meses.map(m => app.ui.formatMonthLabel(m)),
+                                datasets: [{
+                                    label: 'Qtd. de Operadores Encaixados',
+                                    data: valores,
+                                    backgroundColor: configQ[quadranteNum].bg,
+                                    borderColor: configQ[quadranteNum].c,
+                                    borderWidth: 2,
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        });
+                    }, 100);
+                },
+
                 gerarInteligenciaCSV() {
                     if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.relatorios) return;
                     
@@ -13234,10 +13394,13 @@
                                 if (isNao) {
                                     acertouTudo = false;
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
-                                    if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: {} };
+                                    if (!data.falhasComuns[cleanGap]) data.falhasComuns[cleanGap] = { count: 0, operadores: {}, historicoMeses: {} };
                                     data.falhasComuns[cleanGap].count += 1;
                                     data.falhasComuns[cleanGap].operadores[op] = (data.falhasComuns[cleanGap].operadores[op] || 0) + 1;
-                                    if (mesRef && data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasNormais++;
+                                    if (mesRef) {
+                                        data.falhasComuns[cleanGap].historicoMeses[mesRef] = (data.falhasComuns[cleanGap].historicoMeses[mesRef] || 0) + 1;
+                                        if (data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasNormais++;
+                                    }
                                     if (assuntoBruto) data.assuntosDistribuicao[assuntoBruto].falhasComuns++;
                                 }
                             });
@@ -13248,10 +13411,13 @@
                                 if (isSim) { 
                                     acertouTudo = false;
                                     const cleanGap = `[${formNameDisplay}] ` + app.utils.fixEncoding(col.split('=')[0].trim());
-                                    if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: {} };
+                                    if (!data.falhasCriticas[cleanGap]) data.falhasCriticas[cleanGap] = { count: 0, operadores: {}, historicoMeses: {} };
                                     data.falhasCriticas[cleanGap].count += 1;
                                     data.falhasCriticas[cleanGap].operadores[op] = (data.falhasCriticas[cleanGap].operadores[op] || 0) + 1;
-                                    if (mesRef && data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasCriticas++;
+                                    if (mesRef) {
+                                        data.falhasCriticas[cleanGap].historicoMeses[mesRef] = (data.falhasCriticas[cleanGap].historicoMeses[mesRef] || 0) + 1;
+                                        if (data.mesesEvolutivo[mesRef]) data.mesesEvolutivo[mesRef].falhasCriticas++;
+                                    }
                                     if (assuntoBruto) data.assuntosDistribuicao[assuntoBruto].falhasCriticas++;
                                 }
                             });
@@ -13310,18 +13476,48 @@
                     });
 
                     data.falhasCriticasArray = Object.entries(data.falhasCriticas)
-                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
+                        .map(([nome, info]) => ({ nome, count: info.count, historicoMeses: info.historicoMeses, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
                         .sort((a,b) => b.count - a.count).slice(0, 5); 
 
                     data.falhasComunsArray = Object.entries(data.falhasComuns)
-                        .map(([nome, info]) => ({ nome, count: info.count, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
+                        .map(([nome, info]) => ({ nome, count: info.count, historicoMeses: info.historicoMeses, operadores: Object.entries(info.operadores).map(([opName, qtd]) => ({nome: opName, qtd})).sort((a,b) => b.qtd - a.qtd) }))
                         .sort((a,b) => b.count - a.count).slice(0, 10);
 
                     data.rankOperadores = Object.values(data.operadores).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
                     data.rankMonitores = Object.values(data.monitorProdutividade).sort((a,b) => parseFloat(b.mediaNota) - parseFloat(a.mediaNota));
                     data.assuntosDisponiveis = Array.from(assuntosDisp).sort();
 
+                    // Transformar Objeto Caótico em Lista Ordenada Crescente (Maior para Menor)
+                    data.notasDistribuicaoArray = Object.entries(data.notasDistribuicao)
+                        .map(([nota, info]) => ({ notaStr: nota, valor: parseFloat(nota), ...info }))
+                        .sort((a, b) => b.valor - a.valor);
+
+                    // Motor de Evolução dos Quadrantes
+                    data.quadrantesEvolutivo = {};
+                    data.mesesDisponiveis.forEach(m => {
+                        data.quadrantesEvolutivo[m] = { q1: 0, q2: 0, q3: 0, q4: 0 };
+                    });
+                    
+                    Object.keys(data.operadoresEvolutivo).forEach(op => {
+                        Object.keys(data.operadoresEvolutivo[op]).forEach(mes => {
+                            const stats = data.operadoresEvolutivo[op][mes];
+                            const mediaOp = stats.soma / stats.count;
+                            const volOp = stats.count;
+                            
+                            const altaNota = mediaOp >= 90;
+                            const altoVol = volOp >= 2;
+
+                            if (altaNota && altoVol) data.quadrantesEvolutivo[mes].q1++; 
+                            else if (!altaNota && altoVol) data.quadrantesEvolutivo[mes].q2++;
+                            else if (altaNota && !altoVol) data.quadrantesEvolutivo[mes].q3++; 
+                            else data.quadrantesEvolutivo[mes].q4++; 
+                        });
+                    });
+
                     app.analiseCSVDinamicoData.consolidado = data;
+
+                    // Aciona as melhorias visuais na tela
+                    setTimeout(() => { if(app.admin.aplicarMelhoriasUX) app.admin.aplicarMelhoriasUX(); }, 500);
                 },
 
                 resetTermos(mat) {
