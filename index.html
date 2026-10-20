@@ -9559,26 +9559,32 @@
                         html += renderChapterTitle('Ciclo de Maturidade', 'Acompanhamento do impacto do Tempo de Empresa (Curva de Aprendizado) na qualidade das entregas.', 'fa-seedling', 'teal');
                         html += `
                             <div class="hideable-box relative mb-8 animate-fade-in glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-emerald-500 shadow-sm bg-slate-50 dark:bg-slate-900">
-                                ${btnHideCode}
-                                ${!this.analiseEditMode ? `
-                                    <div class="absolute top-4 right-4 flex gap-2 z-20">
-                                        <div class="flex items-center bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm gap-1">
-                                            <div class="flex items-center gap-1.5 px-2 border-r border-slate-100 dark:border-slate-700">
-                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ramp-Up até:</span>
-                                                <input type="number" id="inline-mat-ramp" value="${matStats[0].maxDias}" class="w-10 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded text-center text-xs font-black text-slate-700 dark:text-white outline-none focus:border-emerald-500">
-                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">d.</span>
+                                ${btnHideCode}${!this.analiseEditMode ? `
+                                    <div class="flex flex-col md:flex-row items-center justify-between bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 relative z-20 gap-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg"><i class="fa-solid fa-sliders"></i></div>
+                                            <div>
+                                                <div class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Configuração do Ciclo</div>
+                                                <div class="text-[10px] text-slate-500">Defina a linha de corte dos níveis em dias.</div>
                                             </div>
-                                            <div class="flex items-center gap-1.5 px-2">
-                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Júnior até:</span>
-                                                <input type="number" id="inline-mat-jr" value="${matStats[1].maxDias}" class="w-10 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded text-center text-xs font-black text-slate-700 dark:text-white outline-none focus:border-emerald-500">
-                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">d.</span>
+                                        </div>
+                                        <div class="flex flex-wrap items-center justify-center gap-3 w-full md:w-auto">
+                                            <div class="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase">Ramp-Up até:</span>
+                                                <input type="number" id="inline-mat-ramp" value="${matStats[0].maxDias}" class="w-14 bg-transparent text-center text-sm font-black text-slate-800 dark:text-white outline-none border-b-2 border-dashed border-slate-300 focus:border-emerald-500 transition-colors">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase">dias</span>
                                             </div>
-                                            <button onclick="app.ui.salvarMaturidadeInline()" class="ml-1 bg-emerald-500 hover:bg-emerald-600 text-white w-7 h-7 rounded flex items-center justify-center transition-colors shadow-sm" title="Salvar e Recalcular"><i class="fa-solid fa-check text-[10px]"></i></button>
+                                            <div class="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase">Júnior até:</span>
+                                                <input type="number" id="inline-mat-jr" value="${matStats[1].maxDias}" class="w-14 bg-transparent text-center text-sm font-black text-slate-800 dark:text-white outline-none border-b-2 border-dashed border-slate-300 focus:border-emerald-500 transition-colors">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase">dias</span>
+                                            </div>
+                                            <button onclick="app.ui.salvarMaturidadeInline()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform hover:-translate-y-0.5 w-full sm:w-auto"><i class="fa-solid fa-check mr-2"></i> Aplicar</button>
                                         </div>
                                     </div>
                                 ` : ''}
                                 
-                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
                                     <!-- Cartões Dinâmicos de Quadrante -->
                                     <div class="lg:col-span-2 grid grid-cols-2 md:grid-cols-${matStats.length > 4 ? 4 : matStats.length} gap-4">
                         `;
@@ -12851,6 +12857,7 @@
                                 .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar, .pdf-clean-mode details, .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
                                 .pdf-clean-mode .glass-card, .chapter-marker, details { box-shadow: none !important; border: 1px solid rgba(226, 232, 240, 0.8) !important; background: #f8fafc !important; page-break-inside: avoid !important; break-inside: avoid !important; display: block !important; margin-bottom: 24px !important; }
                                 .pdf-clean-mode canvas { max-width: 100% !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+                                body .pdf-clean-mode .hidden-in-print, body .hidden-in-print { display: none !important; opacity: 0 !important; visibility: hidden !important; }
                                 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                             }
                         `;
@@ -12909,11 +12916,20 @@
                             const btn = document.createElement('button');
                             btn.className = 'btn-hide-chapter absolute top-2 right-2 w-8 h-8 bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-blue-500 rounded-full flex items-center justify-center transition-all shadow-sm border border-slate-200 dark:border-slate-700 z-50';
                             btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
-                            btn.title = "Ocultar do Relatório (PDF)";
+                            btn.title = "Ocultar Título e Conteúdo (PDF)";
                             btn.onclick = (e) => {
                                 const targetChapter = e.target.closest('.chapter-marker');
+                                // Pega o bloco de conteúdo que vem exatamente depois do título
+                                const targetContent = targetChapter.nextElementSibling;
+
                                 targetChapter.classList.toggle('opacity-30');
                                 targetChapter.classList.toggle('hidden-in-print');
+                                
+                                if (targetContent) {
+                                    targetContent.classList.toggle('opacity-30');
+                                    targetContent.classList.toggle('hidden-in-print');
+                                }
+
                                 const isHidden = targetChapter.classList.contains('hidden-in-print');
                                 const iconElement = btn.querySelector('i');
                                 if (isHidden) {
@@ -12923,7 +12939,7 @@
                                 } else {
                                     iconElement.classList.replace('fa-eye', 'fa-eye-slash');
                                     btn.classList.remove('text-blue-600', 'bg-blue-100');
-                                    btn.title = "Ocultar do Relatório (PDF)";
+                                    btn.title = "Ocultar Título e Conteúdo (PDF)";
                                 }
                             };
                             chapter.appendChild(btn);
@@ -12933,7 +12949,8 @@
                     if(!document.getElementById('css-hide-chapters')) {
                         const style = document.createElement('style');
                         style.id = 'css-hide-chapters';
-                        style.innerHTML = `@media print { .hidden-in-print { display: none !important; } }`;
+                        // A classe 'hidden-in-print' é blindada para vencer qualquer display:block do PDF
+                        style.innerHTML = `@media print { body .hidden-in-print, body .pdf-clean-mode .hidden-in-print { display: none !important; opacity: 0 !important; visibility: hidden !important; } }`;
                         document.head.appendChild(style);
                     }
                 },
@@ -14771,6 +14788,7 @@
                                 box-shadow: none !important; 
                             }
                             
+                            body .hidden-in-print { display: none !important; opacity: 0 !important; visibility: hidden !important; }
                             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                         }
                     `;
