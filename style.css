@@ -1,0 +1,272 @@
+<link rel="stylesheet" href="style.css">
+        :root { --theme-color: #22c55e; /* Padrão atual verde */ }
+        html { scroll-behavior: smooth; } /* Rolagem suave nativa em toda a página */
+        body { font-family: 'Poppins', sans-serif; transition: background-color 0.3s ease; }
+        .glass-card { background: rgba(255, 255, 255, 1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); border: 1px solid #f1f5f9; }
+        .dark .glass-card { background: rgba(30, 41, 59, 1); border-color: #334155; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
+        .gradient-text { background: linear-gradient(to right, #2563eb, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .dark .gradient-text { background: linear-gradient(to right, #60a5fa, #93c5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        
+        input[type="month"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator, input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
+        .dark input[type="month"]::-webkit-calendar-picker-indicator, .dark input[type="time"]::-webkit-calendar-picker-indicator, .dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+        input[type="month"]::-webkit-calendar-picker-indicator:hover, input[type="time"]::-webkit-calendar-picker-indicator:hover, input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+        /* Theme Switch - Modo Noturno Customizado */
+        .switch { font-size: 17px; position: relative; display: inline-block; width: 4em; height: 2.2em; border-radius: 30px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #2a2a2a; transition: 0.4s; border-radius: 30px; overflow: hidden; }
+        .slider:before { position: absolute; content: ""; height: 1.2em; width: 1.2em; border-radius: 20px; left: 0.5em; bottom: 0.5em; transition: 0.4s; transition-timing-function: cubic-bezier(0.81, -0.04, 0.38, 1.5); box-shadow: inset 8px -4px 0px 0px #fff; }
+        .switch input:checked + .slider { background-color: #00a6ff; }
+        .switch input:checked + .slider:before { transform: translateX(1.8em); box-shadow: inset 15px -4px 0px 15px #ffcf48; }
+        .star { background-color: #fff; border-radius: 50%; position: absolute; width: 5px; transition: all 0.4s; height: 5px; }
+        .star_1 { left: 2.5em; top: 0.5em; }
+        .star_2 { left: 2.2em; top: 1.2em; }
+        .star_3 { left: 3em; top: 0.9em; }
+        .switch input:checked ~ .slider .star { opacity: 0; }
+        .cloud { width: 3.5em; position: absolute; bottom: -1.4em; left: -1.1em; opacity: 0; transition: all 0.4s; }
+        .switch input:checked ~ .slider .cloud { opacity: 1; }
+        
+        /* Custom Softmarketing Logo Styling */
+        .logo-font { font-family: 'Poppins', sans-serif; letter-spacing: -0.04em; }
+        .logo-sub { font-family: 'Poppins', sans-serif; letter-spacing: 0.15em; font-weight: 300; }
+        
+        /* Image Preview fit */
+        .img-preview { object-fit: cover; border-radius: 0.5rem; }
+
+        /* ========================================================
+           EFEITOS LENDÁRIOS (ROXO/AZUL) E TELA ESPETACULAR
+           ======================================================== */
+        
+        /* Cartão Individual Maxed */
+        .card-legendary {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e3a8a 100%) !important;
+            border: 1px solid #8b5cf6 !important;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.4), inset 0 0 20px rgba(59, 130, 246, 0.2) !important;
+            animation: pulse-legendary 3s infinite alternate !important;
+            color: white !important;
+        }
+        .dark .card-legendary {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #172554 100%) !important;
+            border: 1px solid #6366f1 !important;
+        }
+        @keyframes pulse-legendary {
+            0% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.3), inset 0 0 10px rgba(59, 130, 246, 0.2); border-color: #6366f1; }
+            100% { box-shadow: 0 0 25px rgba(168, 85, 247, 0.6), inset 0 0 20px rgba(96, 165, 250, 0.4); border-color: #a855f7; }
+        }
+
+        /* Banner Espetacular Final */
+        .banner-legendary {
+            background: linear-gradient(270deg, #4c1d95, #2563eb, #0891b2, #4c1d95) !important;
+            background-size: 300% 300% !important;
+            animation: gradient-shift 5s ease infinite, glow-banner-leg 2s infinite alternate !important;
+            border: 2px solid #a855f7 !important;
+            color: white !important;
+        }
+        @keyframes gradient-shift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        @keyframes glow-banner-leg {
+            0% { box-shadow: 0 10px 30px -5px rgba(139, 92, 246, 0.5), 0 0 20px rgba(59, 130, 246, 0.4); }
+            100% { box-shadow: 0 20px 50px -5px rgba(168, 85, 247, 0.8), 0 0 40px rgba(6, 182, 212, 0.6); }
+        }
+
+        /* Brilho Varrendo (Shine Effect) */
+        .shine-effect-legendary { position: relative; overflow: hidden; }
+        .shine-effect-legendary::before {
+            content: ''; position: absolute; top: 0; left: -150%; width: 50%; height: 100%;
+            background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
+            transform: skewX(-25deg); animation: shine-leg 3.5s infinite; pointer-events: none; z-index: 10;
+        }
+        @keyframes shine-leg { 0% { left: -150%; } 20% { left: 250%; } 100% { left: 250%; } }
+
+        /* Background da Tela Inteira (Page Glow) */
+        .page-legendary-mode {
+            position: fixed; inset: 0; pointer-events: none; z-index: 5;
+            background: radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.15) 0%, rgba(0,0,0,0) 60%);
+            animation: ambient-pulse 4s infinite alternate;
+        }
+        .dark .page-legendary-mode {
+            background: radial-gradient(circle at 50% 100%, rgba(99, 102, 241, 0.2) 0%, rgba(0,0,0,0) 70%);
+        }
+        @keyframes ambient-pulse {
+            0% { opacity: 0.5; }
+            100% { opacity: 1; transform: scale(1.05); }
+        }
+        /* ========================================================
+           BARRAS DE PROGRESSO ELEGANTES (NOVO)
+           ======================================================== */
+        .spark-bar-container {
+            position: relative; overflow: hidden; background: #e2e8f0; 
+            border-radius: 9999px; height: 1.25rem; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .dark .spark-bar-container { background: #334155; }
+        
+        .spark-bar-fill {
+            height: 100%; border-radius: 9999px; position: relative; 
+            transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .spark-bar-fill::after {
+            content: ''; position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            animation: elegant-sweep 2.5s infinite ease-in-out;
+        }
+
+        @keyframes elegant-sweep { 
+            0% { transform: translateX(-100%); } 
+            100% { transform: translateX(100%); } 
+        }
+
+        /* ========================================================
+           CORREÇÃO GLOBAL: FORMULÁRIOS NO MODO NOTURNO
+           ======================================================== */
+        .dark input:not([type="checkbox"]):not([type="radio"]), 
+        .dark select, 
+        .dark textarea {
+            background-color: #1e293b !important; /* bg-slate-800 */
+            color: #f8fafc !important; /* text-slate-50 */
+            border-color: #334155 !important; /* border-slate-700 */
+            color-scheme: dark !important; /* Força ícones de calendário/relógio a ficarem claros */
+        }
+        
+        .dark input::placeholder, 
+        .dark textarea::placeholder {
+            color: #94a3b8 !important; /* text-slate-400 */
+        }
+        
+    /* Classe para os futuros botões magnéticos */
+        .magnetic-btn { display: inline-block; transform-style: preserve-3d; }
+
+        /* ========================================================
+           CURSOR MODERNO E PERSONALIZADO (BOLINHA DISCRETA)
+           ======================================================== */
+        body.custom-cursor, body.custom-cursor a, body.custom-cursor button, body.custom-cursor select, body.custom-cursor .cursor-pointer, body.custom-cursor [onclick] {
+            cursor: none !important;
+        }
+        body.custom-cursor input, body.custom-cursor textarea {
+            cursor: text !important; 
+        }
+        body:not(.custom-cursor) .curzr {
+            display: none !important; /* Desaparece se a opção estiver desativada */
+        }
+
+        /* A Bolinha Minimalista */
+        .custom-cursor-dot {
+            width: 8px; height: 8px; background-color: var(--theme-color); border-radius: 50%;
+            position: fixed; top: 0; left: 0; pointer-events: none; z-index: 999999;
+            transform: translate(-50%, -50%);
+            transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1), height 0.3s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.3s, opacity 0.3s;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        }
+
+        .cursor-hover .custom-cursor-dot {
+            width: 32px; height: 32px; background-color: var(--theme-color); opacity: 0.25; mix-blend-mode: multiply;
+        }
+        .dark .cursor-hover .custom-cursor-dot { mix-blend-mode: screen; opacity: 0.4; }
+        
+        /* ========================================================
+           SCROLLYTELLING PREMIUM (EFEITO DE MONTAGEM DA PÁGINA)
+           ======================================================== */
+        .reveal-item {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            will-change: opacity, transform;
+        }
+        .reveal-item.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* CSS Obrigatório do Lenis (Scroll Suave) */
+        html.lenis { height: auto; }
+        .lenis.lenis-smooth { scroll-behavior: auto; }
+        .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+        .lenis.lenis-stopped { overflow: hidden; }
+        .lenis.lenis-scrolling iframe { pointer-events: none; }
+    /* Loader Uiverse - Sincronização */
+        .loader {
+          width: 48px;
+          height: 48px;
+          background: #353535;
+          display: block;
+          margin: 20px auto;
+          position: relative;
+          box-sizing: border-box;
+          animation: rotationBack 1s ease-in-out infinite reverse;
+        }
+        .loader::before {
+          content: '';
+          box-sizing: border-box;
+          left: 0;
+          top: 0;
+          transform: rotate(45deg);
+          position: absolute;
+          width: 48px;
+          height: 48px;
+          background: #2e2e2e;
+          box-shadow: 0 0 5px rgba(0, 0, 0, 0.15);
+        }
+        .loader::after {
+          content: '';
+          box-sizing: border-box;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          background: rgb(0, 0, 0);
+          transform: translate(-50%, -50%);
+          box-shadow: 0 0 5px rgba(0, 0, 0, 0.15);
+        }
+        @keyframes rotationBack {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(-360deg); }
+        }
+
+        /* ========================================================
+           ANIMAÇÃO DO BOTÃO ENVIAR AÇÃO (CORRIGIDA)
+           ======================================================== */
+        .animated-submit-btn { position: relative; transition: all 0.3s ease; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .animated-submit-btn:hover { transform: scale(1.02); box-shadow: 0 10px 20px rgba(22, 163, 74, 0.4); }
+        .animated-submit-btn:active { transform: scale(1); }
+        
+        .animated-submit-btn .state { display: flex; align-items: center; position: relative; justify-content: center; width: 100%; }
+        .animated-submit-btn .icon { margin-right: 12px; transform: scale(1.25); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; }
+        .animated-submit-btn .state p { display: flex; align-items: center; justify-content: center; margin: 0; }
+        .animated-submit-btn .state p span { display: block; opacity: 0; animation: slideDownBtn 0.8s ease forwards calc(var(--i) * 0.03s); }
+        .animated-submit-btn:hover p span { opacity: 1; animation: waveBtn 0.5s ease forwards calc(var(--i) * 0.02s); }
+        .animated-submit-btn.is-flying p span { opacity: 1; animation: disapearBtn 0.6s ease forwards calc(var(--i) * 0.03s); }
+        
+        @keyframes waveBtn { 30% { opacity: 1; transform: translateY(4px) rotate(0); } 50% { opacity: 1; transform: translateY(-3px) rotate(0); color: #bbf7d0; } 100% { opacity: 1; transform: translateY(0) rotate(0); } }
+        @keyframes slideDownBtn { 0% { opacity: 0; transform: translateY(-20px) rotate(-90deg); color: #bbf7d0; filter: blur(5px); } 30% { opacity: 1; transform: translateY(4px) rotate(0); filter: blur(0); } 50% { opacity: 1; transform: translateY(-3px) rotate(0); } 100% { opacity: 1; transform: translateY(0) rotate(0); } }
+        @keyframes disapearBtn { from { opacity: 1; } to { opacity: 0; transform: translateX(5px) translateY(20px); color: #bbf7d0; filter: blur(5px); } }
+        
+        .animated-submit-btn .state--default .icon svg { animation: landBtn 0.6s ease forwards; overflow: visible; }
+        .animated-submit-btn:hover .state--default .icon { transform: rotate(45deg) scale(1.25); }
+        .animated-submit-btn.is-flying .state--default svg { animation: takeOffBtn 0.8s linear forwards; }
+        .animated-submit-btn.is-flying .state--default .icon { transform: rotate(0) scale(1.25); }
+        
+        @keyframes takeOffBtn { 0% { opacity: 1; } 60% { opacity: 1; transform: translateX(70px) rotate(45deg) scale(2); } 100% { opacity: 0; transform: translateX(160px) rotate(45deg) scale(0); } }
+        @keyframes landBtn { 0% { transform: translateX(-60px) translateY(30px) rotate(-50deg) scale(2); opacity: 0; filter: blur(3px); } 100% { transform: translateX(0) translateY(0) rotate(0); opacity: 1; filter: blur(0); } }
+        
+        .animated-submit-btn .state--default .icon:before { content: ""; position: absolute; top: 50%; height: 2px; width: 0; left: -5px; background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.8)); }
+        .animated-submit-btn.is-flying .state--default .icon:before { animation: contrailBtn 0.8s linear forwards; }
+        @keyframes contrailBtn { 0% { width: 0; opacity: 1; } 8% { width: 15px; } 60% { opacity: 0.7; width: 80px; } 100% { opacity: 0; width: 160px; } }
+        
+        .animated-submit-btn .state.state--sent { display: none; position: absolute; inset: 0; }
+        .animated-submit-btn.is-flying .state--default { opacity: 0; transition: opacity 0.5s ease 0.5s; }
+        .animated-submit-btn.is-flying .state.state--sent { display: flex; }
+        .animated-submit-btn.is-flying .state--sent span { opacity: 0; animation: slideDownBtn 0.8s ease forwards calc(var(--i) * 0.2s); }
+        .animated-submit-btn.is-flying .state--sent .icon { opacity: 0; animation: appearBtn 1.2s ease forwards 0.8s; }
+        @keyframes appearBtn { 0% { opacity: 0; transform: scale(4) rotate(-40deg); color: #fff; filter: blur(4px); } 30% { opacity: 1; transform: scale(0.6); filter: blur(1px); } 50% { opacity: 1; transform: scale(1.2); filter: blur(0); } 100% { opacity: 1; transform: scale(1); } }
+        
+    </style>
