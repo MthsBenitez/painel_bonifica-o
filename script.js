@@ -11226,8 +11226,8 @@
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
-                            const data = e.target.result;
-                            const workbook = XLSX.read(data, { type: 'binary', raw: true });
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
                             const firstSheet = workbook.SheetNames[0];
                             const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
 
@@ -11238,26 +11238,39 @@
                             app.config.headcountRH = {}; // Novo cofre para contar pessoas por setor
                             let contagem = 0;
 
+                            // Limpa caracteres proibidos pelo Firebase (., #, $, /, [, ] e quebras de linha)
+                            const cleanFirebaseKey = (str) => app.utils.fixEncoding(String(str || ''))
+                                .toUpperCase()
+                                .replace(/\//g, ' - ')
+                                .replace(/[.#$\[\]]/g, '')
+                                .replace(/\s+/g, ' ')
+                                .trim();
+
                             rows.forEach(row => {
-                                // Função para lidar com problemas de codificação
+                                // Função blindada para lidar com problemas de codificação (ex: MATRÃCULA, OPERAÃ‡ÃƒO) e quebras de linha no título
                                 const getVal = (keywords, exactMatch = false) => {
                                     const key = Object.keys(row).find(k => {
-                                        if (exactMatch) return keywords.includes(k);
-                                        const norm = k.toUpperCase().replace(/[^A-Z]/g, '');
+                                        const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                        if (exactMatch) return keywords.includes(kClean);
+                                        const norm = app.utils.fixEncoding(kClean)
+                                            .normalize('NFD')
+                                            .replace(/[\u0300-\u036f]/g, '')
+                                            .toUpperCase()
+                                            .replace(/[^A-Z]/g, '');
                                         return keywords.some(kw => norm.includes(kw));
                                     });
                                     return key ? row[key] : undefined;
                                 };
 
-                                const mat = getVal(['MATRICULA', 'MATR', 'LOGIN']);
+                                const mat = getVal(['MATRICULA', 'MATRCULA', 'MATR', 'LOGIN']);
                                 const nome = getVal(['NOME', 'COLABORADOR', 'OPERADOR']);
-                                const dias = getVal(['DIAS', 'EMPRESA', 'TEMPO']);
+                                const dias = getVal(['DIASDEEMPRESA', 'DIAS', 'EMPRESA', 'TEMPO']);
                                 
                                 // Captura a coluna exata ou aproximações
-                                const setor = getVal(['OPERAÃ‡ÃƒO/SETOR', 'OPERAÇÃO/SETOR', 'OPERACAO', 'SETOR'], true) || getVal(['OPERACAO', 'SETOR']);
+                                const setor = getVal(['OPERAÃ‡ÃƒO/SETOR', 'OPERAÇÃO/SETOR', 'OPERACAO', 'SETOR'], true) || getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
 
                                 if (setor && typeof setor === 'string') {
-                                    const setorLimpo = setor.trim().toUpperCase();
+                                    const setorLimpo = cleanFirebaseKey(setor);
                                     if (setorLimpo !== "") {
                                         app.config.headcountRH[setorLimpo] = (app.config.headcountRH[setorLimpo] || 0) + 1;
                                     }
@@ -11266,14 +11279,20 @@
                                 if (dias !== undefined && dias !== "") {
                                     const diasInt = parseInt(dias) || 0;
                                     let added = false;
-                                    // Salva as duas chaves no cofre para nunca falhar o cruzamento
+                                    // Salva as duas chaves limpas no cofre para nunca falhar no Firebase nem no cruzamento
                                     if (mat !== undefined && mat !== "") {
-                                        app.config.tempoDeCasa[String(mat).trim()] = diasInt;
-                                        added = true;
+                                        const matLimpa = cleanFirebaseKey(mat);
+                                        if (matLimpa !== "") {
+                                            app.config.tempoDeCasa[matLimpa] = diasInt;
+                                            added = true;
+                                        }
                                     }
                                     if (nome !== undefined && nome !== "") {
-                                        app.config.tempoDeCasa[String(nome).trim().toUpperCase()] = diasInt;
-                                        added = true;
+                                        const nomeLimpo = cleanFirebaseKey(nome);
+                                        if (nomeLimpo !== "") {
+                                            app.config.tempoDeCasa[nomeLimpo] = diasInt;
+                                            added = true;
+                                        }
                                     }
                                     if(added) contagem++;
                                 }
@@ -11294,7 +11313,7 @@
                             app.ui.showAlert("Erro de Leitura", "Falha ao ler a planilha. Verifique se existem as colunas 'Matrícula' e 'Dias'.", "error");
                         }
                     };
-                    reader.readAsBinaryString(file);
+                    reader.readAsArrayBuffer(file);
                 },
 
                 processarCSVAvancado(input) {
