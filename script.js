@@ -11159,7 +11159,7 @@
 
                     // Verifica se a base de RH foi importada
                     if (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0) {
-                        return app.ui.showAlert("Etapa Pendente", "Por favor, vá até a aba 'Gestão da Equipe' (ou Controle de Importação) e importe primeiro a <b>Base de RH</b> para o sistema saber a quantidade de pessoas em cada setor.", "error");
+                        return app.ui.showAlert("Etapa Pendente", "Por favor, vá até a aba <b>'Analítico Operação'</b> (no menu Importações &gt; Base de RH) e importe primeiro a <b>Base de RH</b> para o sistema saber a quantidade de pessoas em cada setor.", "error");
                     }
 
                     app.ui.showAlert("Analisando Qualidade...", "Lendo avaliações e cruzando com o Headcount do RH...", "info");
