@@ -1,4 +1,4 @@
-<script src="script.js">
+
         const app = {
             dataLoaded: false, // <--- ADICIONADO: Trava de segurança do Firebase
             config: { baseValue: 400, goals: [] }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
@@ -14586,4 +14586,3 @@
                 requestAnimationFrame(raf);
             }
         });
-</script>
