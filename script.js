@@ -271,6 +271,17 @@
                                     app.config.metaPadraoVG_Supervisor = 4;
                                 }
                                 
+                                // Inicialização segura das classificações de aplicadores com cargo 'OPERADOR'
+                                if (!app.config.classificacaoOperadoresCargos || typeof app.config.classificacaoOperadoresCargos !== 'object') {
+                                    try {
+                                        const localClass = localStorage.getItem('soft_classificacao_operadores_backup');
+                                        if (localClass) app.config.classificacaoOperadoresCargos = JSON.parse(localClass);
+                                        else app.config.classificacaoOperadoresCargos = {};
+                                    } catch (e) {
+                                        app.config.classificacaoOperadoresCargos = {};
+                                    }
+                                }
+
                                 // CORREÇÃO: Previne o erro "Ops! Algo quebrou" se as metas estiverem vazias
                                 if (!app.config.goals) app.config.goals = [];
                                 
@@ -553,6 +564,10 @@
                     app.config = this.sanitizeFirebaseObject(app.config);
                     try { localStorage.setItem('soft_config_backup', JSON.stringify(app.config)); } catch (e) {}
                     return firebase.database().ref('sistema_bonificacao/config').set(app.config);
+                },
+                saveClassificacaoOperadores() {
+                    try { localStorage.setItem('soft_classificacao_operadores_backup', JSON.stringify(app.config.classificacaoOperadoresCargos || {})); } catch (e) {}
+                    return this.saveConfig();
                 },
                 saveVisaoGeral() {
                     app.visaoGeralData = this.normalizeVisaoGeralKeys(app.visaoGeralData || {});
@@ -6084,6 +6099,559 @@
                     this.renderTab('analitico_visao_geral', true);
                 },
 
+                abrirModalValidarOperadoresVG() {
+                    const modalExist = document.getElementById('vg-validar-operadores-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const classificacoes = app.config.classificacaoOperadoresCargos || {};
+                    const pendentes = app.operadoresPendentesValidacao || {};
+
+                    // Coleta todos os operadores conhecidos com cargo 'OPERADOR'
+                    const mapaOperadores = {};
+
+                    // 1. Adiciona os pendentes da importação atual
+                    Object.values(pendentes).forEach(p => {
+                        mapaOperadores[p.chave] = {
+                            chave: p.chave,
+                            nome: p.nome || p.chave,
+                            cargoCompleto: p.cargoCompleto || p.chave,
+                            count: p.count || 0,
+                            setores: Array.isArray(p.setores) ? p.setores : (p.setores ? Array.from(p.setores) : []),
+                            papel: classificacoes[p.chave] || 'Supervisor',
+                            salvo: !!classificacoes[p.chave]
+                        };
+                    });
+
+                    // 2. Adiciona os já salvos anteriormente no banco
+                    Object.keys(classificacoes).forEach(chave => {
+                        if (!mapaOperadores[chave]) {
+                            mapaOperadores[chave] = {
+                                chave: chave,
+                                nome: chave,
+                                cargoCompleto: chave,
+                                count: 0,
+                                setores: [],
+                                papel: classificacoes[chave],
+                                salvo: true
+                            };
+                        }
+                    });
+
+                    const lista = Object.values(mapaOperadores);
+
+                    const modal = document.createElement('div');
+                    modal.id = 'vg-validar-operadores-modal';
+                    modal.className = 'fixed inset-0 z-[9990] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl shrink-0">
+                                        <i class="fa-solid fa-user-check"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Classificação Permanente de Aplicadores</div>
+                                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Validar Aplicadores com Cargo "OPERADOR"</h3>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('vg-validar-operadores-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <div class="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                <p>No arquivo CSV de Qualidade, alguns colaboradores realizam monitorias mas possuem a palavra <strong>"OPERADOR"</strong> na coluna <strong>CARGO|APLICADOR</strong>.</p>
+                                <p class="mt-1">Defina abaixo se cada um atua como <strong>Monitor</strong> ou <strong>Supervisor</strong>. A sua escolha é <strong>gravada no banco de dados</strong> e será aplicada automaticamente em todas as próximas leituras sem precisar validar novamente.</p>
+                            </div>
+
+                            <!-- Ações em Lote -->
+                            <div class="mt-4 flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 tabular-nums">${lista.length} aplicador(es) identificado(s)</span>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="document.querySelectorAll('.opt-role-monitor').forEach(r => r.click())" class="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 text-xs font-bold transition">
+                                        <i class="fa-solid fa-headset mr-1"></i> Todos como Monitor
+                                    </button>
+                                    <button type="button" onclick="document.querySelectorAll('.opt-role-supervisor').forEach(r => r.click())" class="px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-xs font-bold transition">
+                                        <i class="fa-solid fa-user-tie mr-1"></i> Todos como Supervisor
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Lista de Aplicadores -->
+                            <div class="mt-4 space-y-3 max-h-[380px] overflow-y-auto custom-scrollbar pr-1" id="vg-operadores-list-container">
+                                ${lista.length === 0 ? `
+                                    <div class="text-center py-10 text-slate-400 italic">
+                                        <i class="fa-solid fa-check-circle text-3xl mb-2 text-emerald-500"></i>
+                                        <p>Nenhum aplicador pendente com cargo "OPERADOR". Quando você importar um CSV com novos aplicadores, eles aparecerão aqui para validação.</p>
+                                    </div>
+                                ` : lista.map((op, idx) => {
+                                    const isMon = op.papel === 'Monitor';
+                                    const isSup = op.papel === 'Supervisor';
+
+                                    return `
+                                        <div class="p-4 rounded-2xl border ${op.salvo ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80' : 'border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-950/20'} flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm hover:shadow-md transition">
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <span class="font-extrabold text-sm text-slate-800 dark:text-white">${app.utils.escapeHtml(op.nome)}</span>
+                                                    ${op.salvo ? `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                            <i class="fa-solid fa-database text-[8px]"></i> Salvo no Banco
+                                                        </span>
+                                                    ` : `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 animate-pulse">
+                                                            <i class="fa-solid fa-clock text-[8px]"></i> Pendente
+                                                        </span>
+                                                    `}
+                                                </div>
+                                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                    Cargo no arquivo: <span class="font-semibold text-slate-700 dark:text-slate-300">${app.utils.escapeHtml(op.cargoCompleto)}</span>
+                                                    ${op.count > 0 ? ` • <strong class="text-indigo-600 dark:text-indigo-400 tabular-nums">${op.count} avaliações</strong>` : ''}
+                                                </div>
+                                                ${op.setores && op.setores.length > 0 ? `
+                                                    <div class="text-[10px] text-slate-400 truncate max-w-md mt-0.5">
+                                                        Setores: ${op.setores.join(', ')}
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+
+                                            <!-- Seleção de Cargo -->
+                                            <div class="flex items-center gap-2 shrink-0">
+                                                <label class="cursor-pointer">
+                                                    <input type="radio" name="vg-op-class-${idx}" data-chave="${app.utils.escapeHtml(op.chave)}" value="Monitor" ${isMon ? 'checked' : ''} class="hidden peer opt-role-monitor">
+                                                    <div class="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black text-slate-600 dark:text-slate-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600 peer-checked:shadow-md transition flex items-center gap-1.5">
+                                                        <i class="fa-solid fa-headset text-xs"></i> Monitor
+                                                    </div>
+                                                </label>
+                                                <label class="cursor-pointer">
+                                                    <input type="radio" name="vg-op-class-${idx}" data-chave="${app.utils.escapeHtml(op.chave)}" value="Supervisor" ${isSup ? 'checked' : ''} class="hidden peer opt-role-supervisor">
+                                                    <div class="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black text-slate-600 dark:text-slate-300 peer-checked:bg-purple-600 peer-checked:text-white peer-checked:border-purple-600 peer-checked:shadow-md transition flex items-center gap-1.5">
+                                                        <i class="fa-solid fa-user-tie text-xs"></i> Supervisor
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+
+                            <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <button onclick="document.getElementById('vg-validar-operadores-modal').remove()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    Fechar
+                                </button>
+                                ${lista.length > 0 ? `
+                                    <button onclick="app.ui.salvarClassificacaoOperadores()" class="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2">
+                                        <i class="fa-solid fa-floppy-disk"></i> Salvar no Banco e Atualizar Metas
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                salvarClassificacaoOperadores() {
+                    const inputs = document.querySelectorAll('#vg-operadores-list-container input[type="radio"]:checked');
+                    if (!app.config.classificacaoOperadoresCargos || typeof app.config.classificacaoOperadoresCargos !== 'object') {
+                        app.config.classificacaoOperadoresCargos = {};
+                    }
+
+                    let totalAtualizados = 0;
+                    inputs.forEach(inp => {
+                        const chave = inp.getAttribute('data-chave');
+                        const val = inp.value; // 'Monitor' ou 'Supervisor'
+                        if (chave && val) {
+                            app.config.classificacaoOperadoresCargos[chave] = val;
+                            totalAtualizados++;
+                        }
+                    });
+
+                    // Salva as classificações no banco de dados (Firebase + LocalStorage)
+                    app.storage.saveClassificacaoOperadores().then(() => {
+                        // Se temos as linhas em memória, reprocessa imediatamente para atualizar os dados da Visão Geral
+                        if (app.admin && typeof app.admin.reprocessarLinhasVisaoGeral === 'function') {
+                            app.admin.reprocessarLinhasVisaoGeral();
+                            app.storage.saveVisaoGeral();
+                        }
+
+                        const modal = document.getElementById('vg-validar-operadores-modal');
+                        if (modal) modal.remove();
+
+                        app.ui.showAlert(
+                            "Classificações Gravadas no Banco!",
+                            `As definições de <b>${totalAtualizados} aplicador(es)</b> foram salvas com sucesso no banco de dados.<br><br>As metas e gráficos foram recalculados imediatamente. Esta configuração fica salva permanentemente.`,
+                            "success"
+                        );
+                        app.ui.renderTab('analitico_visao_geral', true);
+                    }).catch(err => {
+                        console.error("Erro ao salvar classificações:", err);
+                        app.ui.showAlert("Erro", "Falha ao gravar no banco de dados: " + (err.message || err), "error");
+                    });
+                },
+
+                abrirModalDebugMetasVG(filtroFoco = 'todos') {
+                    const modalExist = document.getElementById('vg-debug-metas-modal');
+                    if (modalExist) modalExist.remove();
+
+                    // 1. Coleta dados consolidados da Visão Geral
+                    const ignorados = Array.isArray(app.config.ignoredSetoresRH) ? app.config.ignoredSetoresRH : [];
+                    const dePara = app.config.deParaSetoresVG || {};
+                    const headcounts = app.config.headcountRH || {};
+                    const qualidadeRaw = app.visaoGeralData || {};
+                    const cargoFilter = app.ui.visaoGeralCargoFilter || 'monitor';
+
+                    const metaPadraoMon = app.config.metaPadraoVG_Monitor !== undefined ? parseFloat(app.config.metaPadraoVG_Monitor) : 2;
+                    const metaPadraoSup = app.config.metaPadraoVG_Supervisor !== undefined ? parseFloat(app.config.metaPadraoVG_Supervisor) : 4;
+
+                    const metasSetoresMon = app.config.metasSetoresVG_Monitor || {};
+                    const metasSetoresSup = app.config.metasSetoresVG_Supervisor || {};
+
+                    // Consolida Qualidade
+                    const qualidade = {};
+                    Object.keys(qualidadeRaw).forEach(sQual => {
+                        const destinoRH = dePara[sQual] || sQual;
+                        if (!qualidade[destinoRH]) {
+                            qualidade[destinoRH] = {
+                                count: 0,
+                                somaNotas: 0,
+                                monitor: { count: 0, somaNotas: 0 },
+                                supervisor: { count: 0, somaNotas: 0 },
+                                origens: []
+                            };
+                        }
+                        const item = qualidadeRaw[sQual] || {};
+                        const itemTot = item.count || 0;
+                        const itemSoma = item.somaNotas || 0;
+                        const monCount = item.monitor ? (item.monitor.count || 0) : (item.supervisor ? 0 : itemTot);
+                        const monSoma = item.monitor ? (item.monitor.somaNotas || 0) : (item.supervisor ? 0 : itemSoma);
+                        const supCount = item.supervisor ? (item.supervisor.count || 0) : 0;
+                        const supSoma = item.supervisor ? (item.supervisor.somaNotas || 0) : 0;
+
+                        qualidade[destinoRH].count += itemTot;
+                        qualidade[destinoRH].somaNotas += itemSoma;
+                        qualidade[destinoRH].monitor.count += monCount;
+                        qualidade[destinoRH].monitor.somaNotas += monSoma;
+                        qualidade[destinoRH].supervisor.count += supCount;
+                        qualidade[destinoRH].supervisor.somaNotas += supSoma;
+
+                        if (dePara[sQual] && !qualidade[destinoRH].origens.includes(sQual)) {
+                            qualidade[destinoRH].origens.push(sQual);
+                        }
+                    });
+
+                    const todosSetoresSet = new Set([
+                        ...Object.keys(headcounts),
+                        ...Object.keys(qualidade)
+                    ]);
+
+                    const relatorio = [];
+                    todosSetoresSet.forEach(setor => {
+                        const safeS = app.storage.sanitizeFirebaseKey(setor);
+                        const upperS = String(setor || '').trim().toUpperCase();
+                        if (ignorados.includes(setor) || ignorados.includes(safeS) || ignorados.includes(upperS)) return;
+
+                        const dQualidade = qualidade[setor] || {
+                            count: 0,
+                            somaNotas: 0,
+                            monitor: { count: 0, somaNotas: 0 },
+                            supervisor: { count: 0, somaNotas: 0 },
+                            origens: []
+                        };
+
+                        let hCount = parseInt(headcounts[setor]) || parseInt(headcounts[safeS]) || 0;
+                        if (!hCount) hCount = app.getHeadcountOperacao(setor);
+                        if (!hCount && dQualidade.origens && dQualidade.origens.length > 0) {
+                            for (const orig of dQualidade.origens) {
+                                const hOrig = app.getHeadcountOperacao(orig);
+                                if (hOrig > 0) { hCount = hOrig; break; }
+                            }
+                        }
+                        const effectiveHC = hCount > 0 ? hCount : (dQualidade.count > 0 ? 1 : 0);
+
+                        let metaOpMon = (metasSetoresMon[setor] !== undefined && metasSetoresMon[setor] !== '') ? parseFloat(metasSetoresMon[setor]) :
+                                        (metasSetoresMon[safeS] !== undefined && metasSetoresMon[safeS] !== '') ? parseFloat(metasSetoresMon[safeS]) :
+                                        (app.config.metasSetoresVG?.[safeS] !== undefined && app.config.metasSetoresVG?.[safeS] !== '') ? parseFloat(app.config.metasSetoresVG[safeS]) :
+                                        (app.config.metasSetoresVG?.[setor] !== undefined && app.config.metasSetoresVG?.[setor] !== '') ? parseFloat(app.config.metasSetoresVG[setor]) :
+                                        (metaPadraoMon > 0 ? metaPadraoMon : 2);
+                        if (isNaN(metaOpMon) || metaOpMon <= 0) metaOpMon = 2;
+
+                        let metaOpSup = (metasSetoresSup[setor] !== undefined && metasSetoresSup[setor] !== '') ? parseFloat(metasSetoresSup[setor]) :
+                                        (metasSetoresSup[safeS] !== undefined && metasSetoresSup[safeS] !== '') ? parseFloat(metasSetoresSup[safeS]) :
+                                        (metaPadraoSup > 0 ? metaPadraoSup : 4);
+                        if (isNaN(metaOpSup) || metaOpSup <= 0) metaOpSup = 4;
+
+                        let metaPorOp = metaOpMon;
+                        let realizadas = dQualidade.monitor.count;
+                        if (cargoFilter === 'supervisor') {
+                            metaPorOp = metaOpSup;
+                            realizadas = dQualidade.supervisor.count;
+                        } else if (cargoFilter === 'junto') {
+                            metaPorOp = metaOpMon + metaOpSup;
+                            realizadas = dQualidade.count;
+                        }
+
+                        const meta = effectiveHC > 0 ? Math.max(1, Math.round(effectiveHC * metaPorOp)) : metaPorOp;
+                        const pct = meta > 0 ? (realizadas / meta) * 100 : (realizadas > 0 ? 100 : 0);
+
+                        // Diagnóstico de Causa Raiz
+                        let diagnostico = '';
+                        let tipoCausa = 'ok'; // 'ok', 'apenas_supervisor', 'sem_depara', 'sem_monitorias', 'sem_hc'
+
+                        if (pct >= 100) {
+                            diagnostico = `Meta atingida (${pct.toFixed(1)}%). ${realizadas} avaliações para meta de ${meta}.`;
+                            tipoCausa = 'ok';
+                        } else if (realizadas > 0) {
+                            diagnostico = `Em andamento (${pct.toFixed(1)}%). Faltam ${Math.max(0, meta - realizadas)} avaliações para a meta de ${meta}.`;
+                            tipoCausa = 'em_andamento';
+                        } else {
+                            // Progresso em 0%
+                            if (cargoFilter === 'monitor' && dQualidade.supervisor.count > 0) {
+                                diagnostico = `Possui ${dQualidade.supervisor.count} avaliações feitas por SUPERVISOR, mas 0 de MONITOR. Se os aplicadores eram monitores com cargo "OPERADOR", clique em "Validar Operadores".`;
+                                tipoCausa = 'apenas_supervisor';
+                            } else if (cargoFilter === 'supervisor' && dQualidade.monitor.count > 0) {
+                                diagnostico = `Possui ${dQualidade.monitor.count} avaliações feitas por MONITOR, mas 0 de SUPERVISOR.`;
+                                tipoCausa = 'apenas_monitor';
+                            } else if (dQualidade.count === 0 && !headcounts[setor] && !headcounts[safeS]) {
+                                diagnostico = `Setor presente apenas em nomes vinculados, sem avaliações e sem headcount direto no RH.`;
+                                tipoCausa = 'sem_hc';
+                            } else if (dQualidade.count === 0) {
+                                diagnostico = `Nenhuma avaliação encontrada no CSV para este nome de operação. Verifique se o nome no arquivo está diferente e use o botão "Vincular DE/PARA".`;
+                                tipoCausa = 'sem_depara';
+                            } else {
+                                diagnostico = `Nenhuma avaliação realizada no mês para esta operação.`;
+                                tipoCausa = 'sem_monitorias';
+                            }
+                        }
+
+                        relatorio.push({
+                            setor,
+                            hCount,
+                            effectiveHC,
+                            metaPorOp,
+                            meta,
+                            realizadas,
+                            realizadasMon: dQualidade.monitor.count,
+                            realizadasSup: dQualidade.supervisor.count,
+                            realizadasTot: dQualidade.count,
+                            pct: pct.toFixed(1),
+                            pctNum: pct,
+                            diagnostico,
+                            tipoCausa,
+                            origens: dQualidade.origens
+                        });
+                    });
+
+                    // Contadores estatísticos
+                    const totalSetores = relatorio.length;
+                    const totalZeradas = relatorio.filter(r => r.realizadas === 0).length;
+                    const totalApenasSup = relatorio.filter(r => r.tipoCausa === 'apenas_supervisor').length;
+                    const totalSemDePara = relatorio.filter(r => r.tipoCausa === 'sem_depara').length;
+
+                    const cargoLabel = cargoFilter === 'monitor' ? 'Monitores' : (cargoFilter === 'supervisor' ? 'Supervisores' : 'Consolidado (Junto)');
+
+                    const modal = document.createElement('div');
+                    modal.id = 'vg-debug-metas-modal';
+                    modal.className = 'fixed inset-0 z-[9990] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-5xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                            <!-- Cabeçalho -->
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0">
+                                        <i class="fa-solid fa-bug"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Auditoria & Diagnóstico</div>
+                                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Por que muitas operações estão com progresso em 0%?</h3>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('vg-debug-metas-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <!-- Seletor Rápido de Filtro de Cargo dentro do Modal -->
+                            <div class="mt-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-slate-500 dark:text-slate-400">Visão Ativa no Momento:</span>
+                                    <strong class="text-indigo-600 dark:text-indigo-400 font-black">${cargoLabel}</strong>
+                                </div>
+                                <div class="flex items-center gap-1.5 bg-slate-200 dark:bg-slate-700/50 p-1 rounded-xl">
+                                    <button onclick="app.ui.setVisaoGeralCargoFilter('monitor'); document.getElementById('vg-debug-metas-modal').remove(); app.ui.abrirModalDebugMetasVG('todos')" class="px-3 py-1 rounded-lg font-black text-xs transition ${cargoFilter === 'monitor' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}">
+                                        <i class="fa-solid fa-headset mr-1"></i> Monitor
+                                    </button>
+                                    <button onclick="app.ui.setVisaoGeralCargoFilter('supervisor'); document.getElementById('vg-debug-metas-modal').remove(); app.ui.abrirModalDebugMetasVG('todos')" class="px-3 py-1 rounded-lg font-black text-xs transition ${cargoFilter === 'supervisor' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}">
+                                        <i class="fa-solid fa-user-tie mr-1"></i> Supervisor
+                                    </button>
+                                    <button onclick="app.ui.setVisaoGeralCargoFilter('junto'); document.getElementById('vg-debug-metas-modal').remove(); app.ui.abrirModalDebugMetasVG('todos')" class="px-3 py-1 rounded-lg font-black text-xs transition ${cargoFilter === 'junto' ? 'bg-slate-800 text-white shadow-sm dark:bg-slate-600' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}">
+                                        <i class="fa-solid fa-layer-group mr-1"></i> Junto
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Cards de Diagnóstico das Causas Raiz -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                                <div onclick="app.ui.filtrarTabelaDebugMetas('todos')" class="cursor-pointer p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 transition">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Operações</div>
+                                    <div class="text-2xl font-black tabular-nums mt-1 text-slate-800 dark:text-white">${totalSetores}</div>
+                                    <div class="text-[10px] text-slate-500 mt-1">Analisadas no cálculo</div>
+                                </div>
+                                <div onclick="app.ui.filtrarTabelaDebugMetas('zeradas')" class="cursor-pointer p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 hover:border-red-400 transition">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Progresso 0%</div>
+                                    <div class="text-2xl font-black tabular-nums mt-1 text-red-600 dark:text-red-400">${totalZeradas}</div>
+                                    <div class="text-[10px] text-red-500 mt-1">Clique para ver apenas essas</div>
+                                </div>
+                                <div onclick="app.ui.filtrarTabelaDebugMetas('apenas_supervisor')" class="cursor-pointer p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 hover:border-amber-400 transition">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Tem Sup. mas 0% Mon.</div>
+                                    <div class="text-2xl font-black tabular-nums mt-1 text-amber-600 dark:text-amber-400">${totalApenasSup}</div>
+                                    <div class="text-[10px] text-amber-600 mt-1">Causa: cargo do aplicador</div>
+                                </div>
+                                <div onclick="app.ui.filtrarTabelaDebugMetas('sem_depara')" class="cursor-pointer p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/60 hover:border-purple-400 transition">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Sem Vínculo no CSV</div>
+                                    <div class="text-2xl font-black tabular-nums mt-1 text-purple-600 dark:text-purple-400">${totalSemDePara}</div>
+                                    <div class="text-[10px] text-purple-600 mt-1">Causa: nome divergente</div>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Pesquisa e Filtros -->
+                            <div class="mt-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <div class="relative flex-1 w-full">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                    <input type="text" id="vg-debug-search" oninput="app.ui.filtrarTabelaDebugMetas()" placeholder="Pesquisar operação no diagnóstico..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                </div>
+                                <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                                    <button onclick="app.ui.filtrarTabelaDebugMetas('todos')" id="btn-dbg-filtro-todos" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold shadow-sm">Todas</button>
+                                    <button onclick="app.ui.filtrarTabelaDebugMetas('zeradas')" id="btn-dbg-filtro-zeradas" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200">Apenas 0%</button>
+                                    <button onclick="app.ui.filtrarTabelaDebugMetas('apenas_supervisor')" id="btn-dbg-filtro-apenas_supervisor" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200">Tem Sup. mas 0% Mon.</button>
+                                    <button onclick="app.ui.filtrarTabelaDebugMetas('sem_depara')" id="btn-dbg-filtro-sem_depara" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200">Sem Vínculo CSV</button>
+                                </div>
+                            </div>
+
+                            <!-- Tabela de Auditoria Operação por Operação -->
+                            <div class="mt-4 overflow-x-auto max-h-[360px] custom-scrollbar border border-slate-100 dark:border-slate-800 rounded-2xl">
+                                <table class="w-full text-left text-xs" id="vg-debug-table">
+                                    <thead class="bg-slate-50 dark:bg-slate-800/80 sticky top-0 z-10 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                                        <tr>
+                                            <th class="py-2.5 px-3">Operação</th>
+                                            <th class="py-2.5 px-2 text-center">HC</th>
+                                            <th class="py-2.5 px-2 text-center">Regra</th>
+                                            <th class="py-2.5 px-2 text-center">Meta</th>
+                                            <th class="py-2.5 px-2 text-center">Realizado</th>
+                                            <th class="py-2.5 px-2 text-center">% Prog.</th>
+                                            <th class="py-2.5 px-3">Diagnóstico da Causa Raiz</th>
+                                            <th class="py-2.5 px-3 text-right">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                        ${relatorio.map(r => {
+                                            const isZero = r.realizadas === 0;
+                                            return `
+                                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition dbg-row" data-setor="${app.utils.escapeHtml(r.setor.toUpperCase())}" data-causa="${r.tipoCausa}" data-zero="${isZero ? '1' : '0'}">
+                                                    <td class="py-2.5 px-3 font-bold text-slate-800 dark:text-white">
+                                                        ${app.utils.escapeHtml(r.setor)}
+                                                        ${r.origens && r.origens.length > 0 ? `
+                                                            <div class="text-[9px] text-indigo-500 font-semibold truncate max-w-[180px]" title="Origens DE/PARA: ${r.origens.join(', ')}">
+                                                                <i class="fa-solid fa-link text-[8px] mr-0.5"></i> ${r.origens.join(', ')}
+                                                            </div>
+                                                        ` : ''}
+                                                    </td>
+                                                    <td class="py-2.5 px-2 text-center font-bold tabular-nums text-slate-600 dark:text-slate-300">${r.effectiveHC}</td>
+                                                    <td class="py-2.5 px-2 text-center font-bold tabular-nums text-slate-500">${r.metaPorOp}/op</td>
+                                                    <td class="py-2.5 px-2 text-center font-black tabular-nums text-indigo-600 dark:text-indigo-400">${r.meta}</td>
+                                                    <td class="py-2.5 px-2 text-center tabular-nums">
+                                                        <span class="font-extrabold ${isZero ? 'text-red-500' : 'text-emerald-600'}">${r.realizadas}</span>
+                                                        <div class="text-[9px] text-slate-400">M:${r.realizadasMon} | S:${r.realizadasSup}</div>
+                                                    </td>
+                                                    <td class="py-2.5 px-2 text-center font-black tabular-nums ${isZero ? 'text-red-500' : (r.pctNum >= 100 ? 'text-emerald-600' : 'text-indigo-600')}">
+                                                        ${r.pct}%
+                                                    </td>
+                                                    <td class="py-2.5 px-3 text-[11px] leading-relaxed">
+                                                        ${r.tipoCausa === 'apenas_supervisor' ? `
+                                                            <span class="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800/60">
+                                                                <i class="fa-solid fa-triangle-exclamation text-amber-500"></i> ${r.diagnostico}
+                                                            </span>
+                                                        ` : r.tipoCausa === 'sem_depara' ? `
+                                                            <span class="inline-flex items-center gap-1 text-purple-700 dark:text-purple-300 font-bold bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-lg border border-purple-200 dark:border-purple-800/60">
+                                                                <i class="fa-solid fa-link-slash text-purple-500"></i> ${r.diagnostico}
+                                                            </span>
+                                                        ` : r.tipoCausa === 'sem_monitorias' ? `
+                                                            <span class="text-slate-500 dark:text-slate-400">${r.diagnostico}</span>
+                                                        ` : `
+                                                            <span class="text-emerald-600 dark:text-emerald-400 font-semibold">${r.diagnostico}</span>
+                                                        `}
+                                                    </td>
+                                                    <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+                                                        ${r.tipoCausa === 'apenas_supervisor' ? `
+                                                            <button onclick="document.getElementById('vg-debug-metas-modal').remove(); app.ui.abrirModalValidarOperadoresVG()" class="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-[10px] font-bold transition">
+                                                                <i class="fa-solid fa-user-check mr-0.5"></i> Validar
+                                                            </button>
+                                                        ` : ''}
+                                                        <button onclick="document.getElementById('vg-debug-metas-modal').remove(); app.ui.abrirModalDeParaVisaoGeral('${app.utils.escapeHtml(r.setor)}')" class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition" title="Vincular DE/PARA">
+                                                            <i class="fa-solid fa-link"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="mt-6 flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <button onclick="document.getElementById('vg-debug-metas-modal').remove()" class="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-sm hover:bg-slate-200 transition">
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+
+                    if (filtroFoco && filtroFoco !== 'todos') {
+                        this.filtrarTabelaDebugMetas(filtroFoco);
+                    }
+                },
+
+                filtrarTabelaDebugMetas(filtro = null) {
+                    if (filtro) app.ui._filtroDebugAtivo = filtro;
+                    const ativo = app.ui._filtroDebugAtivo || 'todos';
+                    const searchInput = document.getElementById('vg-debug-search');
+                    const termo = searchInput ? (searchInput.value || '').trim().toUpperCase() : '';
+
+                    // Atualiza botões
+                    ['todos', 'zeradas', 'apenas_supervisor', 'sem_depara'].forEach(f => {
+                        const btn = document.getElementById(`btn-dbg-filtro-${f}`);
+                        if (btn) {
+                            if (f === ativo) {
+                                btn.className = 'px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold shadow-sm';
+                            } else {
+                                btn.className = 'px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200';
+                            }
+                        }
+                    });
+
+                    const rows = document.querySelectorAll('#vg-debug-table .dbg-row');
+                    rows.forEach(r => {
+                        const setor = r.getAttribute('data-setor') || '';
+                        const causa = r.getAttribute('data-causa') || '';
+                        const zero = r.getAttribute('data-zero') === '1';
+
+                        let matchFiltro = true;
+                        if (ativo === 'zeradas') matchFiltro = zero;
+                        else if (ativo === 'apenas_supervisor') matchFiltro = causa === 'apenas_supervisor';
+                        else if (ativo === 'sem_depara') matchFiltro = causa === 'sem_depara';
+
+                        let matchSearch = !termo || setor.includes(termo);
+
+                        if (matchFiltro && matchSearch) {
+                            r.classList.remove('hidden');
+                        } else {
+                            r.classList.add('hidden');
+                        }
+                    });
+                },
+
+
                 renderView_AnaliticoVisaoGeral(container) {
                     if(!app.hasAdminAccess('analitico_visao_geral')) return;
                     app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.visaoGeralData || {});
@@ -6092,6 +6660,7 @@
                     const headcounts = app.config.headcountRH || {};
                     const qualidadeRaw = app.visaoGeralData || {};
                     const qtdOrfaosQual = Object.keys(qualidadeRaw).filter(sq => !headcounts[sq] && !dePara[sq]).length;
+                    const qtdPendentesOp = Object.keys(app.operadoresPendentesValidacao || {}).length;
 
                     // Filtro de cargo: padrão 'monitor' (inicialmente ver só a do monitor)
                     const cargoFilter = this.visaoGeralCargoFilter || (function() {
@@ -6153,6 +6722,13 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-3">
                                 ${metaTopHtml}
+                                <button onclick="app.ui.abrirModalDebugMetasVG('todos')" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Diagnóstico de Metas & Causas Raiz de 0%">
+                                    <i class="fa-solid fa-bug"></i> Diagnóstico Metas
+                                </button>
+                                <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="relative bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdPendentesOp > 0 ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-black' : 'border-slate-200 dark:border-slate-700 font-bold'} py-3 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Validar Aplicadores com Cargo 'OPERADOR'">
+                                    <i class="fa-solid fa-user-check ${qtdPendentesOp > 0 ? 'text-amber-500' : 'text-slate-400'}"></i> Validar Operadores
+                                    ${qtdPendentesOp > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdPendentesOp}</span>` : ''}
+                                </button>
                                 <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border ${qtdOrfaosQual > 0 ? 'border-amber-400 dark:border-amber-500' : 'border-slate-200 dark:border-slate-700'} font-bold w-11 h-11 rounded-xl shadow-sm transition-all flex items-center justify-center text-sm" title="Vincular Operações DE/PARA">
                                     <i class="fa-solid fa-link"></i>
                                     ${qtdOrfaosQual > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse tabular-nums">${qtdOrfaosQual}</span>` : ''}
@@ -6166,6 +6742,22 @@
                                 </label>
                             </div>
                         </div>
+                        ${qtdPendentesOp > 0 ? `
+                            <div class="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                        <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs font-black text-amber-800 dark:text-amber-200">Atenção: ${qtdPendentesOp} Aplicador(es) com Cargo "OPERADOR"</div>
+                                        <div class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5">Defina se atuam como Monitor ou Supervisor para que as metas sejam distribuÃ­das corretamente. Fica gravado no banco.</div>
+                                    </div>
+                                </div>
+                                <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-md shadow-amber-500/20 transition flex items-center gap-2 shrink-0">
+                                    <i class="fa-solid fa-user-check"></i> Validar Operadores
+                                </button>
+                            </div>
+                        ` : ''}
                     `;
 
                     if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
@@ -8043,7 +8635,7 @@
                     const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
                     const lblCls = 'text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 block text-center';
 
-                                        // Status da AvaliaÃ§Ã£o do UsuÃ¡rio Logado
+                    // Status da Avaliação do Usuário Logado
                     const examStatus = (app.csatNpsExam && typeof app.csatNpsExam.verificarStatus === 'function') 
                         ? app.csatNpsExam.verificarStatus() 
                         : { podeFazer: true, status: 'pendente' };
@@ -8052,7 +8644,7 @@
                     let examCardHtml = '';
                     if (examStatus.status === 'aprovado' && examStatus.registro) {
                         examCardHtml = `
-                            <!-- CARD CERTIFICAÃ‡ÃƒO APROVADA -->
+                            <!-- CARD CERTIFICAÇÃO APROVADA -->
                             <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-800 text-white p-6 md:p-8 shadow-xl border border-emerald-400/30">
                                 <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                                     <div class="flex items-center gap-4">
@@ -8061,11 +8653,11 @@
                                         </div>
                                         <div>
                                             <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest text-emerald-100">
-                                                <i class="fa-solid fa-circle-check"></i> CertificaÃ§Ã£o Oficial Aprovada
+                                                <i class="fa-solid fa-circle-check"></i> Certificação Oficial Aprovada
                                             </span>
                                             <h3 class="text-xl md:text-2xl font-black mt-1">Aprovado em CSAT & NPS</h3>
                                             <p class="text-xs md:text-sm text-emerald-100 mt-1">
-                                                Aproveitamento: <strong class="text-white text-sm tabular-nums">${examStatus.registro.nota}% (${examStatus.registro.acertos}/10 acertos)</strong> â€¢ CÃ³digo: <span class="tabular-nums font-bold">${examStatus.registro.certificadoId || 'CERT-CX-OK'}</span>
+                                                Aproveitamento: <strong class="text-white text-sm tabular-nums">${examStatus.registro.nota}% (${examStatus.registro.acertos}/10 acertos)</strong> • Código: <span class="tabular-nums font-bold">${examStatus.registro.certificadoId || 'CERT-CX-OK'}</span>
                                             </p>
                                         </div>
                                     </div>
@@ -8087,7 +8679,7 @@
                         `;
                     } else if (examStatus.status === 'bloqueado') {
                         examCardHtml = `
-                            <!-- CARD TENTATIVA BLOQUEADA (ANTI-COLA / REPROVAÃ‡ÃƒO) -->
+                            <!-- CARD TENTATIVA BLOQUEADA (ANTI-COLA / REPROVAÇÃO) -->
                             <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-rose-700 via-red-700 to-amber-800 text-white p-6 md:p-8 shadow-xl border border-red-400/30">
                                 <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                                     <div class="flex items-center gap-4">
@@ -8096,17 +8688,17 @@
                                         </div>
                                         <div>
                                             <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest text-red-200">
-                                                <i class="fa-solid fa-shield-halved"></i> Tentativa do Dia ConcluÃ­da
+                                                <i class="fa-solid fa-shield-halved"></i> Tentativa do Dia Concluída
                                             </span>
-                                            <h3 class="text-xl md:text-2xl font-black mt-1">AvaliaÃ§Ã£o Bloqueada atÃ© AmanhÃ£</h3>
+                                            <h3 class="text-xl md:text-2xl font-black mt-1">Avaliação Bloqueada até Amanhã</h3>
                                             <p class="text-xs md:text-sm text-red-100 mt-1">
-                                                VocÃª jÃ¡ realizou a avaliaÃ§Ã£o hoje. Nova tentativa liberada em <strong>${examStatus.dataLiberacaoFmt} Ã s 00:00</strong> (tempo restante: <strong class="tabular-nums">${examStatus.tempoRestanteTexto}</strong>).
+                                                Você já realizou a avaliação hoje. Nova tentativa liberada em <strong>${examStatus.dataLiberacaoFmt} às 00:00</strong> (tempo restante: <strong class="tabular-nums">${examStatus.tempoRestanteTexto}</strong>).
                                             </p>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3 shrink-0 flex-wrap justify-center">
                                         <button onclick="app.csatNpsExam.abrirModalResultado()" class="px-5 py-2.5 rounded-xl bg-white text-red-900 hover:bg-red-50 font-black text-xs md:text-sm shadow-lg transition flex items-center gap-2">
-                                            <i class="fa-solid fa-book-open"></i> Revisar QuestÃµes & ExplicaÃ§Ãµes
+                                            <i class="fa-solid fa-book-open"></i> Revisar Questões & Explicações
                                         </button>
                                         ${isGestor ? `
                                             <button onclick="app.csatNpsExam.abrirPainelAdmin()" class="px-4 py-2.5 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
@@ -8119,7 +8711,7 @@
                         `;
                     } else {
                         examCardHtml = `
-                            <!-- CARD DISPONÃVEL PARA FAZER -->
+                            <!-- CARD DISPONÍVEL PARA FAZER -->
                             <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-900 via-indigo-800 to-violet-900 text-white p-6 md:p-8 shadow-xl border border-indigo-400/30">
                                 <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                                     <div class="flex items-center gap-4">
@@ -8128,17 +8720,17 @@
                                         </div>
                                         <div>
                                             <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/15 text-[10px] font-black uppercase tracking-widest text-indigo-200">
-                                                <i class="fa-solid fa-shield-halved"></i> CertificaÃ§Ã£o ObrigatÃ³ria com Anti-Cola
+                                                <i class="fa-solid fa-shield-halved"></i> Certificação Obrigatória com Anti-Cola
                                             </span>
-                                            <h3 class="text-xl md:text-2xl font-black mt-1">AvaliaÃ§Ã£o Oficial de ProficiÃªncia em CSAT & NPS</h3>
+                                            <h3 class="text-xl md:text-2xl font-black mt-1">Avaliação Oficial de Proficiência em CSAT & NPS</h3>
                                             <p class="text-xs md:text-sm text-indigo-200 mt-1 leading-relaxed max-w-xl">
-                                                10 questÃµes avanÃ§adas de cÃ¡lculo, amostragem e governanÃ§a. Prova monitorada com trava anti-cola (saÃ­da da tela ou perda de foco gera advertÃªncia/anulaÃ§Ã£o). Nota mÃ­nima: 70%.
+                                                10 questões avançadas de cálculo, amostragem e governança. Prova monitorada com trava anti-cola (saída da tela ou perda de foco gera advertência/anulação). Nota mínima: 70%.
                                             </p>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3 shrink-0 flex-wrap justify-center">
                                         <button onclick="app.csatNpsExam.abrirBriefingModal()" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-black text-sm shadow-xl shadow-emerald-500/30 transition flex items-center gap-2.5">
-                                            <i class="fa-solid fa-play"></i> Iniciar AvaliaÃ§Ã£o (12 min)
+                                            <i class="fa-solid fa-play"></i> Iniciar Avaliação (12 min)
                                         </button>
                                         ${isGestor ? `
                                             <button onclick="app.csatNpsExam.abrirPainelAdmin()" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
@@ -8165,7 +8757,7 @@
                                 </div>
                             </div>
 
-                            <!-- CARD AVALIAÃ‡ÃƒO CSAT & NPS -->
+                            <!-- CARD AVALIAÇÃO CSAT & NPS -->
                             ${examCardHtml}
 
                             <!-- COMPARATIVO RAPIDO -->
@@ -16574,6 +17166,154 @@
                     });
                 },
 
+                reprocessarLinhasVisaoGeral(rows = null) {
+                    const linhas = rows || app.visaoGeralUltimasLinhasCSV;
+                    if (!linhas || linhas.length === 0) return null;
+
+                    app.visaoGeralData = {}; // Zera os dados velhos
+                    app.operadoresPendentesValidacao = {};
+                    const classificacoes = app.config.classificacaoOperadoresCargos || {};
+
+                    let totalLidas = 0;
+                    let totalMonitor = 0;
+                    let totalSupervisor = 0;
+
+                    linhas.forEach(row => {
+                        const getVal = (keywords, exactList = []) => {
+                            if (exactList.length > 0) {
+                                for (const pref of exactList) {
+                                    const foundExact = Object.keys(row).find(k => {
+                                        const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim().toUpperCase();
+                                        return kClean === pref.toUpperCase();
+                                    });
+                                    if (foundExact && row[foundExact] !== undefined && String(row[foundExact]).trim() !== "") {
+                                        return row[foundExact];
+                                    }
+                                }
+                            }
+                            for (const kw of keywords) {
+                                const found = Object.keys(row).find(k => {
+                                    const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                    const norm = app.utils.fixEncoding(kClean).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
+                                    return norm.includes(kw);
+                                });
+                                if (found && row[found] !== undefined && String(row[found]).trim() !== "") {
+                                    return row[found];
+                                }
+                            }
+                            return undefined;
+                        };
+
+                        const setor = getVal(
+                            ['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'ILHA', 'CAMPANHA', 'SETOR'],
+                            ['OPERAÇÃO/SETOR', 'OPERAÇÃO / SETOR', 'OPERACAO/SETOR', 'OPERACAO / SETOR', 'OPERACAO', 'OPERAÇÃO', 'SETOR']
+                        );
+                        const notaRaw = getVal(['NOTAMONITORIA', 'NOTA', 'RESULTADO', 'PONTUACAO']);
+
+                        // Captura a coluna CARGO|APLICADOR ou suas variações
+                        const cargoRaw = getVal(
+                            ['CARGOAPLICADOR', 'CARGODOAPLICADOR', 'APLICADOR', 'CARGO'],
+                            ['CARGO|APLICADOR', 'CARGO | APLICADOR', 'CARGO/APLICADOR', 'CARGO / APLICADOR', 'CARGO_APLICADOR', 'CARGO APLICADOR', 'CARGO']
+                        );
+                        const aplicadorRaw = getVal(
+                            ['MONITORSUPERVISOR', 'NOMEAPLICADOR', 'APLICADOR', 'AVALIADOR'],
+                            ['MONITOR|SUPERVISOR', 'MONITOR | SUPERVISOR', 'NOME APLICADOR', 'AVALIADOR']
+                        );
+
+                        if (setor && typeof setor === 'string' && notaRaw !== undefined && notaRaw !== "") {
+                            const setorLimpo = app.utils.fixEncoding(String(setor)).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
+                            let notaFormatada = typeof notaRaw === 'string' ? parseFloat(notaRaw.replace(',', '.')) : parseFloat(notaRaw);
+
+                            if (!isNaN(notaFormatada) && setorLimpo !== "") {
+                                const cRawStr = String(cargoRaw || '').trim();
+                                const normC = app.utils.fixEncoding(cRawStr).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+
+                                // Extração do nome da pessoa (se houver ' - ')
+                                let nomePessoa = '';
+                                if (cRawStr.includes(' - ')) {
+                                    nomePessoa = cRawStr.split(' - ').slice(1).join(' - ').trim().toUpperCase();
+                                } else if (aplicadorRaw && String(aplicadorRaw).includes(' - ')) {
+                                    nomePessoa = String(aplicadorRaw).split(' - ').slice(1).join(' - ').trim().toUpperCase();
+                                } else if (aplicadorRaw) {
+                                    nomePessoa = String(aplicadorRaw).trim().toUpperCase();
+                                } else {
+                                    nomePessoa = cRawStr.toUpperCase();
+                                }
+
+                                const chaveCargoCompleto = cRawStr.toUpperCase();
+
+                                // Resolução do Cargo/Grupo
+                                let cargoGrupo = 'Supervisor';
+
+                                if (nomePessoa && classificacoes[nomePessoa]) {
+                                    cargoGrupo = classificacoes[nomePessoa];
+                                } else if (chaveCargoCompleto && classificacoes[chaveCargoCompleto]) {
+                                    cargoGrupo = classificacoes[chaveCargoCompleto];
+                                } else if (normC.includes('OPERADOR')) {
+                                    // Contém OPERADOR e ainda não foi validado pelo usuário
+                                    const chaveReg = nomePessoa || chaveCargoCompleto;
+                                    if (!app.operadoresPendentesValidacao[chaveReg]) {
+                                        app.operadoresPendentesValidacao[chaveReg] = {
+                                            chave: chaveReg,
+                                            nome: nomePessoa || chaveCargoCompleto,
+                                            cargoCompleto: cRawStr,
+                                            count: 0,
+                                            somaNotas: 0,
+                                            setores: []
+                                        };
+                                    }
+                                    app.operadoresPendentesValidacao[chaveReg].count++;
+                                    app.operadoresPendentesValidacao[chaveReg].somaNotas += notaFormatada;
+                                    if (!app.operadoresPendentesValidacao[chaveReg].setores.includes(setorLimpo)) {
+                                        app.operadoresPendentesValidacao[chaveReg].setores.push(setorLimpo);
+                                    }
+                                    cargoGrupo = 'Supervisor'; // padrão provisório até validação
+                                } else {
+                                    const primeiraPalavra = normC.split(/[\s\/\-_|.,;:]+/)[0] || '';
+                                    if (primeiraPalavra === 'MONITOR' || primeiraPalavra.startsWith('MONITOR')) {
+                                        cargoGrupo = 'Monitor';
+                                    } else if (primeiraPalavra === 'SUPERVISOR' || primeiraPalavra.startsWith('SUPERVISOR')) {
+                                        cargoGrupo = 'Supervisor';
+                                    } else {
+                                        cargoGrupo = 'Supervisor';
+                                    }
+                                }
+
+                                if (!app.visaoGeralData[setorLimpo]) {
+                                    app.visaoGeralData[setorLimpo] = {
+                                        count: 0,
+                                        somaNotas: 0,
+                                        monitor: { count: 0, somaNotas: 0 },
+                                        supervisor: { count: 0, somaNotas: 0 }
+                                    };
+                                }
+                                if (!app.visaoGeralData[setorLimpo].monitor) {
+                                    app.visaoGeralData[setorLimpo].monitor = { count: 0, somaNotas: 0 };
+                                }
+                                if (!app.visaoGeralData[setorLimpo].supervisor) {
+                                    app.visaoGeralData[setorLimpo].supervisor = { count: 0, somaNotas: 0 };
+                                }
+
+                                app.visaoGeralData[setorLimpo].count++;
+                                app.visaoGeralData[setorLimpo].somaNotas += notaFormatada;
+                                totalLidas++;
+
+                                if (cargoGrupo === 'Monitor') {
+                                    app.visaoGeralData[setorLimpo].monitor.count++;
+                                    app.visaoGeralData[setorLimpo].monitor.somaNotas += notaFormatada;
+                                    totalMonitor++;
+                                } else {
+                                    app.visaoGeralData[setorLimpo].supervisor.count++;
+                                    app.visaoGeralData[setorLimpo].supervisor.somaNotas += notaFormatada;
+                                    totalSupervisor++;
+                                }
+                            }
+                        }
+                    });
+
+                    return { totalLidas, totalMonitor, totalSupervisor };
+                },
+
                 processarCSVVisaoGeral(input) {
                     const file = input.files[0];
                     if (!file) return;
@@ -16595,117 +17335,32 @@
 
                             if (rows.length === 0) return app.ui.showAlert("Erro", "O CSV de Monitorias está vazio.", "error");
 
-                            app.visaoGeralData = {}; // Zera os dados velhos
-                            let totalLidas = 0;
-                            let totalMonitor = 0;
-                            let totalSupervisor = 0;
-
-                            rows.forEach(row => {
-                                const getVal = (keywords, exactList = []) => {
-                                    if (exactList.length > 0) {
-                                        for (const pref of exactList) {
-                                            const foundExact = Object.keys(row).find(k => {
-                                                const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim().toUpperCase();
-                                                return kClean === pref.toUpperCase();
-                                            });
-                                            if (foundExact && row[foundExact] !== undefined && String(row[foundExact]).trim() !== "") {
-                                                return row[foundExact];
-                                            }
-                                        }
-                                    }
-                                    for (const kw of keywords) {
-                                        const found = Object.keys(row).find(k => {
-                                            const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
-                                            const norm = app.utils.fixEncoding(kClean).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
-                                            return norm.includes(kw);
-                                        });
-                                        if (found && row[found] !== undefined && String(row[found]).trim() !== "") {
-                                            return row[found];
-                                        }
-                                    }
-                                    return undefined;
-                                };
-
-                                const setor = getVal(
-                                    ['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'ILHA', 'CAMPANHA', 'SETOR'],
-                                    ['OPERAÇÃO/SETOR', 'OPERAÇÃO / SETOR', 'OPERACAO/SETOR', 'OPERACAO / SETOR', 'OPERACAO', 'OPERAÇÃO', 'SETOR']
-                                );
-                                const notaRaw = getVal(['NOTAMONITORIA', 'NOTA', 'RESULTADO', 'PONTUACAO']);
-
-                                // Captura a coluna CARGO|APLICADOR ou suas variações
-                                const cargoRaw = getVal(
-                                    ['CARGOAPLICADOR', 'CARGODOAPLICADOR', 'APLICADOR', 'CARGO'],
-                                    ['CARGO|APLICADOR', 'CARGO | APLICADOR', 'CARGO/APLICADOR', 'CARGO / APLICADOR', 'CARGO_APLICADOR', 'CARGO APLICADOR', 'CARGO']
-                                );
-
-                                // Regra: Primeira palavra SUPERVISOR -> Supervisor | MONITOR -> Monitor | Diferente -> SUPERVISOR
-                                const getCargoGrupo = (raw) => {
-                                    if (!raw) return 'Supervisor';
-                                    const str = app.utils.fixEncoding(String(raw))
-                                        .normalize('NFD')
-                                        .replace(/[\u0300-\u036f]/g, '')
-                                        .toUpperCase()
-                                        .trim();
-                                    if (!str) return 'Supervisor';
-                                    const primeiraPalavra = str.split(/[\s\/\-_|.,;:]+/)[0] || '';
-                                    if (primeiraPalavra === 'MONITOR' || primeiraPalavra.startsWith('MONITOR')) {
-                                        return 'Monitor';
-                                    }
-                                    if (primeiraPalavra === 'SUPERVISOR' || primeiraPalavra.startsWith('SUPERVISOR')) {
-                                        return 'Supervisor';
-                                    }
-                                    return 'Supervisor';
-                                };
-
-                                const cargoGrupo = getCargoGrupo(cargoRaw);
-
-                                if (setor && typeof setor === 'string' && notaRaw !== undefined && notaRaw !== "") {
-                                    const setorLimpo = app.utils.fixEncoding(String(setor)).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
-                                    let notaFormatada = typeof notaRaw === 'string' ? parseFloat(notaRaw.replace(',', '.')) : parseFloat(notaRaw);
-                                    
-                                    if (!isNaN(notaFormatada) && setorLimpo !== "") {
-                                        if (!app.visaoGeralData[setorLimpo]) {
-                                            app.visaoGeralData[setorLimpo] = {
-                                                count: 0,
-                                                somaNotas: 0,
-                                                monitor: { count: 0, somaNotas: 0 },
-                                                supervisor: { count: 0, somaNotas: 0 }
-                                            };
-                                        }
-                                        if (!app.visaoGeralData[setorLimpo].monitor) {
-                                            app.visaoGeralData[setorLimpo].monitor = { count: 0, somaNotas: 0 };
-                                        }
-                                        if (!app.visaoGeralData[setorLimpo].supervisor) {
-                                            app.visaoGeralData[setorLimpo].supervisor = { count: 0, somaNotas: 0 };
-                                        }
-
-                                        app.visaoGeralData[setorLimpo].count++;
-                                        app.visaoGeralData[setorLimpo].somaNotas += notaFormatada;
-                                        totalLidas++;
-
-                                        if (cargoGrupo === 'Monitor') {
-                                            app.visaoGeralData[setorLimpo].monitor.count++;
-                                            app.visaoGeralData[setorLimpo].monitor.somaNotas += notaFormatada;
-                                            totalMonitor++;
-                                        } else {
-                                            app.visaoGeralData[setorLimpo].supervisor.count++;
-                                            app.visaoGeralData[setorLimpo].supervisor.somaNotas += notaFormatada;
-                                            totalSupervisor++;
-                                        }
-                                    }
-                                }
-                            });
+                            app.visaoGeralUltimasLinhasCSV = rows;
+                            const res = this.reprocessarLinhasVisaoGeral(rows);
+                            if (!res) return app.ui.showAlert("Aviso", "Nenhuma linha válida encontrada no CSV.", "warning");
 
                             // Salva na nuvem (Firebase) + LocalStorage + LocalForage e recarrega
                             app.storage.saveVisaoGeral().then(() => {
+                                const pendentesCount = Object.keys(app.operadoresPendentesValidacao || {}).length;
+                                let alertaOperadoresHtml = '';
+                                if (pendentesCount > 0) {
+                                    alertaOperadoresHtml = `
+                                        <div class="mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                            <span><i class="fa-solid fa-triangle-exclamation mr-1.5 text-amber-500"></i>Detectamos <b>${pendentesCount} aplicador(es) com cargo 'OPERADOR'</b>. Valide se atuam como Monitor ou Supervisor.</span>
+                                            <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shrink-0 shadow-sm transition">Validar Agora</button>
+                                        </div>
+                                    `;
+                                }
+
                                 app.ui.showAlert(
                                     "Triangulação Concluída!",
                                     `O sistema cruzou com sucesso a quantidade de colaboradores do RH com as avaliações deste arquivo.<br><br>` +
                                     `<div class="text-left bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">` +
-                                    `<div><b>Total de avaliações:</b> <span class="tabular-nums font-bold">${totalLidas}</span></div>` +
-                                    `<div class="text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-headset mr-1"></i><b>Monitor:</b> <span class="tabular-nums font-bold">${totalMonitor}</span> avaliações</div>` +
-                                    `<div class="text-purple-600 dark:text-purple-400"><i class="fa-solid fa-user-tie mr-1"></i><b>Supervisor:</b> <span class="tabular-nums font-bold">${totalSupervisor}</span> avaliações</div>` +
-                                    `</div>`,
+                                    `<div><b>Total de avaliações:</b> <span class="tabular-nums font-bold">${res.totalLidas}</span></div>` +
+                                    `<div class="text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-headset mr-1"></i><b>Monitor:</b> <span class="tabular-nums font-bold">${res.totalMonitor}</span> avaliações</div>` +
+                                    `<div class="text-purple-600 dark:text-purple-400"><i class="fa-solid fa-user-tie mr-1"></i><b>Supervisor:</b> <span class="tabular-nums font-bold">${res.totalSupervisor}</span> avaliações</div>` +
+                                    `</div>` +
+                                    alertaOperadoresHtml,
                                     "success"
                                 );
                                 app.ui.renderTab('analitico_visao_geral', true);
