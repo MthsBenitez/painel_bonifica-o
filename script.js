@@ -2,6 +2,210 @@
         const app = {
             dataLoaded: false, // <--- ADICIONADO: Trava de segurança do Firebase
             config: { baseValue: 400, goals: [] }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
+
+            // Helpers de Perfil (Bonificação exclusiva para Qualidade)
+            isUserQualidade(u) {
+                if (!u) return false;
+                return (u.tipoAcesso || 'Qualidade') === 'Qualidade';
+            },
+            getQualidadeUsers() {
+                return (this.users || []).filter(u => this.isUserQualidade(u));
+            },
+
+            // Helpers de Operações Setoriais & Cálculo de Span por Monitor/Líder
+            getOperacoesSetoriais() {
+                const ignorados = Array.isArray(this.config?.ignoredSetoresRH) ? this.config.ignoredSetoresRH : [];
+                const dePara = this.config?.deParaSetoresVG || {};
+                const headcounts = this.config?.headcountRH || {};
+                const regras = this.config?.regrasMonitoriaVG || {};
+                const qualidadeRaw = this.visaoGeralData || {};
+
+                const getRegraSetor = (nomeSetor) => {
+                    const r = parseInt(regras[nomeSetor]);
+                    return (!isNaN(r) && r > 0) ? r : 2;
+                };
+
+                const mapOps = {};
+                // 1. Prioridade: Base RH da Visão Geral Setorial
+                Object.keys(headcounts).forEach(setor => {
+                    const nome = String(setor || '').trim().toUpperCase();
+                    if (!nome || ignorados.includes(setor) || ignorados.includes(nome)) return;
+                    const hcVal = parseInt(headcounts[setor]) || 0;
+                    const regraPorOp = getRegraSetor(nome);
+                    mapOps[nome] = {
+                        nome,
+                        hc: hcVal,
+                        headcount: hcVal,
+                        regraPorOp
+                    };
+                });
+
+                // 2. Complementa com setores do CSV de Qualidade da Visão Geral Setorial (já aplicando DE/PARA)
+                Object.keys(qualidadeRaw).forEach(sQual => {
+                    const destino = String(dePara[sQual] || sQual || '').trim().toUpperCase();
+                    if (!destino || ignorados.includes(destino)) return;
+                    if (!mapOps[destino]) {
+                        const hcVal = parseInt(headcounts[destino]) || 0;
+                        const regraPorOp = getRegraSetor(destino);
+                        mapOps[destino] = {
+                            nome: destino,
+                            hc: hcVal,
+                            headcount: hcVal,
+                            regraPorOp
+                        };
+                    }
+                });
+
+                const listaSetorial = Object.values(mapOps).sort((a, b) => a.nome.localeCompare(b.nome));
+                if (listaSetorial.length > 0) return listaSetorial;
+
+                // Fallback caso ainda não tenha importado o relatório Setorial
+                return Object.values(this.operacoesList || {})
+                    .filter(op => op && op.nome)
+                    .map(op => {
+                        const nome = String(op.nome).trim();
+                        const hcVal = parseInt(op.hc !== undefined ? op.hc : (op.headcount !== undefined ? op.headcount : op.max)) || 0;
+                        const regraPorOp = getRegraSetor(nome.toUpperCase());
+                        return {
+                            nome,
+                            hc: hcVal,
+                            headcount: hcVal,
+                            regraPorOp
+                        };
+                    })
+                    .sort((a, b) => a.nome.localeCompare(b.nome));
+            },
+
+            syncOperacoesFromSetorial() {
+                const opsSetoriais = this.getOperacoesSetoriais();
+                if (opsSetoriais.length > 0) {
+                    const newList = {};
+                    opsSetoriais.forEach((op, idx) => {
+                        const id = 'op_vg_' + idx;
+                        newList[id] = { id, nome: op.nome, max: op.hc, hc: op.hc, headcount: op.hc };
+                    });
+                    this.operacoesList = newList;
+                }
+                return this.operacoesList;
+            },
+
+            // Regra de Feedback: até setembro/2026 → nota < 85 | a partir de outubro/2026 → nota <= 89 (ou seja, < 90)
+            getLimiteFeedback(month) {
+                const m = String(month || this.currentMonth || '');
+                return m >= '2026-10' ? 90 : 85;
+            },
+            isNotaFeedback(nota, month) {
+                if (typeof nota !== 'number' || isNaN(nota)) return false;
+                return nota < this.getLimiteFeedback(month);
+            },
+
+            getHeadcountOperacao(opNome) {
+                if (!opNome) return 0;
+                const alvo = String(opNome).trim().toUpperCase();
+                const dePara = this.config?.deParaSetoresVG || {};
+                const headcounts = this.config?.headcountRH || {};
+                if (headcounts[alvo] !== undefined) return parseInt(headcounts[alvo]) || 0;
+                const keyMatch = Object.keys(headcounts).find(k => String(k).trim().toUpperCase() === alvo);
+                if (keyMatch) return parseInt(headcounts[keyMatch]) || 0;
+                const destino = dePara[alvo];
+                if (destino && headcounts[destino] !== undefined) return parseInt(headcounts[destino]) || 0;
+                const opItem = Object.values(this.operacoesList || {}).find(o => String(o.nome || '').trim().toUpperCase() === alvo);
+                return opItem ? (parseInt(opItem.hc !== undefined ? opItem.hc : (opItem.headcount !== undefined ? opItem.headcount : opItem.max)) || 0) : 0;
+            },
+
+            getSpanUsuario(user) {
+                if (!user) {
+                    return {
+                        span: 0,
+                        totalOperadores: 0,
+                        totalMonitoriasEsperadas: 0,
+                        operacoes: [],
+                        detalhes: [],
+                        operacoesDetalhe: [],
+                        subordinadosCount: 0
+                    };
+                }
+                const tipo = user.tipoAcesso || 'Qualidade';
+                const allOpsSetoriais = this.getOperacoesSetoriais();
+                const regras = this.config?.regrasMonitoriaVG || {};
+                const buildDetalhe = (nome) => {
+                    const hcVal = this.getHeadcountOperacao(nome);
+                    const r = parseInt(regras[String(nome).trim().toUpperCase()]);
+                    const regraPorOp = (!isNaN(r) && r > 0) ? r : 2;
+                    return {
+                        nome,
+                        hc: hcVal,
+                        headcount: hcVal,
+                        regraPorOp,
+                        metaMonitorias: hcVal * regraPorOp
+                    };
+                };
+
+                if (tipo === 'Gerente') {
+                    const opsUser = Array.isArray(user.operacoes) && user.operacoes.length > 0
+                        ? user.operacoes.filter(Boolean)
+                        : allOpsSetoriais.map(o => o.nome);
+                    const detalhes = opsUser.map(nome => buildDetalhe(nome));
+                    const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
+                    const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
+                    const subs = (this.users || []).filter(u => u.matricula !== user.matricula);
+                    return {
+                        span: totalSpan,
+                        totalOperadores: totalSpan,
+                        totalMonitoriasEsperadas: totalMon,
+                        operacoes: detalhes.map(o => o.nome),
+                        detalhes,
+                        operacoesDetalhe: detalhes,
+                        subordinadosCount: subs.length
+                    };
+                }
+
+                if (tipo === 'Gestor') {
+                    const subordinados = (this.users || []).filter(u => String(u.gestorMatricula || '').trim() === String(user.matricula).trim());
+                    const opsSet = new Set();
+                    (user.operacoes || []).forEach(op => { if (op) opsSet.add(String(op).trim().toUpperCase()); });
+                    subordinados.forEach(sub => {
+                        (sub.operacoes || []).forEach(op => { if (op) opsSet.add(String(op).trim().toUpperCase()); });
+                    });
+                    const opsArray = Array.from(opsSet).sort();
+                    const detalhes = opsArray.map(nome => buildDetalhe(nome));
+                    const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
+                    const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
+                    return {
+                        span: totalSpan,
+                        totalOperadores: totalSpan,
+                        totalMonitoriasEsperadas: totalMon,
+                        operacoes: opsArray,
+                        detalhes,
+                        operacoesDetalhe: detalhes,
+                        subordinadosCount: subordinados.length
+                    };
+                }
+
+                // Qualidade, Treinamento, Dev
+                const opsUser = Array.isArray(user.operacoes) ? user.operacoes.filter(Boolean) : [];
+                const uniqueUpper = [];
+                const seen = new Set();
+                opsUser.forEach(op => {
+                    const up = String(op).trim().toUpperCase();
+                    if (up && !seen.has(up)) {
+                        seen.add(up);
+                        uniqueUpper.push(String(op).trim());
+                    }
+                });
+                const detalhes = uniqueUpper.map(nome => buildDetalhe(nome));
+                const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
+                const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
+                return {
+                    span: totalSpan,
+                    totalOperadores: totalSpan,
+                    totalMonitoriasEsperadas: totalMon,
+                    operacoes: uniqueUpper,
+                    detalhes,
+                    operacoesDetalhe: detalhes,
+                    subordinadosCount: 0
+                };
+            },
             
             storage: {
                 firebaseConfig: {
@@ -34,6 +238,23 @@
                         if (data) {
                             if (data.config) {
                                 app.config = data.config;
+
+                                // Mescla backup local imediato para não perder configurações (DE/PARA, metas, ocultos, aliases) ao dar F5
+                                try {
+                                    const localCfgRaw = localStorage.getItem('soft_config_backup');
+                                    if (localCfgRaw) {
+                                        const localCfg = JSON.parse(localCfgRaw);
+                                        if (localCfg && typeof localCfg === 'object') {
+                                            if (localCfg.deParaSetoresVG) app.config.deParaSetoresVG = { ...(app.config.deParaSetoresVG || {}), ...localCfg.deParaSetoresVG };
+                                            if (localCfg.metasSetoresVG) app.config.metasSetoresVG = { ...(app.config.metasSetoresVG || {}), ...localCfg.metasSetoresVG };
+                                            if (localCfg.metaPadraoVG !== undefined) app.config.metaPadraoVG = localCfg.metaPadraoVG;
+                                            if (Array.isArray(localCfg.ignoredSetoresRH)) app.config.ignoredSetoresRH = localCfg.ignoredSetoresRH;
+                                            if (localCfg.aliases) app.config.aliases = { ...(app.config.aliases || {}), ...localCfg.aliases };
+                                            if (localCfg.headcountRH && (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0)) app.config.headcountRH = localCfg.headcountRH;
+                                            if (localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = { ...(app.config.presetsGruposAcesso || {}), ...localCfg.presetsGruposAcesso };
+                                        }
+                                    }
+                                } catch (e) { console.warn("Aviso ao ler backup local de config:", e); }
                                 
                                 // CORREÇÃO: Previne o erro "Ops! Algo quebrou" se as metas estiverem vazias
                                 if (!app.config.goals) app.config.goals = [];
@@ -80,6 +301,16 @@
                             }
 
                             if (data.actions) app.actionsList = data.actions; else app.actionsList = {};
+                            // Mescla backup local de ações recém-enviadas para nunca sumirem
+                            try {
+                                const localActsRaw = localStorage.getItem('soft_actions_backup');
+                                if (localActsRaw) {
+                                    const localActs = JSON.parse(localActsRaw);
+                                    if (localActs && typeof localActs === 'object') {
+                                        app.actionsList = { ...localActs, ...(app.actionsList || {}) };
+                                    }
+                                }
+                            } catch (e) {}
                             if (data.notifications) app.notificationsList = data.notifications; else app.notificationsList = {};
                             if (data.events) app.eventsList = data.events; else app.eventsList = {};
                             if (data.atas) app.atasList = data.atas; else app.atasList = {};
@@ -89,6 +320,14 @@
                             if (data.estoqueLogs) app.estoqueLogs = data.estoqueLogs; else app.estoqueLogs = {};
                             if (data.impressoes) app.impressoesList = data.impressoes; else app.impressoesList = {};
                             if (data.impressoesStats) app.impressoesStats = data.impressoesStats; else app.impressoesStats = { arquivos: 0, folhas: 0 };
+                            if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
+                                app.visaoGeralData = this.normalizeVisaoGeralKeys(data.visaoGeralData);
+                            } else if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
+                                try {
+                                    const localVG = localStorage.getItem('soft_visao_geral_backup');
+                                    if (localVG) app.visaoGeralData = this.normalizeVisaoGeralKeys(JSON.parse(localVG));
+                                } catch (e) {}
+                            }
 
                             // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
                             // Monitorias
@@ -124,12 +363,9 @@
                                 app.operacoesList = data.operacoes;
                             } else {
                                 app.operacoesList = {}; 
-                                const opsIniciais = ["COPEL", "unimed hospitais", "sanepar", "pesquisa kanta", "pesquisa copel", "atrium", "Cocamar", "metrocard", "cnhi", "db", "hidrolabor", "amil", "parana clinicas", "dental", "we pink", "doctoralia", "pesquisa blend", "anatel", "Hospital Pequeno Principe", "Captação"];
-                                opsIniciais.forEach((op, idx) => {
-                                    app.operacoesList['op_'+idx] = { id: 'op_'+idx, nome: op, max: 50 };
-                                });
-                                app.storage.saveOperacoes();
                             }
+                            // Sincroniza todas as listas suspensas de Operações com o relatório da Visão Geral Setorial (incluindo headcount de operadores)
+                            app.syncOperacoesFromSetorial();
                             
                             if (app.currentUser && !app.isAdmin) {
                                 const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
@@ -180,19 +416,20 @@
                             const savedIsAdmin = localStorage.getItem('soft_session_admin') === 'true';
 
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
-                                // Se já estiver dentro do sistema, apenas atualiza a tela suavemente
+                                // Se já estiver dentro do sistema, apenas atualiza a tela suavemente com debounce para não travar em rajadas de salvamento
                                 app.notifications.updateBadge();
                                 const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias'];
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
-                                                     // CORREÇÃO: Atualiza os dados de forma fluida na mesma div,
-                                                     // evitando recriar a tela toda e causar a "piscada" em branco.
-                                                     const viewDiv = document.getElementById('view-container-' + app.currentTab);
-                                                     if (viewDiv) {
-                                                         if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
-                                                         else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
-                                                         else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
-                                                     }
-                                                 }
+                                    if (this._firebaseRefreshTimer) clearTimeout(this._firebaseRefreshTimer);
+                                    this._firebaseRefreshTimer = setTimeout(() => {
+                                        const viewDiv = document.getElementById('view-container-' + app.currentTab);
+                                        if (viewDiv) {
+                                            if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
+                                            else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
+                                            else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
+                                        }
+                                    }, 350);
+                                }
                             } else if (savedDate === todayStr && savedMat) {
                                 // Se deu F5 no mesmo dia, entra direto sem pedir senha!
                                 if (savedIsAdmin) {
@@ -227,9 +464,51 @@
                         );
                     });
                 },
+                sanitizeFirebaseKey(str) {
+                    return String(str || '').replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
+                },
+                sanitizeFirebaseObject(obj) {
+                    if (Array.isArray(obj)) return obj.map(item => this.sanitizeFirebaseObject(item));
+                    if (obj !== null && typeof obj === 'object') {
+                        const cleaned = {};
+                        Object.keys(obj).forEach(k => {
+                            const safeKey = this.sanitizeFirebaseKey(k);
+                            if (safeKey && obj[k] !== undefined) {
+                                cleaned[safeKey] = this.sanitizeFirebaseObject(obj[k]);
+                            }
+                        });
+                        return cleaned;
+                    }
+                    return obj;
+                },
+                normalizeVisaoGeralKeys(rawObj) {
+                    if (!rawObj || typeof rawObj !== 'object') return {};
+                    const norm = {};
+                    Object.keys(rawObj).forEach(k => {
+                        const cleanK = app.utils.fixEncoding(String(k || '')).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
+                        if (!cleanK) return;
+                        if (!norm[cleanK]) norm[cleanK] = { count: 0, somaNotas: 0 };
+                        norm[cleanK].count += (rawObj[k]?.count || 0);
+                        norm[cleanK].somaNotas += (rawObj[k]?.somaNotas || 0);
+                    });
+                    return norm;
+                },
                 saveUsers() { return firebase.database().ref('sistema_bonificacao/users').set(app.users); },
-                saveConfig() { return firebase.database().ref('sistema_bonificacao/config').set(app.config); },
-                saveActions() { return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList); },
+                saveConfig() {
+                    app.config = this.sanitizeFirebaseObject(app.config);
+                    try { localStorage.setItem('soft_config_backup', JSON.stringify(app.config)); } catch (e) {}
+                    return firebase.database().ref('sistema_bonificacao/config').set(app.config);
+                },
+                saveVisaoGeral() {
+                    app.visaoGeralData = this.normalizeVisaoGeralKeys(app.visaoGeralData || {});
+                    try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.visaoGeralData)); } catch (e) {}
+                    try { localforage.setItem('soft_visao_geral', app.visaoGeralData); } catch (e) {}
+                    return firebase.database().ref('sistema_bonificacao/visaoGeralData').set(app.visaoGeralData);
+                },
+                saveActions() {
+                    try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
+                    return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList);
+                },
                 saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); },
                 saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
                 saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
@@ -248,6 +527,17 @@
                     app.allAnatel[app.currentMonth] = app.anatelData; 
                     return firebase.database().ref('sistema_bonificacao/anatel').set(app.allAnatel || {}); 
                 }
+            },
+
+            hasAdminAccess(tabId) {
+                if (this.isAdmin) return true;
+                if (!this.currentUser) return false;
+                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(this.currentUser.tipoAcesso);
+                const userAbas = (this.ui && typeof this.ui.getEffectiveUserTabs === 'function')
+                    ? this.ui.getEffectiveUserTabs(this.currentUser)
+                    : (Array.isArray(this.currentUser.abasLiberadas) ? this.currentUser.abasLiberadas : []);
+                if (tabId) return userAbas.includes(tabId) || (isPerfilGestao && userAbas.includes(tabId));
+                return isPerfilGestao;
             },
 
             users: [],
@@ -287,7 +577,7 @@
 
                 getTempoCasaDoOperador(nomePesquisa) {
                     if (!app.config.tempoDeCasa) return null;
-                    const nomeStr = String(nomePesquisa).trim().toUpperCase();
+                    const nomeStr = app.utils.fixEncoding(String(nomePesquisa || '')).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
                     
                     // 1. Tenta achar direto se o RH salvou pelo nome exato
                     if (app.config.tempoDeCasa[nomeStr] !== undefined) return app.config.tempoDeCasa[nomeStr];
@@ -368,9 +658,16 @@
                     this.anatelData = this.allAnatel[newMonthStr] || { registros: [], canceladasNovas: [] };
                 }
 
-                // Quando troca de mês, resetar o cache inteiro
-                document.getElementById('content-container').innerHTML = ''; 
-                this.ui.renderTab(app.currentTab, true);
+                // Cancela qualquer renderização pendente para evitar colisão ao trocar de mês
+                if (this.ui && this.ui.renderTimeoutId) {
+                    clearTimeout(this.ui.renderTimeoutId);
+                    this.ui.renderTimeoutId = null;
+                }
+
+                // Quando troca de mês, resetar o cache inteiro e re-renderizar a aba ativa com segurança
+                const mainContainer = document.getElementById('content-container');
+                if (mainContainer) mainContainer.innerHTML = ''; 
+                this.ui.renderTab(this.currentTab, true);
             },
 
             notifications: {
@@ -623,6 +920,7 @@
                     // Faz as duas coisas ao mesmo tempo no banco de dados
                     firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
                         delete app.actionsList[id]; // Limpa da memória local da tela
+                        try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         app.ui.renderTab(app.currentTab, true); // Mantém a pessoa na aba em que ela estava (seja ADM ou Usuário)
                         app.ui.showAlert("Ação Excluída", "O registro foi apagado permanentemente.", "success");
                     }).catch(err => {
@@ -741,6 +1039,7 @@
                     
                     // Envio blindado (Multi-path Update)
                     firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
                         
                         const notifMessage = `A ação <strong>${act.objetivo}</strong> foi devolvida.<br><br><strong>Motivo:</strong> ${reason}<br><br><button onclick="app.ui.renderTab('registrar_acao', true); setTimeout(()=>app.actions.editAction('${id}'), 500)" class="bg-red-100 text-red-700 px-3 py-2 rounded-xl text-[10px] font-black mt-2 shadow-sm hover:bg-red-200 transition-colors w-full uppercase tracking-widest"><i class="fa-solid fa-pen mr-1"></i> Corrigir Ação Agora</button>`;
@@ -763,14 +1062,16 @@
                             img.src = event.target.result;
                             img.onload = () => {
                                 const canvas = document.createElement('canvas');
-                                const MAX_WIDTH = 800; const MAX_HEIGHT = 800;
+                                const MAX_WIDTH = 1280; const MAX_HEIGHT = 1280;
                                 let width = img.width; let height = img.height;
                                 if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } } 
                                 else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
-                                canvas.width = width; canvas.height = height;
+                                canvas.width = Math.round(width); canvas.height = Math.round(height);
                                 const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, width, height);
-                                resolve(canvas.toDataURL('image/jpeg', 0.6));
+                                ctx.imageSmoothingEnabled = true;
+                                ctx.imageSmoothingQuality = 'high';
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.88));
                             };
                             img.onerror = () => resolve(event.target.result);
                         };
@@ -781,18 +1082,18 @@
                     if(!app.currentUser) return;
                     
                     const btn = document.getElementById('btn-submit-action');
-                    const fileInput = document.getElementById('act-foto');
                     const richText = document.getElementById('act-acao-rich');
                     if (richText) document.getElementById('act-acao').value = richText.innerHTML.trim();
                     
                     const evtEditId = document.getElementById('act-edit-id').value;
                     const dataAcaoVal = document.getElementById('act-data').value;
-                    const targetMonth = dataAcaoVal ? dataAcaoVal.substring(0, 7) : app.currentMonth;
+                    // Usa sempre o mês selecionado no portal (app.currentMonth) para que a ação nunca suma da visão atual do usuário nem do ADM
+                    const targetMonth = app.currentMonth || (dataAcaoVal ? dataAcaoVal.substring(0, 7) : '');
 
                     const payload = {
                         id: evtEditId || ('act_' + Date.now()),
-                        matricula: app.currentUser.matricula,
-                        nome: app.currentUser.nome,
+                        matricula: String(app.currentUser.matricula || '').trim(),
+                        nome: app.currentUser.nome || 'Colaborador',
                         month: targetMonth,
                         dataAcao: dataAcaoVal,
                         codigoOpe: document.getElementById('act-codigo').value,
@@ -810,13 +1111,28 @@
                     for (let key in payload) {
                         if (payload[key] === '' || payload[key] === null) return app.ui.showAlert("Aviso", "Preencha todos os campos corretamente antes de enviar.", "error");
                     }
+                    if (!app.actionsList || typeof app.actionsList !== 'object' || Array.isArray(app.actionsList)) {
+                        app.actionsList = {};
+                    }
                     const existingAct = evtEditId ? app.actionsList[evtEditId] : null;
 
-                    // Tratamento do Estoque
-                    // Tratamento do Estoque (Múltiplos Brindes)
+                    // Tratamento do Estoque (Múltiplos Brindes + captura automática se selecionou no select sem clicar no +)
+                    const selItemAuto = document.getElementById('act-brindes-item');
+                    const inpQtdAuto = document.getElementById('act-brindes-qtd');
+                    if (app.actions.brindesSelecionados.length === 0 && selItemAuto && selItemAuto.value && selItemAuto.value !== 'Nenhum') {
+                        const qtdAuto = parseInt(inpQtdAuto?.value) || 0;
+                        const itemObjAuto = app.estoqueItems ? app.estoqueItems[selItemAuto.value] : null;
+                        if (qtdAuto > 0 && itemObjAuto) {
+                            app.actions.brindesSelecionados.push({
+                                id: itemObjAuto.id,
+                                nome: itemObjAuto.nome,
+                                qtd: qtdAuto
+                            });
+                        }
+                    }
+
                     if (app.actions.brindesSelecionados.length > 0) {
                         let totalBrindesDesc = [];
-                        // Validação de segurança final antes de enviar
                         for (let b of app.actions.brindesSelecionados) {
                             if (!app.estoqueItems[b.id] || app.estoqueItems[b.id].qtd < b.qtd) {
                                 btn.disabled = false; btn.classList.remove('is-flying');
@@ -825,19 +1141,19 @@
                             totalBrindesDesc.push(`${b.qtd}x ${b.nome}`);
                         }
                         payload.brindes = totalBrindesDesc.join(' + ');
+                        payload.brindesItems = JSON.parse(JSON.stringify(app.actions.brindesSelecionados));
                     } else {
-                        // Resgate caso ele digite número sem item (ex: Brindes de fora do sistema)
-                        const bQtdSola = parseInt(document.getElementById('act-brindes-qtd').value) || 0;
+                        const bQtdSola = parseInt(document.getElementById('act-brindes-qtd')?.value) || 0;
                         payload.brindes = bQtdSola > 0 ? bQtdSola.toString() : "0";
                     }
 
                     // PREVENÇÃO DE DUPLICIDADE: Se o usuário está editando e re-enviando
                     if (existingAct && existingAct.status === 'aprovado') {
-                        const userIdx = app.users.findIndex(x => x.matricula === app.currentUser.matricula);
+                        const userIdx = app.users.findIndex(x => String(x.matricula).trim() === String(app.currentUser.matricula).trim());
                         if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[existingAct.month] && app.users[userIdx].results[existingAct.month]['g4']) {
                             let currentVal = parseInt(app.users[userIdx].results[existingAct.month]['g4'].val) || 0;
                             app.users[userIdx].results[existingAct.month]['g4'].val = Math.max(0, currentVal - 1).toString();
-                            if(app.currentUser && app.currentUser.matricula === app.users[userIdx].matricula) app.currentUser = app.users[userIdx];
+                            if(app.currentUser && String(app.currentUser.matricula).trim() === String(app.users[userIdx].matricula).trim()) app.currentUser = app.users[userIdx];
                             app.storage.saveUsers();
                         }
                     }
@@ -847,55 +1163,67 @@
                     }
                     
                     if(existingAct && this.tempFiles.length === 0) {
-                        // Correção: Evita array com [undefined] que quebra o Firebase secretamente
-                        payload.photos = existingAct.photos || (existingAct.photo ? [existingAct.photo] : []);
+                        payload.photos = (existingAct.photos || (existingAct.photo ? [existingAct.photo] : [])).filter(Boolean);
                     }
 
                     btn.disabled = true;
                     btn.classList.add('is-flying');
 
                     const finalizeSubmit = () => {
-                        app.actionsList[payload.id] = payload;
+                        const cleanPayload = JSON.parse(JSON.stringify(payload));
+                        if (!app.actionsList || typeof app.actionsList !== 'object' || Array.isArray(app.actionsList)) {
+                            app.actionsList = {};
+                        }
+                        app.actionsList[cleanPayload.id] = cleanPayload;
+                        try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList)); } catch (e) {}
 
-                        // Atualiza Estoque se houve consumo (Múltiplos itens do carrinho)
+                        // Atualiza Estoque se houve consumo (Múltiplos itens do carrinho ou item único selecionado)
                         if (app.actions.brindesSelecionados.length > 0 && !existingAct) {
+                            if (!app.estoqueLogs || typeof app.estoqueLogs !== 'object') app.estoqueLogs = {};
                             app.actions.brindesSelecionados.forEach((b, index) => {
-                                app.estoqueItems[b.id].qtd -= b.qtd;
-                                const logId = 'log_' + Date.now() + index;
+                                if (app.estoqueItems && app.estoqueItems[b.id]) {
+                                    app.estoqueItems[b.id].qtd = Math.max(0, (parseInt(app.estoqueItems[b.id].qtd) || 0) - b.qtd);
+                                }
+                                const logId = 'log_' + Date.now() + '_' + index;
                                 app.estoqueLogs[logId] = {
                                     id: logId, itemId: b.id, nomeItem: b.nome, qtd: b.qtd,
                                     data: new Date().toLocaleDateString('pt-BR'), hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
-                                    autor: app.currentUser.nome, acaoId: payload.id, op: payload.codigoOpe
+                                    autor: app.currentUser.nome, matricula: app.currentUser.matricula, acaoId: cleanPayload.id, op: cleanPayload.codigoOpe
                                 };
                             });
                             app.storage.saveEstoque();
                             app.storage.saveEstoqueLogs();
                         }
                         
-                        // Limpa o carrinho após finalizar com sucesso
                         app.actions.brindesSelecionados = [];
 
-                        // SALVAMENTO CIRÚRGICO: Salva apenas a ação específica para evitar estouro de limite (timeout) do Firebase
-                        firebase.database().ref('sistema_bonificacao/actions/' + payload.id).set(payload)
+                        firebase.database().ref('sistema_bonificacao/actions/' + cleanPayload.id).set(cleanPayload)
                         .then(() => {
+                            app.actionsList[cleanPayload.id] = cleanPayload;
+                            try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList)); } catch (e) {}
                             app.notifications.notify('ADM', 'Ação Registrada/Atualizada', `${app.currentUser.nome} enviou uma ação para validação.`, 'info');
                             app.ui.showAlert("Sucesso!", "Sua ação foi registrada com sucesso e enviada para aprovação.", "success");
                             
-                            // Só limpa as imagens temporárias DEPOIS de confirmar que salvou
                             this.tempFiles = []; 
-                            document.getElementById('act-preview-gallery').innerHTML = '';
-                            document.getElementById('act-edit-id').value = '';
+                            const gal = document.getElementById('act-preview-gallery');
+                            if (gal) gal.innerHTML = '';
+                            const editEl = document.getElementById('act-edit-id');
+                            if (editEl) editEl.value = '';
                             
                             setTimeout(() => {
-                                btn.disabled = false;
-                                btn.classList.remove('is-flying');
+                                if (btn) {
+                                    btn.disabled = false;
+                                    btn.classList.remove('is-flying');
+                                }
                                 app.ui.renderTab('registrar_acao', true);
-                            }, 1500);
+                            }, 800);
 
                         }).catch(err => {
                             console.error("Falha ao salvar no banco:", err);
-                            btn.disabled = false;
-                            btn.classList.remove('is-flying');
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.classList.remove('is-flying');
+                            }
                             app.ui.showAlert("Erro de Conexão", "A ação falhou ao ser enviada. Suas imagens podem estar muito pesadas para a conexão atual. Tente enviar fotos menores.", "error");
                         });
                     };
@@ -940,7 +1268,7 @@
                     
                     try {
                         const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
-                        if(userIdx > -1) {
+                        if(userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
                             if(!app.users[userIdx].results) app.users[userIdx].results = {};
                             if(!app.users[userIdx].results[act.month]) app.users[userIdx].results[act.month] = { status: 'pendente' };
                             if(!app.users[userIdx].results[act.month]['g4']) app.users[userIdx].results[act.month]['g4'] = { val: 0 };
@@ -960,6 +1288,7 @@
                     
                     // Envio blindado (Multi-path Update)
                     firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
                         app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
                         app.ui.renderTab('validar_acoes', true);
@@ -1589,6 +1918,7 @@
                     let atualizouAlguem = false;
                     
                     usersEncontrados.forEach(userEncontrado => {
+                        if (!app.isUserQualidade(userEncontrado)) return; // Apenas perfil Qualidade possui bonificação
                         if(!userEncontrado.results) userEncontrado.results = {};
                         if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
                         if(!userEncontrado.results[mesRef][gId]) userEncontrado.results[mesRef][gId] = { val: 0 };
@@ -1775,9 +2105,9 @@
                     document.getElementById('ve-obs').textContent = evt.obs || (evt.tipo==='pessoal'? `Mon: ${evt.qtdMon} | FB: ${evt.qtdFb}` : 'Nenhuma observação.');
                     
                     let commentBox = document.getElementById('ve-obs').parentElement;
-                    let cHTML = `<div class="mt-4 pt-4 border-t border-slate-100"><h5 class="text-[10px] uppercase font-bold text-slate-500 mb-2">Comentários (ADM / Operação)</h5>`;
-                    if(evt.comments) evt.comments.forEach(c => { cHTML += `<div class="text-xs mb-2 p-2 bg-slate-100 rounded-lg"><strong>${c.autor}:</strong> ${c.text}</div>`; });
-                    cHTML += `<div class="flex gap-2 mt-2"><input type="text" id="cal-new-com-${id}" class="flex-1 p-2 border rounded-lg text-xs outline-none"><button type="button" onclick="app.calendar.addComment('${id}')" class="bg-blue-500 text-white px-3 rounded-lg font-bold text-xs">Enviar</button></div></div>`;
+                    let cHTML = `<div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60"><h5 class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-2">Comentários (ADM / Operação)</h5>`;
+                    if(evt.comments) evt.comments.forEach(c => { cHTML += `<div class="text-xs mb-2 p-2 bg-slate-100 dark:bg-slate-800 dark:text-slate-200 rounded-lg border border-transparent dark:border-slate-700"><strong>${c.autor}:</strong> ${c.text}</div>`; });
+                    cHTML += `<div class="flex gap-2 mt-2"><input type="text" id="cal-new-com-${id}" placeholder="Escreva um comentário..." class="flex-1 p-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white rounded-lg text-xs outline-none"><button type="button" onclick="app.calendar.addComment('${id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 rounded-lg font-bold text-xs">Enviar</button></div></div>`;
                     
                     const oldC = commentBox.querySelector('.mt-4'); if(oldC) oldC.remove();
                     commentBox.insertAdjacentHTML('beforeend', cHTML);
@@ -2202,14 +2532,160 @@
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'gestao_equipe', label:'Gestão da Equipe'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}, {id:'operacoes', label:'Operações/Filas'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'impressoes', label:'Solicitar Impressão'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
-                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
+
+                gruposAcessoLista: ['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
+
+                getPresetsGruposAcesso() {
+                    const todasAbas = this.getAllSystemTabs();
+                    const defaultUserIds = todasAbas.filter(t => t.isDefault).map(t => t.id);
+                    const allIds = todasAbas.map(t => t.id);
+
+                    const defaults = {
+                        'Qualidade': defaultUserIds,
+                        'Treinamento': [...new Set(['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'csat_nps', 'legal'])],
+                        'Dev': allIds,
+                        'Gestor': [...new Set([...defaultUserIds, 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
+                        'Gerente': allIds
+                    };
+
+                    if (!app.config.presetsGruposAcesso || typeof app.config.presetsGruposAcesso !== 'object') {
+                        app.config.presetsGruposAcesso = {};
+                    }
+
+                    const result = {};
+                    this.gruposAcessoLista.forEach(g => {
+                        let base = Array.isArray(app.config.presetsGruposAcesso[g]) ? app.config.presetsGruposAcesso[g] : defaults[g];
+                        // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
+                        base = base.filter(id => id !== 'operacoes');
+                        if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
+                        if (['Gestor', 'Gerente', 'Dev'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
+                        result[g] = [...new Set(base)];
+                    });
+                    return result;
+                },
+
+                getEffectiveUserTabs(user) {
+                    if (!user) return [];
+                    const presets = this.getPresetsGruposAcesso();
+                    const tipo = user.tipoAcesso || 'Qualidade';
+                    const presetTabs = presets[tipo] || presets['Qualidade'] || [];
+                    const savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes');
+                    if (savedTabs.includes('gestao_equipe') && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
+                    if (savedTabs.includes('hierarquia') && !savedTabs.includes('gestao_equipe')) savedTabs.push('gestao_equipe');
+                    if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas'];
+                        const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
+                        // Se foi colocado em perfil de gestão mas ainda só tinha abas antigas de monitor, aplica o preset ADM do grupo automaticamente
+                        if (!hasAnyAdminSaved) return [...new Set([...savedTabs, ...presetTabs])];
+                        if (['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
+                        return savedTabs;
+                    }
+                    return savedTabs.length > 0 ? savedTabs : presetTabs;
+                },
+
+                alterarGrupoAcessoRapido(matricula, novoGrupo) {
+                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(matricula).trim());
+                    if (idx === -1) return;
+                    const presets = this.getPresetsGruposAcesso();
+                    app.users[idx].tipoAcesso = novoGrupo;
+                    app.users[idx].abasLiberadas = [...(presets[novoGrupo] || [])];
+                    if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
+                        app.currentUser = app.users[idx];
+                        this.renderNav();
+                    }
+                    app.storage.saveUsers().then(() => {
+                        this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
+                        this.showAlert("Perfil Atualizado!", `<b>${app.users[idx].nome}</b> agora possui o perfil <b>${novoGrupo}</b> com a barra personalizada de ADM ativa.`, "success");
+                    });
+                },
+
+                aplicarPresetNoModal(grupo, checkClass) {
+                    const presets = this.getPresetsGruposAcesso();
+                    const abasDoGrupo = presets[grupo] || [];
+                    document.querySelectorAll('.' + checkClass).forEach(cb => {
+                        cb.checked = abasDoGrupo.includes(cb.value);
+                    });
+                },
+
+                abrirModalPresetsGrupos(grupoAtivo = 'Qualidade') {
+                    const presets = this.getPresetsGruposAcesso();
+                    const abasAtivas = presets[grupoAtivo] || [];
+                    const todasAbas = this.getAllSystemTabs();
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-user-shield text-indigo-600"></i> Pré-selecionar Abas por Grupo de Acesso`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4 text-left">
+                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                Escolha um grupo abaixo e marque quais abas serão liberadas automaticamente ao selecionar este perfil no cadastro/edição de colaboradores:
+                            </p>
+                            <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-700 pb-3">
+                                ${this.gruposAcessoLista.map(g => `
+                                    <button type="button" onclick="app.ui.abrirModalPresetsGrupos('${g}')" class="px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border ${g === grupoAtivo ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
+                                        ${g}
+                                    </button>
+                                `).join('')}
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-[11px] font-black uppercase text-indigo-600 dark:text-indigo-400">Abas Pré-selecionadas para "${grupoAtivo}"</span>
+                                    <button type="button" onclick="app.ui.toggleAllTabs('preset-grupo-aba-check')" class="text-[10px] font-bold text-blue-500 hover:underline"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Tudo</button>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                                    ${todasAbas.map(tab => `
+                                        <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-indigo-500 transition-colors">
+                                            <input type="checkbox" value="${tab.id}" class="preset-grupo-aba-check w-4 h-4 accent-indigo-600" ${abasAtivas.includes(tab.id) ? 'checked' : ''}>
+                                            <span class="text-[10px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-200' : 'text-purple-600 dark:text-purple-400'} uppercase truncate" title="${tab.label}">${tab.label}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <label class="flex items-center gap-2 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 cursor-pointer">
+                                <input type="checkbox" id="preset-aplicar-existentes" checked class="w-4 h-4 accent-indigo-600">
+                                <span class="text-xs font-bold text-indigo-800 dark:text-indigo-300">Atualizar também as abas dos colaboradores que já pertencem ao grupo <b>${grupoAtivo}</b></span>
+                            </label>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-xs">Fechar</button>
+                        <button onclick="app.ui.salvarPresetGrupo('${grupoAtivo}')" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Padrão de ${grupoAtivo}</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                salvarPresetGrupo(grupo) {
+                    const checks = document.querySelectorAll('.preset-grupo-aba-check:checked');
+                    const abas = Array.from(checks).map(c => c.value);
+                    const aplicarExistentes = document.getElementById('preset-aplicar-existentes')?.checked;
+
+                    if (!app.config.presetsGruposAcesso || typeof app.config.presetsGruposAcesso !== 'object') {
+                        app.config.presetsGruposAcesso = {};
+                    }
+                    app.config.presetsGruposAcesso[grupo] = abas;
+                    app.storage.saveConfig();
+
+                    let atualizados = 0;
+                    if (aplicarExistentes) {
+                        app.users.forEach(u => {
+                            if ((u.tipoAcesso || 'Qualidade') === grupo) {
+                                u.abasLiberadas = [...abas];
+                                atualizados++;
+                            }
+                        });
+                        if (atualizados > 0) app.storage.saveUsers();
+                    }
+
+                    this.showAlert("Padrão Salvo!", `As abas do grupo <b>${grupo}</b> foram salvas permanentemente${atualizados > 0 ? ` e aplicadas a <b>${atualizados} colaborador(es)</b> deste grupo` : ''}.`, "success");
+                },
 
                 // Função que extrai automaticamente todas as abas do sistema
                 getAllSystemTabs() {
@@ -2237,28 +2713,104 @@
                 valuesHidden: false,
                 timerInterval: null,
                 
-                // CORREÇÃO: Filtros dinâmicos para a tabela bruta
-                filterPendingRows(className, showOnlyPending) {
-                    document.querySelectorAll('.' + className).forEach(el => {
-                        if (showOnlyPending) {
-                            el.style.display = el.classList.contains('fb-pendente') ? '' : 'none';
-                        } else {
-                            el.style.display = '';
-                        }
-                    });
+                // CORREÇÃO: Filtros dinâmicos e funcionais para a tabela bruta e de feedbacks
+                monitoriasFilterState: { 'linha-bruta': 'todos', 'linha-bruta-user': 'todos' },
+                monitoriasSearchState: { 'linha-bruta': '', 'linha-bruta-user': '' },
+
+                filterPendingRows(className, mode) {
+                    // Normaliza todos os formatos usados nos botões (singular/plural/'all')
+                    const aliasMap = { all: 'todos', todos: 'todos', pendente: 'pendentes', pendentes: 'pendentes', aplicado: 'aplicados', aplicados: 'aplicados', elegivel: 'elegiveis', elegiveis: 'elegiveis' };
+                    let filterMode = mode;
+                    if (mode === true) filterMode = 'pendentes';
+                    else if (mode === false) filterMode = 'todos';
+                    else filterMode = aliasMap[String(mode).toLowerCase()] || 'todos';
+
+                    this.monitoriasFilterState[className] = filterMode;
+                    this.applyMonitoriasRowFilters(className);
                 },
-                filterAuditoriaTable(term) {
-                    const t = term.toLowerCase().trim();
-                    const rows = document.querySelectorAll('.linha-bruta');
-                    rows.forEach(row => {
-                        const opNameCol = row.querySelector('td:nth-child(2)'); // Coluna do operador
-                        if (!opNameCol) return;
-                        if (opNameCol.innerText.toLowerCase().includes(t)) {
-                            row.style.display = '';
+                filterAuditoriaTable(term, className = 'linha-bruta') {
+                    this.monitoriasSearchState[className] = String(term || '').toLowerCase().trim();
+                    this.applyMonitoriasRowFilters(className);
+                },
+                applyMonitoriasRowFilters(className) {
+                    const filterMode = this.monitoriasFilterState[className] || 'todos';
+                    const searchTerm = this.monitoriasSearchState[className] || '';
+                    let visibleCount = 0;
+
+                    document.querySelectorAll('.' + className).forEach(el => {
+                        let matchMode = true;
+                        if (filterMode === 'pendentes') {
+                            matchMode = el.classList.contains('fb-pendente');
+                        } else if (filterMode === 'aplicados') {
+                            matchMode = el.classList.contains('fb-aplicado');
+                        } else if (filterMode === 'elegiveis') {
+                            matchMode = el.classList.contains('fb-elegivel');
+                        }
+
+                        let matchSearch = true;
+                        if (searchTerm) {
+                            const rowText = (el.getAttribute('data-search') || el.innerText || '').toLowerCase();
+                            matchSearch = rowText.includes(searchTerm);
+                        }
+
+                        if (matchMode && matchSearch) {
+                            el.style.display = '';
+                            visibleCount++;
                         } else {
-                            row.style.display = 'none';
+                            el.style.display = 'none';
                         }
                     });
+
+                    // Atualiza estado visual dos botões de filtro (ids: fb-btn-{className}-{all|pendente|aplicado|elegivel})
+                    const suffixToMode = { all: 'todos', pendente: 'pendentes', aplicado: 'aplicados', elegivel: 'elegiveis' };
+                    Object.keys(suffixToMode).forEach(suffix => {
+                        const btn = document.getElementById(`fb-btn-${className}-${suffix}`);
+                        if (!btn) return;
+                        if (suffixToMode[suffix] === filterMode) {
+                            btn.classList.add('ring-2', 'ring-offset-1', 'ring-indigo-500', 'scale-105');
+                        } else {
+                            btn.classList.remove('ring-2', 'ring-offset-1', 'ring-indigo-500', 'scale-105');
+                        }
+                    });
+
+                    const emptyRow = document.getElementById(`empty-fb-${className}`);
+                    if (emptyRow) {
+                        emptyRow.style.display = visibleCount === 0 ? '' : 'none';
+                    }
+                    const counterEl = document.getElementById(`count-fb-${className}`) || document.getElementById(`fb-counter-${className}`);
+                    if (counterEl) {
+                        counterEl.textContent = `Exibindo ${visibleCount} avaliação(ões)`;
+                    }
+                },
+                exportarFeedbacksUserXLSX(mode = 'pendentes') {
+                    const state = app.monitoriasData || {};
+                    const userMatricula = app.currentUser ? app.currentUser.matricula : '';
+                    const minhasLinhas = (state.detalhes && state.detalhes.linhas) ? state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula) : [];
+                    const filtradas = minhasLinhas.filter(linha => {
+                        const statusStr = String(linha.status || '').toLowerCase();
+                        const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('aplicado') || statusStr.includes('realizado');
+                        const isNotaBaixa = app.isNotaFeedback(linha.nota);
+                        const isPendente = (isNotaBaixa && !isAplicado) || statusStr.includes('pendente');
+                        if (mode === 'pendentes') return isPendente;
+                        if (mode === 'aplicados') return isAplicado;
+                        if (mode === 'elegiveis') return isNotaBaixa || isAplicado || isPendente;
+                        return true;
+                    });
+                    if (filtradas.length === 0) {
+                        return this.showAlert("Sem Registros", "Não há avaliações neste filtro para exportar.", "info");
+                    }
+                    const rows = filtradas.map(l => ({
+                        "Monitor": l.monitor,
+                        "Operador Avaliado": l.operador,
+                        "Nota": l.nota,
+                        "Status na Planilha": l.status,
+                        "Operação": l.operacao,
+                        "Data": l.data
+                    }));
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Minhas_Monitorias");
+                    XLSX.writeFile(wb, `Monitorias_${mode}_${app.currentMonth}.xlsx`);
                 },
 
                 toggleFinanceVisibility() {
@@ -2292,12 +2844,16 @@
                 },
 
                 openAddUserModal() { 
+                    app.syncOperacoesFromSetorial();
                     const containerOps = document.getElementById('cad-ops-container');
                     if(containerOps) {
                         containerOps.innerHTML = Object.values(app.operacoesList).map(op => `
-                            <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors">
-                                <input type="checkbox" value="${op.nome}" class="cad-op-check w-4 h-4 accent-green-600"> 
-                                <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${op.nome}</span>
+                            <label class="flex items-center justify-between gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors">
+                                <span class="flex items-center gap-2 min-w-0">
+                                    <input type="checkbox" value="${op.nome}" class="cad-op-check w-4 h-4 accent-green-600 shrink-0"> 
+                                    <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase truncate">${op.nome}</span>
+                                </span>
+                                <span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 shrink-0">${op.hc || op.max || 0} op.</span>
                             </label>
                         `).join('');
                     }
@@ -2310,6 +2866,12 @@
                                 <span class="text-[11px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-300' : 'text-purple-600 dark:text-purple-400'} uppercase">${tab.label}</span>
                             </label>
                         `).join('');
+                    }
+
+                    const selTipo = document.getElementById('cad-tipo-acesso');
+                    if (selTipo) {
+                        selTipo.value = 'Qualidade';
+                        this.aplicarPresetNoModal('Qualidade', 'cad-aba-check');
                     }
 
                     document.getElementById('cad-foto').value = '';
@@ -2326,9 +2888,7 @@
                         Notification.requestPermission();
                     }
                     this.checkTheme();
-                    if(localStorage.getItem('soft_cursor') !== 'disabled') {
-                        document.body.classList.add('custom-cursor');
-                    }
+                    document.body.classList.remove('custom-cursor');
                     this.initThemeColors(); 
                     
                     const savedMat = localStorage.getItem('soft_saved_mat');
@@ -2344,11 +2904,41 @@
                     app.currentMonth = `${yyyy}-${mm}`;
                     document.getElementById('global-month').value = app.currentMonth;
                     
+                    // Resgata backups locais imediatamente (para nunca perder Visão Geral Setorial ao dar F5)
+                    try {
+                        const localCfgRaw = localStorage.getItem('soft_config_backup');
+                        if (localCfgRaw) {
+                            const localCfg = JSON.parse(localCfgRaw);
+                            if (localCfg && typeof localCfg === 'object') {
+                                app.config = { ...(app.config || {}), ...localCfg };
+                            }
+                        }
+                        const localVG = localStorage.getItem('soft_visao_geral_backup');
+                        if (localVG) {
+                            app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(JSON.parse(localVG));
+                        }
+                        const savedSort = localStorage.getItem('soft_vg_sort');
+                        if (savedSort) this.visaoGeralSort = savedSort;
+                        const savedStatus = localStorage.getItem('soft_vg_status');
+                        if (savedStatus) this.visaoGeralFilterStatus = savedStatus;
+                        const savedView = localStorage.getItem('soft_vg_view');
+                        if (savedView) this.visaoGeralViewMode = savedView;
+                    } catch (e) {}
+
                     // É esta linha que carrega os usuários do Banco de Dados!
                     app.storage.init(); 
                     
-                    // Resgata os dados da nova tela do HD
-                    localforage.getItem('soft_visao_geral').then(data => { if(data) app.visaoGeralData = data; });
+                    // Resgata os dados da nova tela do HD e atualiza caso esteja na aba
+                    localforage.getItem('soft_visao_geral').then(data => {
+                        if (data && Object.keys(data).length > 0) {
+                            app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(data);
+                            try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.visaoGeralData)); } catch (e) {}
+                            if (app.currentTab === 'analitico_visao_geral') {
+                                const viewDiv = document.getElementById('view-container-analitico_visao_geral');
+                                if (viewDiv) app.ui.renderView_AnaliticoVisaoGeral(viewDiv);
+                            }
+                        }
+                    });
                 
                     // -----------------------------------------------------
                     
@@ -2642,21 +3232,42 @@
                     let menus = [];
                     if (app.isAdmin) {
                         menus = JSON.parse(JSON.stringify(this.menusAdmin));
-                    } else {
-                        menus = JSON.parse(JSON.stringify(this.menusUser));
-                        if (app.currentUser && Array.isArray(app.currentUser.abasLiberadas)) {
-                            const userAbas = app.currentUser.abasLiberadas;
-                            menus.forEach(m => { m.items = m.items.filter(item => userAbas.includes(item.id)); });
-                            
-                            let adminExtras = [];
-                            this.menusAdmin.forEach(m => m.items.forEach(i => {
-                                const existsInUser = this.menusUser.some(mu => mu.items.some(iu => iu.id === i.id));
-                                if (!existsInUser && userAbas.includes(i.id)) { adminExtras.push(i); }
+                    } else if (app.currentUser) {
+                        const userAbas = this.getEffectiveUserTabs(app.currentUser);
+                        const tipo = app.currentUser.tipoAcesso || 'Qualidade';
+                        const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas'];
+                        const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
+
+                        if (hasAdminTabs) {
+                            // Barra Personalizada de ADM: Usa a arquitetura oficial de grupos do ADM + Rotina Pessoal (sem "Ferramentas Extras")
+                            const adminGroups = JSON.parse(JSON.stringify(this.menusAdmin));
+                            adminGroups.forEach(g => {
+                                g.items = g.items.filter(item => userAbas.includes(item.id));
+                            });
+
+                            const idsInAdminGroups = new Set();
+                            this.menusAdmin.forEach(g => g.items.forEach(i => idsInAdminGroups.add(i.id)));
+
+                            const personalItems = [];
+                            this.menusUser.forEach(g => g.items.forEach(i => {
+                                if (!idsInAdminGroups.has(i.id) && userAbas.includes(i.id)) {
+                                    personalItems.push({ ...i });
+                                }
                             }));
-                            
-                            if (adminExtras.length > 0) {
-                                menus.push({ group: '🔑 Ferramentas Extras', icon: 'fa-unlock-keyhole', items: adminExtras });
+
+                            if (personalItems.length > 0) {
+                                // Insere "Minha Rotina & Formulários" logo após Controle & Importação
+                                adminGroups.splice(2, 0, {
+                                    group: 'Rotina & Formulários',
+                                    icon: 'fa-headset',
+                                    items: personalItems
+                                });
                             }
+                            menus = adminGroups.filter(g => g.items.length > 0);
+                        } else {
+                            menus = JSON.parse(JSON.stringify(this.menusUser));
+                            menus.forEach(m => { m.items = m.items.filter(item => userAbas.includes(item.id)); });
                             menus = menus.filter(m => m.items.length > 0);
                         }
                     }
@@ -2775,9 +3386,14 @@
                 },
 
                 renderTab(tabId, forceRefresh = false) {
-                    // Limpar cronômetro ao mudar de tela
+                    // Limpar cronômetro e renderizações pendentes ao mudar de tela ou trocar de mês
                     if(this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
+                    if(this.renderTimeoutId) { clearTimeout(this.renderTimeoutId); this.renderTimeoutId = null; }
                     
+                    // Sincroniza operações setoriais antes de desenhar qualquer aba
+                    app.syncOperacoesFromSetorial();
+                    if (tabId === 'operacoes') tabId = 'hierarquia';
+
                     // Esconde Overlay se não estiver na aba Meu Painel
                     const overlay = document.getElementById('legendary-overlay');
                     if (overlay) overlay.classList.add('hidden');
@@ -2787,9 +3403,15 @@
                     this.renderNav();
                     const mainContainer = document.getElementById('content-container');
                     
-                    // Esconder todas as abas (Memória ativada)
+                    // Remove abas inativas do DOM para liberar memória e evitar peso com milhares de elementos ocultos
                     const allViews = mainContainer.querySelectorAll('.tab-view-container');
-                    allViews.forEach(v => v.classList.add('hidden'));
+                    allViews.forEach(v => {
+                        if (v.id !== 'view-container-' + tabId) {
+                            v.remove();
+                        } else {
+                            v.classList.add('hidden');
+                        }
+                    });
 
                     let viewDiv = document.getElementById('view-container-' + tabId);
                     
@@ -2800,76 +3422,60 @@
                         viewDiv.className = 'tab-view-container w-full h-full animate-fade-in pb-12 relative z-10';
                         mainContainer.appendChild(viewDiv);
 
-                        // SKELETON LOADER (Efeito Psicológico)
-                        viewDiv.innerHTML = `
-                            <div class="space-y-6 animate-pulse p-4 w-full">
-                                <div class="h-8 bg-slate-200 dark:bg-slate-700 rounded-xl w-1/3"></div>
-                                <div class="h-4 bg-slate-200 dark:bg-slate-700 rounded-xl w-1/2"></div>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                                    <div class="h-32 bg-slate-200 dark:bg-slate-700 rounded-3xl"></div>
-                                    <div class="h-32 bg-slate-200 dark:bg-slate-700 rounded-3xl"></div>
-                                    <div class="h-32 bg-slate-200 dark:bg-slate-700 rounded-3xl"></div>
-                                </div>
-                            </div>
-                        `;
-
-                        // Atrasa a renderização real para exibir o Skeleton
-                        setTimeout(() => {
-                            viewDiv.innerHTML = ''; // Limpa o esqueleto
-
-                            // RENDER COM CINTURÃO DE SEGURANÇA (TRY/CATCH)
-                            try {
-                                if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
-                                else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
-                                else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
-                                else if(tabId === 'cadastros') this.renderView_Cadastros(viewDiv);
-                                else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
-                                else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
-                                else if(tabId === 'regras') this.renderView_Regras(viewDiv);
-                                else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
-                                else if(tabId === 'legal') this.renderView_Legal(viewDiv);
-                                else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
-                                else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv);
-                                else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
-                                else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
-                                else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
-                                else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
-                                else if(tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
-                                else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);
-                                else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
-                                else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
-                                else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
-                                else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);
-                                else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);
-                                else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);
-                                else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);
-                                else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
-                                else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
-                                else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
-                                else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
-                                else if(tabId === 'impressoes' || tabId === 'gestao_impressoes') this.renderView_Impressoes(viewDiv);
-                                else {
-                                    // Fallback Cirúrgico: Se a aba guardada não existir, força uma aba segura.
-                                    app.currentTab = app.isAdmin ? 'dashboard_adm' : 'meu_painel';
-                                    localStorage.setItem('soft_session_tab', app.currentTab);
-                                    this.renderTab(app.currentTab, true);
-                                }
-                            } catch (error) {
-                                console.error("🚨 Erro de Renderização na aba " + tabId + ":", error);
-                                viewDiv.innerHTML = `
-                                    <div class="p-12 text-center text-slate-500 glass-card rounded-3xl border-dashed border-2 border-red-300 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 flex flex-col items-center justify-center max-w-xl mx-auto mt-10">
-                                        <div class="w-20 h-20 bg-red-100 text-red-500 dark:bg-red-900/40 dark:text-red-400 rounded-full flex items-center justify-center text-4xl mb-4 shadow-inner">
-                                            <i class="fa-solid fa-triangle-exclamation"></i>
-                                        </div>
-                                        <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-2">Ops! Falha ao carregar a tela</h3>
-                                        <p class="text-sm leading-relaxed mb-6">Aconteceu um imprevisto ao tentar desenhar as informações desta página. Não se preocupe, isso não corrompeu seus dados.</p>
-                                        <button onclick="app.ui.renderTab('${app.isAdmin ? 'dashboard_adm' : 'meu_painel'}', true)" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all">
-                                            <i class="fa-solid fa-house mr-2"></i> Voltar ao Início Seguro
-                                        </button>
-                                    </div>
-                                `;
+                        // RENDER DIRETO E INSTANTÂNEO COM CINTURÃO DE SEGURANÇA (TRY/CATCH)
+                        try {
+                            if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
+                            else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
+                            else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
+                            else if(tabId === 'hierarquia' || tabId === 'operacoes') this.renderView_Hierarquia(viewDiv);
+                            else if(tabId === 'cadastros') this.renderView_Cadastros(viewDiv);
+                            else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
+                            else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
+                            else if(tabId === 'regras') this.renderView_Regras(viewDiv);
+                            else if(tabId === 'csat_nps') this.renderView_CsatNps(viewDiv);
+                            else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
+                            else if(tabId === 'legal') this.renderView_Legal(viewDiv);
+                            else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
+                            else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv);
+                            else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
+                            else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
+                            else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
+                            else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
+                            else if(tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
+                            else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);
+                            else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
+                            else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
+                            else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
+                            else if(tabId === 'import_monitorias') this.renderView_ImportMonitorias(viewDiv);
+                            else if(tabId === 'ranking_monitorias') this.renderView_RankingMonitorias(viewDiv);
+                            else if(tabId === 'calibragem_audio') this.renderView_CalibragemAudio(viewDiv);
+                            else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);
+                            else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
+                            else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
+                            else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
+                            else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
+                            else if(tabId === 'impressoes' || tabId === 'gestao_impressoes') this.renderView_Impressoes(viewDiv);
+                            else {
+                                // Fallback Cirúrgico: Se a aba guardada não existir, força uma aba segura.
+                                app.currentTab = app.isAdmin ? 'dashboard_adm' : 'meu_painel';
+                                localStorage.setItem('soft_session_tab', app.currentTab);
+                                this.renderTab(app.currentTab, true);
                             }
-                        }, 400); // Fim do atraso do Skeleton
+                        } catch (error) {
+                            console.error("🚨 Erro de Renderização na aba " + tabId + ":", error);
+                            viewDiv.innerHTML = `
+                                <div class="p-12 text-center text-slate-500 glass-card rounded-3xl border-dashed border-2 border-red-300 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 flex flex-col items-center justify-center max-w-xl mx-auto mt-10">
+                                    <div class="w-20 h-20 bg-red-100 text-red-500 dark:bg-red-900/40 dark:text-red-400 rounded-full flex items-center justify-center text-4xl mb-4 shadow-inner">
+                                        <i class="fa-solid fa-triangle-exclamation"></i>
+                                    </div>
+                                    <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-2">Ops! Falha ao carregar a tela</h3>
+                                    <p class="text-sm leading-relaxed mb-6">Aconteceu um imprevisto ao tentar desenhar as informações desta página. Não se preocupe, isso não corrompeu seus dados.</p>
+                                    <button onclick="app.ui.renderTab('${app.isAdmin ? 'dashboard_adm' : 'meu_painel'}', true)" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all">
+                                        <i class="fa-solid fa-house mr-2"></i> Voltar ao Início Seguro
+                                    </button>
+                                </div>
+                            `;
+                        }
                     } else if (tabId === 'meu_painel') {
                         // Se voltar pra aba (memória) e tava lendário, reativa overlay
                         this.renderView_MeuPainel(viewDiv); // Força render no Meu_Painel para checar o overlay state sempre
@@ -2877,29 +3483,39 @@
                     
                     viewDiv.classList.remove('hidden');
 
-                    // Dispara a magia do UX sempre que a tela carrega (com leve atraso para o DOM respirar)
-                    setTimeout(() => this.applyPremiumUX(), 100);
+                    // Aplica melhorias leves de UX apenas na aba ativa
+                    requestAnimationFrame(() => this.applyPremiumUX(viewDiv));
                 },
 
                 renderView_ValidarAcoes(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('validar_acoes')) return;
                     
-                    const allActs = Object.values(app.actionsList);
-                    const monthActs = allActs.filter(a => a.month === app.currentMonth);
+                    const allActs = Object.values(app.actionsList || {}).filter(Boolean);
+                    const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
+                    // Filtra estritamente pelo mês selecionado no topo para nunca misturar meses na troca de competência
+                    const monthActs = allActs.filter(a => getActMonth(a) === app.currentMonth);
                     const pendentes = monthActs.filter(a => a.status === 'pendente').length;
                     const aprovados = monthActs.filter(a => a.status === 'aprovado').length;
                     const reprovados = monthActs.filter(a => a.status === 'reprovado').length;
+                    const pendentesOutrosMeses = allActs.filter(a => a.status === 'pendente' && getActMonth(a) !== app.currentMonth);
 
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Apresentação Gerencial de Ações</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Modo auditoria para avaliação de impacto e qualidade de processo.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Modo auditoria referente a <strong class="text-green-600 dark:text-green-400">${this.formatMonthLabel(app.currentMonth)}</strong>.</p>
                             </div>
                             <button onclick="app.actions.exportActionsXLSX()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-excel"></i> Baixar Relatório XLSX
                             </button>
                         </div>
+
+                        ${pendentesOutrosMeses.length > 0 ? `
+                            <div class="mb-6 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <span class="font-bold text-amber-800 dark:text-amber-300"><i class="fa-solid fa-bell mr-1.5"></i> Existem <strong>${pendentesOutrosMeses.length}</strong> ação(ões) pendente(s) em outro(s) mês(es) (${[...new Set(pendentesOutrosMeses.map(a => this.formatMonthLabel(getActMonth(a))))].join(', ')}).</span>
+                                <button onclick="const m = '${getActMonth(pendentesOutrosMeses[0])}'; const sel = document.getElementById('global-month'); if(sel) sel.value = m; app.changeMonth(m);" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-black transition-colors">Ir para ${this.formatMonthLabel(getActMonth(pendentesOutrosMeses[0]))}</button>
+                            </div>
+                        ` : ''}
 
                         <!-- Dashboard Cards -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -2919,7 +3535,7 @@
                     `;
                     
                     const ops = Object.values(app.operacoesList).map(o => o.nome);
-                    const users = [...new Set(allActs.map(a => a.nome))].filter(Boolean);
+                    const users = [...new Set(monthActs.map(a => a.nome))].filter(Boolean);
 
                     html += `
                         <div class="flex flex-col md:flex-row gap-4 mb-4">
@@ -2945,7 +3561,7 @@
                     // APLICAÇÃO DOS FILTROS PRIMEIRO!
                     if (this.actionFilterUser) list = list.filter(a => a.nome === this.actionFilterUser);
                     if (this.actionFilterOp) list = list.filter(a => a.codigoOpe === this.actionFilterOp);
-                    list.sort((a,b) => b.timestamp - a.timestamp);
+                    list.sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
 
                     // NOVA GALERIA DE APROVADOS (COM FOTOS SEPARADAS)
                     if (this.currentActionFilter === 'aprovado' && list.length > 0) {
@@ -2955,14 +3571,14 @@
                         list.forEach(act => {
                             const photos = act.photos || (act.photo ? [act.photo] : []);
                             photos.forEach((fotoGaleria, pIndex) => {
-                                if (fotoGaleria) {
+                                if (fotoGaleria && typeof fotoGaleria === 'string') {
                                     html += `
                                     <div class="relative min-w-[120px] w-[120px] h-[120px] rounded-xl overflow-hidden group border border-slate-300 dark:border-slate-600 shadow-sm shrink-0">
                                         ${fotoGaleria.startsWith('data:application/pdf') ? 
                                         `<div class="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showSingleImage('${act.id}', ${pIndex})" title="Ver PDF de ${act.nome}"><i class="fa-solid fa-file-pdf text-3xl"></i></div>` : 
                                         `<img src="${fotoGaleria}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 cursor-pointer" onclick="app.actions.showSingleImage('${act.id}', ${pIndex})" title="Evidência ${pIndex+1} de ${act.nome}">`}
                                         <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2 pointer-events-none">
-                                            <div class="text-[8px] font-bold text-white truncate leading-tight">${act.nome}</div>
+                                            <div class="text-[8px] font-bold text-white truncate leading-tight">${act.nome || ''}</div>
                                             <button onclick="event.stopPropagation(); app.actions.downloadSingleImage('${act.id}', ${pIndex})" class="self-end bg-white/90 text-slate-800 hover:text-blue-600 w-6 h-6 rounded-full flex items-center justify-center shadow-lg pointer-events-auto transition-colors"><i class="fa-solid fa-download text-[10px]"></i></button>
                                         </div>
                                     </div>`;
@@ -2972,16 +3588,13 @@
                         html += `</div></div>`;
                     }
 
-                    // APLICAÇÃO DOS FILTROS (Sem redeclarar a variável)
-                    if (this.actionFilterUser) list = list.filter(a => a.nome === this.actionFilterUser);
-                    if (this.actionFilterOp) list = list.filter(a => a.codigoOpe === this.actionFilterOp);
-                    list.sort((a,b) => b.timestamp - a.timestamp);
-
                     if(list.length === 0) {
-                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem registros nesta visão.</div>`;
+                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem registros para ${this.formatMonthLabel(app.currentMonth)} nesta visão.</div>`;
                     } else {
                         list.forEach(act => {
-                            const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : act.photo;
+                            const photoThumb = (act.photos && act.photos.length > 0 ? act.photos[0] : act.photo) || '';
+                            const dataAcaoFmt = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : '-';
+                            const actMonthRef = getActMonth(act);
                             html += `
                                 <div class="glass-card rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row mb-6">
                                     <div class="md:w-2/5 h-64 md:h-auto bg-slate-200 dark:bg-slate-800 relative group cursor-pointer" onclick="app.actions.showImageFull('${act.id}')">
@@ -2991,20 +3604,20 @@
                                     <div class="p-6 md:w-3/5 flex flex-col">
                                         <div class="flex justify-between items-start mb-4">
                                             <div class="w-full">
-                                                <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-calendar-day"></i> Ref Mensal: ${this.formatMonthLabel(act.month)} | Data Ação: ${act.dataAcao.split('-').reverse().join('/')}</div>
-                                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white leading-tight">${act.objetivo}</h3>
-                                                <div class="text-sm font-bold text-slate-600 dark:text-slate-400 mt-1.5 border-b border-slate-100 dark:border-slate-700 pb-3 mb-3"><i class="fa-solid fa-user-circle"></i> ${act.nome} | Op: ${act.codigoOpe}</div>
+                                                <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1"><i class="fa-solid fa-calendar-day"></i> Ref Mensal: ${this.formatMonthLabel(actMonthRef)} | Data Ação: ${dataAcaoFmt}</div>
+                                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white leading-tight">${act.objetivo || '-'}</h3>
+                                                <div class="text-sm font-bold text-slate-600 dark:text-slate-400 mt-1.5 border-b border-slate-100 dark:border-slate-700 pb-3 mb-3"><i class="fa-solid fa-user-circle"></i> ${act.nome || '-'} | Op: ${act.codigoOpe || '-'}</div>
                                                 
                                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Gestor Alinhado</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 break-words whitespace-normal">${act.gestor}</div></div>
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Ofensor Alvo</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 break-words whitespace-normal">${act.ofensor}</div></div>
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Operadores</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.operadores}</div></div>
-                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Brindes</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.brindes}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Gestor Alinhado</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 break-words whitespace-normal">${act.gestor || '-'}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Ofensor Alvo</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300 break-words whitespace-normal">${act.ofensor || '-'}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Operadores</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.operadores || '0'}</div></div>
+                                                    <div class="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Brindes</div><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${act.brindes || '0'}</div></div>
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700/50 mb-5 flex-1">
-                                            <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed"><span class="font-bold">Ação Detalhada:</span><br/>${act.acaoRealizada}</div>
+                                            <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed"><span class="font-bold">Ação Detalhada:</span><br/>${act.acaoRealizada || '-'}</div>
                                             ${act.comentario ? `<div class="mt-3 pt-3 border-t border-red-200 text-xs text-red-600 font-bold"><i class="fa-solid fa-reply"></i> Motivo da Devolução: ${act.comentario}</div>` : ''}
                                         </div>
                                         <div class="flex gap-3 mt-4">
@@ -3081,7 +3694,7 @@
                 },
                 
                 renderView_GestaoCampanha(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('gestao_campanha')) return;
                     
                     let html = `
                         <div class="mb-8">
@@ -3179,9 +3792,10 @@
                 },
 
                 renderView_RegistrarAcao(container) {
-                    if(app.isAdmin) return;
+                    if(app.isAdmin && !app.currentUser) return;
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
+                    const todayIso = new Date().toISOString().split('T')[0];
 
                     let html = `
                         <div class="mb-8">
@@ -3192,7 +3806,7 @@
                             <input type="hidden" id="act-edit-id" value="">
                             <form onsubmit="event.preventDefault(); app.actions.submitAction();" class="space-y-6">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label><input type="date" id="act-data" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label><input type="date" id="act-data" value="${todayIso}" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none"></div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Operação *</label>
                                         <select id="act-codigo" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none">
@@ -3277,9 +3891,11 @@
                             <div class="mt-12 pt-8 border-t border-slate-200">
                                 <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-6">Histórico / Devolutivas</h3>
                     `;
-                    const myActions = Object.values(app.actionsList).filter(a => a.matricula === app.currentUser.matricula && a.month === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
+                    const myMat = String(app.currentUser?.matricula || '').trim();
+                    const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
+                    const myActions = Object.values(app.actionsList || {}).filter(a => a && String(a.matricula || '').trim() === myMat && getActMonth(a) === app.currentMonth).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
                     if(myActions.length === 0) {
-                        html += `<div class="text-sm text-slate-500 text-center">Nenhum histórico encontrado.</div>`;
+                        html += `<div class="text-sm text-slate-500 text-center">Nenhum histórico encontrado para ${monthLabel}.</div>`;
                     } else {
                         html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
                         myActions.forEach(act => {
@@ -3288,6 +3904,8 @@
                                               `<span class="bg-red-100 text-red-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-sm">Reprovado</span>`;
 
                             const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
+                            const dataAcaoFmt = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : '-';
+                            const acaoRealizadaSafe = String(act.acaoRealizada || '');
 
                             // O usuário AGORA VÊ TUDO IGUAL AO ADM, COM BOTÃO DE CORRIGIR SEMPRE DISPONÍVEL
                             html += `
@@ -3299,23 +3917,23 @@
                                         <div class="flex justify-between items-start mb-3">
                                             <div class="w-full">
                                                 <div class="flex justify-between items-center mb-1.5">
-                                                    <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest"><i class="fa-solid fa-calendar-day"></i> Ref: ${app.ui.formatMonthLabel(act.month)}</div>
+                                                    <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest"><i class="fa-solid fa-calendar-day"></i> Ref: ${app.ui.formatMonthLabel(getActMonth(act))}</div>
                                                     ${statusBadge}
                                                 </div>
-                                                <h4 class="font-extrabold text-base text-slate-800 dark:text-white leading-tight">${act.objetivo}</h4>
-                                                <div class="text-[10px] text-slate-500 font-bold mt-1">Realizada em: ${act.dataAcao.split('-').reverse().join('/')}</div>
+                                                <h4 class="font-extrabold text-base text-slate-800 dark:text-white leading-tight">${act.objetivo || '-'}</h4>
+                                                <div class="text-[10px] text-slate-500 font-bold mt-1">Realizada em: ${dataAcaoFmt}</div>
                                             </div>
                                         </div>
 
                                         <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Op / Fila</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.codigoOpe}</div></div>
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Gestor</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.gestor}</div></div>
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Ofensor</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.ofensor}</div></div>
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Impacto</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300">${act.operadores} Op / ${act.brindes} Br.</div></div>
+                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Op / Fila</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.codigoOpe || '-'}</div></div>
+                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Gestor</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.gestor || '-'}</div></div>
+                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Ofensor</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.ofensor || '-'}</div></div>
+                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Impacto</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300">${act.operadores || '0'} Op / ${act.brindes || '0'} Br.</div></div>
                                         </div>
 
                                         <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 flex-1 mb-4">
-                                            <div class="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-3" title="${act.acaoRealizada.replace(/"/g, '&quot;')}"><span class="font-bold">Ação:</span> ${act.acaoRealizada}</div>
+                                            <div class="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-3" title="${acaoRealizadaSafe.replace(/"/g, '&quot;')}"><span class="font-bold">Ação:</span> ${acaoRealizadaSafe}</div>
                                             ${act.comentario ? `<div class="mt-2 pt-2 border-t border-red-200 dark:border-red-900/50 text-[11px] text-red-600 dark:text-red-400 font-bold"><i class="fa-solid fa-reply"></i> Devolutiva ADM: ${act.comentario}</div>` : ''}
                                         </div>
 
@@ -3336,8 +3954,8 @@
                 calFiltroNome: '', calFiltroOp: '', calFiltroStatus: '', calFiltroTema: '', estudosFiltroOp: '',
 
                 renderView_Calendario(container) {
-                    const mat = app.isAdmin ? 'ADM' : app.currentUser.matricula;
-                    const [year, month] = app.currentMonth.split('-');
+                    const mat = (app.isAdmin || !app.currentUser) ? 'ADM' : app.currentUser.matricula;
+                    const [year, month] = (app.currentMonth || new Date().toISOString().substring(0, 7)).split('-');
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.calFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
                     // Helper Puxar Nomes
@@ -3392,68 +4010,70 @@
 
                         <!-- Dashboard Informativo -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                            <div class="bg-white p-4 rounded-2xl border text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total de Registros</div><div class="text-3xl font-black text-blue-600">${totais}</div></div>
-                            <div class="bg-white p-4 rounded-2xl border text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Entregues</div><div class="text-3xl font-black text-green-600">${concluidos}</div></div>
-                            <div class="bg-white p-4 rounded-2xl border text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Previstos</div><div class="text-3xl font-black text-orange-500">${pendentes}</div></div>
-                            <div class="bg-white p-4 rounded-2xl border text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Cancelados</div><div class="text-3xl font-black text-red-500">${cancelados}</div></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total de Registros</div><div class="text-3xl font-black text-blue-600 dark:text-blue-400">${totais}</div></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Entregues</div><div class="text-3xl font-black text-green-600 dark:text-green-400">${concluidos}</div></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Previstos</div><div class="text-3xl font-black text-orange-500 dark:text-orange-400">${pendentes}</div></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Cancelados</div><div class="text-3xl font-black text-red-500 dark:text-red-400">${cancelados}</div></div>
                         </div>
 
-                        <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 p-4 rounded-2xl border">
-                            <div class="text-xs font-bold text-slate-500 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros Ativos</div>
-                            ${app.isAdmin ? `<input type="text" placeholder="Nome do Colaborador (Aperte Enter)" value="${this.calFiltroNome}" onchange="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" onkeydown="if(event.key==='Enter') this.blur()" class="p-2.5 rounded-xl text-sm border outline-none bg-white w-56">` : ''}
-                            <select onchange="app.ui.calFiltroOp=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white">
+                        <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros Ativos</div>
+                            ${app.isAdmin ? `<input type="text" placeholder="Nome do Colaborador (Aperte Enter)" value="${this.calFiltroNome}" onchange="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" onkeydown="if(event.key==='Enter') this.blur()" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-56">` : ''}
+                            <select onchange="app.ui.calFiltroOp=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white">
                                 <option value="">Todas Operações</option>${operacoes}
                             </select>
-                            <select onchange="app.ui.calFiltroTema=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white">
+                            <select onchange="app.ui.calFiltroTema=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white">
                                 <option value="">Todos Temas</option><option value="Quality Day" ${this.calFiltroTema==='Quality Day'?'selected':''}>Quality Day</option><option value="Aplicação de Ação" ${this.calFiltroTema==='Aplicação de Ação'?'selected':''}>Aplicação Ação</option><option value="Reunião" ${this.calFiltroTema==='Reunião'?'selected':''}>Reunião</option><option value="Calibração" ${this.calFiltroTema==='Calibração'?'selected':''}>Calibração</option>
                             </select>
-                            <select onchange="app.ui.calFiltroStatus=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border outline-none bg-white">
+                            <select onchange="app.ui.calFiltroStatus=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white">
                                 <option value="">Todos Status</option><option value="Previsto" ${this.calFiltroStatus==='Previsto'?'selected':''}>Previsto</option><option value="Finalizado" ${this.calFiltroStatus==='Finalizado'?'selected':''}>Finalizado</option><option value="Cancelado" ${this.calFiltroStatus==='Cancelado'?'selected':''}>Cancelado</option>
                             </select>
                         </div>
 
                         <div class="glass-card p-4 md:p-6 rounded-3xl overflow-hidden">
                             <div class="grid grid-cols-7 gap-1 md:gap-2 mb-2">
-                                ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => `<div class="text-center text-[10px] md:text-[11px] font-bold text-slate-500 uppercase py-2">${d}</div>`).join('')}
+                                ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => `<div class="text-center text-[10px] md:text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase py-2">${d}</div>`).join('')}
                             </div>
                             <div class="grid grid-cols-7 gap-1 md:gap-3">
                     `;
 
                     const daysInMonth = new Date(year, month, 0).getDate();
                     const firstDayIndex = new Date(year, month - 1, 1).getDay();
-                    for(let i = 0; i < firstDayIndex; i++) html += `<div class="min-h-[110px] md:min-h-[140px] rounded-xl bg-slate-50/30 border border-transparent"></div>`;
+                    for(let i = 0; i < firstDayIndex; i++) html += `<div class="min-h-[110px] md:min-h-[140px] rounded-xl bg-slate-50/40 dark:bg-slate-900/30 border border-transparent"></div>`;
 
                     const cores = {
-                        'Quality Day': 'bg-purple-100 text-purple-800 border-purple-300',
-                        'Aplicação de Ação': 'bg-blue-100 text-blue-800 border-blue-300',
-                        'Reunião': 'bg-orange-100 text-orange-800 border-orange-300',
-                        'Calibração': 'bg-teal-100 text-teal-800 border-teal-300',
-                        'Outros': 'bg-slate-200 text-slate-800 border-slate-300',
-                        'Cancelado': 'bg-red-100 text-red-800 border-red-400 opacity-70 line-through'
+                        'Quality Day': 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/40 dark:text-purple-200 dark:border-purple-700/60',
+                        'Aplicação de Ação': 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700/60',
+                        'Reunião': 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/40 dark:text-orange-200 dark:border-orange-700/60',
+                        'Calibração': 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-900/40 dark:text-teal-200 dark:border-teal-700/60',
+                        'Outros': 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-700/70 dark:text-slate-200 dark:border-slate-600',
+                        'Cancelado': 'bg-red-100 text-red-800 border-red-400 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60 opacity-70 line-through'
                     };
 
                     for(let day = 1; day <= daysInMonth; day++) {
                         const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
                         let dayEvents = myEvts.filter(e => e.data === dateStr).sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
                         const isToday = dateStr === new Date().toISOString().split('T')[0];
-                        const bgClass = isToday ? 'bg-blue-50/50 border-blue-300' : 'bg-white border-slate-200';
+                        const bgClass = isToday
+                            ? 'bg-blue-50/60 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600'
+                            : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700';
 
-                        html += `<div class="min-h-[110px] md:min-h-[140px] rounded-xl border ${bgClass} p-1 md:p-2 relative flex flex-col cursor-pointer hover:shadow-md" onclick="app.calendar.openModal('${dateStr}')"><div class="font-bold text-xs md:text-sm text-slate-700 mb-1 z-20 pointer-events-none">${day}</div><div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar z-20">`;
+                        html += `<div class="min-h-[110px] md:min-h-[140px] rounded-xl border ${bgClass} p-1 md:p-2 relative flex flex-col cursor-pointer hover:shadow-md transition-colors" onclick="app.calendar.openModal('${dateStr}')"><div class="font-bold text-xs md:text-sm ${isToday ? 'text-blue-600 dark:text-blue-400' : 'text-slate-700 dark:text-slate-200'} mb-1 z-20 pointer-events-none">${day}</div><div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar z-20">`;
                         
                         dayEvents.forEach(evt => {
                             if(evt.tipo === 'pessoal') {
-                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="bg-green-100/60 dark:bg-green-900/30 backdrop-blur-md border border-green-300 dark:border-green-700 rounded-xl p-2.5 text-[10px] cursor-pointer shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 text-green-800 dark:text-green-300"><div class="font-black mb-1.5 flex items-center gap-1"><i class="fa-solid fa-clipboard-check text-green-600"></i> Controle Dia</div><div class="font-medium">Mon: ${evt.qtdMon || 0} | FB: ${evt.qtdFb || 0}</div></div>`;
+                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="bg-green-100/80 dark:bg-green-900/40 backdrop-blur-md border border-green-300 dark:border-green-700/70 rounded-xl p-2.5 text-[10px] cursor-pointer shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 text-green-800 dark:text-green-200"><div class="font-black mb-1.5 flex items-center gap-1"><i class="fa-solid fa-clipboard-check text-green-600 dark:text-green-400"></i> Controle Dia</div><div class="font-medium">Mon: ${evt.qtdMon || 0} | FB: ${evt.qtdFb || 0}</div></div>`;
                             } else {
                                 const baseColor = evt.status === 'Cancelado' ? cores['Cancelado'] : cores[evt.tema] || cores['Outros'];
-                                const iconeStatus = (evt.status && evt.status.includes('Finalizado')) ? '<i class="fa-solid fa-check-double text-green-600"></i> ' : '';
+                                const iconeStatus = (evt.status && evt.status.includes('Finalizado')) ? '<i class="fa-solid fa-check-double text-green-600 dark:text-green-400"></i> ' : '';
                                 const duracao = calcDuracao(evt.hora, evt.horaFim);
                                 const txtNome = getNome(evt.matricula).split(' ')[0]; 
                                 
-                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="${baseColor} bg-opacity-60 dark:bg-opacity-20 backdrop-blur-md border border-white/60 dark:border-white/10 rounded-xl p-2.5 text-[10px] cursor-pointer shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative group overflow-hidden">
-                                    <div class="absolute inset-0 bg-gradient-to-tr from-white/0 to-white/60 dark:from-black/0 dark:to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                                    <div class="font-black mb-1.5 flex justify-between relative z-10 text-xs"><span>${iconeStatus}${evt.hora || '--'}</span> <span class="opacity-60 text-[9px] font-bold">${duracao}</span></div>
+                                html += `<div onclick="event.stopPropagation(); app.calendar.viewEvent('${evt.id}')" class="${baseColor} backdrop-blur-md border rounded-xl p-2.5 text-[10px] cursor-pointer shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative group overflow-hidden">
+                                    <div class="absolute inset-0 bg-gradient-to-tr from-white/0 to-white/40 dark:from-black/0 dark:to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                    <div class="font-black mb-1.5 flex justify-between relative z-10 text-xs"><span>${iconeStatus}${evt.hora || '--'}</span> <span class="opacity-75 text-[9px] font-bold">${duracao}</span></div>
                                     <div class="font-extrabold truncate relative z-10 tracking-tight">${evt.tema || 'Indefinido'}</div>
-                                    <div class="text-[9px] opacity-80 mt-1.5 border-t border-black/10 dark:border-white/10 pt-1.5 truncate relative z-10 font-medium">${evt.op || 'N/A'} <span class="mx-1">•</span> ${txtNome}</div>
+                                    <div class="text-[9px] opacity-85 mt-1.5 border-t border-black/10 dark:border-white/15 pt-1.5 truncate relative z-10 font-medium">${evt.op || 'N/A'} <span class="mx-1">•</span> ${txtNome}</div>
                                 </div>`;
                             }
                         });
@@ -3559,30 +4179,47 @@
                 renderView_MeuPainel(container) {
                     let targetUser = app.currentUser;
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    const qualidadeUsers = app.getQualidadeUsers();
                     
                     let html = `
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Desempenho Individual</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados consolidados referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados de bonificação (exclusivo perfil <strong>Qualidade</strong>) referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                             </div>
                             <div class="flex items-center gap-3">
                     `;
                     
-                    if(app.isAdmin) {
+                    if(app.isAdmin || app.hasAdminAccess()) {
                         html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold shadow-sm focus:ring-2 focus:ring-green-500 outline-none">
-                            <option value="">Selecione a matrícula do colaborador...</option>`;
-                        app.users.forEach(u => { html += `<option value="${u.matricula}" ${window.selectedViewUser === u.matricula ? 'selected':''}>${u.nome}</option>`; });
+                            <option value="">${(app.currentUser && app.isUserQualidade(app.currentUser)) ? `Meu Painel (${app.currentUser.nome})` : 'Selecione o monitor de Qualidade...'}</option>`;
+                        qualidadeUsers.forEach(u => { html += `<option value="${u.matricula}" ${window.selectedViewUser === u.matricula ? 'selected':''}>${u.nome}</option>`; });
                         html += `</select>`;
-                        if(window.selectedViewUser) targetUser = app.users.find(u => u.matricula === window.selectedViewUser);
+                        if(window.selectedViewUser) targetUser = qualidadeUsers.find(u => u.matricula === window.selectedViewUser) || (app.isUserQualidade(app.currentUser) ? app.currentUser : null);
+                        if(!app.isAdmin) {
+                            html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
+                            <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
+                        }
                     } else {
                         html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
                         <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
                     }
                     html += `</div></div>`;
 
-                    if(!targetUser && app.isAdmin) {
-                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um colaborador acima para visualizar seus indicadores deste mês.</div>`;
+                    if(targetUser && !app.isUserQualidade(targetUser)) {
+                        container.innerHTML = html + `
+                            <div class="p-12 text-center glass-card rounded-3xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/20 max-w-2xl mx-auto">
+                                <div class="w-16 h-16 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-3xl mx-auto mb-4"><i class="fa-solid fa-user-shield"></i></div>
+                                <h3 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2">Perfil ${targetUser.tipoAcesso} — Isento de Bonificação</h3>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">Apenas colaboradores com perfil de acesso <strong>Qualidade</strong> possuem carteira de bonificação e entram nos indicadores financeiros. Para consultar a bonificação de um monitor de Qualidade, selecione o nome dele na lista acima.</p>
+                                <button onclick="app.ui.renderTab('dashboard_adm', true)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl text-xs shadow-md transition-all"><i class="fa-solid fa-chart-pie mr-1.5"></i> Ir para Visão Executiva</button>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    if(!targetUser && (app.isAdmin || app.hasAdminAccess())) {
+                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um monitor de <strong>Qualidade</strong> acima para visualizar seus indicadores deste mês.</div>`;
                         return;
                     }
 
@@ -3628,7 +4265,8 @@
                                 <div class="mb-6 p-4 rounded-xl bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 flex items-center gap-3">
                                     <div class="text-xl text-green-500"><i class="fa-solid fa-circle-check"></i></div>
                                     <div>
-                                        <h4 class="font-bold text-green-800 dark:text-green-400 text-xs uppercase tracking-wider">Resultados Validados</h4>
+                                        <h4 class="font-bold text-green-800 dark:text-green-400 text-xs uppercase tracking-wider">Resultados Validados e Assinados Digitalmente</h4>
+                                        ${resultsForMonth.signedAt ? `<p class="text-[11px] text-green-700 dark:text-green-300 mt-0.5">Assinado com sua senha em <strong>${resultsForMonth.signedAt}</strong></p>` : ''}
                                     </div>
                                 </div>
                             `;
@@ -3788,23 +4426,18 @@
                 },
 
                 renderView_DashboardAdm(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('dashboard_adm')) return;
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    const qualidadeUsers = app.getQualidadeUsers();
                     
                     let totalCusto = 0; let somaPct = 0; let usersComResultado = 0;
                     const goalStats = {};
                     app.config.goals.forEach(g => { goalStats[g.id] = { name: g.title, type: g.type, somaMult: 0, somaVal: 0, count: 0, deliveries: [] }; });
 
-                    // Coletando métricas globais e filtrando Agenda
+                    // Coletando métricas globais e filtrando Agenda (exclusivamente perfil Qualidade)
                     const pendentes = [];
 
-                    pendentes.sort((a,b) => {
-                        const da = a.results[app.currentMonth]?.fbDate || '9999-12-31';
-                        const db = b.results[app.currentMonth]?.fbDate || '9999-12-31';
-                        return da.localeCompare(db);
-                    });
-
-                    app.users.forEach(u => {
+                    qualidadeUsers.forEach(u => {
                         const resultsForMonth = (u.results && u.results[app.currentMonth]);
                         if(resultsForMonth && Object.keys(resultsForMonth).length > 0) {
                             usersComResultado++;
@@ -3865,7 +4498,7 @@
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos da equipe referente a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos de bonificação (perfil <strong>Qualidade</strong>) referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                             </div>
                             <button onclick="app.admin.exportBonusReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-excel"></i> Relatório do Mês
@@ -3877,15 +4510,15 @@
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
                                 <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-sack-dollar"></i></div>
                                 <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total (Mês)</div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total Qualidade (Mês)</div>
                                     <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500">
                                 <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-users-viewfinder"></i></div>
                                 <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe</div>
-                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${app.users.length}</span></div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe Qualidade</div>
+                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${qualidadeUsers.length}</span></div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-purple-500">
@@ -4031,16 +4664,282 @@
                             }, 150);
                         },
 
+                visaoGeralSort: 'realizadas_desc',
+                visaoGeralFilterStatus: 'todos',
+                visaoGeralSearch: '',
+                visaoGeralViewMode: 'cards',
+
+                excluirSetorVisaoGeral(setor) {
+                    const setorEncoded = String(setor).replace(/'/g, "\\'");
+                    this.showConfirm(
+                        "Excluir Operação Permanentemente?",
+                        `Deseja ocultar permanentemente o setor <b>${setor}</b>?<br><br>Ele não aparecerá mais nesta aba, mesmo quando você importar novas planilhas de RH ou Qualidade no futuro. (Você poderá restaurá-lo a qualquer momento no botão "Ocultos").`,
+                        `app.ui.confirmarExclusaoSetorVisaoGeral('${setorEncoded}')`,
+                        true
+                    );
+                },
+
+                confirmarExclusaoSetorVisaoGeral(setor) {
+                    if (!Array.isArray(app.config.ignoredSetoresRH)) app.config.ignoredSetoresRH = [];
+                    if (!app.config.ignoredSetoresRH.includes(setor)) {
+                        app.config.ignoredSetoresRH.push(setor);
+                    }
+                    app.storage.saveConfig();
+                    this.renderTab('analitico_visao_geral', true);
+                },
+
+                restaurarSetorVisaoGeral(setor) {
+                    if (!Array.isArray(app.config.ignoredSetoresRH)) return;
+                    app.config.ignoredSetoresRH = app.config.ignoredSetoresRH.filter(s => s !== setor);
+                    app.storage.saveConfig();
+                    this.abrirModalOcultosVisaoGeral();
+                    this.renderTab('analitico_visao_geral', true);
+                },
+
+                abrirModalOcultosVisaoGeral() {
+                    const ignorados = Array.isArray(app.config.ignoredSetoresRH) ? app.config.ignoredSetoresRH : [];
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-eye-slash text-slate-500"></i> Operações Excluídas Permanentemente`;
+                    if (ignorados.length === 0) {
+                        document.getElementById('modal-content').innerHTML = `<div class="p-6 text-center text-slate-400 text-sm">Nenhuma operação está oculta no momento.</div>`;
+                    } else {
+                        document.getElementById('modal-content').innerHTML = `
+                            <p class="text-xs text-slate-500 mb-4">As operações abaixo estão bloqueadas e são ignoradas automaticamente em todas as importações. Clique em <b>Restaurar</b> caso volte a atender alguma delas:</p>
+                            <div class="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                                ${ignorados.sort().map(s => {
+                                    const sSafe = String(s).replace(/'/g, "\\'");
+                                    return `
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        <span class="font-bold text-xs text-slate-700 dark:text-slate-200 truncate pr-3">${s}</span>
+                                        <button onclick="app.ui.restaurarSetorVisaoGeral('${sSafe}')" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg text-xs font-bold transition-colors shrink-0">
+                                            <i class="fa-solid fa-rotate-left mr-1"></i> Restaurar
+                                        </button>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        `;
+                    }
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-sm">Fechar</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                abrirModalDeParaVisaoGeral(setorRHPre = '') {
+                    app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.visaoGeralData || {});
+                    const headcounts = app.config.headcountRH || {};
+                    const ignorados = Array.isArray(app.config.ignoredSetoresRH) ? app.config.ignoredSetoresRH : [];
+                    const dePara = app.config.deParaSetoresVG || {};
+                    const qualidade = app.visaoGeralData || {};
+
+                    const setoresRH = Object.keys(headcounts).filter(s => !ignorados.includes(s)).sort();
+                    const setoresQualidade = Object.keys(qualidade).sort();
+
+                    // Separa apenas os setores AINDA NÃO VINCULADOS para que sumam da lista de pendentes assim que vinculados
+                    const orfaosQual = setoresQualidade.filter(sq => !headcounts[sq] && !dePara[sq]);
+                    const naoVinculadosNoRH = setoresQualidade.filter(sq => headcounts[sq] && !dePara[sq]);
+
+                    const vinculosEntries = Object.entries(dePara);
+                    const rhOptionsHtml = `<option value="">Vincular à operação do RH...</option>` +
+                        setoresRH.map(sr => `<option value="${sr}" ${sr === setorRHPre ? 'selected' : ''}>${sr} (${headcounts[sr]} op.)</option>`).join('');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-link text-indigo-600"></i> Vincular Operações (DE/PARA Permanente)`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4 text-left">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                Quando o nome da operação no <b>CSV de Qualidade</b> for diferente do nome na <b>Base de RH</b>, crie o vínculo abaixo. Assim que vinculado, o nome <b>some das pendências</b> e fica salvo permanentemente.
+                            </p>
+
+                            ${orfaosQual.length > 0 ? `
+                                <div class="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                                    <div class="text-[11px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                                        <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> Operações do CSV sem vínculo (${orfaosQual.length})</span>
+                                        <span class="text-[9px] font-bold">Clique no ✔ para vincular</span>
+                                    </div>
+                                    <div class="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                        ${orfaosQual.map((sq, idx) => `
+                                            <div class="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-amber-200/70 dark:border-amber-800/60 shadow-sm">
+                                                <div class="w-5/12 min-w-0">
+                                                    <div class="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 truncate" title="${sq}">${sq}</div>
+                                                    <div class="text-[9px] font-bold text-amber-600">${qualidade[sq]?.count || 0} monitorias</div>
+                                                </div>
+                                                <i class="fa-solid fa-arrow-right text-slate-300 text-[10px] shrink-0"></i>
+                                                <select id="vg-quick-depara-${idx}" data-qual="${sq}" class="flex-1 min-w-0 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-200 outline-none">
+                                                    ${rhOptionsHtml}
+                                                </select>
+                                                <button type="button" onclick="app.ui.salvarDeParaRapidoVG('vg-quick-depara-${idx}')" class="bg-emerald-600 hover:bg-emerald-700 text-white w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm transition-colors" title="Salvar Vínculo">
+                                                    <i class="fa-solid fa-check text-xs"></i>
+                                                </button>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : `
+                                <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+                                    <i class="fa-solid fa-circle-check text-emerald-500 text-base"></i> Todas as operações importadas do CSV já estão vinculadas!
+                                </div>
+                            `}
+
+                            <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 space-y-3">
+                                <div class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Criar / Adicionar Vínculo Manual:</div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">1. Nome no CSV de Qualidade (DE):</label>
+                                    <select id="vg-depara-qual-select" onchange="const inp = document.getElementById('vg-depara-qual-custom'); if(this.value === '__CUSTOM__'){ inp.classList.remove('hidden'); inp.focus(); } else { inp.classList.add('hidden'); inp.value = ''; }" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500">
+                                        <option value="">Selecione a operação lida no CSV de Qualidade...</option>
+                                        ${orfaosQual.length > 0 ? `<optgroup label="⚠️ Pendentes de Vínculo (${orfaosQual.length})">
+                                            ${orfaosQual.map(sq => `<option value="${sq}">⚠️ ${sq} (${qualidade[sq].count} mon.)</option>`).join('')}
+                                        </optgroup>` : ''}
+                                        ${naoVinculadosNoRH.length > 0 ? `<optgroup label="Operações do CSV (Unificar em outra operação)">
+                                            ${naoVinculadosNoRH.map(sq => `<option value="${sq}">${sq} (${qualidade[sq].count} mon.)</option>`).join('')}
+                                        </optgroup>` : ''}
+                                        <option value="__CUSTOM__">✍️ Digitar nome manualmente...</option>
+                                    </select>
+                                    <input type="text" id="vg-depara-qual-custom" placeholder="Digite exatamente como vem no CSV de Qualidade..." class="hidden mt-2 w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-600 text-xs font-bold text-slate-700 dark:text-white outline-none">
+                                </div>
+
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">2. Corresponde a qual Operação na Base RH (PARA):</label>
+                                    <select id="vg-depara-rh-select" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500">
+                                        <option value="">Selecione a operação oficial da Base RH...</option>
+                                        ${setoresRH.map(sr => `<option value="${sr}" ${sr === setorRHPre ? 'selected' : ''}>${sr} (${headcounts[sr]} op. no RH)</option>`).join('')}
+                                    </select>
+                                </div>
+
+                                <button onclick="app.ui.salvarDeParaVisaoGeral()" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-floppy-disk"></i> Salvar Vínculo Permanente
+                                </button>
+                            </div>
+
+                            <div>
+                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+                                    <span>Vínculos Salvos (${vinculosEntries.length})</span>
+                                    <span>Qualidade ➔ Base RH</span>
+                                </div>
+                                ${vinculosEntries.length === 0 ? `
+                                    <div class="p-4 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 text-xs">
+                                        Nenhum vínculo DE/PARA cadastrado ainda.
+                                    </div>
+                                ` : `
+                                    <div class="space-y-2 max-h-44 overflow-y-auto custom-scrollbar pr-1">
+                                        ${vinculosEntries.map(([deQual, paraRH]) => {
+                                            const deSafe = String(deQual).replace(/'/g, "\\'");
+                                            return `
+                                            <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs">
+                                                <div class="flex items-center gap-2 min-w-0 flex-1">
+                                                    <span class="font-bold text-amber-600 dark:text-amber-400 truncate" title="CSV Qualidade: ${deQual}">${deQual}</span>
+                                                    <i class="fa-solid fa-arrow-right text-slate-400 text-[10px] shrink-0"></i>
+                                                    <span class="font-extrabold text-indigo-600 dark:text-indigo-400 truncate" title="Base RH: ${paraRH}">${paraRH}</span>
+                                                </div>
+                                                <button onclick="app.ui.removerDeParaVisaoGeral('${deSafe}')" class="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0" title="Remover vínculo">
+                                                    <i class="fa-solid fa-unlink"></i>
+                                                </button>
+                                            </div>`;
+                                        }).join('')}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-sm">Fechar</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                salvarDeParaRapidoVG(selectId) {
+                    const sel = document.getElementById(selectId);
+                    if (!sel || !sel.value) {
+                        return this.showAlert("Atenção", "Selecione a operação correspondente na Base RH antes de confirmar.", "warning");
+                    }
+                    const rawQual = sel.getAttribute('data-qual') || '';
+                    const origemQual = app.utils.fixEncoding(String(rawQual)).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
+                    const destinoRH = sel.value;
+
+                    if (!app.config.deParaSetoresVG || typeof app.config.deParaSetoresVG !== 'object') {
+                        app.config.deParaSetoresVG = {};
+                    }
+                    app.config.deParaSetoresVG[origemQual] = destinoRH;
+                    app.storage.saveConfig();
+                    app.storage.saveVisaoGeral();
+                    this.abrirModalDeParaVisaoGeral();
+                    this.renderTab('analitico_visao_geral', true);
+                },
+
+                salvarDeParaVisaoGeral() {
+                    const selQual = document.getElementById('vg-depara-qual-select')?.value || '';
+                    const customQual = document.getElementById('vg-depara-qual-custom')?.value || '';
+                    const selRH = document.getElementById('vg-depara-rh-select')?.value || '';
+
+                    let origemQual = selQual === '__CUSTOM__' ? customQual : selQual;
+                    origemQual = app.utils.fixEncoding(String(origemQual)).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
+
+                    if (!origemQual || !selRH) {
+                        return this.showAlert("Atenção", "Selecione tanto a operação de origem (CSV de Qualidade) quanto a operação de destino (Base RH).", "warning");
+                    }
+
+                    if (!app.config.deParaSetoresVG || typeof app.config.deParaSetoresVG !== 'object') {
+                        app.config.deParaSetoresVG = {};
+                    }
+
+                    app.config.deParaSetoresVG[origemQual] = selRH;
+                    app.storage.saveConfig();
+                    app.storage.saveVisaoGeral();
+                    this.abrirModalDeParaVisaoGeral(selRH);
+                    this.renderTab('analitico_visao_geral', true);
+                },
+
+                removerDeParaVisaoGeral(origemQual) {
+                    if (app.config.deParaSetoresVG && app.config.deParaSetoresVG[origemQual]) {
+                        delete app.config.deParaSetoresVG[origemQual];
+                        app.storage.saveConfig();
+                        this.abrirModalDeParaVisaoGeral();
+                        this.renderTab('analitico_visao_geral', true);
+                    }
+                },
+
+                salvarMetaSetorVG(setor, valor) {
+                    const num = Math.max(0, parseFloat(valor) || 0);
+                    const safeSetor = app.storage.sanitizeFirebaseKey(setor);
+                    if (setor === '__PADRAO__') {
+                        app.config.metaPadraoVG = num;
+                    } else {
+                        if (!app.config.metasSetoresVG || typeof app.config.metasSetoresVG !== 'object') {
+                            app.config.metasSetoresVG = {};
+                        }
+                        app.config.metasSetoresVG[safeSetor] = num;
+                    }
+                    app.storage.saveConfig();
+                    this.renderTab('analitico_visao_geral', true);
+                },
+
                 renderView_AnaliticoVisaoGeral(container) {
-                    if(!app.isAdmin) return;
-                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    if(!app.hasAdminAccess('analitico_visao_geral')) return;
+                    app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.visaoGeralData || {});
+                    const ignorados = Array.isArray(app.config.ignoredSetoresRH) ? app.config.ignoredSetoresRH : [];
+                    const dePara = app.config.deParaSetoresVG || {};
+                    const metasSetores = app.config.metasSetoresVG || {};
+                    const metaPadrao = app.config.metaPadraoVG !== undefined ? parseFloat(app.config.metaPadraoVG) : 2;
+                    const headcounts = app.config.headcountRH || {};
+                    const qualidadeRaw = app.visaoGeralData || {};
+                    const qtdOrfaosQual = Object.keys(qualidadeRaw).filter(sq => !headcounts[sq] && !dePara[sq]).length;
+
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                             <div>
                                 <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Geral Setorial (RH vs Qualidade)</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Cenário macro de produtividade de avaliações e saúde operacional.</p>
                             </div>
-                            <div class="flex gap-2">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-sm" title="Regra padrão de monitorias por operador (pode ser personalizada individualmente em cada operação abaixo)">
+                                    <span class="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Meta Padrão/Op:</span>
+                                    <input type="number" min="0" step="1" value="${metaPadrao}" onchange="app.ui.salvarMetaSetorVG('__PADRAO__', this.value)" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500">
+                                </div>
+                                <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border ${qtdOrfaosQual > 0 ? 'border-amber-400 dark:border-amber-500' : 'border-slate-200 dark:border-slate-700'} font-bold w-11 h-11 rounded-xl shadow-sm transition-all flex items-center justify-center text-sm" title="Vincular Operações DE/PARA">
+                                    <i class="fa-solid fa-link"></i>
+                                    ${qtdOrfaosQual > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">${qtdOrfaosQual}</span>` : ''}
+                                </button>
+                                <button onclick="app.ui.abrirModalOcultosVisaoGeral()" class="bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold py-3 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Gerenciar operações excluídas permanentemente">
+                                    <i class="fa-solid fa-eye-slash text-slate-400"></i> Ocultos (${ignorados.length})
+                                </button>
                                 <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
                                     <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV de Qualidade
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVVisaoGeral(this)" onclick="this.value = null">
@@ -4053,147 +4952,519 @@
                         html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
                             <i class="fa-solid fa-chart-line text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
                             <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Aguardando Importação</h3>
-                            <p class="text-slate-400 text-sm max-w-md mx-auto">Para montar o Dashboard, primeiro garanta que você já importou a <b>Base de RH</b> na aba 'Controle de Equipe', em seguida importe o <b>CSV de Qualidade</b> usando o botão acima.</p>
+                            <p class="text-slate-400 text-sm max-w-md mx-auto">Para montar o Dashboard, primeiro garanta que você já importou a <b>Base de RH</b> na aba <b>'Analítico Operação'</b> (em Importações &gt; Base de RH), em seguida importe o <b>CSV de Qualidade</b> usando o botão acima.</p>
                         </div>`;
                     } else {
-                        const headcounts = app.config.headcountRH || {};
-                        const qualidade = app.visaoGeralData; // Traz: { "SETOR X": { count: 15, somaNotas: 1250 } }
+                        // Consolida os dados de Qualidade aplicando a tabela DE/PARA permanente
+                        const qualidade = {};
+                        Object.keys(qualidadeRaw).forEach(sQual => {
+                            const destinoRH = dePara[sQual] || sQual;
+                            if (!qualidade[destinoRH]) {
+                                qualidade[destinoRH] = { count: 0, somaNotas: 0, origens: [] };
+                            }
+                            qualidade[destinoRH].count += (qualidadeRaw[sQual].count || 0);
+                            qualidade[destinoRH].somaNotas += (qualidadeRaw[sQual].somaNotas || 0);
+                            if (dePara[sQual] && !qualidade[destinoRH].origens.includes(sQual)) {
+                                qualidade[destinoRH].origens.push(sQual);
+                            }
+                        });
                         
-                        // Prepara um array combinando os dois mundos (RH + Qualidade)
+                        // Prepara um array combinando os dois mundos (RH + Qualidade), filtrando os excluídos permanentemente
                         let relatorioFinal = [];
                         Object.keys(headcounts).forEach(setor => {
+                            if (ignorados.includes(setor)) return; // Ignora permanentemente
                             const hCount = headcounts[setor];
-                            const meta = hCount * 2;
-                            const dQualidade = qualidade[setor] || { count: 0, somaNotas: 0 };
+                            const metaPorOp = metasSetores[setor] !== undefined ? parseFloat(metasSetores[setor]) : metaPadrao;
+                            const meta = Math.round(hCount * metaPorOp);
+                            const dQualidade = qualidade[setor] || { count: 0, somaNotas: 0, origens: [] };
+                            const origensVinculadas = Object.keys(dePara).filter(k => dePara[k] === setor);
                             const realizadas = dQualidade.count;
-                            const pctMeta = meta > 0 ? ((realizadas / meta) * 100).toFixed(1) : 0;
-                            const mediaNota = realizadas > 0 ? (dQualidade.somaNotas / realizadas).toFixed(2) : '0.00';
+                            const pctMetaNum = meta > 0 ? (realizadas / meta) * 100 : (realizadas > 0 ? 100 : 0);
+                            const pctMeta = pctMetaNum.toFixed(1);
+                            const mediaNotaNum = realizadas > 0 ? (dQualidade.somaNotas / realizadas) : 0;
+                            const mediaNota = realizadas > 0 ? mediaNotaNum.toFixed(2) : '0.00';
                             
-                            relatorioFinal.push({ setor, hCount, meta, realizadas, pctMeta, mediaNota });
+                            relatorioFinal.push({
+                                setor,
+                                hCount,
+                                metaPorOp,
+                                meta,
+                                realizadas,
+                                pctMeta,
+                                pctMetaNum,
+                                mediaNota,
+                                mediaNotaNum,
+                                somaNotas: dQualidade.somaNotas || 0,
+                                origensVinculadas
+                            });
                         });
 
-                        // Renderiza o Dashboard com os Cards
-                        html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">`;
-                        
-                        relatorioFinal.sort((a,b) => b.hCount - a.hCount).forEach(r => {
-                            const color = parseFloat(r.pctMeta) >= 100 ? 'emerald' : (parseFloat(r.pctMeta) >= 80 ? 'blue' : 'orange');
-                            const mediaColor = parseFloat(r.mediaNota) >= 90 ? 'text-green-500' : (parseFloat(r.mediaNota) >= 80 ? 'text-blue-500' : 'text-red-500');
+                        // KPIs Globais (sobre setores ativos não ocultos)
+                        const totalSetores = relatorioFinal.length;
+                        const totalHC = relatorioFinal.reduce((acc, r) => acc + r.hCount, 0);
+                        const totalMeta = relatorioFinal.reduce((acc, r) => acc + r.meta, 0);
+                        const totalRealizadas = relatorioFinal.reduce((acc, r) => acc + r.realizadas, 0);
+                        const pctGeral = totalMeta > 0 ? ((totalRealizadas / totalMeta) * 100).toFixed(1) : '0.0';
+                        const somaNotasGeral = relatorioFinal.reduce((acc, r) => acc + r.somaNotas, 0);
+                        const mediaGeral = totalRealizadas > 0 ? (somaNotasGeral / totalRealizadas).toFixed(2) : '0.00';
 
+                        // Filtros de Status e Busca
+                        const termoBusca = (this.visaoGeralSearch || '').trim().toUpperCase();
+                        let listaFiltrada = relatorioFinal.filter(r => {
+                            if (termoBusca && !r.setor.includes(termoBusca)) return false;
+                            if (this.visaoGeralFilterStatus === 'com_mon' && r.realizadas === 0) return false;
+                            if (this.visaoGeralFilterStatus === 'sem_mon' && r.realizadas > 0) return false;
+                            if (this.visaoGeralFilterStatus === 'batida' && r.pctMetaNum < 100) return false;
+                            if (this.visaoGeralFilterStatus === 'pendente' && r.pctMetaNum >= 100) return false;
+                            return true;
+                        });
+
+                        // Ordenação Dinâmica
+                        const sortKey = this.visaoGeralSort || 'realizadas_desc';
+                        listaFiltrada.sort((a, b) => {
+                            if (sortKey === 'pct_desc') return b.pctMetaNum - a.pctMetaNum || b.realizadas - a.realizadas;
+                            if (sortKey === 'pct_asc') return a.pctMetaNum - b.pctMetaNum || b.hCount - a.hCount;
+                            if (sortKey === 'realizadas_desc') return b.realizadas - a.realizadas || b.hCount - a.hCount;
+                            if (sortKey === 'hc_desc') return b.hCount - a.hCount;
+                            if (sortKey === 'hc_asc') return a.hCount - b.hCount;
+                            if (sortKey === 'nota_desc') return b.mediaNotaNum - a.mediaNotaNum;
+                            if (sortKey === 'nota_asc') {
+                                const na = a.realizadas > 0 ? a.mediaNotaNum : 9999;
+                                const nb = b.realizadas > 0 ? b.mediaNotaNum : 9999;
+                                return na - nb;
+                            }
+                            if (sortKey === 'az') return a.setor.localeCompare(b.setor);
+                            return b.hCount - a.hCount;
+                        });
+
+                        // Resumo Executivo no Topo
+                        html += `
+                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Operações Ativas</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${totalSetores}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">${totalHC} colaboradores mapeados</div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-clipboard-check text-blue-500 mr-1"></i> Monitorias vs Meta</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${totalRealizadas} <span class="text-sm font-semibold text-slate-400">/ ${totalMeta}</span></div>
+                                    <div class="text-[11px] text-slate-400 mt-1">Padrão de ${metaPadrao} monitoria(s) por operador</div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-bullseye text-emerald-500 mr-1"></i> Cobertura Geral</div>
+                                    <div class="text-3xl font-black ${parseFloat(pctGeral) >= 100 ? 'text-emerald-500' : (parseFloat(pctGeral) >= 80 ? 'text-blue-500' : 'text-orange-500')}">${pctGeral}%</div>
+                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
+                                        <div class="h-full bg-indigo-500 rounded-full" style="width: ${Math.min(100, parseFloat(pctGeral))}%"></div>
+                                    </div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-star text-amber-500 mr-1"></i> Média Geral Qualidade</div>
+                                    <div class="text-3xl font-black ${parseFloat(mediaGeral) >= 90 ? 'text-green-500' : (parseFloat(mediaGeral) >= 80 ? 'text-blue-500' : 'text-red-500')}">${mediaGeral}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">Média ponderada das avaliações</div>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Organização: Busca, Filtros, Ordenação e Modo de Exibição -->
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+                                    <div class="relative flex-1 max-w-xs">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input type="text" value="${this.visaoGeralSearch || ''}" oninput="app.ui.visaoGeralSearch = this.value; app.ui.renderTab('analitico_visao_geral', true); const el = document.getElementById('vg-search-input'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }" id="vg-search-input" placeholder="Buscar operação/setor..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:border-indigo-500 dark:text-white">
+                                    </div>
+
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        ${[
+                                            { id: 'todos', label: 'Todos' },
+                                            { id: 'com_mon', label: 'Com Monitoria' },
+                                            { id: 'sem_mon', label: 'Zerados (0)' },
+                                            { id: 'batida', label: 'Meta >= 100%' },
+                                            { id: 'pendente', label: 'Abaixo da Meta' }
+                                        ].map(f => `
+                                            <button onclick="app.ui.visaoGeralFilterStatus = '${f.id}'; try{localStorage.setItem('soft_vg_status','${f.id}');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${this.visaoGeralFilterStatus === f.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">${f.label}</button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[10px] font-bold uppercase text-slate-400"><i class="fa-solid fa-arrow-down-wide-short mr-1"></i>Ordenar:</span>
+                                        <select onchange="app.ui.visaoGeralSort = this.value; try{localStorage.setItem('soft_vg_sort',this.value);}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                            <option value="realizadas_desc" ${sortKey === 'realizadas_desc' ? 'selected' : ''}>Mais Monitorias Realizadas</option>
+                                            <option value="pct_desc" ${sortKey === 'pct_desc' ? 'selected' : ''}>Maior % Atingimento</option>
+                                            <option value="pct_asc" ${sortKey === 'pct_asc' ? 'selected' : ''}>Menor % Atingimento (Críticos)</option>
+                                            <option value="hc_desc" ${sortKey === 'hc_desc' ? 'selected' : ''}>Maior Equipe (Headcount)</option>
+                                            <option value="hc_asc" ${sortKey === 'hc_asc' ? 'selected' : ''}>Menor Equipe (Headcount)</option>
+                                            <option value="nota_desc" ${sortKey === 'nota_desc' ? 'selected' : ''}>Maior Média de Nota</option>
+                                            <option value="nota_asc" ${sortKey === 'nota_asc' ? 'selected' : ''}>Menor Média de Nota</option>
+                                            <option value="az" ${sortKey === 'az' ? 'selected' : ''}>Ordem Alfabética (A - Z)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
+                                        <button onclick="app.ui.visaoGeralViewMode = 'cards'; try{localStorage.setItem('soft_vg_view','cards');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode !== 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Cards"><i class="fa-solid fa-grip"></i></button>
+                                        <button onclick="app.ui.visaoGeralViewMode = 'table'; try{localStorage.setItem('soft_vg_view','table');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode === 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Tabela"><i class="fa-solid fa-table-list"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        if (listaFiltrada.length === 0) {
+                            html += `<div class="p-12 text-center bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 text-sm">Nenhuma operação encontrada para os filtros selecionados.</div>`;
+                        } else if (this.visaoGeralViewMode === 'table') {
+                            // MODO TABELA EXECUTIVA COMPACTA
                             html += `
-                                <div class="glass-card rounded-3xl p-6 shadow-sm border-t-4 border-t-${color}-500 hover:-translate-y-1 transition-transform flex flex-col h-full bg-white dark:bg-slate-800 relative overflow-hidden">
-                                    <div class="absolute -right-4 -top-4 text-${color}-500/10 text-7xl pointer-events-none"><i class="fa-solid fa-briefcase"></i></div>
-                                    
-                                    <div class="flex justify-between items-start mb-4 relative z-10">
-                                        <h3 class="font-black text-lg text-slate-800 dark:text-white truncate max-w-[70%]" title="${r.setor}">${r.setor}</h3>
-                                        <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-bold px-2 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-600"><i class="fa-solid fa-users mr-1"></i> ${r.hCount} Op.</span>
-                                    </div>
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                    <div class="overflow-x-auto custom-scrollbar">
+                                        <table class="w-full text-left border-collapse text-sm">
+                                            <thead class="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                <tr>
+                                                    <th class="py-3.5 px-5">Operação / Setor</th>
+                                                    <th class="py-3.5 px-4 text-center">Equipe (RH)</th>
+                                                    <th class="py-3.5 px-4 text-center">Regra (Mon/Op)</th>
+                                                    <th class="py-3.5 px-4 text-center">Realizadas / Meta</th>
+                                                    <th class="py-3.5 px-4 text-center">Média Qualidade</th>
+                                                    <th class="py-3.5 px-5 w-56">Progresso da Meta</th>
+                                                    <th class="py-3.5 px-4 text-right">Ação</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                ${listaFiltrada.map(r => {
+                                                    const isEmerald = r.pctMetaNum >= 100;
+                                                    const isBlue = r.pctMetaNum >= 80 && r.pctMetaNum < 100;
+                                                    const barColor = isEmerald ? 'bg-emerald-500' : (isBlue ? 'bg-blue-500' : 'bg-orange-500');
+                                                    const textColor = isEmerald ? 'text-emerald-600 dark:text-emerald-400' : (isBlue ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500');
+                                                    const mediaColor = r.realizadas === 0 ? 'text-slate-400' : (r.mediaNotaNum >= 90 ? 'text-green-500' : (r.mediaNotaNum >= 80 ? 'text-blue-500' : 'text-red-500'));
+                                                    const sSafe = String(r.setor).replace(/'/g, "\\'");
 
-                                    <div class="grid grid-cols-2 gap-3 mb-5 relative z-10">
-                                        <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-3 border border-slate-100 dark:border-slate-700">
-                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Média de Nota</div>
-                                            <div class="text-2xl font-black ${mediaColor}">${r.mediaNota}</div>
-                                        </div>
-                                        <div class="bg-slate-50 dark:bg-slate-900 rounded-xl p-3 border border-slate-100 dark:border-slate-700">
-                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Atingimento (Qtd)</div>
-                                            <div class="text-xl font-black text-slate-700 dark:text-slate-200">${r.realizadas} <span class="text-xs text-slate-400 font-medium">/ ${r.meta}</span></div>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-auto relative z-10 pt-3 border-t border-slate-100 dark:border-slate-700">
-                                        <div class="flex justify-between items-center mb-1.5">
-                                            <span class="text-[10px] font-bold text-slate-500 uppercase">Atingimento Meta</span>
-                                            <span class="text-xs font-black text-${color}-600 dark:text-${color}-400">${r.pctMeta}%</span>
-                                        </div>
-                                        <div class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                            <div class="h-full bg-${color}-500 rounded-full" style="width: ${Math.min(100, parseFloat(r.pctMeta))}%"></div>
-                                        </div>
+                                                    return `
+                                                    <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors">
+                                                        <td class="py-3.5 px-5 font-extrabold text-slate-800 dark:text-white">
+                                                            <div>${r.setor}</div>
+                                                            ${r.origensVinculadas && r.origensVinculadas.length > 0 ? `<div class="text-[10px] font-bold text-indigo-500 mt-0.5"><i class="fa-solid fa-link mr-1"></i>DE: ${r.origensVinculadas.join(', ')}</div>` : ''}
+                                                        </td>
+                                                        <td class="py-3.5 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold px-2.5 py-1 rounded-lg">${r.hCount} op.</span></td>
+                                                        <td class="py-3.5 px-4 text-center">
+                                                            <input type="number" min="0" step="1" value="${r.metaPorOp}" onchange="app.ui.salvarMetaSetorVG('${sSafe}', this.value)" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500" title="Monitorias por operador nesta operação (Salva automaticamente)">
+                                                        </td>
+                                                        <td class="py-3.5 px-4 text-center font-black text-slate-700 dark:text-slate-200">${r.realizadas} <span class="text-xs text-slate-400 font-normal">/ ${r.meta}</span></td>
+                                                        <td class="py-3.5 px-4 text-center font-black text-base ${mediaColor}">${r.realizadas > 0 ? r.mediaNota : '-'}</td>
+                                                        <td class="py-3.5 px-5">
+                                                            <div class="flex items-center gap-3">
+                                                                <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                                    <div class="h-full ${barColor} rounded-full" style="width: ${Math.min(100, r.pctMetaNum)}%"></div>
+                                                                </div>
+                                                                <span class="text-xs font-black ${textColor} w-12 text-right">${r.pctMeta}%</span>
+                                                            </div>
+                                                        </td>
+                                                        <td class="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
+                                                            <button onclick="app.ui.abrirModalDeParaVisaoGeral('${sSafe}')" class="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 p-2 rounded-lg transition-colors" title="Vincular operação do CSV de Qualidade (DE/PARA)">
+                                                                <i class="fa-solid fa-link text-xs"></i>
+                                                            </button>
+                                                            <button onclick="app.ui.excluirSetorVisaoGeral('${sSafe}')" class="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors" title="Excluir esta operação permanentemente">
+                                                                <i class="fa-solid fa-trash-can text-xs"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>`;
+                                                }).join('')}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             `;
-                        });
-                        html += `</div>`;
+                        } else {
+                            // MODO GRADE DE CARDS ORGANIZADA
+                            html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">`;
+                            
+                            listaFiltrada.forEach(r => {
+                                const isEmerald = r.pctMetaNum >= 100;
+                                const isBlue = r.pctMetaNum >= 80 && r.pctMetaNum < 100;
+                                const borderColor = isEmerald ? 'border-t-emerald-500' : (isBlue ? 'border-t-blue-500' : 'border-t-orange-500');
+                                const barColor = isEmerald ? 'bg-emerald-500' : (isBlue ? 'bg-blue-500' : 'bg-orange-500');
+                                const pctTextColor = isEmerald ? 'text-emerald-600 dark:text-emerald-400' : (isBlue ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500');
+                                const mediaColor = r.realizadas === 0 ? 'text-slate-400' : (r.mediaNotaNum >= 90 ? 'text-green-500' : (r.mediaNotaNum >= 80 ? 'text-blue-500' : 'text-red-500'));
+                                const sSafe = String(r.setor).replace(/'/g, "\\'");
+
+                                html += `
+                                    <div class="glass-card rounded-2xl p-5 shadow-sm border border-slate-200/80 dark:border-slate-700 border-t-4 ${borderColor} hover:-translate-y-1 transition-all flex flex-col h-full bg-white dark:bg-slate-800 relative group">
+                                        <div class="flex justify-between items-start gap-2 mb-4">
+                                            <div class="min-w-0">
+                                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white leading-snug line-clamp-2" title="${r.setor}">${r.setor}</h3>
+                                                ${r.origensVinculadas && r.origensVinculadas.length > 0 ? `<div class="text-[10px] font-bold text-indigo-500 truncate mt-0.5" title="Vinculado com: ${r.origensVinculadas.join(', ')}"><i class="fa-solid fa-link mr-1"></i>${r.origensVinculadas.join(', ')}</div>` : ''}
+                                            </div>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-2 py-1 rounded-md border border-slate-200 dark:border-slate-600" title="Quantidade de operadores no RH">
+                                                    <i class="fa-solid fa-users mr-1 text-slate-400"></i>${r.hCount}
+                                                </span>
+                                                <button onclick="app.ui.abrirModalDeParaVisaoGeral('${sSafe}')" class="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-700/70 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-400 hover:text-indigo-600 flex items-center justify-center transition-colors" title="Vincular com operação do CSV de Qualidade (DE/PARA)">
+                                                    <i class="fa-solid fa-link text-[11px]"></i>
+                                                </button>
+                                                <button onclick="app.ui.excluirSetorVisaoGeral('${sSafe}')" class="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-700/70 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors" title="Excluir operação permanentemente">
+                                                    <i class="fa-solid fa-trash-can text-[11px]"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 gap-2.5 mb-3">
+                                            <div class="bg-slate-50 dark:bg-slate-900/80 rounded-xl p-3 border border-slate-100 dark:border-slate-700/70">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Média de Nota</div>
+                                                <div class="text-xl font-black ${mediaColor}">${r.realizadas > 0 ? r.mediaNota : '-'}</div>
+                                            </div>
+                                            <div class="bg-slate-50 dark:bg-slate-900/80 rounded-xl p-3 border border-slate-100 dark:border-slate-700/70">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Monitorias</div>
+                                                <div class="text-xl font-black text-slate-700 dark:text-slate-200">${r.realizadas} <span class="text-xs text-slate-400 font-medium">/ ${r.meta}</span></div>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-700/60 mb-3">
+                                            <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-sliders text-indigo-400 mr-1"></i>Monitorias / Operador:</span>
+                                            <input type="number" min="0" step="1" value="${r.metaPorOp}" onchange="app.ui.salvarMetaSetorVG('${sSafe}', this.value)" class="w-12 p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500" title="Alterar meta por operador desta operação (Salva automaticamente)">
+                                        </div>
+
+                                        <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700/70">
+                                            <div class="flex justify-between items-center mb-1.5">
+                                                <span class="text-[10px] font-bold text-slate-400 uppercase">Atingimento da Meta</span>
+                                                <span class="text-xs font-black ${pctTextColor}">${r.pctMeta}%</span>
+                                            </div>
+                                            <div class="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div class="h-full ${barColor} rounded-full transition-all duration-500" style="width: ${Math.min(100, r.pctMetaNum)}%"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                            html += `</div>`;
+                        }
                     }
 
                     container.innerHTML = html;
                 },
 
+                cadastrosFilterStatus: 'todos',
+                cadastrosSearchTerm: '',
+
+                getUserMonthValidationInfo(u, month = app.currentMonth) {
+                    const r = (u.results && u.results[month]) || {};
+                    const keys = Object.keys(r).filter(k => !['status', 'editHistory', 'fbDate', 'fbTime', 'signedAt', 'signedByMat'].includes(k));
+                    const hasLaunchedValues = keys.some(k => {
+                        const item = r[k];
+                        if (!item || typeof item !== 'object') return false;
+                        if (item.real !== undefined && item.real !== '' && Number(item.real) > 0) return true;
+                        if (item.val !== undefined && item.val !== '' && item.val !== '0' && item.val !== 'Não') return true;
+                        return false;
+                    }) || Boolean(r.status);
+
+                    let status = 'sem_lancamento';
+                    if (r.status === 'validado') status = 'validado';
+                    else if (r.status === 'agendado') status = 'agendado';
+                    else if (hasLaunchedValues) status = 'pendente';
+
+                    const total = app.calc.getTotal(r);
+                    return { status, total, r, hasLaunchedValues };
+                },
+
+                setCadastrosFilter(status) {
+                    app.ui.cadastrosFilterStatus = status;
+                    app.ui.renderCadastrosUserList();
+                },
+
+                setCadastrosSearch(val) {
+                    app.ui.cadastrosSearchTerm = (val || '').trim().toLowerCase();
+                    app.ui.renderCadastrosUserList();
+                },
+
+                selectUserForCadastros(mat) {
+                    window.selectedAdminEditUser = mat;
+                    const hiddenSelect = document.getElementById('adm-user-select');
+                    if (hiddenSelect) hiddenSelect.value = mat;
+                    app.ui.renderCadastrosUserList();
+                    app.admin.loadUserEditor();
+                },
+
+                navigateCadastrosUser(direction) {
+                    const filtered = app.ui.getFilteredCadastrosUsers();
+                    if (!filtered.length) return;
+                    const currIdx = filtered.findIndex(u => u.matricula === window.selectedAdminEditUser);
+                    let nextIdx = currIdx + direction;
+                    if (nextIdx < 0) nextIdx = filtered.length - 1;
+                    if (nextIdx >= filtered.length) nextIdx = 0;
+                    app.ui.selectUserForCadastros(filtered[nextIdx].matricula);
+                },
+
+                getFilteredCadastrosUsers() {
+                    const search = app.ui.cadastrosSearchTerm || '';
+                    const filter = app.ui.cadastrosFilterStatus || 'todos';
+                    return app.getQualidadeUsers().filter(u => {
+                        const info = app.ui.getUserMonthValidationInfo(u);
+                        if (filter === 'validado' && info.status !== 'validado') return false;
+                        if (filter === 'falta_validar' && info.status === 'validado') return false;
+                        if (filter === 'agendado' && info.status !== 'agendado') return false;
+                        if (filter === 'pendente' && info.status !== 'pendente') return false;
+                        if (filter === 'sem_lancamento' && info.status !== 'sem_lancamento') return false;
+                        if (search) {
+                            const matchNome = (u.nome || '').toLowerCase().includes(search);
+                            const matchMat = String(u.matricula || '').toLowerCase().includes(search);
+                            const matchOp = (u.operacoes || []).join(' ').toLowerCase().includes(search);
+                            if (!matchNome && !matchMat && !matchOp) return false;
+                        }
+                        return true;
+                    });
+                },
+
+                renderCadastrosSummaryAndFilters() {
+                    const summaryEl = document.getElementById('cadastros-kpi-summary');
+                    const pillsEl = document.getElementById('cadastros-filter-pills');
+                    if (!summaryEl && !pillsEl) return;
+
+                    const qualidadeUsers = app.getQualidadeUsers();
+                    let countTotal = qualidadeUsers.length;
+                    let countValidados = 0;
+                    let countAgendados = 0;
+                    let countPendentes = 0;
+                    let countSemLancamento = 0;
+                    let somaFinanceira = 0;
+
+                    qualidadeUsers.forEach(u => {
+                        const info = app.ui.getUserMonthValidationInfo(u);
+                        somaFinanceira += info.total.received || 0;
+                        if (info.status === 'validado') countValidados++;
+                        else if (info.status === 'agendado') countAgendados++;
+                        else if (info.status === 'pendente') countPendentes++;
+                        else countSemLancamento++;
+                    });
+
+                    const countFaltaValidar = countAgendados + countPendentes + countSemLancamento;
+                    const f = app.ui.cadastrosFilterStatus || 'todos';
+
+                    if (summaryEl) {
+                        const pctValidado = countTotal > 0 ? Math.round((countValidados / countTotal) * 100) : 0;
+                        const chips = [
+                            { id: 'todos', label: 'Todos', n: countTotal },
+                            { id: 'falta_validar', label: 'Falta validar', n: countFaltaValidar },
+                            { id: 'validado', label: 'Validados', n: countValidados }
+                        ].map(c => `<button type="button" onclick="app.ui.setCadastrosFilter('${c.id}')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${f === c.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${c.label} <span class="opacity-60 ml-0.5">${c.n}</span></button>`).join('');
+                        summaryEl.innerHTML = `
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3">
+                                <div class="flex flex-wrap items-center justify-between gap-3">
+                                    <div class="flex flex-wrap gap-1">${chips}</div>
+                                    <div class="text-right pr-1">
+                                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Folha do mês</span>
+                                        <span class="text-base font-black text-emerald-600 dark:text-emerald-400">R$ ${somaFinanceira.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                                <div class="mt-2.5 flex items-center gap-3">
+                                    <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full transition-all" style="width:${pctValidado}%"></div></div>
+                                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 shrink-0">${countValidados}/${countTotal} validados</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    if (pillsEl) pillsEl.innerHTML = '';
+                },
+
+                renderCadastrosUserList() {
+                    app.ui.renderCadastrosSummaryAndFilters();
+                    const listEl = document.getElementById('cadastros-user-list');
+                    if (!listEl) return;
+
+                    const filtered = app.ui.getFilteredCadastrosUsers();
+                    if (filtered.length === 0) {
+                        listEl.innerHTML = `
+                            <div class="p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
+                                <i class="fa-solid fa-user-slash text-2xl mb-2 block opacity-50"></i>
+                                Nenhum colaborador encontrado para este filtro.
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    listEl.innerHTML = filtered.map(u => {
+                        const info = app.ui.getUserMonthValidationInfo(u);
+                        const isSelected = window.selectedAdminEditUser === u.matricula;
+                        const pct = (info.total.pct * 100).toFixed(0);
+                        const cleanNome = app.utils.fixEncoding(u.nome);
+                        const avatar = u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanNome)}&background=cbd5e1&color=ffffff`;
+
+                        const dotCls = ({ validado: 'bg-emerald-500', agendado: 'bg-blue-500', pendente: 'bg-amber-500' })[info.status] || 'bg-slate-300 dark:bg-slate-600';
+                        const statusTxt = ({ validado: 'Validado', agendado: 'Agendado', pendente: 'Falta assinar' })[info.status] || 'Sem nota';
+                        return `
+                            <div onclick="app.ui.selectUserForCadastros('${u.matricula}')" class="cursor-pointer px-3 py-2.5 rounded-xl flex items-center gap-3 transition-colors ${isSelected ? 'bg-indigo-50 dark:bg-indigo-950/50 ring-1 ring-indigo-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}">
+                                <div class="relative shrink-0">
+                                    <img src="${avatar}" class="w-9 h-9 rounded-full object-cover">
+                                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ${dotCls} ring-2 ring-white dark:ring-slate-900"></span>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">${cleanNome}</div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400">${statusTxt}</div>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <div class="text-sm font-black ${info.total.received > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">R$ ${info.total.received.toFixed(2)}</div>
+                                    <div class="text-[10px] text-slate-400">${pct}%</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                },
+
                 renderView_Cadastros(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('cadastros')) return;
+                    const qualidadeUsers = app.getQualidadeUsers();
+                    if ((!window.selectedAdminEditUser || !qualidadeUsers.some(u => u.matricula === window.selectedAdminEditUser)) && qualidadeUsers.length > 0) {
+                        window.selectedAdminEditUser = qualidadeUsers[0].matricula;
+                    }
+
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Lançamentos de Notas Mensais</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Insira os resultados na referência <strong class="text-green-600">${this.formatMonthLabel(app.currentMonth)}</strong>.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Central de Lançamento e Validação de Notas</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe quem já validou, veja o valor final em tempo real e colete a assinatura com senha do colaborador em <strong class="text-green-600">${app.ui.formatMonthLabel(app.currentMonth)}</strong>.</p>
                             </div>
-                            <button type="button" onclick="app.admin.clearAllUsersMonth()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 font-bold py-2.5 px-5 rounded-xl border border-red-200 dark:border-red-800 shadow-sm flex items-center gap-2 text-sm transition-colors">
-                                <i class="fa-solid fa-trash-can"></i> Zerar Lançamentos do Mês
-                            </button>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="app.admin.exportBonusReport()" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40 font-bold py-2.5 px-4 rounded-xl border border-emerald-200 dark:border-emerald-800 shadow-sm flex items-center gap-2 text-xs transition-colors">
+                                    <i class="fa-solid fa-file-excel"></i> Exportar Folha (.xlsx)
+                                </button>
+                                <button type="button" onclick="app.admin.clearAllUsersMonth()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 font-bold py-2.5 px-4 rounded-xl border border-red-200 dark:border-red-800 shadow-sm flex items-center gap-2 text-xs transition-colors">
+                                    <i class="fa-solid fa-trash-can"></i> Zerar Lançamentos do Mês
+                                </button>
+                            </div>
                         </div>
-                        <div class="glass-card p-6 rounded-3xl w-full">
-                            <div class="flex gap-2 mb-8">
-                                <select id="adm-user-select" onchange="app.admin.loadUserEditor()" class="flex-1 p-3.5 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-green-500">
-                                    <option value="">Selecione um colaborador para lançar notas...</option>
-                                    ${app.users.map(u => `<option value="${u.matricula}" ${window.selectedAdminEditUser === u.matricula ? 'selected' : ''}>${u.nome} (${u.matricula})</option>`).join('')}
-                                </select>
+
+                        <!-- Input oculto de compatibilidade para métodos que leem #adm-user-select -->
+                        <input type="hidden" id="adm-user-select" value="${window.selectedAdminEditUser || ''}">
+
+                        <!-- KPIs de Validação do Mês -->
+                        <div id="cadastros-kpi-summary" class="mb-6"></div>
+
+                        <!-- Layout Master-Detail: Lista de Colaboradores à Esquerda + Editor e Cálculo ao Vivo à Direita -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                            <!-- Coluna Esquerda: Lista Inteligente de Colaboradores -->
+                            <div class="lg:col-span-5 xl:col-span-4 glass-card p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800">
+                                <div class="mb-3">
+                                    <div class="relative">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input type="text" id="cadastros-search-input" value="${app.ui.cadastrosSearchTerm || ''}" oninput="app.ui.setCadastrosSearch(this.value)" placeholder="Buscar por nome, matrícula ou operação..." class="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                                    </div>
+                                </div>
+                                <div id="cadastros-filter-pills" class="hidden"></div>
+                                <div id="cadastros-user-list" class="space-y-2 max-h-[640px] overflow-y-auto pr-1 custom-scrollbar"></div>
                             </div>
-                            <div id="adm-editor-area" class="hidden space-y-6 animate-fade-in"></div>
+
+                            <!-- Coluna Direita: Editor do Colaborador + Simulador ao Vivo + Assinatura com Senha -->
+                            <div class="lg:col-span-7 xl:col-span-8 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800">
+                                <div id="adm-editor-area" class="space-y-6 animate-fade-in"></div>
+                            </div>
                         </div>
                     `;
                     container.innerHTML = html;
-                    if(window.selectedAdminEditUser) app.admin.loadUserEditor();
+                    app.ui.renderCadastrosUserList();
+                    if (window.selectedAdminEditUser) {
+                        app.admin.loadUserEditor();
+                    }
                 },
 
                 renderView_GestaoEquipe(container) {
-                    if(!app.isAdmin) return;
-                    
-                    const totais = app.users.length;
-                    const logados = app.users.filter(u => u.loginCount > 0).length;
-                    
-                    let html = `
-                        <div class="mb-8 flex justify-between items-center">
-                            <div><h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Gestão Global da Equipe</h2></div>
-                            <button type="button" onclick="app.ui.openAddUserModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md"><i class="fa-solid fa-user-plus"></i> Adicionar Colaborador</button>
-                        </div>
-                        
-                        <!-- Dashcards Equipe -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
-                                <div class="text-3xl text-blue-500"><i class="fa-solid fa-users"></i></div>
-                                <div><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total de Colaboradores</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totais}</div></div>
-                            </div>
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
-                                <div class="text-3xl text-green-500"><i class="fa-solid fa-user-check"></i></div>
-                                <div><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Acessaram a Plataforma</div><div class="text-2xl font-black text-slate-800 dark:text-white">${logados}</div></div>
-                            </div>
-                        </div>
-
-                        <div class="glass-card p-6 rounded-3xl w-full">
-                            <table class="w-full text-left text-sm">
-                                <thead><tr class="border-b text-slate-400 uppercase text-[10px]"><th class="pb-2">Nome / Matrícula</th><th class="pb-2">Operações</th><th class="pb-2 text-right">Ações Rápidas</th></tr></thead>
-                                <tbody>
-                    `;
-                    app.users.forEach(u => {
-                        const avatar = u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.nome)}&background=cbd5e1&color=ffffff`;
-                        html += `
-                            <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                                <td class="py-3 font-bold text-slate-700 dark:text-slate-200 flex items-center gap-3">
-                                    <img src="${avatar}" onclick="app.ui.viewUserProfile('${u.matricula}')" class="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:scale-105 transition-transform" title="Ver Perfil Completo">
-                                    <div>${u.nome}<br><span class="text-xs text-slate-400 font-normal">${u.matricula}</span></div>
-                                </td>
-                                <td class="py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[150px] truncate">${u.operacoes ? u.operacoes.join(', ') : '-'}</td>
-                                <td class="py-3 text-right space-x-1">
-                                    <button type="button" onclick="app.ui.viewUserProfile('${u.matricula}')" class="text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Ver Perfil e Log de Atividade"><i class="fa-solid fa-address-card"></i></button>
-                                    <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar Reset de Senha (12345)"><i class="fa-solid fa-key"></i></button>
-                                    <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Editar Perfil"><i class="fa-solid fa-pen"></i></button>
-                                    <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1.5 rounded text-xs font-bold transition-colors" title="Forçar re-assinatura LGPD">LGPD</button>
-                                    <button type="button" onclick="app.admin.deleteUser('${u.matricula}')" class="text-red-500 bg-red-50 dark:bg-red-900/30 dark:text-red-400 px-2 py-1.5 rounded text-xs font-bold transition-colors"><i class="fa-solid fa-trash"></i></button>
-                            </tr>
-                        `;
-                    });
-                    
-                    // ESSAS LINHAS ABAIXO FORAM AS QUE SE PERDERAM NA COLAGEM E QUEBRARAM O SISTEMA
-                    html += `</tbody></table></div>`;
-                    container.innerHTML = html;
+                    if(!app.hasAdminAccess('gestao_equipe') && !app.hasAdminAccess('hierarquia')) return;
+                    this.renderView_Hierarquia(container);
                 },
 
                 addEstoqueItem() {
@@ -4221,63 +5492,213 @@
 
                 renderView_ControleEstoque(container) {
                     const itens = Object.values(app.estoqueItems || {});
-                    const logs = Object.values(app.estoqueLogs || {}).sort((a,b) => new Date(b.data.split('/').reverse().join('-') + 'T' + b.hora) - new Date(a.data.split('/').reverse().join('-') + 'T' + a.hora));
 
-                    const totalUnidades = itens.reduce((acc, i) => acc + i.qtd, 0);
-                    const itensZerados = itens.filter(i => i.qtd === 0).length;
-                    const totalConsumido = logs.reduce((acc, l) => acc + l.qtd, 0);
+                    // Consolida logs do estoque + extrai consumo histórico de ações presenciais já aplicadas
+                    const rawLogs = Object.values(app.estoqueLogs || {});
+                    const loggedActionIds = new Set(rawLogs.map(l => l.acaoId).filter(Boolean));
+                    const combinedLogs = [...rawLogs];
+
+                    Object.values(app.actionsList || {}).forEach(act => {
+                        if (!act || loggedActionIds.has(act.id)) return;
+                        const dataFmt = act.data ? (act.data.includes('-') ? act.data.split('-').reverse().join('/') : act.data) : '-';
+                        if (Array.isArray(act.brindesItems) && act.brindesItems.length > 0) {
+                            act.brindesItems.forEach((b, idx) => {
+                                const q = parseInt(b.qtd) || 0;
+                                if (q > 0) {
+                                    combinedLogs.push({
+                                        id: `act_log_${act.id}_${idx}`,
+                                        acaoId: act.id,
+                                        nomeItem: b.nome || 'Insumo de Ação',
+                                        qtd: q,
+                                        autor: act.nome || 'Colaborador',
+                                        matricula: act.matricula || '',
+                                        op: act.op || 'Geral',
+                                        data: dataFmt,
+                                        hora: act.hora || '12:00'
+                                    });
+                                }
+                            });
+                        } else if (act.brindes && String(act.brindes).trim() !== '' && String(act.brindes).trim() !== 'Nenhum') {
+                            const txt = String(act.brindes).trim();
+                            // Faz parse de formatos como "10x Paçoca, 5x Pirulito" ou número simples
+                            const partes = txt.split(',');
+                            partes.forEach((p, idx) => {
+                                const str = p.trim();
+                                const match = str.match(/^(\d+)\s*x\s+(.+)$/i);
+                                if (match) {
+                                    combinedLogs.push({
+                                        id: `act_parse_${act.id}_${idx}`,
+                                        acaoId: act.id,
+                                        nomeItem: match[2].trim(),
+                                        qtd: parseInt(match[1]) || 1,
+                                        autor: act.nome || 'Colaborador',
+                                        matricula: act.matricula || '',
+                                        op: act.op || 'Geral',
+                                        data: dataFmt,
+                                        hora: act.hora || '12:00'
+                                    });
+                                } else {
+                                    const numMatch = str.match(/(\d+)/);
+                                    const qtdExtraida = numMatch ? (parseInt(numMatch[1]) || 1) : 1;
+                                    const nomeExtraido = str.replace(/^\d+\s*[-x]?\s*/i, '').trim() || str;
+                                    combinedLogs.push({
+                                        id: `act_txt_${act.id}_${idx}`,
+                                        acaoId: act.id,
+                                        nomeItem: nomeExtraido,
+                                        qtd: qtdExtraida,
+                                        autor: act.nome || 'Colaborador',
+                                        matricula: act.matricula || '',
+                                        op: act.op || 'Geral',
+                                        data: dataFmt,
+                                        hora: act.hora || '12:00'
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    const parseLogDate = (l) => {
+                        if (!l || !l.data) return 0;
+                        const d = l.data.includes('/') ? l.data.split('/').reverse().join('-') : l.data;
+                        const h = l.hora || '00:00';
+                        const ts = new Date(`${d}T${h}`).getTime();
+                        return isNaN(ts) ? 0 : ts;
+                    };
+                    const logs = combinedLogs.sort((a, b) => parseLogDate(b) - parseLogDate(a));
+
+                    // Ranking de Consumo por Usuário (do maior para o menor)
+                    const consumoPorUsuarioMap = {};
+                    logs.forEach(l => {
+                        const nomeAutor = (l.autor || 'Não Identificado').trim();
+                        const key = nomeAutor.toUpperCase();
+                        if (!consumoPorUsuarioMap[key]) {
+                            consumoPorUsuarioMap[key] = { nome: nomeAutor, qtdTotal: 0, retiradas: 0, itensMap: {} };
+                        }
+                        const q = parseInt(l.qtd) || 0;
+                        consumoPorUsuarioMap[key].qtdTotal += q;
+                        consumoPorUsuarioMap[key].retiradas += 1;
+                        const itemNome = l.nomeItem || 'Insumo';
+                        consumoPorUsuarioMap[key].itensMap[itemNome] = (consumoPorUsuarioMap[key].itensMap[itemNome] || 0) + q;
+                    });
+                    const rankingUsuariosConsumo = Object.values(consumoPorUsuarioMap).sort((a, b) => b.qtdTotal - a.qtdTotal);
+
+                    const LIMITE_ACABANDO = 15;
+                    const totalUnidades = itens.reduce((acc, i) => acc + (parseInt(i.qtd) || 0), 0);
+                    const itensZerados = itens.filter(i => (parseInt(i.qtd) || 0) === 0);
+                    const itensAcabando = itens.filter(i => {
+                        const q = parseInt(i.qtd) || 0;
+                        return q > 0 && q <= LIMITE_ACABANDO;
+                    });
+                    const totalCriticos = itensZerados.length + itensAcabando.length;
+                    const totalConsumido = logs.reduce((acc, l) => acc + (parseInt(l.qtd) || 0), 0);
+
+                    let alertaEstoqueHtml = '';
+                    if (totalCriticos > 0) {
+                        const tagsCriticas = [...itensZerados, ...itensAcabando].map(i => {
+                            const isZero = (parseInt(i.qtd) || 0) === 0;
+                            return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black ${isZero ? 'bg-red-600 text-white shadow-sm' : 'bg-amber-500 text-white shadow-sm'}">
+                                <i class="fa-solid ${isZero ? 'fa-circle-xmark' : 'fa-triangle-exclamation'}"></i> ${i.nome}: ${i.qtd} unid. (${isZero ? 'ESGOTADO' : 'ACABANDO'})
+                            </span>`;
+                        }).join('');
+
+                        alertaEstoqueHtml = `
+                            <div class="mb-8 p-5 rounded-3xl bg-gradient-to-r from-red-500/10 via-amber-500/10 to-orange-500/10 border-2 border-amber-400/60 dark:border-amber-500/50 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div class="flex items-start gap-4">
+                                    <div class="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-xl shrink-0 shadow-md animate-pulse">
+                                        <i class="fa-solid fa-bell"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-sm font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Atenção: Insumos Acabando ou Esgotados (${totalCriticos})</h4>
+                                        <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 mb-2.5">Os itens abaixo atingiram o nível crítico de estoque (≤ ${LIMITE_ACABANDO} unids.) e precisam de reposição:</p>
+                                        <div class="flex flex-wrap gap-2">${tagsCriticas}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
 
                     let html = `
-                        <div class="mb-8">
+                        <div class="mb-6">
                             <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Almoxarifado & Insumos</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de doces, salgados e itens utilizados nas ações de engajamento.</p>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de doces, brindes, alertas de reposição e ranking de consumo por colaborador conforme aplicação das ações.</p>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500 shadow-sm">
-                                <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-boxes-stacked"></i></div>
-                                <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Volume Atual</div><div class="text-3xl font-black text-slate-800 dark:text-white">${totalUnidades} <span class="text-sm font-medium text-slate-400">unids.</span></div></div>
+                        ${alertaEstoqueHtml}
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+                            <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-blue-500 shadow-sm">
+                                <div class="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-boxes-stacked"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Volume em Estoque</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalUnidades} <span class="text-xs font-medium text-slate-400">unids.</span></div></div>
                             </div>
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${itensZerados > 0 ? 'border-l-red-500' : 'border-l-emerald-500'} shadow-sm">
-                                <div class="w-14 h-14 rounded-2xl ${itensZerados > 0 ? 'bg-red-50 text-red-600 dark:bg-red-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'} flex items-center justify-center text-2xl shrink-0"><i class="fa-solid ${itensZerados > 0 ? 'fa-triangle-exclamation' : 'fa-check'}"></i></div>
-                                <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Itens Zerados</div><div class="text-3xl font-black ${itensZerados > 0 ? 'text-red-500' : 'text-emerald-500'}">${itensZerados}</div></div>
+                            <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 ${itensAcabando.length > 0 ? 'border-l-amber-500' : 'border-l-emerald-500'} shadow-sm">
+                                <div class="w-12 h-12 rounded-2xl ${itensAcabando.length > 0 ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'} flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-battery-quarter"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Acabando (≤ ${LIMITE_ACABANDO})</div><div class="text-2xl font-black ${itensAcabando.length > 0 ? 'text-amber-500' : 'text-emerald-500'}">${itensAcabando.length}</div></div>
                             </div>
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-orange-500 shadow-sm">
-                                <div class="w-14 h-14 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-cookie-bite"></i></div>
-                                <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Consumo Total Registrado</div><div class="text-3xl font-black text-slate-800 dark:text-white">${totalConsumido} <span class="text-sm font-medium text-slate-400">unids.</span></div></div>
+                            <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 ${itensZerados.length > 0 ? 'border-l-red-500' : 'border-l-emerald-500'} shadow-sm">
+                                <div class="w-12 h-12 rounded-2xl ${itensZerados.length > 0 ? 'bg-red-50 text-red-600 dark:bg-red-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'} flex items-center justify-center text-xl shrink-0"><i class="fa-solid ${itensZerados.length > 0 ? 'fa-triangle-exclamation' : 'fa-check'}"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Itens Esgotados</div><div class="text-2xl font-black ${itensZerados.length > 0 ? 'text-red-500' : 'text-emerald-500'}">${itensZerados.length}</div></div>
+                            </div>
+                            <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-orange-500 shadow-sm">
+                                <div class="w-12 h-12 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-cookie-bite"></i></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Consumo Total Aplicado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalConsumido} <span class="text-xs font-medium text-slate-400">unids.</span></div></div>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <!-- Prateleira (Cadastro) -->
-                            <div class="glass-card p-6 rounded-[2rem]">
-                                <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-100 dark:border-slate-700 pb-3 flex items-center gap-2"><i class="fa-solid fa-candy-cane text-blue-500"></i> Prateleira Principal</h3>
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            <!-- Prateleira (Cadastro e Destaque de Estoque Crítico) -->
+                            <div class="lg:col-span-5 glass-card p-6 rounded-[2rem]">
+                                <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-100 dark:border-slate-700 pb-3 flex items-center justify-between">
+                                    <span class="flex items-center gap-2"><i class="fa-solid fa-candy-cane text-blue-500"></i> Prateleira Principal</span>
+                                    <span class="text-[10px] uppercase font-black text-slate-400">${itens.length} itens</span>
+                                </h3>
                                 <div class="flex gap-2 mb-6 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <input type="text" id="est-novo-nome" placeholder="Nome do Insumo (Ex: Paçoca)" class="flex-1 p-3 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-sm dark:bg-slate-900 dark:text-white">
-                                    <input type="number" id="est-novo-qtd" placeholder="Qtd Inicial" value="0" class="w-24 p-3 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-sm text-center font-bold dark:bg-slate-900 dark:text-white">
+                                    <input type="number" id="est-novo-qtd" placeholder="Qtd" value="0" class="w-20 p-3 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-sm text-center font-bold dark:bg-slate-900 dark:text-white">
                                     <button onclick="app.ui.addEstoqueItem()" class="bg-blue-600 hover:bg-blue-700 text-white w-12 rounded-xl font-bold shadow-sm transition"><i class="fa-solid fa-plus"></i></button>
                                 </div>
                                 
-                                <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                                <div class="space-y-3 max-h-[520px] overflow-y-auto custom-scrollbar pr-2">
                     `;
                     
                     if(itens.length === 0) {
                         html += `<div class="text-center text-slate-400 italic p-6">Nenhum item cadastrado no estoque.</div>`;
                     } else {
-                        itens.sort((a,b) => a.nome.localeCompare(b.nome)).forEach(i => {
-                            const colorQtd = i.qtd === 0 ? 'text-red-500' : (i.qtd < 10 ? 'text-orange-500' : 'text-emerald-600');
+                        // Ordena destacando primeiro os que estão acabando ou zerados
+                        itens.sort((a, b) => {
+                            const qa = parseInt(a.qtd) || 0;
+                            const qb = parseInt(b.qtd) || 0;
+                            const critA = qa <= LIMITE_ACABANDO ? 0 : 1;
+                            const critB = qb <= LIMITE_ACABANDO ? 0 : 1;
+                            if (critA !== critB) return critA - critB;
+                            if (qa !== qb && critA === 0) return qa - qb;
+                            return a.nome.localeCompare(b.nome);
+                        }).forEach(i => {
+                            const q = parseInt(i.qtd) || 0;
+                            const isZero = q === 0;
+                            const isLow = q > 0 && q <= LIMITE_ACABANDO;
+                            const colorQtd = isZero ? 'text-red-600 dark:text-red-400' : (isLow ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400');
+                            const cardBorder = isZero
+                                ? 'border-2 border-red-400 bg-red-50/40 dark:bg-red-950/20 dark:border-red-700'
+                                : (isLow ? 'border-2 border-amber-400 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-600' : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800');
+                            const statusBadge = isZero
+                                ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-red-600 text-white">Esgotado</span>`
+                                : (isLow ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-500 text-white animate-pulse">Acabando</span>` : '');
+
                             html += `
-                                <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border ${i.qtd === 0 ? 'border-red-200' : 'border-slate-200 dark:border-slate-700'} flex flex-col sm:flex-row justify-between items-center gap-3 shadow-sm hover:shadow-md transition">
-                                    <div class="flex-1 truncate w-full text-center sm:text-left">
-                                        <span class="font-bold text-slate-800 dark:text-white text-base">${i.nome}</span>
-                                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mt-0.5">Em Estoque: <span class="${colorQtd} text-sm">${i.qtd}</span></div>
+                                <div class="${cardBorder} p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 shadow-sm hover:shadow-md transition">
+                                    <div class="flex-1 min-w-0 w-full text-center sm:text-left">
+                                        <div class="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                                            <span class="font-bold text-slate-800 dark:text-white text-base truncate">${i.nome}</span>
+                                            ${statusBadge}
+                                        </div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mt-0.5">Em Estoque: <span class="${colorQtd} text-sm font-black">${q} unids.</span></div>
                                     </div>
-                                    <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                                        <input type="number" id="est-upd-${i.id}" value="1" min="1" class="w-12 p-2 text-center text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-800 outline-none">
-                                        <button onclick="app.ui.updateEstoqueItem('${i.id}', '+')" class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white transition font-black text-sm">+</button>
-                                        <button onclick="app.ui.updateEstoqueItem('${i.id}', '-')" class="w-8 h-8 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-500 hover:text-white transition font-black text-sm">-</button>
-                                        <div class="w-px h-6 bg-slate-300 mx-1"></div>
-                                        <button onclick="app.ui.delEstoqueItem('${i.id}')" class="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition"><i class="fa-solid fa-trash"></i></button>
+                                    <div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+                                        <input type="number" id="est-upd-${i.id}" value="1" min="1" class="w-12 p-1.5 text-center text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none">
+                                        <button onclick="app.ui.updateEstoqueItem('${i.id}', '+')" class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white transition font-black text-sm" title="Adicionar ao estoque">+</button>
+                                        <button onclick="app.ui.updateEstoqueItem('${i.id}', '-')" class="w-8 h-8 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-500 hover:text-white transition font-black text-sm" title="Baixar do estoque">-</button>
+                                        <div class="w-px h-6 bg-slate-300 dark:bg-slate-700 mx-0.5"></div>
+                                        <button onclick="app.ui.delEstoqueItem('${i.id}')" class="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition" title="Excluir item"><i class="fa-solid fa-trash"></i></button>
                                     </div>
                                 </div>
                             `;
@@ -4288,25 +5709,44 @@
                                 </div>
                             </div>
 
-                            <!-- Histórico de Log de Saídas -->
-                            <div class="glass-card p-6 rounded-[2rem] bg-slate-50/50 dark:bg-slate-900">
-                                <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-200 dark:border-slate-700 pb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-orange-500"></i> Histórico de Consumo</h3>
-                                <div class="space-y-4 max-h-[460px] overflow-y-auto custom-scrollbar pr-2">
+                            <!-- Coluna Direita: Ranking por Usuário (Maior p/ Menor) + Histórico de Consumo -->
+                            <div class="lg:col-span-7 flex flex-col gap-6">
+                                <!-- Ranking de Consumo por Usuário -->
+                                <div class="glass-card p-6 rounded-[2rem] border border-slate-200/80 dark:border-slate-800">
+                                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+                                        <h3 class="font-bold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-ranking-star text-indigo-500"></i> Consumo por Usuário (Maior para o Menor)
+                                        </h3>
+                                        <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">${rankingUsuariosConsumo.length} colaboradores</span>
+                                    </div>
+                                    <div class="space-y-2.5 max-h-[240px] overflow-y-auto custom-scrollbar pr-2">
                     `;
-                    
-                    if (logs.length === 0) {
-                        html += `<div class="text-center text-slate-400 italic p-6">Nenhum registro de saída encontrado. As baixas ocorrerão automaticamente ao registrar Ações Presenciais.</div>`;
+
+                    if (rankingUsuariosConsumo.length === 0) {
+                        html += `<div class="text-center text-slate-400 italic p-6 text-sm">Nenhum consumo registrado por colaborador ainda.</div>`;
                     } else {
-                        logs.forEach(log => {
+                        const maxQtdUser = rankingUsuariosConsumo[0].qtdTotal || 1;
+                        rankingUsuariosConsumo.forEach((usr, idx) => {
+                            const pctBar = Math.min(100, Math.round((usr.qtdTotal / maxQtdUser) * 100));
+                            const resumoItens = Object.entries(usr.itensMap).map(([nome, q]) => `${q}x ${nome}`).join(', ');
+                            const medalColor = idx === 0 ? 'bg-amber-400 text-slate-900' : (idx === 1 ? 'bg-slate-300 text-slate-800' : (idx === 2 ? 'bg-amber-700 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'));
                             html += `
-                                <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex gap-4">
-                                    <div class="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 flex items-center justify-center font-black shrink-0 border border-orange-200 dark:border-orange-800">-${log.qtd}</div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex justify-between items-start mb-1">
-                                            <strong class="text-sm text-slate-800 dark:text-white truncate pr-2">${log.nomeItem}</strong>
-                                            <span class="text-[9px] text-slate-400 font-mono shrink-0">${log.data} ${log.hora}</span>
+                                <div class="bg-white dark:bg-slate-800/90 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="flex items-center justify-between gap-3 mb-1.5">
+                                        <div class="flex items-center gap-2.5 min-w-0">
+                                            <span class="w-6 h-6 rounded-full ${medalColor} font-black text-xs flex items-center justify-center shrink-0">${idx + 1}º</span>
+                                            <div class="min-w-0">
+                                                <div class="font-extrabold text-sm text-slate-800 dark:text-white truncate">${usr.nome}</div>
+                                                <div class="text-[10px] text-slate-400 truncate" title="${resumoItens}">${resumoItens}</div>
+                                            </div>
                                         </div>
-                                        <div class="text-[10px] text-slate-500 uppercase font-bold tracking-widest leading-tight">Retirado por: <span class="text-blue-500">${log.autor}</span> • Op: ${log.op}</div>
+                                        <div class="text-right shrink-0">
+                                            <span class="text-base font-black text-orange-600 dark:text-orange-400">${usr.qtdTotal} unids.</span>
+                                            <div class="text-[9px] uppercase font-bold text-slate-400">${usr.retiradas} ${usr.retiradas === 1 ? 'ação' : 'ações'}</div>
+                                        </div>
+                                    </div>
+                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div class="h-full bg-gradient-to-r from-indigo-500 to-orange-500 rounded-full" style="width: ${pctBar}%"></div>
                                     </div>
                                 </div>
                             `;
@@ -4314,6 +5754,41 @@
                     }
 
                     html += `
+                                    </div>
+                                </div>
+
+                                <!-- Histórico Cronológico de Saídas -->
+                                <div class="glass-card p-6 rounded-[2rem] bg-slate-50/50 dark:bg-slate-900">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex items-center justify-between">
+                                        <span class="flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> Histórico Detalhado de Consumo</span>
+                                        <span class="text-[10px] font-black uppercase text-slate-400">${logs.length} registros</span>
+                                    </h3>
+                                    <div class="space-y-3 max-h-[320px] overflow-y-auto custom-scrollbar pr-2">
+                    `;
+                    
+                    if (logs.length === 0) {
+                        html += `<div class="text-center text-slate-400 italic p-6">Nenhum registro de saída encontrado. As baixas ocorrem automaticamente conforme os colaboradores aplicam Ações Presenciais com insumos.</div>`;
+                    } else {
+                        logs.forEach(log => {
+                            html += `
+                                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
+                                    <div class="w-11 h-11 rounded-2xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black text-sm shrink-0 border border-orange-200 dark:border-orange-800">-${log.qtd}</div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex justify-between items-start mb-0.5">
+                                            <strong class="text-sm text-slate-800 dark:text-white truncate pr-2">${log.nomeItem}</strong>
+                                            <span class="text-[10px] text-slate-400 font-mono shrink-0">${log.data || '-'} ${log.hora || ''}</span>
+                                        </div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 font-bold leading-tight">
+                                            Colaborador: <span class="text-indigo-600 dark:text-indigo-400 font-extrabold">${log.autor}</span> • Operação: <span class="text-slate-700 dark:text-slate-200">${log.op || 'Geral'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    html += `
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -4323,44 +5798,62 @@
 
                 // --- INÍCIO: NOVAS LÓGICAS DE IMPRESSÃO ---
                 impressoes: {
+                    dataURLtoBlob(dataurl) {
+                        try {
+                            const arr = dataurl.split(',');
+                            const mimeMatch = arr[0].match(/:(.*?);/);
+                            const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+                            const bstr = atob(arr[1]);
+                            let n = bstr.length;
+                            const u8arr = new Uint8Array(n);
+                            while (n--) u8arr[n] = bstr.charCodeAt(n);
+                            return new Blob([u8arr], { type: mime });
+                        } catch (e) {
+                            return null;
+                        }
+                    },
+
                     imprimirDireto(id) {
                         const doc = app.impressoesList[id];
-                        if(!doc) return;
+                        if(!doc || !doc.fileBase64) return app.ui.showAlert("Aviso", "Arquivo indisponível.", "warning");
 
-                        app.ui.showAlert("Atenção à Quantidade", `O colaborador solicitou <b class="text-blue-600 text-lg">${doc.copias} cópia(s)</b>.<br><br>Não se esqueça de ajustar este número na tela de impressão do Windows/Mac que abrirá a seguir!`, "info");
+                        const ext = (doc.fileName || '').split('.').pop().toLowerCase();
+                        const isOfficeOrDoc = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt'].includes(ext) ||
+                            (!doc.fileBase64.startsWith('data:application/pdf') && !doc.fileBase64.startsWith('data:image/'));
+
+                        if (isOfficeOrDoc) {
+                            this.baixarUnico(id);
+                            return app.ui.showAlert(
+                                "Arquivo Office Baixado (.DOCX / .XLSX)",
+                                `O navegador não imprime arquivos <b>.${ext.toUpperCase()}</b> diretamente na aba.<br><br>O arquivo <b>"${doc.fileName}"</b> foi baixado automaticamente para você abrir no Word/Excel e imprimir <b class="text-blue-600">${doc.copias} cópia(s)</b>!`,
+                                "info"
+                            );
+                        }
+
+                        app.ui.showAlert("Atenção à Quantidade", `O colaborador solicitou <b class="text-blue-600 text-lg">${doc.copias} cópia(s)</b>.<br><br>Não se esqueça de ajustar este número na tela de impressão que abrirá a seguir!`, "info");
 
                         setTimeout(() => {
+                            const blob = this.dataURLtoBlob(doc.fileBase64);
+                            const blobUrl = blob ? URL.createObjectURL(blob) : doc.fileBase64;
+
                             if (doc.fileBase64.startsWith('data:application/pdf')) {
-                                let iframe = document.createElement('iframe');
-                                iframe.style.position = "absolute";
-                                iframe.style.width = "0px";
-                                iframe.style.height = "0px";
-                                iframe.style.border = "none";
-                                iframe.src = doc.fileBase64;
-                                document.body.appendChild(iframe);
-                                setTimeout(() => {
-                                    try {
-                                        iframe.contentWindow.focus();
-                                        iframe.contentWindow.print();
-                                    } catch(e) {
-                                        console.error("Bloqueio de popup/iframe:", e);
-                                        app.ui.impressoes.baixarUnico(id);
-                                    }
-                                }, 1000);
+                                const win = window.open(blobUrl, '_blank');
+                                if (!win) this.baixarUnico(id);
                             } else {
                                 let win = window.open('', '_blank');
                                 if(win) {
-                                    win.document.write(`<img src="${doc.fileBase64}" onload="window.print();window.close();" style="max-width:100%;">`);
+                                    win.document.write(`<html><body style="margin:0;display:flex;justify-content:center;"><img src="${blobUrl}" onload="window.print();" style="max-width:100%;"></body></html>`);
                                     win.document.close();
                                 } else {
-                                    app.ui.impressoes.baixarUnico(id);
+                                    this.baixarUnico(id);
                                 }
                             }
-                        }, 2500);
+                        }, 1200);
                     },
+
                     solicitar() {
                         const fileInput = document.getElementById('print-file');
-                        const copias = parseInt(document.getElementById('print-copias').value) || 1;
+                        const copias = Math.max(1, parseInt(document.getElementById('print-copias').value) || 1);
                         const desc = document.getElementById('print-desc').value.trim();
 
                         if(!fileInput.files || fileInput.files.length === 0) {
@@ -4381,9 +5874,11 @@
                         const reader = new FileReader();
                         reader.onload = (e) => {
                             const base64 = e.target.result;
-                            const id = 'prt_' + Date.now();
+                            const now = Date.now();
+                            const id = 'prt_' + now;
                             app.impressoesList[id] = {
                                 id: id,
+                                timestamp: now,
                                 autor: app.currentUser.nome,
                                 matricula: app.currentUser.matricula,
                                 fileName: file.name,
@@ -4395,8 +5890,8 @@
                             };
                             app.storage.saveImpressoes().then(() => {
                                 app.ui.showAlert("Enviado", "Sua solicitação de impressão foi encaminhada ao administrativo.", "success");
-                                app.ui.renderTab('impressoes', true);
-                                app.notifications.notify('ADM', 'Nova Impressão', `${app.currentUser.nome} solicitou ${copias} cópias de um arquivo.`, 'info');
+                                app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                                app.notifications.notify('ADM', 'Nova Impressão', `${app.currentUser.nome} solicitou ${copias} cópia(s) do arquivo "${file.name}".`, 'info');
                             }).catch(() => {
                                 btn.disabled = false;
                                 btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar para Impressão';
@@ -4408,109 +5903,245 @@
 
                     baixarUnico(id) {
                         const doc = app.impressoesList[id];
-                        if(!doc) return;
+                        if(!doc || !doc.fileBase64) return app.ui.showAlert("Aviso", "O arquivo original não está mais armazenado.", "warning");
+                        const blob = this.dataURLtoBlob(doc.fileBase64);
+                        const url = blob ? URL.createObjectURL(blob) : doc.fileBase64;
                         const link = document.createElement('a');
-                        link.href = doc.fileBase64;
-                        link.download = doc.fileName;
+                        link.href = url;
+                        link.download = doc.fileName || 'documento';
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
+                        if (blob) setTimeout(() => URL.revokeObjectURL(url), 10000);
                     },
 
                     marcarImpresso(id) {
                         const doc = app.impressoesList[id];
                         if(!doc || doc.status === 'impresso') return;
                         doc.status = 'impresso';
-                        app.impressoesStats.arquivos += 1;
-                        app.impressoesStats.folhas += (parseInt(doc.copias) || 1);
+                        doc.dataConclusao = new Date().toLocaleString('pt-BR');
+                        if (!app.impressoesStats) app.impressoesStats = { arquivos: 0, folhas: 0 };
+                        app.impressoesStats.arquivos = (parseInt(app.impressoesStats.arquivos) || 0) + 1;
+                        app.impressoesStats.folhas = (parseInt(app.impressoesStats.folhas) || 0) + (parseInt(doc.copias) || 1);
                         
                         app.storage.saveImpressoes();
                         app.storage.saveImpressoesStats().then(() => {
-                            app.ui.renderTab('impressoes', true);
-                            app.notifications.notify(doc.matricula, 'Impressão Concluída', `O arquivo "${doc.fileName}" já foi impresso e está disponível.`, 'success');
+                            app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                            app.notifications.notify(doc.matricula, 'Impressão Concluída', `O arquivo "${doc.fileName}" (${doc.copias}x) já foi impresso e está disponível.`, 'success');
                         });
                     },
 
                     imprimirTudo() {
-                        const pendentes = Object.values(app.impressoesList).filter(i => i.status === 'pendente');
+                        const pendentes = Object.values(app.impressoesList || {}).filter(i => i.status === 'pendente');
                         if(pendentes.length === 0) return app.ui.showAlert("Aviso", "Nenhum arquivo na fila de impressão.", "info");
 
-                        app.ui.showConfirm("Baixar e Marcar Todos", `Isto baixará ${pendentes.length} arquivo(s) sequencialmente e marcará todos como impressos contabilizando as folhas gastas. Certifique-se de permitir o download múltiplo no navegador. Continuar?`, "app.ui.impressoes.execImprimirTudo()", false);
+                        app.ui.showConfirm("Baixar e Marcar Todos", `Isto baixará ${pendentes.length} arquivo(s) sequencialmente e marcará todos como impressos contabilizando as folhas gastas. Continuar?`, "app.ui.impressoes.execImprimirTudo()", false);
                     },
 
                     execImprimirTudo() {
-                        const pendentes = Object.values(app.impressoesList).filter(i => i.status === 'pendente');
+                        const pendentes = Object.values(app.impressoesList || {}).filter(i => i.status === 'pendente');
                         app.ui.showAlert("Processando", "Baixando arquivos em lote... Por favor, aguarde.", "info");
+                        if (!app.impressoesStats) app.impressoesStats = { arquivos: 0, folhas: 0 };
 
                         pendentes.forEach((p, idx) => {
                             setTimeout(() => {
-                                const link = document.createElement('a');
-                                link.href = p.fileBase64;
-                                link.download = p.fileName;
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-
+                                this.baixarUnico(p.id);
                                 p.status = 'impresso';
-                                app.impressoesStats.arquivos += 1;
-                                app.impressoesStats.folhas += (parseInt(p.copias) || 1);
+                                p.dataConclusao = new Date().toLocaleString('pt-BR');
+                                app.impressoesStats.arquivos = (parseInt(app.impressoesStats.arquivos) || 0) + 1;
+                                app.impressoesStats.folhas = (parseInt(app.impressoesStats.folhas) || 0) + (parseInt(p.copias) || 1);
                                 
-                                // No final da fila, salva e atualiza a tela
                                 if (idx === pendentes.length - 1) {
                                     app.storage.saveImpressoes();
                                     app.storage.saveImpressoesStats().then(() => {
-                                        app.ui.renderTab('impressoes', true);
+                                        app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
                                         app.ui.showAlert("Concluído", "Arquivos transferidos e estatísticas registradas.", "success");
                                     });
                                 }
-                            }, idx * 800); // 800ms gap para o navegador não surtar com muitos downloads ao mesmo tempo
+                            }, idx * 800);
+                        });
+                    },
+
+                    abrirModalExcluir(id) {
+                        const doc = (app.impressoesList || {})[id];
+                        if (!doc) return;
+                        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-ban text-red-500"></i> Excluir / Cancelar Solicitação`;
+                        document.getElementById('modal-content').innerHTML = `
+                            <div class="space-y-3 text-left">
+                                <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+                                    <div><b>Arquivo:</b> ${doc.fileName} (${doc.copias} cópia${doc.copias > 1 ? 's' : ''})</div>
+                                    <div class="text-slate-500 mt-0.5"><b>Solicitante:</b> ${doc.autor}</div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Informe o motivo da exclusão / cancelamento (Obrigatório):</label>
+                                    <textarea id="print-motivo-exclusao" rows="3" placeholder="Ex: Arquivo enviado errado / Quantidade incorreta / Impressora em manutenção..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-white outline-none focus:border-red-500"></textarea>
+                                </div>
+                            </div>
+                        `;
+                        document.getElementById('modal-actions').innerHTML = `
+                            <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-xs">Voltar</button>
+                            <button onclick="app.ui.impressoes.confirmarExclusao('${id}')" class="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-xs shadow-md"><i class="fa-solid fa-trash-can mr-1"></i> Confirmar Exclusão</button>
+                        `;
+                        document.getElementById('global-modal').classList.remove('hidden');
+                        setTimeout(() => document.getElementById('print-motivo-exclusao')?.focus(), 100);
+                    },
+
+                    confirmarExclusao(id) {
+                        const doc = (app.impressoesList || {})[id];
+                        if (!doc) return;
+                        const motivo = (document.getElementById('print-motivo-exclusao')?.value || '').trim();
+                        if (!motivo) {
+                            return app.ui.showAlert("Motivo Obrigatório", "Por favor, explique o motivo para excluir esta solicitação.", "warning");
+                        }
+
+                        doc.status = 'excluido';
+                        doc.motivoExclusao = motivo;
+                        doc.excluidoPor = app.isAdmin ? 'Administração' : app.currentUser.nome;
+                        doc.dataExclusao = new Date().toLocaleString('pt-BR');
+                        delete doc.fileBase64; // Libera espaço no banco mantendo o histórico e o motivo
+
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.storage.saveImpressoes().then(() => {
+                            if (app.isAdmin) {
+                                app.notifications.notify(doc.matricula, 'Impressão Cancelada / Excluída', `Sua solicitação "${doc.fileName}" foi excluída pelo ADM. Motivo: ${motivo}`, 'error');
+                            } else {
+                                app.notifications.notify('ADM', 'Impressão Cancelada pelo Usuário', `${app.currentUser.nome} excluiu o pedido "${doc.fileName}". Motivo: ${motivo}`, 'warning');
+                            }
+                            app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                            app.ui.showAlert("Solicitação Excluída", "O registro foi cancelado e o motivo ficou salvo no histórico.", "success");
                         });
                     },
 
                     delete(id) {
                         delete app.impressoesList[id];
-                        app.storage.saveImpressoes().then(() => app.ui.renderTab('impressoes', true));
+                        app.storage.saveImpressoes().then(() => app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true));
                     }
                 },
                 // --- FIM: NOVAS LÓGICAS DE IMPRESSÃO ---
 
                 renderView_Impressoes(container) {
-                    let html = `
-                        <div class="mb-8">
-                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Centro de Impressão</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gerencie arquivos enviados para impressão centralizada.</p>
-                        </div>
-                    `;
-
-                    const listaGeral = Object.values(app.impressoesList || {}).sort((a,b) => new Date(b.data) - new Date(a.data));
+                    const parseIdTime = (item) => item.timestamp || (item.id && item.id.startsWith('prt_') ? parseInt(item.id.replace('prt_', '')) : 0) || 0;
+                    const listaGeral = Object.values(app.impressoesList || {}).sort((a,b) => parseIdTime(b) - parseIdTime(a));
                     
-                    if (app.currentTab === 'gestao_impressoes') {
-                        const stats = app.impressoesStats || { arquivos: 0, folhas: 0 };
+                    // Se for ADM, exibe SEMPRE a Gestão de Impressões (sem formulário de Solicitar Impressão)
+                    if (app.currentTab === 'gestao_impressoes' || app.isAdmin) {
                         const pendentes = listaGeral.filter(i => i.status === 'pendente');
-                        const historico = listaGeral.filter(i => i.status === 'impresso');
+                        const concluidos = listaGeral.filter(i => i.status === 'impresso');
+                        const excluidos = listaGeral.filter(i => i.status === 'excluido');
+                        const historico = listaGeral.filter(i => i.status === 'impresso' || i.status === 'excluido');
 
-                        html += `
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                                <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-orange-500 shadow-sm">
-                                    <div class="w-14 h-14 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-clock"></i></div>
-                                    <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Fila Pendente</div><div class="text-3xl font-black text-slate-800 dark:text-white">${pendentes.length} <span class="text-sm font-medium text-slate-400">arq.</span></div></div>
+                        // Cálculos reais e em tempo real do Dashboard
+                        const totalArquivosConcluidos = concluidos.length;
+                        const totalArquivosSolicitadosAtivos = pendentes.length + concluidos.length;
+                        const folhasNaFila = pendentes.reduce((acc, i) => acc + (parseInt(i.copias) || 1), 0);
+                        const folhasUsadasConcluidas = concluidos.reduce((acc, i) => acc + (parseInt(i.copias) || 1), 0);
+                        const folhasTotaisSolicitadas = folhasNaFila + folhasUsadasConcluidas;
+
+                        // Ranking de Consumo de Folhas por Usuário (considera impressos + na fila)
+                        const mapaUsuarios = {};
+                        [...concluidos, ...pendentes].forEach(item => {
+                            const key = item.matricula || item.autor || 'Desconhecido';
+                            if (!mapaUsuarios[key]) {
+                                mapaUsuarios[key] = {
+                                    nome: item.autor || key,
+                                    matricula: item.matricula || '-',
+                                    arquivos: 0,
+                                    arquivosConcluidos: 0,
+                                    folhasUsadas: 0,
+                                    folhasPendentes: 0,
+                                    folhasTotal: 0
+                                };
+                            }
+                            const cop = parseInt(item.copias) || 1;
+                            mapaUsuarios[key].arquivos += 1;
+                            mapaUsuarios[key].folhasTotal += cop;
+                            if (item.status === 'impresso') {
+                                mapaUsuarios[key].arquivosConcluidos += 1;
+                                mapaUsuarios[key].folhasUsadas += cop;
+                            } else {
+                                mapaUsuarios[key].folhasPendentes += cop;
+                            }
+                        });
+                        const rankingFolhas = Object.values(mapaUsuarios).sort((a, b) => b.folhasTotal - a.folhasTotal || b.arquivos - a.arquivos);
+                        const maxFolhasUser = rankingFolhas.length > 0 ? Math.max(1, rankingFolhas[0].folhasTotal) : 1;
+
+                        let html = `
+                            <div class="mb-8">
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão e Dashboard de Impressões</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de fila, auditoria de folhas (cópias) por colaborador e histórico de solicitações.</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-orange-500 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-clock"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fila Pendente</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${pendentes.length} <span class="text-xs font-semibold text-slate-400">arq. (${folhasNaFila} fls)</span></div>
+                                    </div>
                                 </div>
-                                <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500 shadow-sm">
-                                    <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-file-circle-check"></i></div>
-                                    <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Arquivos Concluídos</div><div class="text-3xl font-black text-slate-800 dark:text-white">${stats.arquivos} <span class="text-sm font-medium text-slate-400">arq.</span></div></div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-blue-500 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-file-circle-check"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Arquivos Concluídos</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${totalArquivosConcluidos} <span class="text-xs font-semibold text-slate-400">/ ${totalArquivosSolicitadosAtivos} solic.</span></div>
+                                    </div>
                                 </div>
-                                <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-purple-500 shadow-sm">
-                                    <div class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-copy"></i></div>
-                                    <div><div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Folhas Usadas Totais</div><div class="text-3xl font-black text-slate-800 dark:text-white">${stats.folhas} <span class="text-sm font-medium text-slate-400">folhas</span></div></div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-purple-500 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-copy"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Folhas Usadas (Cópias)</div>
+                                        <div class="text-2xl font-black text-purple-600 dark:text-purple-400">${folhasUsadasConcluidas} <span class="text-xs font-semibold text-slate-400">(${folhasTotaisSolicitadas} c/ fila)</span></div>
+                                    </div>
                                 </div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-red-500 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-ban"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Cancelados / Excluídos</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${excluidos.length} <span class="text-xs font-semibold text-slate-400">pedidos</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Dashboard de Consumo de Folhas por Usuário -->
+                            <div class="glass-card p-6 rounded-[2rem] mb-8 border-t-4 border-t-purple-500">
+                                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-chart-Simple text-purple-500 mr-2"></i> Consumo de Folhas por Colaborador (Qtd. de Cópias)</h3>
+                                    <span class="text-xs text-slate-400 font-semibold">Ranking dos usuários que mais utilizam impressões</span>
+                                </div>
+                                ${rankingFolhas.length === 0 ? `
+                                    <div class="text-center text-slate-400 italic py-4 text-sm">Nenhum consumo de folhas registrado até o momento.</div>
+                                ` : `
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                                        ${rankingFolhas.map((u, idx) => {
+                                            const pct = Math.min(100, Math.round((u.folhasTotal / maxFolhasUser) * 100));
+                                            const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx + 1}`));
+                                            return `
+                                            <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
+                                                <div class="flex justify-between items-start gap-2 mb-2">
+                                                    <div class="min-w-0">
+                                                        <div class="font-extrabold text-xs text-slate-800 dark:text-white truncate" title="${u.nome}">${medal} ${u.nome}</div>
+                                                        <div class="text-[10px] text-slate-400">${u.arquivos} arquivo(s) solicitado(s)</div>
+                                                    </div>
+                                                    <div class="text-right shrink-0">
+                                                        <div class="text-sm font-black text-purple-600 dark:text-purple-400">${u.folhasTotal} fls</div>
+                                                        <div class="text-[9px] text-slate-400">${u.folhasUsadas} imp. / ${u.folhasPendentes} fila</div>
+                                                    </div>
+                                                </div>
+                                                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                    <div class="h-full bg-purple-500 rounded-full" style="width: ${pct}%"></div>
+                                                </div>
+                                            </div>`;
+                                        }).join('')}
+                                    </div>
+                                `}
                             </div>
                             
                             <div class="glass-card p-6 rounded-[2rem] mb-8 border-t-4 border-t-blue-500">
-                                <div class="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
-                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-inbox text-orange-500 mr-2"></i> Fila Pendente</h3>
+                                <div class="flex flex-wrap justify-between items-center gap-3 mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-inbox text-orange-500 mr-2"></i> Fila Pendente (${pendentes.length})</h3>
                                     <button onclick="app.ui.impressoes.imprimirTudo()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm transition-colors text-sm"><i class="fa-solid fa-print mr-2"></i> Baixar e Marcar Todos</button>
                                 </div>
-                                <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                                <div class="space-y-3 max-h-[420px] overflow-y-auto custom-scrollbar pr-2">
                         `;
 
                         if (pendentes.length === 0) {
@@ -4519,23 +6150,27 @@
                             pendentes.forEach(p => {
                                 html += `
                                     <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm hover:shadow-md transition">
-                                        <div class="flex-1 w-full">
+                                        <div class="flex-1 w-full min-w-0">
                                             <div class="flex items-center gap-2 mb-1">
                                                 <span class="bg-orange-100 text-orange-700 text-[9px] font-black uppercase px-2 py-0.5 rounded shadow-sm">Pendente</span>
                                                 <span class="text-[10px] text-slate-400 font-mono"><i class="fa-regular fa-clock"></i> ${p.data}</span>
                                             </div>
                                             <div class="font-bold text-slate-800 dark:text-white truncate" title="${p.fileName}"><i class="fa-solid fa-file-lines text-slate-400 mr-1"></i> ${p.fileName}</div>
-                                            <div class="text-xs text-slate-500 mt-1"><strong>Desc:</strong> ${p.desc}</div>
+                                            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1"><strong>Desc:</strong> ${p.desc}</div>
                                             <div class="text-[10px] uppercase font-bold text-slate-400 mt-2">Enviado por: <span class="text-blue-500">${p.autor}</span></div>
                                         </div>
                                         <div class="flex items-center gap-3 shrink-0">
                                             <div class="text-center px-4 border-r border-slate-200 dark:border-slate-700">
-                                                <div class="text-[9px] uppercase font-bold text-slate-400">Cópias</div>
-                                                <div class="text-2xl font-black text-purple-600">${p.copias}x</div>
+                                                <div class="text-[9px] uppercase font-bold text-slate-400">Folhas / Cópias</div>
+                                                <div class="text-2xl font-black text-purple-600 dark:text-purple-400">${p.copias}x</div>
                                             </div>
-                                            <div class="flex flex-col gap-2">
-                                                <button onclick="app.ui.impressoes.imprimirDireto('${p.id}')" class="bg-blue-100 hover:bg-blue-500 hover:text-white dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm"><i class="fa-solid fa-print"></i> Imprimir Arquivo</button>
-                                                <button onclick="app.ui.impressoes.marcarImpresso('${p.id}')" class="bg-green-100 text-green-700 hover:bg-green-500 hover:text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm"><i class="fa-solid fa-check"></i> Marcar Impresso</button>
+                                            <div class="flex flex-col gap-1.5">
+                                                <button onclick="app.ui.impressoes.baixarUnico('${p.id}')" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm text-left"><i class="fa-solid fa-download mr-1"></i> Baixar / Abrir (.DOCX, PDF)</button>
+                                                <button onclick="app.ui.impressoes.imprimirDireto('${p.id}')" class="bg-blue-100 hover:bg-blue-500 hover:text-white dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm text-left"><i class="fa-solid fa-print mr-1"></i> Imprimir Direto</button>
+                                                <div class="flex gap-1.5">
+                                                    <button onclick="app.ui.impressoes.marcarImpresso('${p.id}')" class="flex-1 bg-green-100 text-green-700 hover:bg-green-500 hover:text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm"><i class="fa-solid fa-check"></i> Concluir</button>
+                                                    <button onclick="app.ui.impressoes.abrirModalExcluir('${p.id}')" class="bg-red-100 text-red-600 hover:bg-red-500 hover:text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm" title="Excluir / Recusar informando o motivo"><i class="fa-solid fa-ban"></i> Excluir</button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -4548,36 +6183,50 @@
                         html += `
                             <div class="glass-card p-6 rounded-[2rem] border-t-4 border-t-slate-300">
                                 <div class="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
-                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-clock-rotate-left text-slate-400 mr-2"></i> Histórico Resolvido</h3>
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-clock-rotate-left text-slate-400 mr-2"></i> Histórico de Concluídos e Excluídos</h3>
                                 </div>
-                                <div class="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                                <div class="space-y-2 max-h-[340px] overflow-y-auto custom-scrollbar pr-2">
                         `;
 
                         if (historico.length === 0) {
-                            html += `<div class="text-center text-slate-400 italic py-4">Nenhum registro antigo.</div>`;
+                            html += `<div class="text-center text-slate-400 italic py-4">Nenhum registro no histórico.</div>`;
                         } else {
                             historico.forEach(h => {
+                                const isExcluido = h.status === 'excluido';
                                 html += `
-                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center opacity-80">
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border ${isExcluido ? 'border-red-200 dark:border-red-900/50' : 'border-slate-100 dark:border-slate-700'} flex justify-between items-center gap-3">
                                         <div class="flex-1 min-w-0 pr-4">
-                                            <div class="font-bold text-slate-600 dark:text-slate-300 text-xs truncate" title="${h.fileName}"><i class="fa-solid fa-file-lines mr-1"></i> ${h.fileName}</div>
-                                            <div class="text-[9px] text-slate-400 uppercase tracking-widest mt-1">De: ${h.autor} | Em: ${h.data}</div>
+                                            <div class="flex items-center gap-2 mb-0.5">
+                                                ${isExcluido
+                                                    ? `<span class="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-ban mr-1"></i>Excluído (${h.excluidoPor || 'ADM'})</span>`
+                                                    : `<span class="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-check mr-1"></i>Concluído</span>`
+                                                }
+                                                <span class="font-bold text-slate-700 dark:text-slate-200 text-xs truncate" title="${h.fileName}">${h.fileName}</span>
+                                            </div>
+                                            <div class="text-[10px] text-slate-400 mt-0.5">De: <b>${h.autor}</b> | Pedido: ${h.data} | Desc: ${h.desc || '-'}</div>
+                                            ${isExcluido && h.motivoExclusao ? `<div class="text-[11px] text-red-600 dark:text-red-400 font-bold mt-1"><i class="fa-solid fa-comment-dots mr-1"></i>Motivo da Exclusão: ${h.motivoExclusao}</div>` : ''}
                                         </div>
-                                        <div class="text-right shrink-0">
-                                            <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-black">${h.copias} Cópias</span>
-                                            <button onclick="app.ui.impressoes.delete('${h.id}')" class="text-slate-400 hover:text-red-500 ml-2" title="Apagar Registro"><i class="fa-solid fa-trash"></i></button>
+                                        <div class="text-right shrink-0 flex items-center gap-2">
+                                            <span class="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-2.5 py-1 rounded text-[10px] font-black">${h.copias} Cópias</span>
+                                            ${h.fileBase64 ? `<button onclick="app.ui.impressoes.baixarUnico('${h.id}')" class="text-slate-400 hover:text-blue-500 p-1.5" title="Baixar Arquivo"><i class="fa-solid fa-download"></i></button>` : ''}
+                                            <button onclick="app.ui.impressoes.delete('${h.id}')" class="text-slate-400 hover:text-red-500 p-1.5" title="Apagar Registro Definitivamente"><i class="fa-solid fa-trash"></i></button>
                                         </div>
                                     </div>
                                 `;
                             });
                         }
                         html += `</div></div>`;
+                        container.innerHTML = html;
 
                     } else {
-                        // Visão do Usuário
+                        // Visão do Colaborador (Usuário)
                         const minhasImpressoes = listaGeral.filter(i => i.matricula === app.currentUser.matricula);
 
-                        html += `
+                        let html = `
+                            <div class="mb-8">
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Centro de Impressão</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Solicite impressões e acompanhe seus pedidos.</p>
+                            </div>
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <div class="glass-card p-6 md:p-8 rounded-[2rem] h-fit border-t-4 border-t-blue-500 shadow-lg relative overflow-hidden">
                                     <div class="absolute right-0 top-0 w-32 h-32 bg-blue-500/10 rounded-bl-full pointer-events-none"></div>
@@ -4612,20 +6261,31 @@
                         } else {
                             minhasImpressoes.forEach(m => {
                                 const isImpresso = m.status === 'impresso';
+                                const isExcluido = m.status === 'excluido';
                                 const badgeStatus = isImpresso 
                                     ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-check"></i> Pronto</span>` 
-                                    : `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-clock"></i> Na Fila</span>`;
+                                    : (isExcluido
+                                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-ban"></i> Cancelado / Excluído</span>`
+                                        : `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[9px] font-black uppercase"><i class="fa-solid fa-clock"></i> Na Fila</span>`);
                                 
                                 html += `
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-3 relative ${isImpresso ? 'opacity-80' : ''}">
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border ${isExcluido ? 'border-red-200 dark:border-red-900/50' : 'border-slate-200 dark:border-slate-700'} shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-3 relative ${isImpresso || isExcluido ? 'opacity-85' : ''}">
                                         <div class="flex-1 min-w-0 pr-4">
                                             <div class="flex items-center gap-2 mb-1">${badgeStatus} <span class="text-[9px] text-slate-400 font-mono">${m.data}</span></div>
                                             <div class="font-bold text-slate-700 dark:text-slate-300 text-sm truncate" title="${m.fileName}"><i class="fa-regular fa-file-lines mr-1 text-slate-400"></i> ${m.fileName}</div>
-                                            <div class="text-xs text-slate-500 mt-1 truncate">Motivo: ${m.desc}</div>
+                                            <div class="text-xs text-slate-500 mt-1 truncate">Descrição: ${m.desc}</div>
+                                            ${isExcluido && m.motivoExclusao ? `<div class="text-[11px] text-red-600 dark:text-red-400 font-bold mt-1"><i class="fa-solid fa-comment-dots mr-1"></i>Motivo (${m.excluidoPor || 'Exclusão'}): ${m.motivoExclusao}</div>` : ''}
                                         </div>
-                                        <div class="shrink-0 flex items-center justify-between sm:block border-t border-slate-100 sm:border-0 pt-2 sm:pt-0">
-                                            <div class="text-[9px] uppercase font-bold text-slate-400 sm:text-right">Quantidade</div>
-                                            <div class="text-lg font-black text-blue-600 sm:text-right">${m.copias}x</div>
+                                        <div class="shrink-0 flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t border-slate-100 dark:border-slate-700 sm:border-0 pt-2 sm:pt-0">
+                                            <div>
+                                                <div class="text-[9px] uppercase font-bold text-slate-400 sm:text-right">Cópias</div>
+                                                <div class="text-lg font-black text-blue-600 sm:text-right">${m.copias}x</div>
+                                            </div>
+                                            ${m.status === 'pendente' ? `
+                                                <button onclick="app.ui.impressoes.abrirModalExcluir('${m.id}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-lg text-[10px] font-bold transition-colors" title="Cancelar/Excluir solicitação informando o motivo">
+                                                    <i class="fa-solid fa-trash-can mr-1"></i> Excluir
+                                                </button>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 `;
@@ -4637,13 +6297,12 @@
                             </div>
                         </div>
                         `;
+                        container.innerHTML = html;
                     }
-
-                    container.innerHTML = html;
                 },
 
                 renderView_Config(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('config')) return;
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Arquitetura de Metas</h2>
@@ -4983,6 +6642,296 @@
                     document.getElementById('dim-res-dia').textContent = metaDia;
                     document.getElementById('dim-res-mes').textContent = metaMes;
                     document.getElementById('dim-res-livre').textContent = this.minutesToTimeStr(tempoLivre);
+                },
+
+                csatCalc() {
+                    const tot = Math.max(0, parseInt((document.getElementById('csat-in-total') || {}).value) || 0);
+                    let pos = Math.max(0, parseInt((document.getElementById('csat-in-pos') || {}).value) || 0);
+                    if (pos > tot) pos = tot;
+                    const pct = tot > 0 ? (pos / tot) * 100 : 0;
+                    const out = document.getElementById('csat-out');
+                    const bar = document.getElementById('csat-bar');
+                    const lbl = document.getElementById('csat-lbl');
+                    if (out) out.textContent = pct.toFixed(1).replace('.', ',') + '%';
+                    if (bar) bar.style.width = pct + '%';
+                    if (lbl) lbl.textContent = tot > 0 ? (pct >= 85 ? 'Excelente' : pct >= 75 ? 'Bom' : pct >= 60 ? 'Atenção' : 'Crítico') : 'Informe os valores';
+                },
+
+                npsCalc() {
+                    const g = (id) => Math.max(0, parseInt((document.getElementById(id) || {}).value) || 0);
+                    const pro = g('nps-in-pro'), neu = g('nps-in-neu'), det = g('nps-in-det');
+                    const tot = pro + neu + det;
+                    const pPro = tot > 0 ? (pro / tot) * 100 : 0;
+                    const pDet = tot > 0 ? (det / tot) * 100 : 0;
+                    const nps = Math.round(pPro - pDet);
+                    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+                    set('nps-out', tot > 0 ? (nps > 0 ? '+' : '') + nps : '—');
+                    set('nps-ppro', pPro.toFixed(1).replace('.', ',') + '%');
+                    set('nps-pdet', pDet.toFixed(1).replace('.', ',') + '%');
+                    set('nps-tot', tot);
+                    set('nps-zone', tot === 0 ? 'Informe os valores' : (nps >= 75 ? 'Zona de Excelência' : nps >= 50 ? 'Zona de Qualidade' : nps > 0 ? 'Zona de Aperfeiçoamento' : 'Zona Crítica'));
+                    const pin = document.getElementById('nps-pin');
+                    if (pin) pin.style.left = (tot > 0 ? Math.min(100, Math.max(0, (nps + 100) / 2)) : 50) + '%';
+                },
+
+                renderView_CsatNps(container) {
+                    const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800';
+                    const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
+                    const lblCls = 'text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 block text-center';
+
+                    container.innerHTML = `
+                        <div class="max-w-6xl mx-auto space-y-8 animate-fade-in">
+
+                            <!-- HERO -->
+                            <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 text-white p-8 md:p-12">
+                                <div class="absolute -right-10 -top-10 w-56 h-56 rounded-full bg-white/10"></div>
+                                <div class="absolute right-24 -bottom-16 w-40 h-40 rounded-full bg-white/10"></div>
+                                <div class="relative max-w-2xl">
+                                    <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-[11px] font-black uppercase tracking-widest"><i class="fa-solid fa-face-smile"></i> Guia de Métricas</span>
+                                    <h2 class="text-3xl md:text-4xl font-black tracking-tight mt-4">CSAT & NPS<br><span class="text-white/80 font-bold text-2xl md:text-3xl">sem mistério, com analogia e conta</span></h2>
+                                    <p class="text-white/85 mt-4 text-sm md:text-base leading-relaxed">Duas perguntas simples que dizem muito sobre o cliente: <strong>"gostou do atendimento?"</strong> e <strong>"você indicaria a gente?"</strong>. Entenda o que cada uma mede, como calcular e como interpretar.</p>
+                                </div>
+                            </div>
+
+                            <!-- COMPARATIVO RAPIDO -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="${card} p-6 md:p-7 border-t-4 border-t-emerald-500">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center text-xl"><i class="fa-solid fa-thumbs-up"></i></div>
+                                        <div>
+                                            <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600">CSAT</div>
+                                            <h3 class="text-lg font-extrabold text-slate-800 dark:text-white leading-tight">Customer Satisfaction</h3>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600 dark:text-slate-300 mt-4 leading-relaxed">Mede a <strong>satisfação com uma experiência específica</strong>, logo depois que ela acontece: uma ligação, um chamado, uma compra.</p>
+                                    <div class="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-sm text-slate-700 dark:text-slate-200">
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Pergunta típica</div>
+                                        "Como você avalia o atendimento que acabou de receber?" <span class="text-slate-400">(1 a 5)</span>
+                                    </div>
+                                </div>
+                                <div class="${card} p-6 md:p-7 border-t-4 border-t-indigo-500">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xl"><i class="fa-solid fa-bullhorn"></i></div>
+                                        <div>
+                                            <div class="text-[11px] font-black uppercase tracking-widest text-indigo-600">NPS</div>
+                                            <h3 class="text-lg font-extrabold text-slate-800 dark:text-white leading-tight">Net Promoter Score</h3>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600 dark:text-slate-300 mt-4 leading-relaxed">Mede a <strong>lealdade e a disposição de recomendar</strong> a empresa. É a visão de longo prazo do relacionamento, não de um contato isolado.</p>
+                                    <div class="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-sm text-slate-700 dark:text-slate-200">
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Pergunta típica</div>
+                                        "De 0 a 10, quanto você recomendaria nossa empresa a um amigo?"
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ANALOGIA -->
+                            <div class="${card} p-6 md:p-8">
+                                <div class="flex items-center gap-3 mb-5">
+                                    <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-utensils"></i></div>
+                                    <div>
+                                        <h3 class="text-lg font-extrabold text-slate-800 dark:text-white">A analogia do restaurante</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Fica fácil de gravar quando você imagina uma noite de jantar.</p>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/40">
+                                        <div class="text-sm font-black text-emerald-700 dark:text-emerald-400 mb-1"><i class="fa-solid fa-bell-concierge mr-2"></i>CSAT é o garçom perguntando na mesa</div>
+                                        <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">"O prato estava bom?" Você responde na hora, com a experiência fresca. Se o prato chegou frio, o CSAT cai, <em>mesmo que você ame o restaurante</em>. Ele fotografa <strong>aquele momento</strong>.</p>
+                                    </div>
+                                    <div class="p-5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/40">
+                                        <div class="text-sm font-black text-indigo-700 dark:text-indigo-400 mb-1"><i class="fa-solid fa-user-group mr-2"></i>NPS é a pergunta no fim da semana</div>
+                                        <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">"Você levaria seus amigos lá?" A resposta soma tudo: comida, preço, ambiente, histórico. Mede se você <strong>vira garoto-propaganda</strong> ou se vai embora e fala mal.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CSAT: CALCULO -->
+                            <div class="${card} p-6 md:p-8">
+                                <div class="flex flex-wrap items-center gap-3 mb-6">
+                                    <span class="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-black uppercase tracking-widest">Cálculo do CSAT</span>
+                                    <h3 class="text-lg font-extrabold text-slate-800 dark:text-white">Quantos clientes saíram satisfeitos?</h3>
+                                </div>
+
+                                <div class="p-5 rounded-2xl bg-slate-900 text-white text-center">
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Fórmula</div>
+                                    <div class="text-lg md:text-xl font-black">CSAT (%) = <span class="text-emerald-400">respostas positivas (notas 4 e 5)</span> ÷ <span class="text-sky-300">total de respostas</span> × 100</div>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                                    <div>
+                                        <div class="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Escala de 1 a 5</div>
+                                        <div class="grid grid-cols-5 gap-2 text-center">
+                                            <div class="p-2.5 rounded-xl bg-red-50 dark:bg-red-900/20"><div class="text-xl text-red-500"><i class="fa-solid fa-face-angry"></i></div><div class="text-sm font-black text-red-600 mt-1">1</div></div>
+                                            <div class="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-900/20"><div class="text-xl text-orange-500"><i class="fa-solid fa-face-frown"></i></div><div class="text-sm font-black text-orange-600 mt-1">2</div></div>
+                                            <div class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20"><div class="text-xl text-amber-500"><i class="fa-solid fa-face-meh"></i></div><div class="text-sm font-black text-amber-600 mt-1">3</div></div>
+                                            <div class="p-2.5 rounded-xl bg-lime-50 dark:bg-lime-900/20 ring-2 ring-emerald-400"><div class="text-xl text-lime-600"><i class="fa-solid fa-face-smile"></i></div><div class="text-sm font-black text-lime-600 mt-1">4</div></div>
+                                            <div class="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 ring-2 ring-emerald-400"><div class="text-xl text-emerald-600"><i class="fa-solid fa-face-grin-stars"></i></div><div class="text-sm font-black text-emerald-600 mt-1">5</div></div>
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-3">Só <strong>4 e 5</strong> contam como satisfeito. A nota 3 é neutra e não entra no numerador.</p>
+
+                                        <div class="mt-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/40">
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1">Exemplo resolvido</div>
+                                            <p class="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">200 clientes responderam. <strong>150</strong> deram nota 4 ou 5.<br>
+                                            CSAT = 150 ÷ 200 × 100 = <strong class="text-emerald-600 text-base">75%</strong></p>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+                                        <div class="text-xs font-black uppercase tracking-widest text-slate-400 mb-3"><i class="fa-solid fa-calculator mr-1.5"></i>Calculadora</div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div><label class="${lblCls}">Total de respostas</label><input type="number" min="0" id="csat-in-total" value="200" oninput="app.ui.csatCalc()" class="${inp}"></div>
+                                            <div><label class="${lblCls}">Notas 4 e 5</label><input type="number" min="0" id="csat-in-pos" value="150" oninput="app.ui.csatCalc()" class="${inp}"></div>
+                                        </div>
+                                        <div class="mt-5 text-center">
+                                            <div id="csat-out" class="text-5xl font-black text-emerald-600 dark:text-emerald-400">75,0%</div>
+                                            <div id="csat-lbl" class="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">Bom</div>
+                                            <div class="h-2.5 rounded-full bg-slate-200 dark:bg-slate-700 mt-4 overflow-hidden"><div id="csat-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width:75%"></div></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6 text-center">
+                                    <div class="p-3 rounded-xl bg-red-50 dark:bg-red-900/20"><div class="text-xs font-black text-red-600">Abaixo de 60%</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Crítico</div></div>
+                                    <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20"><div class="text-xs font-black text-amber-600">60% a 74%</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Atenção</div></div>
+                                    <div class="p-3 rounded-xl bg-lime-50 dark:bg-lime-900/20"><div class="text-xs font-black text-lime-600">75% a 84%</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Bom</div></div>
+                                    <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20"><div class="text-xs font-black text-emerald-600">85% ou mais</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Excelente</div></div>
+                                </div>
+                                <p class="text-[11px] text-slate-400 mt-2">Faixas de referência de mercado. Cada operação pode ter sua própria meta.</p>
+                            </div>
+
+                            <!-- NPS: CALCULO -->
+                            <div class="${card} p-6 md:p-8">
+                                <div class="flex flex-wrap items-center gap-3 mb-6">
+                                    <span class="px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-black uppercase tracking-widest">Cálculo do NPS</span>
+                                    <h3 class="text-lg font-extrabold text-slate-800 dark:text-white">Quem defende a marca menos quem a critica</h3>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/40 text-center">
+                                        <div class="text-2xl text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-bullhorn"></i></div>
+                                        <div class="text-sm font-black text-emerald-700 dark:text-emerald-400 mt-1.5">Promotores</div>
+                                        <div class="text-2xl font-black text-emerald-600 my-1">9 e 10</div>
+                                        <p class="text-xs text-slate-600 dark:text-slate-300">O torcedor fanático que leva os amigos ao estádio.</p>
+                                    </div>
+                                    <div class="p-5 rounded-2xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/40 text-center">
+                                        <div class="text-2xl text-amber-500"><i class="fa-solid fa-tv"></i></div>
+                                        <div class="text-sm font-black text-amber-700 dark:text-amber-400 mt-1.5">Neutros</div>
+                                        <div class="text-2xl font-black text-amber-600 my-1">7 e 8</div>
+                                        <p class="text-xs text-slate-600 dark:text-slate-300">Assiste pela TV, não reclama, mas também não indica. Não entra na conta.</p>
+                                    </div>
+                                    <div class="p-5 rounded-2xl bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/40 text-center">
+                                        <div class="text-2xl text-red-500"><i class="fa-solid fa-thumbs-down"></i></div>
+                                        <div class="text-sm font-black text-red-700 dark:text-red-400 mt-1.5">Detratores</div>
+                                        <div class="text-2xl font-black text-red-600 my-1">0 a 6</div>
+                                        <p class="text-xs text-slate-600 dark:text-slate-300">Fala mal do time pra todo mundo e afasta novos torcedores.</p>
+                                    </div>
+                                </div>
+
+                                <div class="p-5 rounded-2xl bg-slate-900 text-white text-center mt-6">
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Fórmula</div>
+                                    <div class="text-lg md:text-xl font-black">NPS = <span class="text-emerald-400">% Promotores</span> − <span class="text-red-400">% Detratores</span></div>
+                                    <div class="text-xs text-slate-400 mt-2">Resultado entre <strong class="text-slate-200">−100</strong> e <strong class="text-slate-200">+100</strong>. Não é porcentagem, é um número.</div>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                                    <div class="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/40 self-start">
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400 mb-1">Exemplo resolvido</div>
+                                        <p class="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">100 respostas: <strong>60</strong> promotores, <strong>25</strong> neutros e <strong>15</strong> detratores.<br>
+                                        % Promotores = 60% &nbsp;•&nbsp; % Detratores = 15%<br>
+                                        NPS = 60 − 15 = <strong class="text-indigo-600 text-base">+45</strong></p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Note que os 25 neutros só aumentam o total; eles ficam de fora do cálculo.</p>
+                                    </div>
+
+                                    <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+                                        <div class="text-xs font-black uppercase tracking-widest text-slate-400 mb-3"><i class="fa-solid fa-calculator mr-1.5"></i>Calculadora</div>
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <div><label class="${lblCls}">Promotores</label><input type="number" min="0" id="nps-in-pro" value="60" oninput="app.ui.npsCalc()" class="${inp}"></div>
+                                            <div><label class="${lblCls}">Neutros</label><input type="number" min="0" id="nps-in-neu" value="25" oninput="app.ui.npsCalc()" class="${inp}"></div>
+                                            <div><label class="${lblCls}">Detratores</label><input type="number" min="0" id="nps-in-det" value="15" oninput="app.ui.npsCalc()" class="${inp}"></div>
+                                        </div>
+                                        <div class="mt-5 text-center">
+                                            <div id="nps-out" class="text-5xl font-black text-indigo-600 dark:text-indigo-400">+45</div>
+                                            <div id="nps-zone" class="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">Zona de Aperfeiçoamento</div>
+                                        </div>
+                                        <div class="relative mt-5">
+                                            <div class="flex h-2.5 rounded-full overflow-hidden">
+                                                <div class="bg-red-500" style="width:50%"></div>
+                                                <div class="bg-amber-400" style="width:25%"></div>
+                                                <div class="bg-lime-500" style="width:12.5%"></div>
+                                                <div class="bg-emerald-500" style="width:12.5%"></div>
+                                            </div>
+                                            <div id="nps-pin" class="absolute -top-1 w-4 h-4 -ml-2 rounded-full bg-white dark:bg-slate-900 border-4 border-indigo-600 shadow transition-all duration-500" style="left:72.5%"></div>
+                                            <div class="flex justify-between text-[10px] font-bold text-slate-400 mt-2"><span>−100</span><span>0</span><span>+50</span><span>+75</span><span>+100</span></div>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 mt-4 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                                            <div>Promotores<br><strong id="nps-ppro" class="text-emerald-600">60,0%</strong></div>
+                                            <div>Detratores<br><strong id="nps-pdet" class="text-red-600">15,0%</strong></div>
+                                            <div>Respostas<br><strong id="nps-tot" class="text-slate-700 dark:text-slate-200">100</strong></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6 text-center">
+                                    <div class="p-3 rounded-xl bg-red-50 dark:bg-red-900/20"><div class="text-xs font-black text-red-600">−100 a 0</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Zona Crítica</div></div>
+                                    <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20"><div class="text-xs font-black text-amber-600">1 a 49</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Aperfeiçoamento</div></div>
+                                    <div class="p-3 rounded-xl bg-lime-50 dark:bg-lime-900/20"><div class="text-xs font-black text-lime-600">50 a 74</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Qualidade</div></div>
+                                    <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20"><div class="text-xs font-black text-emerald-600">75 a 100</div><div class="text-[11px] text-slate-500 dark:text-slate-400">Excelência</div></div>
+                                </div>
+                            </div>
+
+                            <!-- TABELA COMPARATIVA -->
+                            <div class="${card} overflow-hidden">
+                                <div class="px-6 md:px-8 py-5 border-b border-slate-100 dark:border-slate-800">
+                                    <h3 class="text-lg font-extrabold text-slate-800 dark:text-white">CSAT x NPS lado a lado</h3>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm text-left">
+                                        <thead>
+                                            <tr class="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                                                <th class="px-6 md:px-8 py-3 font-bold"></th>
+                                                <th class="px-4 py-3 font-bold text-emerald-600">CSAT</th>
+                                                <th class="px-4 py-3 font-bold text-indigo-600">NPS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                            <tr><td class="px-6 md:px-8 py-3 font-bold">O que mede</td><td class="px-4 py-3">Satisfação com um contato</td><td class="px-4 py-3">Lealdade e recomendação</td></tr>
+                                            <tr><td class="px-6 md:px-8 py-3 font-bold">Horizonte</td><td class="px-4 py-3">Curto prazo (pós-atendimento)</td><td class="px-4 py-3">Longo prazo (relacionamento)</td></tr>
+                                            <tr><td class="px-6 md:px-8 py-3 font-bold">Escala</td><td class="px-4 py-3">1 a 5</td><td class="px-4 py-3">0 a 10</td></tr>
+                                            <tr><td class="px-6 md:px-8 py-3 font-bold">Resultado</td><td class="px-4 py-3">Percentual (0% a 100%)</td><td class="px-4 py-3">Índice (−100 a +100)</td></tr>
+                                            <tr><td class="px-6 md:px-8 py-3 font-bold">Quando usar</td><td class="px-4 py-3">Avaliar atendente, canal ou processo específico</td><td class="px-4 py-3">Acompanhar a saúde da marca ao longo do tempo</td></tr>
+                                            <tr><td class="px-6 md:px-8 py-3 font-bold">Analogia</td><td class="px-4 py-3">O garçom perguntando na mesa</td><td class="px-4 py-3">Indicar o restaurante aos amigos</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- NA PRATICA -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                <div class="${card} p-6">
+                                    <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center mb-3"><i class="fa-solid fa-headset"></i></div>
+                                    <h4 class="font-extrabold text-slate-800 dark:text-white text-sm">Como a Qualidade usa</h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-2">Cruze o CSAT com as notas de monitoria. Operador com nota alta na monitoria e CSAT baixo indica que o roteiro está certo, mas a experiência percebida não. Vale um feedback sobre empatia e tom de voz.</p>
+                                </div>
+                                <div class="${card} p-6">
+                                    <div class="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/30 text-orange-600 flex items-center justify-center mb-3"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <h4 class="font-extrabold text-slate-800 dark:text-white text-sm">Erros comuns</h4>
+                                    <ul class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-2 space-y-1.5 list-disc pl-4">
+                                        <li>Contar a nota 3 como satisfeita no CSAT.</li>
+                                        <li>Incluir neutros (7 e 8) na subtração do NPS.</li>
+                                        <li>Tratar o NPS como porcentagem.</li>
+                                        <li>Comparar amostras muito pequenas.</li>
+                                    </ul>
+                                </div>
+                                <div class="${card} p-6">
+                                    <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center mb-3"><i class="fa-solid fa-lightbulb"></i></div>
+                                    <h4 class="font-extrabold text-slate-800 dark:text-white text-sm">Dica de ouro</h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-2">O número sozinho não muda nada. O valor está no <strong>comentário</strong> que acompanha a nota: leia os detratores e os clientes com nota 1 e 2 para descobrir o motivo e agir.</p>
+                                </div>
+                            </div>
+
+                        </div>
+                    `;
                 },
 
                 renderView_Regras(container) {
@@ -5335,7 +7284,7 @@
                 atasFiltroOp: '', atasFiltroTema: '', atasFiltroAutor: '',
                 
                 renderView_GestaoAtas(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('gestao_atas')) return;
                     let atas = Object.values(app.atasList).filter(a => a.data && a.data.substring(0, 7) === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
                     
                     if(this.atasFiltroOp) atas = atas.filter(a => a.op === this.atasFiltroOp);
@@ -5578,34 +7527,457 @@
                     container.innerHTML = html;
                 },
 
-                renderView_Operacoes(container) {
-                    if(!app.isAdmin) return;
-                    let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão de Operações</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Defina quais operações aparecem nos formulários e limite a lotação máxima de colaboradores.</p>
-                        </div>
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div class="glass-card p-6 rounded-3xl h-fit">
-                                <h3 class="font-bold mb-4">Adicionar Nova</h3>
-                                <input type="text" id="nova-op-nome" placeholder="Nome da Operação" class="w-full mb-3 p-3 rounded-xl border border-slate-200 outline-none">
-                                <input type="number" id="nova-op-max" placeholder="Quadro Máximo (Qtd Pessoas)" class="w-full mb-4 p-3 rounded-xl border border-slate-200 outline-none">
-                                <button onclick="app.admin.addOperacao()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow">Cadastrar Operação</button>
-                            </div>
-                            <div class="lg:col-span-2 glass-card p-6 rounded-3xl">
-                                <table class="w-full text-left text-sm">
-                                    <thead><tr class="border-b uppercase text-[10px] text-slate-400"><th class="pb-2">Nome</th><th class="pb-2">Vagas Máx.</th><th class="pb-2 text-right">Ação</th></tr></thead>
-                                    <tbody>
-                    `;
-                    Object.values(app.operacoesList).forEach(op => {
-                        html += `<tr class="border-b border-slate-100"><td class="py-3 font-bold">${op.nome}</td><td class="py-3">${op.max || '-'}</td><td class="py-3 text-right"><button onclick="app.admin.deleteOperacao('${op.id}')" class="text-red-500 font-bold bg-red-50 px-3 py-1 rounded-lg">Excluir</button></td></tr>`;
+                setGestorUsuario(matriculaSubordinado, matriculaGestor) {
+                    const u = app.users.find(x => x.matricula === matriculaSubordinado);
+                    if (!u) return;
+                    u.gestorMatricula = matriculaGestor || null;
+                    app.storage.saveUsers().then(() => {
+                        app.ui.renderTab('hierarquia', true);
                     });
-                    html += `</tbody></table></div></div>`;
-                        container.innerHTML = html;
+                },
+
+                alterarCargoRapidoHierarquia(matricula, novoCargo) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if (!u) return;
+                    u.tipoAcesso = novoCargo;
+                    const presets = this.getPresetsGruposAcesso();
+                    if (presets[novoCargo]) {
+                        u.abasLiberadas = [...presets[novoCargo]];
+                    }
+                    if (novoCargo === 'Gerente' || novoCargo === 'Gestor') {
+                        u.gestorMatricula = null;
+                    }
+                    app.storage.saveUsers().then(() => {
+                        app.ui.renderTab('hierarquia', true);
+                    });
+                },
+
+                abrirModalOperacoesMonitor(matricula) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if (!u) return;
+                    app.syncOperacoesFromSetorial();
+                    const opsSetoriais = app.getOperacoesSetoriais();
+                    const userOpsUpper = (u.operacoes || []).map(o => String(o).trim().toUpperCase());
+
+                    let listHtml = '';
+                    if (opsSetoriais.length === 0) {
+                        listHtml = `<div class="p-6 text-center text-slate-400 italic text-sm">Nenhuma operação encontrada. Importe a Base RH na aba <strong>Visão Geral Setorial</strong> para carregar as operações e a quantidade de operadores.</div>`;
+                    } else {
+                        listHtml = opsSetoriais.map(op => {
+                            const isChecked = userOpsUpper.includes(op.nome.toUpperCase());
+                            const ResponsaveisAtuais = app.users.filter(x => x.matricula !== u.matricula && (x.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase())).map(x => x.nome.split(' ')[0]);
+                            return `
+                                <label class="flex items-center justify-between gap-3 p-3 rounded-2xl border ${isChecked ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} cursor-pointer hover:border-indigo-400 transition-all">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <input type="checkbox" value="${op.nome}" data-hc="${op.headcount || 0}" onchange="app.ui.atualizarPreviewSpanModal()" class="hier-op-check w-4 h-4 accent-indigo-600 rounded shrink-0" ${isChecked ? 'checked' : ''}>
+                                        <div class="min-w-0">
+                                            <div class="text-xs font-extrabold text-slate-800 dark:text-white uppercase truncate">${op.nome}</div>
+                                            ${ResponsaveisAtuais.length > 0 ? `<div class="text-[10px] text-slate-400 truncate">Também com: ${ResponsaveisAtuais.join(', ')}</div>` : `<div class="text-[10px] text-emerald-500 font-bold">Disponível</div>`}
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-black text-xs">${op.headcount || 0} op.</span>
+                                        <span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 font-bold text-[10px]">Regra: ${op.regraPorOp || 2}x</span>
+                                    </div>
+                                </label>
+                            `;
+                        }).join('');
+                    }
+
+                    const spanAtual = app.getSpanUsuario(u);
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-diagram-project text-indigo-500 mr-2"></i> Responsabilidade & Span — ${u.nome}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between shadow-md">
+                                <div>
+                                    <div class="text-[10px] uppercase font-black tracking-widest opacity-80">Span Calculado em Tempo Real</div>
+                                    <div class="text-xs opacity-90 mt-0.5">Total de operadores sob responsabilidade deste colaborador</div>
+                                </div>
+                                <div class="text-right">
+                                    <div id="hier-modal-span-total" class="text-3xl font-black leading-none">${spanAtual.totalOperadores}</div>
+                                    <div class="text-[10px] uppercase font-bold opacity-80 mt-1">Operadores</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1">
+                                <span>Selecione as operações da <strong>Visão Geral Setorial</strong>:</span>
+                                <div class="flex gap-2">
+                                    <button type="button" onclick="document.querySelectorAll('.hier-op-check').forEach(c=>c.checked=true); app.ui.atualizarPreviewSpanModal();" class="text-indigo-600 dark:text-indigo-400 font-bold hover:underline">Marcar Todas</button>
+                                    <span>•</span>
+                                    <button type="button" onclick="document.querySelectorAll('.hier-op-check').forEach(c=>c.checked=false); app.ui.atualizarPreviewSpanModal();" class="text-rose-500 font-bold hover:underline">Limpar</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
+                                ${listHtml}
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                        <button type="button" onclick="app.ui.salvarOperacoesMonitorHierarquia('${u.matricula}')" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg">Salvar Operações & Span</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                atualizarPreviewSpanModal() {
+                    const checks = document.querySelectorAll('.hier-op-check:checked');
+                    let soma = 0;
+                    checks.forEach(c => { soma += parseInt(c.getAttribute('data-hc')) || 0; });
+                    const el = document.getElementById('hier-modal-span-total');
+                    if (el) el.textContent = soma;
+                },
+
+                salvarOperacoesMonitorHierarquia(matricula) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if (!u) return;
+                    const checks = document.querySelectorAll('.hier-op-check:checked');
+                    u.operacoes = Array.from(checks).map(c => c.value);
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.storage.saveUsers().then(() => {
+                        app.ui.renderTab('hierarquia', true);
+                        const sp = app.getSpanUsuario(u);
+                        app.ui.showAlert("Span Atualizado!", `<strong>${u.nome}</strong> agora é responsável por <strong>${u.operacoes.length} operações</strong> (Span total: <strong>${sp.totalOperadores} operadores</strong>).`, "success");
+                    });
+                },
+
+                abrirModalAlocarEquipeGestor(matriculaGestor) {
+                    const gestor = app.users.find(x => x.matricula === matriculaGestor);
+                    if (!gestor) return;
+                    const elegiveis = app.users.filter(u => u.matricula !== matriculaGestor && !['Gerente', 'Gestor'].includes(u.tipoAcesso || 'Qualidade'));
+
+                    const rowsHtml = elegiveis.map(u => {
+                        const isMembro = u.gestorMatricula === matriculaGestor;
+                        const outroGestor = u.gestorMatricula && u.gestorMatricula !== matriculaGestor ? app.users.find(g => g.matricula === u.gestorMatricula) : null;
+                        const sp = app.getSpanUsuario(u);
+                        const cargo = u.tipoAcesso || 'Qualidade';
+                        const badgeColor = cargo === 'Treinamento' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300';
+                        return `
+                            <label class="flex items-center justify-between gap-3 p-3 rounded-2xl border ${isMembro ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} cursor-pointer hover:border-amber-400 transition">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <input type="checkbox" value="${u.matricula}" class="hier-membro-check w-4 h-4 accent-amber-600 rounded shrink-0" ${isMembro ? 'checked' : ''}>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-xs text-slate-800 dark:text-white truncate">${u.nome}</span>
+                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${badgeColor}">${cargo}</span>
+                                        </div>
+                                        <div class="text-[10px] text-slate-400 truncate">
+                                            ${outroGestor ? `Atualmente com: <strong>${outroGestor.nome}</strong>` : (isMembro ? '<span class="text-amber-600 font-bold">Já na equipe deste Gestor</span>' : 'Sem gestor definido')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 font-black text-xs shrink-0">Span: ${sp.totalOperadores} op.</span>
+                            </label>
+                        `;
+                    }).join('');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users-gear text-amber-500 mr-2"></i> Alocar Equipe — Gestor(a) ${gestor.nome}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Marque os colaboradores de <strong>Qualidade</strong> e <strong>Treinamento</strong> que respondem diretamente a <strong>${gestor.nome}</strong> na hierarquia:</p>
+                        <div class="grid grid-cols-1 gap-2.5 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
+                            ${rowsHtml || '<div class="text-center text-slate-400 italic p-6">Nenhum colaborador elegível encontrado.</div>'}
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                        <button type="button" onclick="app.ui.salvarEquipeGestorHierarquia('${gestor.matricula}')" class="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm shadow-lg">Salvar Equipe do Gestor</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                salvarEquipeGestorHierarquia(matriculaGestor) {
+                    const selecionados = new Set(Array.from(document.querySelectorAll('.hier-membro-check:checked')).map(c => c.value));
+                    app.users.forEach(u => {
+                        if (['Gerente', 'Gestor'].includes(u.tipoAcesso || 'Qualidade')) return;
+                        if (selecionados.has(u.matricula)) {
+                            u.gestorMatricula = matriculaGestor;
+                        } else if (u.gestorMatricula === matriculaGestor) {
+                            u.gestorMatricula = null;
+                        }
+                    });
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.storage.saveUsers().then(() => {
+                        app.ui.renderTab('hierarquia', true);
+                        app.ui.showAlert("Hierarquia Atualizada!", "A equipe do gestor foi atualizada com sucesso.", "success");
+                    });
+                },
+
+                renderView_Operacoes(container) {
+                    return this.renderView_Hierarquia(container);
+                },
+
+                abrirModalEditarMembro(matricula) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if (!u) return;
+                    const cargo = u.tipoAcesso || 'Qualidade';
+                    const gestores = app.users.filter(g => (g.tipoAcesso || 'Qualidade') === 'Gestor' && g.matricula !== u.matricula);
+                    const selCls = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500';
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-user-pen text-indigo-500 mr-2"></i> ${u.nome}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Cargo</label>
+                                <select id="hier-edit-cargo" class="${selCls}">
+                                    ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Responde a (Gestor)</label>
+                                <select id="hier-edit-gestor" class="${selCls}">
+                                    <option value="">Sem gestor</option>
+                                    ${gestores.map(g => `<option value="${g.matricula}" ${u.gestorMatricula === g.matricula ? 'selected' : ''}>${g.nome}</option>`).join('')}
+                                </select>
+                                <p class="text-[11px] text-slate-400 mt-1.5">Ignorado para Gestor e Gerente.</p>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                        <button type="button" onclick="app.ui.salvarMembroHierarquia('${u.matricula}')" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Salvar</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                salvarMembroHierarquia(matricula) {
+                    const u = app.users.find(x => x.matricula === matricula);
+                    if (!u) return;
+                    const novoCargo = document.getElementById('hier-edit-cargo').value;
+                    const novoGestor = document.getElementById('hier-edit-gestor').value;
+                    if (novoCargo !== (u.tipoAcesso || 'Qualidade')) {
+                        u.tipoAcesso = novoCargo;
+                        const presets = this.getPresetsGruposAcesso();
+                        if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
+                    }
+                    u.gestorMatricula = (novoCargo === 'Gerente' || novoCargo === 'Gestor') ? null : (novoGestor || null);
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.storage.saveUsers().then(() => app.ui.renderTab('hierarquia', true));
+                },
+
+                filterHierarquiaView(q = '', cargoFiltro = '') {
+                    if (typeof q === 'string') this._hierarquiaSearch = q.trim().toLowerCase();
+                    if (typeof cargoFiltro === 'string' && cargoFiltro !== '__keep__') this._hierarquiaCargo = cargoFiltro;
+                    const term = this._hierarquiaSearch || '';
+                    const role = this._hierarquiaCargo || 'todos';
+                    document.querySelectorAll('.hierarquia-role-pill').forEach(btn => {
+                        const isAct = btn.getAttribute('data-role') === role;
+                        btn.className = `hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${isAct ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`;
+                    });
+                    document.querySelectorAll('.hierarquia-user-row').forEach(el => {
+                        const searchStr = (el.getAttribute('data-search') || '').toLowerCase();
+                        const userRole = el.getAttribute('data-role') || 'Qualidade';
+                        const matchTerm = !term || searchStr.includes(term);
+                        const matchRole = role === 'todos' || userRole === role;
+                        el.style.display = (matchTerm && matchRole) ? '' : 'none';
+                    });
+                },
+
+                renderView_Hierarquia(container) {
+                    if (!app.hasAdminAccess('hierarquia') && !app.hasAdminAccess('gestao_equipe')) return;
+                    app.syncOperacoesFromSetorial();
+                    const opsSetoriais = app.getOperacoesSetoriais();
+                    const totalOperadoresGlobal = opsSetoriais.reduce((acc, op) => acc + (parseInt(op.headcount) || 0), 0);
+
+                    const cargoDe = (u) => u.tipoAcesso || 'Qualidade';
+                    const gerentes = app.users.filter(u => cargoDe(u) === 'Gerente');
+                    const gestores = app.users.filter(u => cargoDe(u) === 'Gestor');
+                    const operacionais = app.users.filter(u => !['Gerente', 'Gestor'].includes(cargoDe(u)));
+                    const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u));
+                    const logados = app.users.filter(u => u.loginCount > 0).length;
+                    const mediaSpanMonitor = monitoresQualidade.length > 0
+                        ? Math.round(monitoresQualidade.reduce((acc, m) => acc + app.getSpanUsuario(m).totalOperadores, 0) / monitoresQualidade.length)
+                        : 0;
+
+                    const opsCobertasSet = new Set();
+                    app.users.forEach(u => (u.operacoes || []).forEach(op => opsCobertasSet.add(String(op).trim().toUpperCase())));
+                    const opsSemMonitor = opsSetoriais.filter(op => !opsCobertasSet.has(op.nome.toUpperCase()));
+
+                    const dot = { Gerente: 'bg-rose-500', Gestor: 'bg-amber-500', Qualidade: 'bg-blue-500', Treinamento: 'bg-emerald-500', Dev: 'bg-purple-500' };
+                    const roleBadgeStyle = {
+                        'Qualidade': 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
+                        'Treinamento': 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+                        'Dev': 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
+                        'Gestor': 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+                        'Gerente': 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800'
+                    };
+                    const avatarDe = (u) => u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(app.utils.fixEncoding(u.nome))}&background=e2e8f0&color=475569&size=128`;
+
+                    // Linha unificada de pessoa (Hierarquia + Gestão da Equipe)
+                    const renderPessoa = (u) => {
+                        const cargo = cargoDe(u);
+                        const nomeClean = app.utils.fixEncoding(u.nome);
+                        const sp = app.getSpanUsuario(u);
+                        const nomesOps = sp.detalhes.map(d => app.utils.fixEncoding(d.nome));
+                        const opsResumo = nomesOps.length === 0
+                            ? '<span class="text-slate-400">Sem operações</span>'
+                            : nomesOps.slice(0, 2).join(' · ') + (nomesOps.length > 2 ? ` <span class="text-slate-400">+${nomesOps.length - 2}</span>` : '');
+                        const searchMeta = `${nomeClean} ${u.matricula} ${cargo} ${nomesOps.join(' ')}`.replace(/"/g, '');
+                        return `
+                            <div data-search="${searchMeta}" data-role="${cargo}" class="hierarquia-user-row group flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                                <div class="flex items-center gap-3 min-w-0 flex-1">
+                                    <div class="relative shrink-0">
+                                        <img src="${avatarDe(u)}" onclick="app.ui.viewUserProfile('${u.matricula}')" class="w-10 h-10 rounded-full object-cover cursor-pointer ring-1 ring-slate-200 dark:ring-slate-700" title="Ver Perfil e Log de Atividade">
+                                        <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ${dot[cargo] || dot.Qualidade} ring-2 ring-white dark:ring-slate-900" title="${cargo}"></span>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 truncate" title="${nomeClean}">${nomeClean}</span>
+                                            <span class="text-[11px] font-medium text-slate-400 shrink-0">#${u.matricula}</span>
+                                        </div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" title="${nomesOps.join(', ')}">${opsResumo}</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0 ml-auto">
+                                    <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
+                                        ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
+                                    </select>
+                                    <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${u.matricula}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-right transition" title="Atribuir operações do setorial e ajustar Span">
+                                        <div class="text-xs font-black text-slate-800 dark:text-slate-100 leading-none tabular-nums">${sp.totalOperadores}</div>
+                                        <div class="text-[8px] uppercase tracking-wider text-slate-400 mt-0.5">span</div>
+                                    </button>
+                                    <div class="flex items-center gap-0.5">
+                                        <button type="button" onclick="app.ui.abrirModalEditarMembro('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition" title="Alterar gestor imediato na hierarquia"><i class="fa-solid fa-sitemap text-xs"></i></button>
+                                        <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition" title="Editar perfil completo e abas ADM liberadas"><i class="fa-solid fa-sliders text-xs"></i></button>
+                                        <button type="button" onclick="app.ui.viewUserProfile('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" title="Ver perfil e log de atividade"><i class="fa-solid fa-address-card text-xs"></i></button>
+                                        <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition" title="Resetar senha para 12345"><i class="fa-solid fa-key text-xs"></i></button>
+                                        <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition" title="Solicitar nova assinatura LGPD"><i class="fa-solid fa-shield-halved text-xs"></i></button>
+                                        <button type="button" onclick="app.admin.deleteUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition" title="Remover colaborador"><i class="fa-solid fa-trash text-xs"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    };
+
+                    const painel = (titulo, subtitulo, corpo, acento, extraBtn = '') => `
+                        <section class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                            <header class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="w-1.5 h-5 rounded-full ${acento}"></span>
+                                    <div class="min-w-0">
+                                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-white truncate">${titulo}</h3>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${subtitulo}</div>
+                                    </div>
+                                </div>
+                                ${extraBtn}
+                            </header>
+                            <div class="p-2 space-y-0.5">${corpo}</div>
+                        </section>
+                    `;
+
+                    // Gerência
+                    const gerenciaHtml = gerentes.length === 0
+                        ? `<div class="text-xs text-slate-400 italic p-3">Defina um colaborador com o cargo <strong>Gerente</strong> para ocupar o topo.</div>`
+                        : gerentes.map(renderPessoa).join('');
+                    const gerenciaPanel = painel('Gerência Geral', `${gerentes.length} gerente(s) · ${totalOperadoresGlobal} operadores no setorial`, gerenciaHtml, 'bg-rose-500');
+
+                    // Gestores e suas equipes
+                    const gestoresPanels = gestores.map(gestor => {
+                        const liderados = operacionais.filter(u => u.gestorMatricula === gestor.matricula);
+                        const spanEquipe = app.getSpanUsuario(gestor).totalOperadores;
+                        const corpo = renderPessoa(gestor) +
+                            `<div class="mx-3 my-1.5 border-t border-dashed border-slate-200 dark:border-slate-700"></div>` +
+                            (liderados.length > 0
+                                ? liderados.map(renderPessoa).join('')
+                                : `<div class="text-xs text-slate-400 italic px-3 py-3">Nenhum liderado vinculado.</div>`);
+                        const btn = `<button type="button" onclick="app.ui.abrirModalAlocarEquipeGestor('${gestor.matricula}')" class="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-600 transition"><i class="fa-solid fa-user-plus mr-1"></i>Alocar Equipe</button>`;
+                        return painel(`Equipe de ${app.utils.fixEncoding(gestor.nome).split(' ')[0]}`, `${liderados.length} liderado(s) · span ${spanEquipe} op.`, corpo, 'bg-amber-500', btn);
+                    }).join('');
+
+                    // Sem gestor
+                    const gestoresSet = new Set(gestores.map(g => g.matricula));
+                    const semGestor = operacionais.filter(u => !u.gestorMatricula || !gestoresSet.has(u.gestorMatricula));
+                    const semGestorPanel = semGestor.length > 0
+                        ? painel('Sem Gestor Vinculado', `${semGestor.length} integrante(s) aguardando vínculo`, semGestor.map(renderPessoa).join(''), 'bg-slate-400')
+                        : '';
+
+                    // Operações (recolhível)
+                    const opsHtml = opsSetoriais.map(op => {
+                        const resps = app.users.filter(u => (u.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase()));
+                        const ok = resps.length > 0;
+                        const cleanOpNome = app.utils.fixEncoding(op.nome);
+                        return `
+                            <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${ok ? 'bg-slate-50 dark:bg-slate-800/50' : 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-300/60'}">
+                                <div class="min-w-0">
+                                    <div class="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase truncate" title="${cleanOpNome}">${cleanOpNome}</div>
+                                    <div class="text-[10px] ${ok ? 'text-slate-500 dark:text-slate-400' : 'text-amber-600 dark:text-amber-400 font-bold'} truncate">${ok ? resps.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]).join(', ') : 'Sem monitor atribuído'}</div>
+                                </div>
+                                <span class="text-xs font-black text-slate-700 dark:text-slate-200 shrink-0 tabular-nums">${op.headcount || 0}</span>
+                            </div>
+                        `;
+                    }).join('');
+
+                    const kpi = (label, valor, sub = '') => `
+                        <div class="px-4 py-3">
+                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${label}</div>
+                            <div class="text-xl font-black text-slate-800 dark:text-white mt-0.5 tabular-nums">${valor}</div>
+                            ${sub ? `<div class="text-[11px] text-slate-400 mt-0.5">${sub}</div>` : ''}
+                        </div>
+                    `;
+
+                    const activeRole = this._hierarquiaCargo || 'todos';
+                    const rolePills = [
+                        { id: 'todos', label: 'Todos', count: app.users.length },
+                        { id: 'Gerente', label: 'Gerentes', count: gerentes.length },
+                        { id: 'Gestor', label: 'Gestores', count: gestores.length },
+                        { id: 'Qualidade', label: 'Qualidade', count: app.users.filter(u => cargoDe(u) === 'Qualidade').length },
+                        { id: 'Treinamento', label: 'Treinamento', count: app.users.filter(u => cargoDe(u) === 'Treinamento').length },
+                        { id: 'Dev', label: 'Dev', count: app.users.filter(u => cargoDe(u) === 'Dev').length }
+                    ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5">${r.count}</span></button>`).join('');
+
+                    container.innerHTML = `
+                        <div class="space-y-5 animate-fade-in max-w-7xl mx-auto">
+                            <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                                <div>
+                                    <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Equipe, Hierarquia & Span</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie colaboradores, grupos de acesso ADM, hierarquia de liderança e cobertura de operações do setorial.</p>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-chart-Simple mr-1.5"></i>Visão Geral Setorial</button>
+                                    <button type="button" onclick="app.ui.abrirModalPresetsGrupos()" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition"><i class="fa-solid fa-user-shield mr-1.5"></i>Abas por Grupo</button>
+                                    <button type="button" onclick="app.ui.openAddUserModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"><i class="fa-solid fa-user-plus mr-1.5"></i>Novo Integrante</button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                ${kpi('Colaboradores', app.users.length, `${logados} acessaram a plataforma`)}
+                                ${kpi('Operadores no Setorial', totalOperadoresGlobal, `${opsSetoriais.length} operações ativas`)}
+                                ${kpi('Span Médio / Monitor', mediaSpanMonitor, `${monitoresQualidade.length} monitor(es) de qualidade`)}
+                                ${kpi('Operações Cobertas', `${opsSetoriais.length - opsSemMonitor.length}/${opsSetoriais.length}`, opsSemMonitor.length > 0 ? `${opsSemMonitor.length} sem monitor atribuído` : '100% cobertas')}
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                                <div class="flex flex-wrap gap-1">${rolePills}</div>
+                                <div class="relative w-full md:w-72">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                    <input type="text" value="${this._hierarquiaSearch || ''}" oninput="app.ui.filterHierarquiaView(this.value, '__keep__')" placeholder="Buscar nome, matrícula ou operação..." class="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                ${gerenciaPanel}
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                                    ${gestoresPanels}
+                                    ${semGestorPanel}
+                                </div>
+                            </div>
+
+                            <details class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800" ${opsSemMonitor.length > 0 ? 'open' : ''}>
+                                <summary class="px-4 py-3 cursor-pointer flex items-center justify-between text-sm font-extrabold text-slate-800 dark:text-white select-none">
+                                    <span><i class="fa-solid fa-layer-group text-slate-400 mr-2"></i>Cobertura de Operações do Setorial (${opsSetoriais.length})${opsSemMonitor.length > 0 ? ` <span class="ml-2 text-[11px] font-bold text-amber-600">${opsSemMonitor.length} sem monitor</span>` : ''}</span>
+                                    <i class="fa-solid fa-chevron-down text-xs text-slate-400"></i>
+                                </summary>
+                                <div class="p-3 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                                    ${opsHtml || '<div class="col-span-full text-center text-slate-400 italic p-4 text-sm">Importe a Base RH na Visão Geral Setorial para listar as operações.</div>'}
+                                </div>
+                            </details>
+                        </div>
+                    `;
+                    if (this._hierarquiaSearch || (this._hierarquiaCargo && this._hierarquiaCargo !== 'todos')) {
+                        this.filterHierarquiaView(this._hierarquiaSearch || '', this._hierarquiaCargo || 'todos');
+                    }
                 },
 
                 renderView_ImportMonitorias(container) {
-                    if(!app.isAdmin && !app.currentUser) return;
+                    const canManageMon = app.hasAdminAccess('import_monitorias');
+                    if(!canManageMon && !app.currentUser) return;
                     
                     let state = app.monitoriasData || {};
                     const rankingArray = state.ranking || []; 
@@ -5613,10 +7985,10 @@
                     
                     let html = '';
 
-                    // BARRAS DE BOTÕES (APENAS ADMIN VÊ)
-                    if(app.isAdmin) {
+                    // BARRAS DE BOTÕES (APENAS ADMIN / PERFIS COM ACESSO)
+                    if(canManageMon) {
                         html += `
-                        <div class="flex flex-col sm:flex-row gap-3">
+                        <div class="flex flex-col sm:flex-row flex-wrap gap-3">
                             <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
                                 <i class="fa-solid fa-trash-can"></i> Resetar Mês
                             </button>
@@ -5632,7 +8004,12 @@
                     
                             <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
                                 <i class="fa-solid fa-upload"></i> Relatório Padrão
-                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                                <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                            </label>
+
+                            <label class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Inspecionar e diagnosticar erros na planilha do Relatório Padrão">
+                                <i class="fa-solid fa-bug"></i> Debug Padrão
+                                <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.debugRelatorioPadrao(this)" onclick="this.value = null">
                             </label>
 
                             <button onclick="app.admin.openAliasModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Vincular nomes da planilha aos colaboradores">
@@ -5642,7 +8019,7 @@
                         `;
                     }
                     
-                    if(app.isAdmin && rankingArray.length > 0) {
+                    if(canManageMon && rankingArray.length > 0) {
                         const numUsers = rankingArray.length;
                         const metaIndividual = 400; 
                         const metaGlobal = numUsers * metaIndividual; 
@@ -5789,7 +8166,7 @@
                                 </div>
                             </div>
                         `;
-                    } else if (app.isAdmin) {
+                    } else if (canManageMon) {
                         html += `
                             <div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2 mt-6">
                                 <i class="fa-solid fa-file-csv text-5xl mb-4 opacity-50"></i>
@@ -5800,7 +8177,19 @@
                     }
 
                     // SEÇÃO: DETALHAMENTO ANALÍTICO DA IMPORTAÇÃO (APENAS ESTA PARTE FICA AQUI!)
-                    if (app.isAdmin && state.detalhes && state.detalhes.linhas) {
+                    if (canManageMon && state.detalhes && state.detalhes.linhas) {
+                        const todasLinhasBrutas = state.detalhes.linhas || [];
+                        let countBrutoPend = 0, countBrutoAplic = 0, countBrutoEleg = 0;
+                        todasLinhasBrutas.forEach(linha => {
+                            const statusStr = String(linha.status || '').toLowerCase();
+                            const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
+                            const isElegivel = (app.isNotaFeedback(linha.nota)) || isAplicado || statusStr.includes('pendente');
+                            const isPendente = (app.isNotaFeedback(linha.nota) && !isAplicado) || statusStr.includes('pendente');
+                            if (isPendente) countBrutoPend++;
+                            if (isAplicado) countBrutoAplic++;
+                            if (isElegivel) countBrutoEleg++;
+                        });
+
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
                                 <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -5858,14 +8247,19 @@
                 
                                 <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
                                     <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                        <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
+                                        <div>
+                                            <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
+                                            <span id="fb-counter-linha-bruta" class="text-[10px] font-bold text-slate-400">Exibindo ${todasLinhasBrutas.length} de ${todasLinhasBrutas.length} avaliações</span>
+                                        </div>
                                         <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
                                             <div class="relative flex-1 md:flex-none">
                                                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                                                <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value)" placeholder="Buscar operador..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-blue-500 shadow-sm dark:text-white transition-colors">
+                                                <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value, 'linha-bruta')" placeholder="Buscar operador ou monitor..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-blue-500 shadow-sm dark:text-white transition-colors">
                                             </div>
-                                            <button onclick="app.ui.filterPendingRows('linha-bruta', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition-colors">Todos</button>
-                                            <button onclick="app.ui.filterPendingRows('linha-bruta', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-colors">Só Pendentes</button>
+                                            <button id="fb-btn-linha-bruta-all" onclick="app.ui.filterPendingRows('linha-bruta', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${todasLinhasBrutas.length})</button>
+                                            <button id="fb-btn-linha-bruta-pendente" onclick="app.ui.filterPendingRows('linha-bruta', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countBrutoPend})</button>
+                                            <button id="fb-btn-linha-bruta-aplicado" onclick="app.ui.filterPendingRows('linha-bruta', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countBrutoAplic})</button>
+                                            <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Elegíveis &lt;${app.getLimiteFeedback()} (${countBrutoEleg})</button>
                                         </div>
                                     </div>
                                     <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
@@ -5881,20 +8275,33 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                ${state.detalhes.linhas ? state.detalhes.linhas.map(linha => {
-                                                    const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
-                                                    const pendClass = !isAplicado ? 'fb-pendente' : '';
+                                                ${todasLinhasBrutas.map(linha => {
+                                                    const statusStr = String(linha.status || '').toLowerCase();
+                                                    const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
+                                                    const isPendente = (app.isNotaFeedback(linha.nota) && !isAplicado) || statusStr.includes('pendente');
+                                                    const isElegivel = (app.isNotaFeedback(linha.nota)) || isAplicado || isPendente;
+                                                    const rowClasses = [
+                                                        isPendente ? 'fb-pendente' : '',
+                                                        isAplicado ? 'fb-aplicado' : '',
+                                                        isElegivel ? 'fb-elegivel' : ''
+                                                    ].filter(Boolean).join(' ');
+                                                    let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">Dispensado (Nota ≥ ${app.getLimiteFeedback()})</span>`;
+                                                    if (isAplicado) {
+                                                        statusBadge = `<span class="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 font-black"><i class="fa-solid fa-circle-check mr-1"></i> Feedback Aplicado</span>`;
+                                                    } else if (isPendente) {
+                                                        statusBadge = `<span class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800 font-black animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedback Pendente</span>`;
+                                                    }
                                                     return `
-                                                    <tr class="linha-bruta ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                    <tr class="linha-bruta ${rowClasses} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
                                                         <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
                                                         <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
-                                                        <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
-                                                        <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
+                                                        <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                        <td class="py-3 px-4 text-center">${statusBadge}</td>
                                                         <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                         <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
                                                     </tr>
                                                     `;
-                                                }).join('') : ''}
+                                                }).join('')}
                                             </tbody>
                                         </table>
                                     </div>
@@ -6001,6 +8408,18 @@
                             let somaMinhasNotas = 0;
                             let countMinhasNotas = 0;
 
+                            let countUserPend = 0, countUserAplic = 0, countUserEleg = 0;
+                            minhasLinhas.forEach(linha => {
+                                const statusStr = String(linha.status || '').toLowerCase();
+                                const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
+                                const isPendente = (app.isNotaFeedback(linha.nota) && !isAplicado) || statusStr.includes('pendente');
+                                const isElegivel = (app.isNotaFeedback(linha.nota)) || isAplicado || isPendente;
+                                if (isPendente) countUserPend++;
+                                if (isAplicado) countUserAplic++;
+                                if (isElegivel) countUserEleg++;
+                            });
+                            const taxaFeedbackUser = countUserEleg > 0 ? ((countUserAplic / countUserEleg) * 100).toFixed(1) : '100.0';
+
                             operadoresDesteMonitor.forEach(opNome => {
                                 const todasLinhasOp = state.detalhes.linhas.filter(l => l.operador === opNome && typeof l.nota === 'number');
                                 const minhasLinhasOp = todasLinhasOp.filter(l => l.matriculaMonitor === userMatricula);
@@ -6030,12 +8449,41 @@
                             });
                             
                             html += `
-                                <div class="mb-4 mt-8 flex justify-between items-end">
+                                <div class="mb-4 mt-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
                                     <div>
                                         <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">O que a plataforma leu sobre você?</h2>
                                         <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Este é o espelho exato do relatório de monitorias que foi validado neste mês.</p>
                                     </div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button onclick="app.ui.exportarFeedbacksUserXLSX('pendente')" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors">
+                                            <i class="fa-solid fa-file-excel"></i> Baixar Feedbacks Pendentes (${countUserPend})
+                                        </button>
+                                        <button onclick="app.ui.exportarFeedbacksUserXLSX('todos')" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors">
+                                            <i class="fa-solid fa-download"></i> Exportar Tudo
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <!-- Painel Funcional de Controle de Feedbacks do Monitor -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="cursor-pointer bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para filtrar todas as avaliações que exigem feedback (<85)">
+                                        <div class="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-1"><i class="fa-solid fa-clipboard-check mr-1"></i> Exigem Feedback (&lt;${app.getLimiteFeedback()})</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${countUserEleg}</div>
+                                    </div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="cursor-pointer bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para ver apenas os feedbacks já aplicados">
+                                        <div class="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 mb-1"><i class="fa-solid fa-circle-check mr-1"></i> Feedbacks Aplicados</div>
+                                        <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400">${countUserAplic}</div>
+                                    </div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="cursor-pointer bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para filtrar somente os feedbacks pendentes">
+                                        <div class="text-[10px] uppercase font-bold text-red-600 dark:text-red-400 mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedbacks Pendentes</div>
+                                        <div class="text-2xl font-black text-red-600 dark:text-red-400">${countUserPend}</div>
+                                    </div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="cursor-pointer bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para exibir todas as avaliações">
+                                        <div class="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400 mb-1"><i class="fa-solid fa-percent mr-1"></i> Taxa de Conclusão FB</div>
+                                        <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400">${taxaFeedbackUser}%</div>
+                                    </div>
+                                </div>
+
                                 <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg mt-4" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
                                     <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
                                     
@@ -6079,14 +8527,23 @@
                                     </div>
                                     
                                     <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
-                                        <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
-                                            <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
-                                            <div class="flex gap-2">
-                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', false)" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">Todos</button>
-                                                <button onclick="app.ui.filterPendingRows('linha-bruta-user', true)" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 px-3 py-1 rounded shadow-sm border border-red-200 dark:border-red-800 font-bold">Só Pendentes</button>
+                                        <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                            <div>
+                                                <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
+                                                <span id="fb-counter-linha-bruta-user" class="text-[10px] font-bold text-slate-400">Exibindo ${minhasLinhas.length} de ${minhasLinhas.length} avaliações</span>
+                                            </div>
+                                            <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                                                <div class="relative flex-1 md:flex-none">
+                                                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                                                    <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value, 'linha-bruta-user')" placeholder="Buscar operador ou operação..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-purple-500 shadow-sm dark:text-white transition-colors">
+                                                </div>
+                                                <button id="fb-btn-linha-bruta-user-all" onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${minhasLinhas.length})</button>
+                                                <button id="fb-btn-linha-bruta-user-pendente" onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countUserPend})</button>
+                                                <button id="fb-btn-linha-bruta-user-aplicado" onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countUserAplic})</button>
+                                                <button id="fb-btn-linha-bruta-user-elegivel" onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Só Elegíveis &lt;${app.getLimiteFeedback()} (${countUserEleg})</button>
                                             </div>
                                         </div>
-                                        <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[400px]'}">
+                                        <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[450px]'}">
                                             <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
                                                 <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
                                                     <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -6099,13 +8556,26 @@
                                                 </thead>
                                                 <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
                                                     ${minhasLinhas.map(linha => {
-                                                        const isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
-                                                        const pendClass = !isAplicado ? 'fb-pendente' : '';
+                                                        const statusStr = String(linha.status || '').toLowerCase();
+                                                        const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
+                                                        const isPendente = (app.isNotaFeedback(linha.nota) && !isAplicado) || statusStr.includes('pendente');
+                                                        const isElegivel = (app.isNotaFeedback(linha.nota)) || isAplicado || isPendente;
+                                                        const rowClasses = [
+                                                            isPendente ? 'fb-pendente' : '',
+                                                            isAplicado ? 'fb-aplicado' : '',
+                                                            isElegivel ? 'fb-elegivel' : ''
+                                                        ].filter(Boolean).join(' ');
+                                                        let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">Dispensado (Nota ≥ ${app.getLimiteFeedback()})</span>`;
+                                                        if (isAplicado) {
+                                                            statusBadge = `<span class="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 font-black"><i class="fa-solid fa-circle-check mr-1"></i> Feedback Aplicado</span>`;
+                                                        } else if (isPendente) {
+                                                            statusBadge = `<span class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800 font-black animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedback Pendente</span>`;
+                                                        }
                                                         return `
-                                                        <tr class="linha-bruta-user ${pendClass} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
+                                                        <tr class="linha-bruta-user ${rowClasses} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
                                                             <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
-                                                            <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (linha.nota < 85 ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
-                                                            <td class="py-3 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">${linha.status}</span></td>
+                                                            <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                            <td class="py-3 px-4 text-center">${statusBadge}</td>
                                                             <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
                                                             <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
                                                         </tr>
@@ -6135,7 +8605,7 @@
                 
 
                 renderView_CalibragemAudio(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('calibragem_audio')) return;
                     app.calibragemAudio.initPlayer(); // Prepara o motor de áudio
                     
                     const state = app.calibragemAudio.state;
@@ -6527,7 +8997,7 @@
                 },
 
                 renderView_DashboardEstudos(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('dashboard_estudos')) return;
                     let laudos = app.laudos.list || [];
 
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.estudosFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
@@ -6729,78 +9199,134 @@
                     
                     if(!falhaObj) return;
 
-                    const mesesOrdem = data.mesesDisponiveis || [];
-                    const labelsMeses = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0,3));
-                
-                    // --- NOVO MOTOR DE CÁLCULO UNIFICADO E BLINDADO ---
-                    let chartDataValuesGlobal = [];
-                    const normalizeText = (s) => s ? String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim() : '';
-                    const cleanTarget = normalizeText(decodedNome);
+                    const parseDateAny = (dataRaw) => {
+                        if (dataRaw === undefined || dataRaw === null || dataRaw === '') return null;
+                        if (!isNaN(dataRaw) && Number(dataRaw) > 20000) {
+                            const diasPuros = Math.floor(Number(dataRaw));
+                            const dt = new Date((diasPuros - 25569) * 86400 * 1000);
+                            dt.setUTCHours(12, 0, 0, 0);
+                            return (!isNaN(dt) && dt.getFullYear() >= 2020 && dt.getFullYear() <= 2030) ? dt : null;
+                        }
+                        if (typeof dataRaw === 'string') {
+                            let cleanStr = dataRaw.split(' ')[0].split('T')[0].trim();
+                            let matchISO = cleanStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                            if (matchISO) {
+                                let dt = new Date(parseInt(matchISO[1]), parseInt(matchISO[2]) - 1, parseInt(matchISO[3]), 12, 0, 0);
+                                return (!isNaN(dt) && dt.getFullYear() >= 2020 && dt.getFullYear() <= 2030) ? dt : null;
+                            }
+                            let matchBR = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                            if (matchBR) {
+                                let p1 = parseInt(matchBR[1]), p2 = parseInt(matchBR[2]), y = parseInt(matchBR[3]);
+                                if (y < 100) y += 2000;
+                                let d = p1, m = p2;
+                                if (p2 > 12) { m = p1; d = p2; }
+                                let dt = new Date(y, m - 1, d, 12, 0, 0);
+                                return (!isNaN(dt) && dt.getFullYear() >= 2020 && dt.getFullYear() <= 2030) ? dt : null;
+                            }
+                        }
+                        return null;
+                    };
 
-                    // Prepara a memória para os mini-gráficos dos operadores
+                    // --- MOTOR DE CÁLCULO UNIFICADO E BLINDADO (SUPORTA CSV NORMAL E FUSÃO DE 3 ARQUIVOS) ---
+                    let chartDataValuesGlobal = [];
+                    const normalizeText = (s) => s ? app.utils.fixEncoding(String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim() : '';
+                    const cleanTarget = normalizeText(decodedNome);
+                    const cleanTargetSemPrefixo = normalizeText(decodedNome.replace(/^\[.*?\]\s*/, ''));
+
                     let historicoIndivMap = {};
                     falhaObj.operadores.forEach(op => {
                         historicoIndivMap[op.nome] = [];
                     });
 
-                    // [!] CORREÇÃO CIRÚRGICA: Lemos TODAS as avaliações globais brutas, ignorando o filtro de mês da tela!
                     let todasAsAvaliacoes = [];
+                    const mesesDetectadosSet = new Set();
+                    const diasDetectadosSet = new Set();
+
                     if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.relatorios) {
                         app.analiseCSVDinamicoData.relatorios.forEach(rel => {
-                            rel.rows.forEach(row => {
-                                const keys = Object.keys(row);
-                                const colNome = keys.find(k => ['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE'].includes(k.trim().toUpperCase())) || keys.find(k => k.trim().toUpperCase().includes('NOME') && !k.trim().toUpperCase().includes('CLIENTE')) || keys[0];
-                                const colData = keys.find(k => k.trim().toUpperCase().includes('DATA'));
+                            if (!rel.rows || rel.rows.length === 0) return;
+                            const keys = Object.keys(rel.rows[0]);
+                            const colNome = keys.find(k => ['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'FUNCIONARIO', 'FUNCIONÁRIO', 'AGENTE'].includes(k.trim().toUpperCase())) || keys.find(k => (k.trim().toUpperCase().includes('NOME') || k.trim().toUpperCase().includes('OPERADOR') || k.trim().toUpperCase().includes('AGENTE')) && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('SUPERVISOR') && !k.trim().toUpperCase().includes('AVALIADOR')) || keys[0];
+                            const colData = keys.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || keys.find(k => k.trim().toUpperCase().includes('DATA'));
+                            const colsPeso = keys.filter(k => k.toUpperCase().includes('PESO'));
+
+                            rel.rows.forEach((row, rIdx) => {
                                 const opNameRaw = app.utils.fixEncoding(String(row[colNome] || '')).trim();
-                                
+                                if (!opNameRaw || opNameRaw.toUpperCase().includes('TOTAL') || opNameRaw === 'Não Identificado') return;
+
+                                const dtObj = colData ? parseDateAny(row[colData]) : null;
+                                const mesRef = dtObj ? `${dtObj.getFullYear()}-${String(dtObj.getMonth() + 1).padStart(2, '0')}` : 'SEM-DATA';
+                                const diaRef = dtObj ? `${dtObj.getFullYear()}-${String(dtObj.getMonth() + 1).padStart(2, '0')}-${String(dtObj.getDate()).padStart(2, '0')}` : `L-${Math.floor(rIdx / 10) + 1}`;
+                                if (dtObj) {
+                                    mesesDetectadosSet.add(mesRef);
+                                    diasDetectadosSet.add(diaRef);
+                                }
+
                                 let fakePerguntas = [];
-                                keys.filter(k => k.toUpperCase().includes('PESO')).forEach(k => {
-                                    // CORREÇÃO: Extraindo o Peso antes de montar a pergunta para evitar erro de escopo
+                                colsPeso.forEach(k => {
                                     let match = k.match(/=\s*PESO:\s*([0-9.,]+)/i);
                                     let pesoExtraido = match ? parseFloat(match[1].replace(',', '.')) : 0;
-                                    let cleanQ = `[${rel.nome}] ` + k.split('=')[0].trim();
+                                    let cleanQ = `[${rel.nome}] ` + app.utils.fixEncoding(k.split('=')[0].trim());
                                     fakePerguntas.push({ q: cleanQ, p: pesoExtraido, a: String(row[k] || '').trim() });
                                 });
-                                todasAsAvaliacoes.push({ operador: opNameRaw, data: row[colData], perguntas: fakePerguntas });
+                                todasAsAvaliacoes.push({ operador: opNameRaw, mesRef, diaRef, perguntas: fakePerguntas });
                             });
                         });
                     }
 
-                    // Varre cada mês disponível
-                    mesesOrdem.forEach(mesRef => {
-                        let contagemNoMesGlobal = 0;
-                        let contagemPorOpNoMes = {};
-                        falhaObj.operadores.forEach(op => contagemPorOpNoMes[op.nome] = 0);
+                    const mesesOrdem = (data.mesesDisponiveis && data.mesesDisponiveis.length > 0)
+                        ? data.mesesDisponiveis
+                        : Array.from(mesesDetectadosSet).sort();
+                    const diasOrdem = Array.from(diasDetectadosSet).sort();
+
+                    // Se houver mais de 1 mês, agrupa por Mês; se for CSV de 1 único mês (ou sem múltiplos meses), agrupa por Data/Dia (ou lote) para que o gráfico sempre funcione!
+                    const usarModoDiario = mesesOrdem.length <= 1;
+                    let buckets = [];
+                    let labelsEixoX = [];
+
+                    if (!usarModoDiario) {
+                        buckets = mesesOrdem;
+                        labelsEixoX = mesesOrdem.map(m => app.ui.formatMonthLabel(m).substring(0, 3));
+                    } else if (diasOrdem.length > 1) {
+                        buckets = diasOrdem;
+                        labelsEixoX = diasOrdem.map(d => {
+                            const p = d.split('-');
+                            return p.length === 3 ? `${p[2]}/${p[1]}` : d;
+                        });
+                    } else if (diasOrdem.length === 1) {
+                        buckets = [diasOrdem[0]];
+                        const p = diasOrdem[0].split('-');
+                        labelsEixoX = [p.length === 3 ? `${p[2]}/${p[1]}` : diasOrdem[0]];
+                    } else {
+                        const lotes = [...new Set(todasAsAvaliacoes.map(a => a.diaRef))];
+                        buckets = lotes.length > 0 ? lotes : ['Geral'];
+                        labelsEixoX = buckets.map((b, i) => `Bloco ${i + 1}`);
+                    }
+
+                    buckets.forEach(bucketKey => {
+                        let contagemNoBucketGlobal = 0;
+                        let contagemPorOpNoBucket = {};
+                        falhaObj.operadores.forEach(op => contagemPorOpNoBucket[op.nome] = 0);
 
                         todasAsAvaliacoes.forEach(aval => {
-                            let avalMesRef = null;
-                            if(typeof aval.data === 'string' && aval.data.includes('/')) {
-                                const dtParts = aval.data.split('/');
-                                if(dtParts.length === 3) avalMesRef = dtParts[2] + '-' + dtParts[1].padStart(2, '0');
-                            } else if (typeof aval.data === 'string' && aval.data.includes('-')) {
-                                avalMesRef = aval.data.substring(0, 7);
-                            }
-                            
-                            if (avalMesRef === mesRef && aval.perguntas) {
+                            const chaveAval = !usarModoDiario ? aval.mesRef : (diasOrdem.length >= 1 ? aval.diaRef : aval.diaRef);
+                            if (chaveAval === bucketKey && aval.perguntas) {
                                 aval.perguntas.forEach(p => {
-                                    // Se achou a pergunta que estamos analisando
-                                    if (normalizeText(p.q).includes(cleanTarget)) {
+                                    const qNorm = normalizeText(p.q);
+                                    const qSemPref = normalizeText(p.q.replace(/^\[.*?\]\s*/, ''));
+                                    if (qNorm === cleanTarget || qNorm.includes(cleanTarget) || (cleanTargetSemPrefixo && qSemPref === cleanTargetSemPrefixo)) {
                                         const ansStr = normalizeText(p.a);
-                                        
-                                        // CORREÇÃO: Match estrito para evitar falsos positivos com "NÃO SE APLICA"
-                                        const isSim = ansStr === 'S' || ansStr === 'SIM' || ansStr.includes('SIM -');
-                                        const isNao = ansStr === 'N' || ansStr === 'NAO' || ansStr === 'NÃO' || ansStr.includes('NAO -') || ansStr.includes('NÃO -');
-                                        
+                                        const isSim = ansStr === 'S' || ansStr === 'SIM' || ansStr.startsWith('SIM ');
+                                        const isNao = ansStr === 'N' || ansStr === 'NAO' || ansStr === 'NÃO' || ansStr.startsWith('NAO -') || ansStr.startsWith('NÃO -');
+
                                         let isErro = false;
-                                        // Se for Crítica, peso 100 ou 0 e respondeu SIM = Erro
                                         if (type === 'critica' && (p.p === 100 || p.p === 0) && isSim) isErro = true;
-                                        // Se for Comum, peso diferente de 100/0 e respondeu NÃO = Erro
                                         if (type === 'comum' && p.p !== 100 && p.p !== 0 && isNao) isErro = true;
 
                                         if (isErro) {
-                                            contagemNoMesGlobal++;
-                                            if (contagemPorOpNoMes[aval.operador] !== undefined) {
-                                                contagemPorOpNoMes[aval.operador]++;
+                                            contagemNoBucketGlobal++;
+                                            if (contagemPorOpNoBucket[aval.operador] !== undefined) {
+                                                contagemPorOpNoBucket[aval.operador]++;
                                             }
                                         }
                                     }
@@ -6808,17 +9334,27 @@
                             }
                         });
 
-                        // Salva os dados do mês atual
-                        chartDataValuesGlobal.push(contagemNoMesGlobal);
-                        Object.keys(contagemPorOpNoMes).forEach(opNome => {
-                            historicoIndivMap[opNome].push(contagemPorOpNoMes[opNome]);
+                        chartDataValuesGlobal.push(contagemNoBucketGlobal);
+                        Object.keys(contagemPorOpNoBucket).forEach(opNome => {
+                            historicoIndivMap[opNome].push(contagemPorOpNoBucket[opNome]);
                         });
                     });
 
-                    // Se tiver só 1 mês, duplica o ponto para o gráfico desenhar uma linha reta
+                    // Fallback caso todas as datas do CSV estejam na mesma data única: divide por janelas de avaliações para desenhar a evolução
+                    const somaTotalGrafico = chartDataValuesGlobal.reduce((a, b) => a + b, 0);
+                    if (somaTotalGrafico === 0 && falhaObj.count > 0) {
+                        chartDataValuesGlobal = [falhaObj.count];
+                        labelsEixoX = [mesesOrdem[0] ? app.ui.formatMonthLabel(mesesOrdem[0]).substring(0, 3) : 'Total'];
+                        falhaObj.operadores.forEach(op => {
+                            historicoIndivMap[op.nome] = [op.qtd];
+                        });
+                    }
+
+                    const labelsMeses = labelsEixoX;
+
                     if (chartDataValuesGlobal.length === 1) {
                         chartDataValuesGlobal.push(chartDataValuesGlobal[0]);
-                        if(labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
+                        if (labelsMeses.length === 1) labelsMeses.push(labelsMeses[0]);
                         Object.keys(historicoIndivMap).forEach(opNome => {
                             historicoIndivMap[opNome].push(historicoIndivMap[opNome][0]);
                         });
@@ -7146,7 +9682,7 @@
                                     <div class="flex items-center gap-6 text-right">
                                         <div>
                                             <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Nota</div>
-                                            <div class="text-3xl font-black ${aval.nota < 85 ? 'text-red-500' : 'text-green-500'}">${aval.nota}</div>
+                                            <div class="text-3xl font-black ${app.isNotaFeedback(aval.nota) ? 'text-red-500' : 'text-green-500'}">${aval.nota}</div>
                                         </div>
                                         <div class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover/eval:bg-blue-100 group-hover/eval:text-blue-600 transition-colors">
                                             <i class="fa-solid fa-chevron-down text-slate-500 group-open/eval:rotate-180 transition-transform duration-300"></i>
@@ -7472,7 +10008,81 @@
                     }
                 },
 
+                getQuadCfg() {
+                    const def = { q1: 90, q2: 80, q3: 70 };
+                    try {
+                        const c = JSON.parse(localStorage.getItem('soft_quad_cfg') || 'null');
+                        if (c && c.q1 > c.q2 && c.q2 > c.q3 && c.q3 > 0 && c.q1 <= 100) return { q1: +c.q1, q2: +c.q2, q3: +c.q3 };
+                    } catch (e) {}
+                    return def;
+                },
+
+                openQuadConfigModal() {
+                    const c = this.getQuadCfg();
+                    const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-lg font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
+                    const row = (id, cor, nome, val) => `
+                        <div class="flex items-center gap-3">
+                            <span class="w-2 h-10 rounded-full ${cor}"></span>
+                            <div class="flex-1">
+                                <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${nome}</div>
+                                <div class="text-[11px] text-slate-400" id="quadcfg-hint-${id}"></div>
+                            </div>
+                            <div class="w-28"><input type="number" step="0.1" min="1" max="100" id="quadcfg-${id}" value="${val}" oninput="app.ui.previewQuadConfig()" class="${inp}"></div>
+                        </div>`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-orange-500 mr-2"></i> Faixas dos Quadrantes`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Defina a nota mínima de cada quadrante. O Q4 recebe tudo que ficar abaixo do Q3.</p>
+                            ${row('q1', 'bg-emerald-500', 'Q1 · Excelente — a partir de', c.q1)}
+                            ${row('q2', 'bg-blue-500', 'Q2 · Bom — a partir de', c.q2)}
+                            ${row('q3', 'bg-orange-500', 'Q3 · Regular — a partir de', c.q3)}
+                            <div class="flex h-3 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800" id="quadcfg-bar"></div>
+                            <div id="quadcfg-error" class="hidden text-xs font-bold text-red-500"></div>
+                        </div>`;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="app.ui.resetQuadConfig()" class="px-4 py-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl font-bold text-sm">Restaurar padrão</button>
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                        <button type="button" onclick="app.ui.saveQuadConfig()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Aplicar</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                    this.previewQuadConfig();
+                },
+
+                previewQuadConfig() {
+                    const v = ['q1', 'q2', 'q3'].map(k => parseFloat((document.getElementById('quadcfg-' + k) || {}).value));
+                    const [a, b, c] = v;
+                    const ok = v.every(n => !isNaN(n)) && a > b && b > c && c > 0 && a <= 100;
+                    const set = (id, t) => { const el = document.getElementById('quadcfg-hint-' + id); if (el) el.textContent = t; };
+                    if (ok) {
+                        set('q1', `Notas de ${a} a 100`);
+                        set('q2', `Notas de ${b} a ${(a - 0.1).toFixed(1)}`);
+                        set('q3', `Notas de ${c} a ${(b - 0.1).toFixed(1)}`);
+                        const bar = document.getElementById('quadcfg-bar');
+                        if (bar) bar.innerHTML = [[c, 'bg-red-500'], [b - c, 'bg-orange-500'], [a - b, 'bg-blue-500'], [100 - a, 'bg-emerald-500']].map(([w, cls]) => `<div class="${cls}" style="width:${Math.max(0, w)}%"></div>`).join('');
+                    }
+                    const err = document.getElementById('quadcfg-error');
+                    if (err) {
+                        err.classList.toggle('hidden', ok);
+                        err.textContent = ok ? '' : 'Use valores em ordem decrescente: Q1 > Q2 > Q3 (máximo 100).';
+                    }
+                    return ok;
+                },
+
+                saveQuadConfig() {
+                    if (!this.previewQuadConfig()) return;
+                    const cfg = { q1: parseFloat(document.getElementById('quadcfg-q1').value), q2: parseFloat(document.getElementById('quadcfg-q2').value), q3: parseFloat(document.getElementById('quadcfg-q3').value) };
+                    localStorage.setItem('soft_quad_cfg', JSON.stringify(cfg));
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui._refreshComMemoriaDeScroll();
+                },
+
+                resetQuadConfig() {
+                    localStorage.removeItem('soft_quad_cfg');
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui._refreshComMemoriaDeScroll();
+                },
+
                 openQuadranteModal(qName) {
+                    const qc = this.getQuadCfg();
                     const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data) return;
 
@@ -7481,16 +10091,16 @@
 
                     data.rankOperadores.forEach(op => {
                         let m = parseFloat(op.media);
-                        if(qName === 'Q1' && m >= 90) lista.push(op);
-                        else if(qName === 'Q2' && m >= 80 && m < 90) lista.push(op);
-                        else if(qName === 'Q3' && m >= 70 && m < 80) lista.push(op);
-                        else if(qName === 'Q4' && m < 70) lista.push(op);
+                        if(qName === 'Q1' && m >= qc.q1) lista.push(op);
+                        else if(qName === 'Q2' && m >= qc.q2 && m < qc.q1) lista.push(op);
+                        else if(qName === 'Q3' && m >= qc.q3 && m < qc.q2) lista.push(op);
+                        else if(qName === 'Q4' && m < qc.q3) lista.push(op);
                     });
 
-                    if(qName === 'Q1') { cor = 'text-green-500'; bg = 'bg-green-100 dark:bg-green-900/30'; desc = 'Excelente (90 a 100)'; icon = 'fa-star'; }
-                    else if(qName === 'Q2') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = 'Bom (80 a 89.9)'; icon = 'fa-thumbs-up'; }
-                    else if(qName === 'Q3') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = 'Regular (70 a 79.9)'; icon = 'fa-triangle-exclamation'; }
-                    else if(qName === 'Q4') { cor = 'text-red-500'; bg = 'bg-red-100 dark:bg-red-900/30'; desc = 'Atenção (< 70)'; icon = 'fa-fire'; }
+                    if(qName === 'Q1') { cor = 'text-green-500'; bg = 'bg-green-100 dark:bg-green-900/30'; desc = `Excelente (${qc.q1} a 100)`; icon = 'fa-star'; }
+                    else if(qName === 'Q2') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = `Bom (${qc.q2} a ${(qc.q1-0.1).toFixed(1)})`; icon = 'fa-thumbs-up'; }
+                    else if(qName === 'Q3') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = `Regular (${qc.q3} a ${(qc.q2-0.1).toFixed(1)})`; icon = 'fa-triangle-exclamation'; }
+                    else if(qName === 'Q4') { cor = 'text-red-500'; bg = 'bg-red-100 dark:bg-red-900/30'; desc = `Atenção (< ${qc.q3})`; icon = 'fa-fire'; }
 
                     let htmlList = `<div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
                     if(lista.length === 0) {
@@ -8317,89 +10927,55 @@
                         `;
                     }
 
-                    // --- PREPARAÇÃO DOS QUADRANTES ---
+                    // --- PREPARAÃ‡ÃƒO DOS QUADRANTES (faixas configurÃ¡veis) ---
+                    const qc = app.ui.getQuadCfg();
                     let q1 = [], q2 = [], q3 = [], q4 = [];
                     data.rankOperadores.forEach(op => {
                         let m = parseFloat(op.media);
-                        if(m >= 90) q1.push(op);
-                        else if(m >= 80) q2.push(op);
-                        else if(m >= 70) q3.push(op);
+                        if (m >= qc.q1) q1.push(op);
+                        else if (m >= qc.q2) q2.push(op);
+                        else if (m >= qc.q3) q3.push(op);
                         else q4.push(op);
                     });
 
                     // --- MATRIZ DE DESEMPENHO (QUADRANTES) ---
-                    let tOps = data.rankOperadores.length || 1;
-                    let mQ1 = q1.length > 0 ? (q1.reduce((a,b)=>a+parseFloat(b.media),0)/q1.length).toFixed(1) : '0.0';
-                    let pQ1 = ((q1.length / tOps) * 100).toFixed(1);
-                    let mQ2 = q2.length > 0 ? (q2.reduce((a,b)=>a+parseFloat(b.media),0)/q2.length).toFixed(1) : '0.0';
-                    let pQ2 = ((q2.length / tOps) * 100).toFixed(1);
-                    let mQ3 = q3.length > 0 ? (q3.reduce((a,b)=>a+parseFloat(b.media),0)/q3.length).toFixed(1) : '0.0';
-                    let pQ3 = ((q3.length / tOps) * 100).toFixed(1);
-                    let mQ4 = q4.length > 0 ? (q4.reduce((a,b)=>a+parseFloat(b.media),0)/q4.length).toFixed(1) : '0.0';
-                    let pQ4 = ((q4.length / tOps) * 100).toFixed(1);
+                    const tOps = data.rankOperadores.length || 1;
+                    const mediaDe = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + parseFloat(b.media), 0) / arr.length).toFixed(1) : 'â€”';
+                    const fmtLim = (n) => (Math.round(n * 10) / 10).toString();
+                    const quadCards = [
+                        { id: 'Q1', nome: 'Excelente', lista: q1, bar: 'bg-emerald-500', txt: 'text-emerald-600 dark:text-emerald-400', faixa: `${fmtLim(qc.q1)} a 100` },
+                        { id: 'Q2', nome: 'Bom', lista: q2, bar: 'bg-blue-500', txt: 'text-blue-600 dark:text-blue-400', faixa: `${fmtLim(qc.q2)} a ${fmtLim(qc.q1 - 0.1)}` },
+                        { id: 'Q3', nome: 'Regular', lista: q3, bar: 'bg-orange-500', txt: 'text-orange-600 dark:text-orange-400', faixa: `${fmtLim(qc.q3)} a ${fmtLim(qc.q2 - 0.1)}` },
+                        { id: 'Q4', nome: 'AtenÃ§Ã£o', lista: q4, bar: 'bg-red-500', txt: 'text-red-600 dark:text-red-400', faixa: `abaixo de ${fmtLim(qc.q3)}` }
+                    ].map(c => {
+                        const pct = ((c.lista.length / tOps) * 100).toFixed(1);
+                        return `
+                            <div onclick="app.ui.openQuadranteModal('${c.id}')" class="cursor-pointer bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
+                                <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                    <span><span class="${c.txt}">${c.id}</span> Â· ${c.nome}</span>
+                                    <span>${c.faixa}</span>
+                                </div>
+                                <div class="flex items-baseline gap-2 mt-2">
+                                    <span class="text-3xl font-black text-slate-800 dark:text-white">${c.lista.length}</span>
+                                    <span class="text-xs text-slate-400">operadores Â· ${pct}%</span>
+                                </div>
+                                <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-3 overflow-hidden"><div class="h-full ${c.bar} rounded-full" style="width:${pct}%"></div></div>
+                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2">MÃ©dia do grupo: <strong class="${c.txt}">${mediaDe(c.lista)}</strong></div>
+                            </div>
+                        `;
+                    }).join('');
 
-                    html += renderChapterTitle('Matriz de Desempenho', 'Classificação dos operadores em quadrantes com base na qualidade técnica para ações de desenvolvimento direcionadas.', 'fa-border-all', 'orange');
+                    html += renderChapterTitle('Matriz de Desempenho', 'ClassificaÃ§Ã£o dos operadores em quadrantes com base na qualidade tÃ©cnica para aÃ§Ãµes de desenvolvimento direcionadas.', 'fa-border-all', 'orange');
                     html += `
                         <div class="hideable-box relative mb-8 animate-fade-in">
                             ${btnHideCode}
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <!-- Q1 -->
-                                <div onclick="app.ui.openQuadranteModal('Q1')" class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-green-400 flex flex-col">
-                                    <i class="fa-solid fa-star absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
-                                    <div class="flex justify-between items-start mb-2 relative z-10">
-                                        <div class="text-4xl font-black drop-shadow-md">${q1.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
-                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ1}%</div>
-                                    </div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q1 (Excelente)</div>
-                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Notas 90 a 100</div>
-                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
-                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
-                                        <span class="font-black text-sm drop-shadow">${mQ1}</span>
-                                    </div>
-                                </div>
-                                <!-- Q2 -->
-                                <div onclick="app.ui.openQuadranteModal('Q2')" class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-blue-400 flex flex-col">
-                                    <i class="fa-solid fa-thumbs-up absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
-                                    <div class="flex justify-between items-start mb-2 relative z-10">
-                                        <div class="text-4xl font-black drop-shadow-md">${q2.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
-                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ2}%</div>
-                                    </div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q2 (Bom)</div>
-                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Notas 80 a 89.9</div>
-                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
-                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
-                                        <span class="font-black text-sm drop-shadow">${mQ2}</span>
-                                    </div>
-                                </div>
-                                <!-- Q3 -->
-                                <div onclick="app.ui.openQuadranteModal('Q3')" class="bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-orange-300 flex flex-col">
-                                    <i class="fa-solid fa-triangle-exclamation absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
-                                    <div class="flex justify-between items-start mb-2 relative z-10">
-                                        <div class="text-4xl font-black drop-shadow-md">${q3.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
-                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ3}%</div>
-                                    </div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q3 (Regular)</div>
-                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Notas 70 a 79.9</div>
-                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
-                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
-                                        <span class="font-black text-sm drop-shadow">${mQ3}</span>
-                                    </div>
-                                </div>
-                                <!-- Q4 -->
-                                <div onclick="app.ui.openQuadranteModal('Q4')" class="bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg cursor-pointer hover:-translate-y-1 transition-transform relative overflow-hidden group border border-red-400 flex flex-col">
-                                    <i class="fa-solid fa-fire absolute -right-2 -bottom-2 text-6xl text-white/10 group-hover:scale-110 transition-transform"></i>
-                                    <div class="flex justify-between items-start mb-2 relative z-10">
-                                        <div class="text-4xl font-black drop-shadow-md">${q4.length} <span class="text-xs font-medium opacity-80">Op.</span></div>
-                                        <div class="text-xs font-black bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">${pQ4}%</div>
-                                    </div>
-                                    <div class="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Q4 (Atenção)</div>
-                                    <div class="text-[10px] opacity-75 mt-1 border-b border-white/20 pb-2 mb-2 relative z-10">Abaixo de 70</div>
-                                    <div class="mt-auto pt-1 flex justify-between items-center relative z-10">
-                                        <span class="text-[10px] uppercase font-bold opacity-80">Média Base:</span>
-                                        <span class="font-black text-sm drop-shadow">${mQ4}</span>
-                                    </div>
-                                </div>
-                            </div>
+                            ${app.isGuest ? '' : `
+                            <div class="flex justify-end mb-3">
+                                <button type="button" onclick="app.ui.openQuadConfigModal()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                    <i class="fa-solid fa-sliders mr-1.5"></i>Configurar faixas
+                                </button>
+                            </div>`}
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${quadCards}</div>
                         </div>
                     `;
 
@@ -9391,19 +11967,19 @@
                     `;
                     container.innerHTML = html;
                 },
-                applyPremiumUX() {
-                    // CORREÇÃO: Avisa ao Lenis para não "roubar" a rolagem do mouse nas listas internas
-                    document.querySelectorAll('.overflow-y-auto, .overflow-x-auto, .custom-scrollbar').forEach(el => {
-                        el.setAttribute('data-lenis-prevent', 'true');
-                    });
+                applyPremiumUX(scopeEl) {
+                    const root = (scopeEl && scopeEl.querySelectorAll) ? scopeEl : document;
 
-                    // 1. Textareas Auto-expansíveis (Autosize)
+                    // 1. Textareas Auto-expansíveis (Autosize) apenas nos elementos novos
                     if (typeof autosize !== 'undefined') {
-                        autosize(document.querySelectorAll('textarea'));
+                        const textareas = root.querySelectorAll('textarea:not([data-autosize-bound])');
+                        textareas.forEach(ta => ta.setAttribute('data-autosize-bound', '1'));
+                        if (textareas.length > 0) autosize(textareas);
                     }
 
-                    // 2. Salva-Vidas (Rascunho em LocalStorage)
-                    document.querySelectorAll('textarea, input[type="text"]').forEach(el => {
+                    // 2. Salva-Vidas (Rascunho em LocalStorage) sem duplicar eventListeners
+                    root.querySelectorAll('textarea:not([data-ux-bound]), input[type="text"]:not([data-ux-bound])').forEach(el => {
+                        el.setAttribute('data-ux-bound', '1');
                         // Ignora campos sem ID, campos de filtro, ou somente leitura
                         if(!el.id || el.id.includes('filtro') || el.readOnly) return;
                         
@@ -9413,29 +11989,18 @@
                         const savedDraft = localStorage.getItem(draftKey);
                         if(savedDraft && !el.value) {
                             el.value = savedDraft;
-                            if (typeof autosize !== 'undefined') autosize.update(el); // Reajusta a caixa
+                            if (typeof autosize !== 'undefined' && el.tagName === 'TEXTAREA') autosize.update(el);
                         }
                         
-                        // Salva o texto magicamente a cada tecla digitada
+                        // Salva o texto a cada tecla digitada (com leve debounce para não travar a digitação)
+                        let draftTimer = null;
                         el.addEventListener('input', () => {
-                            localStorage.setItem(draftKey, el.value);
+                            if (draftTimer) clearTimeout(draftTimer);
+                            draftTimer = setTimeout(() => {
+                                localStorage.setItem(draftKey, el.value);
+                            }, 250);
                         });
                     });
-
-                    // 3. Botões Magnéticos (GSAP)
-                    if (typeof gsap !== 'undefined') {
-                        document.querySelectorAll('.magnetic-btn').forEach(btn => {
-                            btn.addEventListener('mousemove', (e) => {
-                                const rect = btn.getBoundingClientRect();
-                                const x = (e.clientX - rect.left - rect.width / 2) * 0.4;
-                                const y = (e.clientY - rect.top - rect.height / 2) * 0.4;
-                                gsap.to(btn, { x: x, y: y, duration: 0.3, ease: 'power2.out' });
-                            });
-                            btn.addEventListener('mouseleave', () => {
-                                gsap.to(btn, { x: 0, y: 0, duration: 0.7, ease: 'elastic.out(1, 0.3)' });
-                            });
-                        });
-                    }
                 }
                 
             }, // <--- FECHA A CLASSE 'ui' DEFINITIVAMENTE AQUI
@@ -10145,6 +12710,28 @@
                     if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                         linhasGlobais = app.monitoriasData.detalhes.linhas;
                     }
+
+                    // Aplica todos os vínculos de nomes (DE/PARA) salvos em app.config.aliases sobre as linhas em memória
+                    const aliasesMap = (app.config && app.config.aliases) ? app.config.aliases : {};
+                    linhasGlobais.forEach(linha => {
+                        if (!linha.isRegisteredMonitor && linha.monitor) {
+                            const monRaw = String(linha.monitor).trim();
+                            const monUpper = monRaw.toUpperCase();
+                            const monSafe = app.storage.sanitizeFirebaseKey(monUpper);
+                            const parteMat = monUpper.includes('-') ? monUpper.split('-')[0].trim() : monUpper;
+                            const parteMatSafe = app.storage.sanitizeFirebaseKey(parteMat);
+                            const mappedMat = aliasesMap[monSafe] || aliasesMap[monUpper] || aliasesMap[parteMatSafe] || aliasesMap[parteMat];
+                            if (mappedMat) {
+                                const u = app.users.find(x => x.matricula === mappedMat);
+                                if (u) {
+                                    linha.rawMonitorOriginal = linha.rawMonitorOriginal || linha.monitor;
+                                    linha.isRegisteredMonitor = true;
+                                    linha.matriculaMonitor = u.matricula;
+                                    linha.monitor = u.nome;
+                                }
+                            }
+                        }
+                    });
             
                     let rankingMap = {};
                     let opsMap = {};
@@ -10173,7 +12760,7 @@
                             rankingMap[linha.matriculaMonitor].total += 1;
                             rankingMap[linha.matriculaMonitor].falta = Math.max(0, 400 - rankingMap[linha.matriculaMonitor].total);
             
-                            if (linha.nota !== 'N/A' && linha.nota < 85) {
+                            if (app.isNotaFeedback(linha.nota)) {
                                 rankingMap[linha.matriculaMonitor].metaFb += 1; // +1 na Meta Pessoal de Feedback deste Monitor
                                 let isAplicado = String(linha.status).toLowerCase().includes('feedback_aplicado') || String(linha.status).toLowerCase().includes('feedback aplicado');
                                 if (isAplicado) {
@@ -10217,7 +12804,7 @@
             
                     novoRanking.forEach(r => {
                         const usr = app.users.find(u => u.matricula === r.matricula);
-                        if(usr) {
+                        if(usr && app.isUserQualidade(usr)) {
                             if(!usr.results) usr.results = {};
                             if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
                             
@@ -10385,11 +12972,11 @@
                             let linhasNovas = [];
                             let matchCount = 0;
             
-                            // FUNÇÃO BLINDADA: Ignora Acentos e Maiúsculas/Minúsculas
+                            // FUNÇÃO BLINDADA: Ignora Acentos, Quebras de Linha e Maiúsculas/Minúsculas
                             const getValByKeyword = (row, keywordStr, excludeStr = '') => {
                                 const keywords = keywordStr.split('|');
                                 const excludes = excludeStr ? excludeStr.split('|') : [];
-                                const normalize = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                                const normalize = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
                                 const key = Object.keys(row).find(k => {
                                     const normK = normalize(k);
                                     if (excludes.length > 0 && excludes.some(ex => normK.includes(normalize(ex)))) return false;
@@ -10409,7 +12996,7 @@
                                 }
                                 if (!monitorRaw) return;
              
-                                const monitorSupStr = String(monitorRaw).trim();
+                                const monitorSupStr = app.utils.fixEncoding(String(monitorRaw)).trim();
                                 
                                 // Separa a matrícula e o nome caso venha no formato "36515 - GRAZIELLA DANIEL"
                                 let matricula = monitorSupStr.includes('-') ? monitorSupStr.split('-')[0].trim() : monitorSupStr;
@@ -10436,7 +13023,7 @@
             
                                 const isRegisteredMonitor = !!userObj;
                                 const titulo = String(getValByKeyword(row, 'TITULO|TÍTULO') || '').toLowerCase();
-                                const operacao = String(getValByKeyword(row, 'OPERACAO|OPERAÇÃO|CAMPANHA') || '').toUpperCase();
+                                const operacao = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERACAO|OPERAÇÃO|CAMPANHA|SETOR') || '')).toUpperCase().trim();
                                 const isNeutro = titulo.includes('neutro') || operacao.includes('NEUTROS');
             
                                 let notaFinalLida = 'N/A';
@@ -10460,6 +13047,8 @@
                                 } else if (dataRaw) {
                                     dataFmt = String(dataRaw);
                                 }
+
+                                const assuntoVal = String(getValByKeyword(row, 'ASSUNTO|MOTIVO|SUBMOTIVO|TEMA') || '').trim();
             
                                 linhasNovas.push({
                                     source: 'PADRAO',
@@ -10471,7 +13060,7 @@
                                     status: String(getValByKeyword(row, 'STATUS') || '-'),
                                     operacao: operacao || 'PADRÃO',
                                     data: dataFmt,
-                                    ASSUNTO: colAssunto ? String(row[colAssunto]).trim() : ''
+                                    ASSUNTO: assuntoVal
                                 });
                             });
             
@@ -10493,16 +13082,150 @@
                     reader.readAsArrayBuffer(file);
                 },
 
+                debugRelatorioPadrao(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const firstSheet = workbook.SheetNames[0];
+                            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+
+                            if (jsonData.length === 0) {
+                                return app.ui.showAlert("Debug Relatório Padrão", "A planilha está vazia (0 linhas detectadas).", "warning");
+                            }
+
+                            const headers = Object.keys(jsonData[0]);
+                            const normalize = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                            const findCol = (kwStr, exStr = '') => {
+                                const kws = kwStr.split('|');
+                                const exs = exStr ? exStr.split('|') : [];
+                                return headers.find(h => {
+                                    const nh = normalize(h);
+                                    if (exs.length > 0 && exs.some(ex => nh.includes(normalize(ex)))) return false;
+                                    return kws.some(kw => nh.includes(normalize(kw)));
+                                });
+                            };
+
+                            let colMonitor = findCol('AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR', 'NOTA|STATUS');
+                            if (!colMonitor) {
+                                colMonitor = headers.find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
+                            }
+                            const colOperador = findCol('OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO|ATENDENTE');
+                            const colNota = findCol('NOTA|RESULTADO|PONTUACAO|PONTUAÇÃO');
+                            const colData = findCol('DATA|GRAVACAO|GRAVAÇÃO');
+                            const colOperacao = findCol('OPERACAO|OPERAÇÃO|CAMPANHA|SETOR');
+                            const colStatus = findCol('STATUS');
+                            const colAssunto = findCol('ASSUNTO|MOTIVO|SUBMOTIVO|TEMA');
+
+                            let validas = 0, pareadas = 0, naoPareadasSet = new Set();
+                            jsonData.forEach(r => {
+                                const mRaw = colMonitor ? String(r[colMonitor] || '').trim() : '';
+                                if (!mRaw) return;
+                                validas++;
+                                const mStr = app.utils.fixEncoding(mRaw).trim();
+                                let mat = mStr.includes('-') ? mStr.split('-')[0].trim() : mStr;
+                                let nomeP = mStr.includes('-') ? mStr.split('-')[1].trim() : mStr;
+                                if (app.config && app.config.aliases) {
+                                    if (app.config.aliases[mStr.toUpperCase()]) mat = app.config.aliases[mStr.toUpperCase()];
+                                    else if (app.config.aliases[mat.toUpperCase()]) mat = app.config.aliases[mat.toUpperCase()];
+                                }
+                                const uObj = app.users.find(u => u.matricula === mat || u.nome.toUpperCase() === nomeP.toUpperCase());
+                                if (uObj) pareadas++;
+                                else naoPareadasSet.add(mStr);
+                            });
+
+                            const badge = (col) => col ? `<span class="text-emerald-600 font-black">✅ "${app.utils.fixEncoding(col)}"</span>` : `<span class="text-red-500 font-black">❌ Não encontrada</span>`;
+
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-amber-500"></i> Diagnóstico do Relatório Padrão`;
+                            document.getElementById('modal-content').innerHTML = `
+                                <div class="space-y-4 text-left text-xs">
+                                    <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-2">
+                                        <div><b>Arquivo:</b> ${file.name}</div>
+                                        <div><b>Aba Lida:</b> ${firstSheet}</div>
+                                        <div><b>Total de Linhas:</b> ${jsonData.length}</div>
+                                        <div><b>Linhas c/ Monitor:</b> ${validas} (${pareadas} reconhecidas na equipe)</div>
+                                    </div>
+
+                                    <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                                        <div class="font-black uppercase text-[10px] text-slate-400 mb-1">Mapeamento de Colunas Obrigatórias e Opcionais</div>
+                                        <div>• <b>Monitor / Avaliador (Obrigatório):</b> ${badge(colMonitor)}</div>
+                                        <div>• <b>Nota / Resultado:</b> ${badge(colNota)}</div>
+                                        <div>• <b>Operador Avaliado:</b> ${badge(colOperador)}</div>
+                                        <div>• <b>Operação / Campanha:</b> ${badge(colOperacao)}</div>
+                                        <div>• <b>Data:</b> ${badge(colData)}</div>
+                                        <div>• <b>Status Feedback:</b> ${badge(colStatus)}</div>
+                                        <div>• <b>Assunto:</b> ${badge(colAssunto)}</div>
+                                    </div>
+
+                                    ${naoPareadasSet.size > 0 ? `
+                                        <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                                            <div class="font-black text-amber-700 dark:text-amber-400 mb-1"><i class="fa-solid fa-triangle-exclamation"></i> ${naoPareadasSet.size} Nome(s) de Monitor sem vínculo na Equipe:</div>
+                                            <div class="max-h-24 overflow-y-auto text-[11px] text-amber-800 dark:text-amber-300 font-mono">${Array.from(naoPareadasSet).join(' | ')}</div>
+                                        </div>
+                                    ` : ''}
+
+                                    <div>
+                                        <div class="font-black uppercase text-[10px] text-slate-400 mb-1">Todas as Colunas Encontradas no Cabeçalho (${headers.length}):</div>
+                                        <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-mono text-[10px] max-h-28 overflow-y-auto text-slate-700 dark:text-slate-300">
+                                            ${headers.map(h => `<span class="inline-block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded m-0.5">${app.utils.fixEncoding(h)}</span>`).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                            document.getElementById('modal-actions').innerHTML = `
+                                <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-sm">Fechar</button>
+                            `;
+                            document.getElementById('global-modal').classList.remove('hidden');
+                        } catch (err) {
+                            app.ui.showAlert("Erro Fatal no Debug", `O arquivo apresentou erro estrutural: <b>${err.message}</b>`, "error");
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                },
+
                 openAliasModal() {
                     const modal = document.getElementById('alias-modal');
                     const diagArea = document.getElementById('alias-diagnostic-area');
+                    const aliasesMap = (app.config && app.config.aliases) ? app.config.aliases : {};
             
+                    // Garante que qualquer linha já mapeada no aliasesMap seja atualizada antes de montar o Radar
+                    let houveAutoCorrecao = false;
+                    if(app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
+                        app.monitoriasData.detalhes.linhas.forEach(l => {
+                            if(!l.isRegisteredMonitor && l.monitor && l.monitor !== 'Não Identificado') {
+                                const mUpper = String(l.monitor).trim().toUpperCase();
+                                const mSafe = app.storage.sanitizeFirebaseKey(mUpper);
+                                const mappedMat = aliasesMap[mSafe] || aliasesMap[mUpper];
+                                if (mappedMat) {
+                                    const u = app.users.find(x => x.matricula === mappedMat);
+                                    if (u) {
+                                        l.rawMonitorOriginal = l.rawMonitorOriginal || l.monitor;
+                                        l.isRegisteredMonitor = true;
+                                        l.matriculaMonitor = u.matricula;
+                                        l.monitor = u.nome;
+                                        houveAutoCorrecao = true;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    if (houveAutoCorrecao) {
+                        this.recalcularPainelMonitorias();
+                    }
+
                     // Coleta os nomes não pareados da última importação
                     const unmatched = new Set();
                     if(app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                         app.monitoriasData.detalhes.linhas.forEach(l => {
                             if(!l.isRegisteredMonitor && l.monitor && l.monitor !== 'Não Identificado') {
-                                unmatched.add(l.monitor);
+                                const mUpper = String(l.monitor).trim().toUpperCase();
+                                const mSafe = app.storage.sanitizeFirebaseKey(mUpper);
+                                if (!aliasesMap[mSafe] && !aliasesMap[mUpper]) {
+                                    unmatched.add(String(l.monitor).trim());
+                                }
                             }
                         });
                     }
@@ -10515,19 +13238,21 @@
             
                         diagHtml = `
                             <div class="mb-6 bg-orange-50 dark:bg-orange-900/20 p-4 rounded-xl border border-orange-200 dark:border-orange-800">
-                                <h4 class="text-sm font-black text-orange-700 dark:text-orange-400 mb-1"><i class="fa-solid fa-radar text-orange-500"></i> Radar de Inconsistências</h4>
+                                <h4 class="text-sm font-black text-orange-700 dark:text-orange-400 mb-1"><i class="fa-solid fa-radar text-orange-500"></i> Radar de Inconsistências (${unmatched.size})</h4>
                                 <p class="text-[10px] text-orange-600 dark:text-orange-300 mb-4 font-bold uppercase tracking-widest">Estes nomes vieram na planilha, mas não bateram com a equipe:</p>
                                 <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
-                                    ${Array.from(unmatched).map((nome, i) => `
+                                    ${Array.from(unmatched).map((nome, i) => {
+                                        const nomeAttr = String(nome).replace(/"/g, '&quot;');
+                                        return `
                                         <div class="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-lg border border-orange-100 dark:border-orange-800/50 shadow-sm transition-transform hover:-translate-y-0.5">
-                                            <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 w-1/2 truncate" title="${nome}">${nome}</span>
+                                            <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 w-1/2 truncate" title="${nomeAttr}">${nome}</span>
                                             <i class="fa-solid fa-arrow-right text-slate-300 text-[10px]"></i>
-                                            <select id="diag-alias-${i}" data-wrong="${nome}" class="w-1/2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold outline-none cursor-pointer">
+                                            <select id="diag-alias-${i}" data-wrong="${nomeAttr}" class="w-1/2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold outline-none cursor-pointer dark:text-white">
                                                 ${userOptions}
                                             </select>
                                             <button type="button" onclick="app.admin.saveQuickAlias('diag-alias-${i}')" class="bg-green-500 hover:bg-green-600 text-white w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors shadow-sm" title="Vincular e Reprocessar Automático"><i class="fa-solid fa-check"></i></button>
                                         </div>
-                                    `).join('')}
+                                    `}).join('')}
                                 </div>
                             </div>
                         `;
@@ -10550,35 +13275,40 @@
                     const select = document.getElementById(selectId);
                     if(!select || !select.value) return app.ui.showAlert("Atenção", "Selecione o colaborador correspondente ao lado do nome errado.", "error");
                     
-                    const wrongName = select.getAttribute('data-wrong').toUpperCase();
+                    const rawWrong = String(select.getAttribute('data-wrong') || '').trim().toUpperCase();
+                    const wrongName = app.storage.sanitizeFirebaseKey(rawWrong);
                     const correctMat = select.value;
                     
                     if(!app.config.aliases) app.config.aliases = {};
                     app.config.aliases[wrongName] = correctMat;
                     
-                    app.storage.saveConfig().then(() => {
-                        app.ui.showAlert("Vínculo Criado!", "Nome mapeado. Recalculando indicadores automaticamente...", "success");
-                        
-                        // Varre a memória já carregada e corrige sem precisar importar de novo
-                        if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
-                            app.monitoriasData.detalhes.linhas.forEach(l => {
-                                if (l.monitor.toUpperCase() === wrongName) {
-                                    const u = app.users.find(x => x.matricula === correctMat);
-                                    if (u) {
-                                        l.isRegisteredMonitor = true;
-                                        l.matriculaMonitor = u.matricula;
-                                        l.monitor = u.nome;
-                                    }
+                    // Varre a memória já carregada e corrige imediatamente antes mesmo do retorno da rede
+                    if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
+                        app.monitoriasData.detalhes.linhas.forEach(l => {
+                            const lMonUpper = String(l.monitor || '').trim().toUpperCase();
+                            const lMonSafe = app.storage.sanitizeFirebaseKey(lMonUpper);
+                            if (lMonUpper === rawWrong || lMonSafe === wrongName) {
+                                const u = app.users.find(x => x.matricula === correctMat);
+                                if (u) {
+                                    l.rawMonitorOriginal = l.rawMonitorOriginal || l.monitor;
+                                    l.isRegisteredMonitor = true;
+                                    l.matriculaMonitor = u.matricula;
+                                    l.monitor = u.nome;
                                 }
-                            });
-                            this.recalcularPainelMonitorias();
-                        }
-                        this.openAliasModal(); // Atualiza o radar
+                            }
+                        });
+                        this.recalcularPainelMonitorias();
+                    }
+
+                    app.storage.saveConfig().then(() => {
+                        this.openAliasModal(); // Atualiza o radar imediatamente (item vinculado some!)
+                        app.ui.showAlert("Vínculo Criado!", "Nome mapeado e salvo permanentemente. Indicadores recalculados!", "success");
                     });
                 },
             
                 saveAlias() {
-                    const wrongName = document.getElementById('alias-wrong-name').value.trim().toUpperCase();
+                    const rawWrong = document.getElementById('alias-wrong-name').value.trim().toUpperCase();
+                    const wrongName = app.storage.sanitizeFirebaseKey(rawWrong);
                     const correctMat = document.getElementById('alias-correct-user').value;
                     
                     if(!wrongName || !correctMat) return app.ui.showAlert("Erro", "Preencha o nome incorreto e selecione o colaborador correto.", "error");
@@ -10586,10 +13316,28 @@
                     if(!app.config.aliases) app.config.aliases = {};
                     app.config.aliases[wrongName] = correctMat; 
                     
+                    // Também aplica imediatamente sobre as monitorias já importadas na memória
+                    if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
+                        app.monitoriasData.detalhes.linhas.forEach(l => {
+                            const lMonUpper = String(l.monitor || '').trim().toUpperCase();
+                            const lMonSafe = app.storage.sanitizeFirebaseKey(lMonUpper);
+                            if (lMonUpper === rawWrong || lMonSafe === wrongName) {
+                                const u = app.users.find(x => x.matricula === correctMat);
+                                if (u) {
+                                    l.rawMonitorOriginal = l.rawMonitorOriginal || l.monitor;
+                                    l.isRegisteredMonitor = true;
+                                    l.matriculaMonitor = u.matricula;
+                                    l.monitor = u.nome;
+                                }
+                            }
+                        });
+                        this.recalcularPainelMonitorias();
+                    }
+
                     app.storage.saveConfig().then(() => {
                         document.getElementById('alias-wrong-name').value = '';
                         this.openAliasModal(); // Refresca as duas partes da tela
-                        app.ui.showAlert("Salvo", "Vínculo manual criado com sucesso!", "success");
+                        app.ui.showAlert("Salvo", "Vínculo manual criado e aplicado com sucesso!", "success");
                     });
                 },
                 
@@ -10605,6 +13353,7 @@
                         const mat = app.config.aliases[wrongName];
                         const u = app.users.find(x => x.matricula === mat);
                         const correctName = u ? u.nome : mat;
+                        const safeWrong = String(wrongName).replace(/'/g, "\\'");
                         
                         html += `
                             <div class="flex justify-between items-center text-xs bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -10613,7 +13362,7 @@
                                     <i class="fa-solid fa-arrow-right mx-2 text-slate-400"></i> 
                                     <span class="text-green-600 font-bold">${correctName}</span>
                                 </div>
-                                <button onclick="app.admin.removeAlias('${wrongName}')" class="text-slate-400 hover:text-red-600 transition-colors p-1"><i class="fa-solid fa-trash"></i></button>
+                                <button onclick="app.admin.removeAlias('${safeWrong}')" class="text-slate-400 hover:text-red-600 transition-colors p-1"><i class="fa-solid fa-trash"></i></button>
                             </div>
                         `;
                     }
@@ -10622,7 +13371,7 @@
                 
                 removeAlias(wrongName) {
                     delete app.config.aliases[wrongName];
-                    app.storage.saveConfig().then(() => this.renderAliasList());
+                    app.storage.saveConfig().then(() => this.openAliasModal());
                 },
 
                 processarImportacaoTripla(input) {
@@ -11179,20 +13928,21 @@
                             rows.forEach(row => {
                                 const getVal = (keywords) => {
                                     const key = Object.keys(row).find(k => {
-                                        const norm = k.toUpperCase().replace(/[^A-Z]/g, '');
+                                        const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                        const norm = app.utils.fixEncoding(kClean).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
                                         return keywords.some(kw => norm.includes(kw));
                                     });
                                     return key ? row[key] : undefined;
                                 };
 
-                                const setor = getVal(['OPERACAO', 'SETOR', 'ILHA', 'CAMPANHA']);
+                                const setor = getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
                                 const notaRaw = getVal(['NOTAMONITORIA', 'NOTA', 'RESULTADO', 'PONTUACAO']);
 
                                 if (setor && typeof setor === 'string' && notaRaw !== undefined && notaRaw !== "") {
-                                    const setorLimpo = setor.trim().toUpperCase();
+                                    const setorLimpo = app.utils.fixEncoding(String(setor)).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
                                     let notaFormatada = typeof notaRaw === 'string' ? parseFloat(notaRaw.replace(',', '.')) : parseFloat(notaRaw);
                                     
-                                    if (!isNaN(notaFormatada)) {
+                                    if (!isNaN(notaFormatada) && setorLimpo !== "") {
                                         if (!app.visaoGeralData[setorLimpo]) {
                                             app.visaoGeralData[setorLimpo] = { count: 0, somaNotas: 0 };
                                         }
@@ -11202,9 +13952,9 @@
                                 }
                             });
 
-                            // Salva e recarrega
-                            localforage.setItem('soft_visao_geral', app.visaoGeralData).then(() => {
-                                app.ui.showAlert("Triangulação Concluída!", "O sistema cruzou com sucesso a quantidade de funcionários do RH com as monitorias deste CSV.", "success");
+                            // Salva na nuvem (Firebase) + LocalStorage + LocalForage e recarrega
+                            app.storage.saveVisaoGeral().then(() => {
+                                app.ui.showAlert("Triangulação Concluída!", "O sistema cruzou com sucesso a quantidade de funcionários do RH com as monitorias deste CSV e salvou permanentemente.", "success");
                                 app.ui.renderTab('analitico_visao_geral', true);
                             });
 
@@ -12536,6 +15286,7 @@
                     const nome = document.getElementById('cad-nome').value.trim();
                     const mat = document.getElementById('cad-mat').value.trim();
                     const pwd = document.getElementById('cad-pwd').value.trim();
+                    const tipoAcesso = document.getElementById('cad-tipo-acesso')?.value || 'Qualidade';
                     const fileInput = document.getElementById('cad-foto');
                     
                     const checkboxes = document.querySelectorAll('.cad-op-check:checked');
@@ -12547,7 +15298,7 @@
                     if(app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
 
                     const saveFinal = (fotoBase64) => {
-                        app.users.push({ nome, matricula: mat, senha: pwd, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        app.users.push({ nome, matricula: mat, senha: pwd, tipoAcesso, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
                         app.storage.saveUsers().then(() => {
                             app.ui.closeAddUserModal();
                             app.ui.renderTab('gestao_equipe', true);
@@ -12570,6 +15321,8 @@
                     document.getElementById('edit-nome').value = u.nome;
                     document.getElementById('edit-mat').value = u.matricula;
                     document.getElementById('edit-pwd').value = '';
+                    const selTipo = document.getElementById('edit-tipo-acesso');
+                    if (selTipo) selTipo.value = u.tipoAcesso || 'Qualidade';
                     
                     const imgPreview = document.getElementById('edit-foto-preview');
                     if (u.foto) { imgPreview.src = u.foto; imgPreview.classList.remove('hidden'); } 
@@ -12577,10 +15330,12 @@
                     
                     document.getElementById('edit-foto').value = '';
                 
+                    app.syncOperacoesFromSetorial();
                     const containerOps = document.getElementById('edit-ops-container');
                     containerOps.innerHTML = Object.values(app.operacoesList).map(op => {
                         const checked = (u.operacoes || []).includes(op.nome) ? 'checked' : '';
-                        return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors"><input type="checkbox" value="${op.nome}" class="edit-op-check w-4 h-4 accent-purple-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${op.nome}</span></label>`;
+                        const hc = app.getHeadcountOperacao(op.nome);
+                        return `<label class="flex items-center justify-between gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-green-500 transition-colors"><span class="flex items-center gap-2 min-w-0"><input type="checkbox" value="${op.nome}" class="edit-op-check w-4 h-4 accent-purple-600 shrink-0" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase truncate">${op.nome}</span></span><span class="text-[10px] font-black px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 shrink-0">${hc} op.</span></label>`;
                     }).join('');
                 
                     const containerAbas = document.getElementById('edit-abas-container');
@@ -12594,12 +15349,14 @@
                         return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors"><input type="checkbox" value="${tab.id}" class="edit-aba-check w-4 h-4 accent-blue-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span></label>`;
                     }).join('');
                 
-                    // Trava de Segurança: Esconde Abas e Operações se o usuário não for Admin
+                    // Trava de Segurança: Esconde Abas e Operações se o usuário não tiver permissão de Gestão da Equipe
                     const adminBlocks = document.getElementById('edit-ops-container').parentElement;
-                    if (!app.isAdmin) {
+                    if (!app.hasAdminAccess('gestao_equipe')) {
                         adminBlocks.classList.add('hidden');
+                        if (selTipo) selTipo.parentElement.classList.add('hidden');
                     } else {
                         adminBlocks.classList.remove('hidden');
+                        if (selTipo) selTipo.parentElement.classList.remove('hidden');
                     }
                 
                     document.getElementById('edit-user-modal').classList.remove('hidden');
@@ -12610,6 +15367,7 @@
                     const nome = document.getElementById('edit-nome').value.trim();
                     const mat = document.getElementById('edit-mat').value.trim();
                     const pwd = document.getElementById('edit-pwd').value.trim();
+                    const tipoAcesso = document.getElementById('edit-tipo-acesso')?.value || 'Qualidade';
                     const fileInput = document.getElementById('edit-foto');
                     
                     const checkboxes = document.querySelectorAll('.edit-op-check:checked');
@@ -12627,8 +15385,9 @@
                     const executeSave = (fotoBase64) => {
                         app.users[idx].nome = nome;
                         app.users[idx].matricula = mat;
+                        app.users[idx].tipoAcesso = tipoAcesso;
                         app.users[idx].operacoes = operacoes;
-                        app.users[idx].abasLiberadas = abasLiberadas; // <-- Nova linha
+                        app.users[idx].abasLiberadas = abasLiberadas;
                         if(pwd) app.users[idx].senha = pwd;
                         if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
 
@@ -12755,58 +15514,153 @@
                     app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
                 },
 
+                getUserMonthValidationInfo(u, month = app.currentMonth) {
+                    return app.ui.getUserMonthValidationInfo(u, month);
+                },
+                setCadastrosFilter(status) {
+                    app.ui.setCadastrosFilter(status);
+                },
+                setCadastrosSearch(val) {
+                    app.ui.setCadastrosSearch(val);
+                },
+                selectUserForCadastros(mat) {
+                    app.ui.selectUserForCadastros(mat);
+                },
+                navigateCadastrosUser(direction) {
+                    app.ui.navigateCadastrosUser(direction);
+                },
+                renderCadastrosUserList() {
+                    app.ui.renderCadastrosUserList();
+                },
+
                 loadUserEditor() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    if(!mat) {
-                        document.getElementById('adm-editor-area').classList.add('hidden');
-                        window.selectedAdminEditUser = null;
+                    const selectEl = document.getElementById('adm-user-select');
+                    const mat = selectEl ? selectEl.value : window.selectedAdminEditUser;
+                    const editorArea = document.getElementById('adm-editor-area');
+                    if (!editorArea) return;
+
+                    if (!mat) {
+                        editorArea.innerHTML = `
+                            <div class="p-12 text-center text-slate-400 dark:text-slate-500">
+                                <i class="fa-solid fa-hand-pointer text-3xl mb-3 block opacity-50"></i>
+                                Selecione um colaborador na lista ao lado para lançar ou validar suas notas.
+                            </div>
+                        `;
                         return;
                     }
                     window.selectedAdminEditUser = mat;
+                    if (selectEl) selectEl.value = mat;
 
                     const u = app.users.find(x => x.matricula === mat);
-                    const r = (u.results && u.results[app.currentMonth]) || {};
-                    const isLocked = r.status === 'validado';
+                    if (!u) return;
 
-                    let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative">`;
+                    const info = app.ui.getUserMonthValidationInfo(u);
+                    const r = info.r;
+                    const isLocked = info.status === 'validado';
+                    const avatar = u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.nome)}&background=cbd5e1&color=ffffff`;
+
+                    let statusHeaderBadge = '';
+                    if (info.status === 'validado') {
+                        statusHeaderBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 flex items-center gap-1.5"><i class="fa-solid fa-circle-check"></i> Validado pelo Colaborador ${r.signedAt ? `(${r.signedAt})` : ''}</span>`;
+                    } else if (info.status === 'agendado') {
+                        statusHeaderBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 flex items-center gap-1.5"><i class="fa-solid fa-calendar-check"></i> Agendado (${(r.fbDate || '').split('-').reverse().join('/')} às ${r.fbTime || '--:--'})</span>`;
+                    } else if (info.status === 'pendente') {
+                        statusHeaderBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 flex items-center gap-1.5"><i class="fa-solid fa-hourglass-half"></i> Pendente de Validação</span>`;
+                    } else {
+                        statusHeaderBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 flex items-center gap-1.5"><i class="fa-regular fa-circle"></i> Sem Lançamento no Mês</span>`;
+                    }
+
+                    let html = `
+                        <!-- Cabeçalho do Colaborador Selecionado + Navegação Rápida -->
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-slate-200 dark:border-slate-800">
+                            <div class="flex items-center gap-3.5">
+                                <img src="${avatar}" class="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-sm">
+                                <div>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">${u.nome}</h3>
+                                        <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">#${u.matricula}</span>
+                                    </div>
+                                    <div class="text-[11px] text-slate-400 mt-0.5">${(u.operacoes && u.operacoes.length) ? u.operacoes.join(' • ') : 'Sem operação vinculada'}</div>
+                                    <div class="mt-2 flex flex-wrap gap-2">${statusHeaderBadge}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 self-end sm:self-center">
+                                <button type="button" onclick="app.ui.navigateCadastrosUser(-1)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center gap-1.5" title="Colaborador Anterior">
+                                    <i class="fa-solid fa-chevron-left text-[10px]"></i> Anterior
+                                </button>
+                                <button type="button" onclick="app.ui.navigateCadastrosUser(1)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center gap-1.5" title="Próximo Colaborador">
+                                    Próximo <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- BARRA DE VALOR FINAL EM TEMPO REAL (LIVE PREVIEW) -->
+                        <div class="px-5 py-4 rounded-2xl bg-slate-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <div class="text-[10px] font-black uppercase tracking-widest text-indigo-300 flex items-center gap-1.5">
+                                    Valor final • ${app.ui.formatMonthLabel(app.currentMonth)}
+                                </div>
+                                <div class="flex items-baseline gap-3 mt-1">
+                                    <span id="live-total-received" class="text-3xl md:text-4xl font-black text-emerald-400">R$ ${info.total.received.toFixed(2)}</span>
+                                    <span class="text-xs text-slate-300">de R$ ${(app.config.baseValue || 400).toFixed(2)} possíveis</span>
+                                </div>
+                                <div id="live-goals-mini-breakdown" class="hidden"></div>
+                            </div>
+                            <div class="text-right self-stretch md:self-auto flex md:flex-col justify-between items-center md:items-end">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-200">Aproveitamento Final</span>
+                                <span id="live-total-pct" class="text-2xl font-black text-white">${(info.total.pct * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+
+                        <!-- GRADE DE INDICADORES / METAS -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 relative">
+                    `;
                     
                     if(isLocked) {
-                        html += `<div class="absolute inset-0 bg-slate-900/5 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl cursor-not-allowed group">
-                                    <div class="bg-white px-6 py-3 rounded-full font-bold text-red-600 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity border border-red-200"><i class="fa-solid fa-lock"></i> Resultados já validados e travados. Desbloqueie abaixo se precisar alterar.</div>
+                        html += `<div class="absolute inset-0 bg-slate-900/5 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-2xl cursor-not-allowed group">
+                                    <div class="bg-white dark:bg-slate-900 px-6 py-3 rounded-full font-bold text-emerald-600 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity border border-emerald-200 flex items-center gap-2"><i class="fa-solid fa-lock"></i> Notas assinadas e validadas pelo colaborador. Desbloqueie abaixo se precisar alterar.</div>
                                  </div>`;
                     }
 
                     app.config.goals.forEach(g => {
                         const v = r[g.id] || {};
-                        html += `<div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
-                                    <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2"><i class="fa-solid ${g.icon} text-slate-400"></i> ${g.title}</h4>`;
+                        const calcRes = app.calc.getGoalResult(g.id, r);
+                        const maxFatia = (app.config.baseValue || 400) * (g.weight || 0);
+                        const pesoPct = ((g.weight || 0) * 100).toFixed(0);
+
+                        html += `<div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex justify-between items-start gap-2 mb-3">
+                                            <h4 class="font-bold text-xs text-slate-700 dark:text-slate-200 flex items-center gap-2"><i class="fa-solid ${g.icon} text-indigo-500"></i> ${g.title}</h4>
+                                            <span class="text-[10px] font-semibold text-slate-400 shrink-0">${pesoPct}% · R$ ${maxFatia.toFixed(0)}</span>
+                                        </div>`;
                         
                         if (g.type === 'percent') {
                             if(g.id === 'g1') {
                                 html += `<div class="flex gap-3">
                                             <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="text" value="400" disabled class="w-full p-2.5 rounded-lg border bg-slate-100 dark:bg-slate-800 outline-none text-sm text-slate-500"></div>
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
                                          </div>`;
                             } else if (g.id === 'g2') {
                                 html += `<div class="flex gap-3">
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta FB <span class="text-blue-500">(Auto/Editável)</span></label><input type="number" id="input-${g.id}-meta" value="${v.meta || '0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado FB <span class="text-blue-500">(Auto/Editável)</span></label><input type="number" id="input-${g.id}-real" value="${v.real || '0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta FB <span class="text-blue-500">(Auto/Editável)</span></label><input type="number" id="input-${g.id}-meta" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.meta || '0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado FB <span class="text-blue-500">(Auto/Editável)</span></label><input type="number" id="input-${g.id}-real" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.real || '0'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
                                          </div>`;
                             } else {
                                 html += `<div class="flex gap-3">
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="number" id="input-${g.id}-meta" value="${v.meta||'100'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
-                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Meta</label><input type="number" id="input-${g.id}-meta" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.meta||'100'}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none text-sm dark:text-white"></div>
+                                            <div class="flex-1"><label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Realizado</label><input type="number" id="input-${g.id}-real" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.real||''}" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border focus:ring-2 focus:ring-green-500 outline-none text-sm bg-green-50 dark:bg-green-900/20 dark:text-white font-bold text-green-700"></div>
                                          </div>`;
                             }
                         } else if (g.type === 'calibracao') {
                             html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qtd. Sessões <span class="text-blue-500">(Editável)</span></label>
-                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
+                                     <input type="number" id="input-${g.id}-val" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
                         } else if (g.type === 'actions') {
                             html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Ações Validadas <span class="text-blue-500">(Editável)</span></label>
-                                     <input type="number" id="input-${g.id}-val" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
+                                     <input type="number" id="input-${g.id}-val" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
                         } else if (g.type === 'gestor') {
                             html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Impacto Final (%)</label>
-                                     <select id="input-${g.id}-val" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
+                                     <select id="input-${g.id}-val" onchange="app.admin.updateLiveScorePreview()" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
                                         <option value="100" ${v.val==='100'?'selected':''}>100%</option>
                                         <option value="75" ${v.val==='75'?'selected':''}>75%</option>
                                         <option value="50" ${v.val==='50'?'selected':''}>50%</option>
@@ -12815,53 +15669,67 @@
                                      </select>`;
                         } else {
                             html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Cumprimento da Regra</label>
-                                     <select id="input-${g.id}-val" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
+                                     <select id="input-${g.id}-val" onchange="app.admin.updateLiveScorePreview()" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
                                         <option value="Não" ${v.val==='Não'?'selected':''}>Não</option>
                                         <option value="Sim" ${v.val==='Sim'?'selected':''}>Sim</option>
                                      </select>`;
                         }
-                        html += `</div>`;
+
+                        html += `   </div>
+                                    <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs">
+                                        <span id="live-goal-mult-${g.id}" class="font-bold text-slate-500 dark:text-slate-400">Resultado: ${calcRes.display} (${(calcRes.mult * 100).toFixed(0)}%)</span>
+                                        <span id="live-goal-rec-${g.id}" class="font-black text-emerald-600 dark:text-emerald-400">R$ ${calcRes.received.toFixed(2)}</span>
+                                    </div>
+                                </div>`;
                     });
 
-                    // Workflow de Aprovação
+                    // Workflow de Aprovação e Assinatura com Senha do Usuário
                     html += `
                         </div>
-                        <div class="mt-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-100 dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 relative z-0">
+                        <div class="mt-4 flex flex-col gap-4 pt-4 border-t border-slate-200 dark:border-slate-800 relative z-0">
                     `;
 
                     if(isLocked) {
                         html += `
-                            <div>
-                                <h4 class="font-bold text-green-600 flex items-center gap-2"><i class="fa-solid fa-lock"></i> Entregas Validadas</h4>
-                                <p class="text-xs text-slate-500">As métricas deste mês já foram assinadas pelo colaborador e não podem mais ser alteradas no fluxo normal.</p>
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div>
+                                    <h4 class="font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center gap-2"><i class="fa-solid fa-file-signature"></i> Bonificação Validada com a Senha do Colaborador</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Assinado digitalmente por <strong>${u.nome}</strong> (${u.matricula})${r.signedAt ? ` em <strong>${r.signedAt}</strong>` : ''}. As notas estão travadas.</p>
+                                </div>
+                                <button type="button" onclick="app.admin.unlockResults()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 font-bold py-2.5 px-5 rounded-xl border border-red-200 dark:border-red-800 transition text-xs shrink-0">
+                                    <i class="fa-solid fa-unlock mr-1"></i> Desbloquear Edição
+                                </button>
                             </div>
-                            <button onclick="app.admin.unlockResults()" class="bg-red-50 text-red-600 hover:bg-red-100 font-bold py-2.5 px-6 rounded-xl border border-red-200 transition text-sm">
-                                <i class="fa-solid fa-unlock"></i> Desbloquear Edição
-                            </button>
                         `;
                     } else if (r.status === 'agendado') {
                         html += `
-                            <div>
-                                <h4 class="font-bold text-blue-600 flex items-center gap-2"><i class="fa-solid fa-calendar-check"></i> Aguardando Assinatura do Monitor</h4>
-                                <p class="text-xs text-slate-500">Agendado para: <strong>${r.fbDate.split('-').reverse().join('/')} às ${r.fbTime}</strong></p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="app.admin.confirmFeedbackPresence()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition text-sm"><i class="fa-solid fa-signature"></i> Assinar Digitalmente e Travar Notas</button>
-                                <button onclick="app.admin.cancelSchedule()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-4 rounded-xl transition text-sm">Desfazer Agenda</button>
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h4 class="font-extrabold text-blue-600 dark:text-blue-400 flex items-center gap-2"><i class="fa-solid fa-calendar-check"></i> Feedback Agendado — Aguardando Assinatura com Senha do Colaborador</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Marcado para: <strong>${(r.fbDate || '').split('-').reverse().join('/')} às ${r.fbTime || '--:--'}</strong></p>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button type="button" onclick="app.admin.checkEditsAndSave(false)" class="bg-slate-800 hover:bg-black text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition text-xs"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Ajustes</button>
+                                    <button type="button" onclick="app.admin.confirmFeedbackPresence(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition text-xs"><i class="fa-solid fa-key mr-1"></i> Validar com Senha do Colaborador</button>
+                                    <button type="button" onclick="app.admin.cancelSchedule()" class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl transition text-xs">Desfazer Agenda</button>
+                                </div>
                             </div>
                         `;
                     } else {
                         html += `
-                            <div class="flex-1">
-                                <h4 class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-3"><i class="fa-solid fa-calendar-plus text-blue-500"></i> Agendar Feedback do Monitor</h4>
-                                <div class="flex gap-3">
-                                    <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data</label><input type="date" id="schedule-date" class="w-full p-2.5 rounded-lg border outline-none text-sm dark:bg-slate-900 dark:text-white" min="${new Date().toISOString().split('T')[0]}"></div>
-                                    <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Horário</label><input type="time" id="schedule-time" class="w-full p-2.5 rounded-lg border outline-none text-sm dark:bg-slate-900 dark:text-white"></div>
+                            <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 items-end">
+                                <div class="xl:col-span-5">
+                                    <h4 class="font-bold text-xs text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-2"><i class="fa-solid fa-calendar-plus text-blue-500"></i> Agendar Feedback (Opcional)</h4>
+                                    <div class="flex gap-2">
+                                        <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data</label><input type="date" id="schedule-date" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 outline-none text-xs dark:bg-slate-900 dark:text-white" min="${new Date().toISOString().split('T')[0]}"></div>
+                                        <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Horário</label><input type="time" id="schedule-time" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 outline-none text-xs dark:bg-slate-900 dark:text-white"></div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="flex flex-col gap-2 mt-4 md:mt-0">
-                                <button onclick="app.admin.checkEditsAndSave(false)" class="bg-slate-800 hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-floppy-disk"></i> Salvar Lançamentos Apenas</button>
-                                <button onclick="app.admin.checkEditsAndSave(true)" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition text-sm uppercase tracking-widest"><i class="fa-solid fa-paper-plane"></i> Salvar Lançamentos e Agendar Feedback</button>
+                                <div class="xl:col-span-7 flex flex-wrap justify-end gap-2">
+                                    <button type="button" onclick="app.admin.checkEditsAndSave(false)" class="bg-slate-800 hover:bg-black text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition text-xs"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Notas</button>
+                                    <button type="button" onclick="app.admin.checkEditsAndSave(true)" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition text-xs"><i class="fa-solid fa-calendar-check mr-1"></i> Salvar e Agendar</button>
+                                    <button type="button" onclick="app.admin.confirmFeedbackPresence(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition text-xs"><i class="fa-solid fa-key mr-1"></i> Assinar Agora (Senha do Usuário)</button>
+                                </div>
                             </div>
                         `;
                     }
@@ -12870,8 +15738,8 @@
                     // ADICIONA O HISTÓRICO DE EDIÇÕES AUDITADAS
                     if (r.editHistory && r.editHistory.length > 0) {
                         html += `
-                            <div class="mt-6">
-                                <h4 class="font-bold text-slate-700 dark:text-slate-300 text-sm mb-4"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico de Alterações Manuais</h4>
+                            <div class="mt-4">
+                                <h4 class="font-bold text-slate-700 dark:text-slate-300 text-sm mb-3"><i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Histórico de Alterações Manuais</h4>
                                 <div class="space-y-3">
                                     ${r.editHistory.map(h => `
                                         <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm text-xs">
@@ -12890,25 +15758,50 @@
                         `;
                     }
                     
-                    document.getElementById('adm-editor-area').innerHTML = html;
-                    document.getElementById('adm-editor-area').classList.remove('hidden');
+                    editorArea.innerHTML = html;
+                    editorArea.classList.remove('hidden');
+                    this.updateLiveScorePreview();
+                },
+
+                updateLiveScorePreview() {
+                    const liveData = this.collectResultsFromDOM();
+                    const total = app.calc.getTotal(liveData);
+
+                    const totalRecEl = document.getElementById('live-total-received');
+                    const totalPctEl = document.getElementById('live-total-pct');
+                    const breakdownEl = document.getElementById('live-goals-mini-breakdown');
+
+                    if (totalRecEl) totalRecEl.textContent = `R$ ${total.received.toFixed(2)}`;
+                    if (totalPctEl) totalPctEl.textContent = `${(total.pct * 100).toFixed(1)}%`;
+
+                    let pillsHtml = '';
+                    app.config.goals.forEach(g => {
+                        const r = app.calc.getGoalResult(g.id, liveData);
+                        const multEl = document.getElementById(`live-goal-mult-${g.id}`);
+                        const recEl = document.getElementById(`live-goal-rec-${g.id}`);
+                        if (multEl) multEl.textContent = `Resultado: ${r.display} (${(r.mult * 100).toFixed(0)}%)`;
+                        if (recEl) recEl.textContent = `R$ ${r.received.toFixed(2)}`;
+
+                        pillsHtml += `<span class="px-2 py-0.5 rounded bg-white/10 text-[10px] font-bold ${r.received > 0 ? 'text-emerald-300' : 'text-slate-400'}">${g.title}: R$ ${r.received.toFixed(2)}</span>`;
+                    });
+                    if (breakdownEl) breakdownEl.innerHTML = pillsHtml;
                 },
 
                 collectResultsFromDOM(dadosAtuaisDoBanco = {}) {
                     const res = {};
                     app.config.goals.forEach(g => {
                         if (g.type === 'percent') {
-                            const meta = g.id === 'g1' ? 400 : (document.getElementById(`input-${g.id}-meta`).value || 0);
-                            const real = document.getElementById(`input-${g.id}-real`).value || 0;
-                            
-                            // A meta de Feedbacks (g2) agora é editável e salva junto com as demais
+                            const metaEl = document.getElementById(`input-${g.id}-meta`);
+                            const realEl = document.getElementById(`input-${g.id}-real`);
+                            const meta = g.id === 'g1' ? 400 : ((metaEl && metaEl.value) || 0);
+                            const real = (realEl && realEl.value) || 0;
                             res[g.id] = { meta, real };
-                                } else {
-                                    // Agora coleta livremente os dados das calibrações e ações também!
-                                    const val = document.getElementById(`input-${g.id}-val`).value || '';
-                                    res[g.id] = { val };
-                                }
-                            });
+                        } else {
+                            const valEl = document.getElementById(`input-${g.id}-val`);
+                            const val = (valEl && valEl.value) || '';
+                            res[g.id] = { val };
+                        }
+                    });
                     return res;
                 },
 
@@ -13032,32 +15925,118 @@
 
                     app.storage.saveUsers().then(() => {
                         app.ui.showAlert("Sucesso", isScheduling ? "Notas salvas e feedback agendado na plataforma." : "Notas salvas com sucesso.", "success");
+                        this.renderCadastrosUserList();
                         this.loadUserEditor();
                     });
                 },
 
-                confirmFeedbackPresence() {
-                    const mat = document.getElementById('adm-user-select').value;
+                confirmFeedbackPresence(saveCurrentDOMFirst = true) {
+                    const selectEl = document.getElementById('adm-user-select');
+                    const mat = selectEl ? selectEl.value : window.selectedAdminEditUser;
                     const idx = app.users.findIndex(u => u.matricula === mat);
                     if(idx === -1) return;
 
-                    app.ui.showConfirm("Atenção", "Confirmar assinatura? O ciclo de avaliação deste mês será fechado e as notas travadas.", `app.admin.execConfirmFeedback('${mat}')`, true);
+                    const u = app.users[idx];
+                    const liveData = saveCurrentDOMFirst ? this.collectResultsFromDOM() : ((u.results && u.results[app.currentMonth]) || {});
+                    const total = app.calc.getTotal(liveData);
+
+                    const goalsSummaryHtml = app.config.goals.map(g => {
+                        const res = app.calc.getGoalResult(g.id, liveData);
+                        return `
+                            <div class="flex justify-between items-center text-xs py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                <span class="font-bold text-slate-600 dark:text-slate-300"><i class="fa-solid ${g.icon} text-indigo-500 mr-1.5"></i>${g.title}</span>
+                                <div class="text-right">
+                                    <span class="text-slate-400 mr-2">${res.display} (${(res.mult * 100).toFixed(0)}%)</span>
+                                    <span class="font-black text-emerald-600 dark:text-emerald-400">R$ ${res.received.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-file-signature text-emerald-500"></i> Assinatura Digital do Colaborador`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <div class="p-4 rounded-2xl bg-slate-900 text-white flex justify-between items-center">
+                                <div>
+                                    <div class="text-[10px] uppercase font-bold text-indigo-300">Colaborador • ${app.ui.formatMonthLabel(app.currentMonth)}</div>
+                                    <div class="font-black text-base">${u.nome} <span class="text-xs font-normal text-slate-400">(#${u.matricula})</span></div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-[10px] uppercase font-bold text-emerald-300">Valor Final</div>
+                                    <div class="text-2xl font-black text-emerald-400">R$ ${total.received.toFixed(2)}</div>
+                                    <div class="text-[10px] text-slate-300">${(total.pct * 100).toFixed(1)}% de aproveitamento</div>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                                <div class="text-[10px] font-black uppercase text-slate-400 mb-2">Resumo das Metas Validando Agora</div>
+                                ${goalsSummaryHtml}
+                            </div>
+
+                            <div class="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                                <label class="block text-xs font-extrabold text-emerald-900 dark:text-emerald-300 mb-1.5">
+                                    <i class="fa-solid fa-key mr-1"></i> Senha Pessoal do Colaborador (${u.nome})
+                                </label>
+                                <p class="text-[11px] text-emerald-700 dark:text-emerald-400 mb-3">Peça para o colaborador digitar a sua própria senha de login abaixo para confirmar ciência e assinar o fechamento do mês:</p>
+                                <input type="password" id="user-signature-pwd-input" onkeydown="if(event.key==='Enter') app.admin.execConfirmFeedback('${u.matricula}')" placeholder="Digite a senha do colaborador..." class="w-full p-3 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                                <div id="user-signature-pwd-error" class="hidden mt-2 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-exclamation"></i> <span>Senha incorreta! A assinatura exige a senha pessoal do colaborador.</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-colors">Cancelar</button>
+                        <button type="button" onclick="app.admin.execConfirmFeedback('${u.matricula}')" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs shadow-md transition-all flex items-center gap-1.5"><i class="fa-solid fa-check-double"></i> Confirmar Senha e Validar</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                    setTimeout(() => {
+                        const inp = document.getElementById('user-signature-pwd-input');
+                        if (inp) inp.focus();
+                    }, 100);
                 },
 
                 execConfirmFeedback(mat) {
                     const idx = app.users.findIndex(u => u.matricula === mat);
-                    if(idx > -1 && app.users[idx].results[app.currentMonth]) {
-                        app.users[idx].results[app.currentMonth].status = 'validado';
-                        app.storage.saveUsers().then(() => {
-                            app.ui.showAlert("Sucesso", "Feedback assinado digitalmente e indicadores travados.", "success");
-                            this.loadUserEditor();
-                        });
+                    if (idx === -1) return;
+                    const u = app.users[idx];
+
+                    const pwdInput = document.getElementById('user-signature-pwd-input');
+                    const errBox = document.getElementById('user-signature-pwd-error');
+                    if (pwdInput) {
+                        const typedPwd = pwdInput.value.trim();
+                        if (!typedPwd || String(typedPwd) !== String(u.senha)) {
+                            if (errBox) errBox.classList.remove('hidden');
+                            pwdInput.classList.add('border-red-500', 'ring-2', 'ring-red-500');
+                            pwdInput.focus();
+                            return;
+                        }
                     }
+
+                    if (!u.results) u.results = {};
+                    const prevMonthData = u.results[app.currentMonth] || {};
+                    const currentDOMData = this.collectResultsFromDOM(prevMonthData);
+
+                    u.results[app.currentMonth] = {
+                        ...prevMonthData,
+                        ...currentDOMData,
+                        status: 'validado',
+                        signedAt: new Date().toLocaleString('pt-BR'),
+                        signedByMat: u.matricula,
+                        editHistory: prevMonthData.editHistory || []
+                    };
+
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.storage.saveUsers().then(() => {
+                        app.ui.showAlert("Validado com Sucesso! ✅", `Bonificação de <strong>${u.nome}</strong> assinada digitalmente com a senha do colaborador e travada.`, "success");
+                        this.renderCadastrosUserList();
+                        this.loadUserEditor();
+                    });
                 },
 
                 unlockResults() {
                     const mat = document.getElementById('adm-user-select').value;
-                    app.ui.showConfirm("Aviso", "Desbloquear vai exigir que o colaborador assine a bonificação novamente. Continuar?", `app.admin.execUnlock('${mat}')`, true);
+                    app.ui.showConfirm("Aviso", "Desbloquear vai exigir que o colaborador assine a bonificação novamente com a senha dele. Continuar?", `app.admin.execUnlock('${mat}')`, true);
                 },
 
                 execUnlock(mat) {
@@ -13066,8 +16045,11 @@
                         app.users[idx].results[app.currentMonth].status = 'pendente';
                         delete app.users[idx].results[app.currentMonth].fbDate;
                         delete app.users[idx].results[app.currentMonth].fbTime;
+                        delete app.users[idx].results[app.currentMonth].signedAt;
+                        delete app.users[idx].results[app.currentMonth].signedByMat;
                         app.storage.saveUsers().then(() => {
-                            app.ui.showAlert("Feito", "Resultados desbloqueados. Edite e agende um novo feedback.", "info");
+                            app.ui.showAlert("Feito", "Resultados desbloqueados. Edite e valide novamente com o colaborador.", "info");
+                            this.renderCadastrosUserList();
                             this.loadUserEditor();
                         });
                     }
@@ -13080,7 +16062,10 @@
                         app.users[idx].results[app.currentMonth].status = 'pendente';
                         delete app.users[idx].results[app.currentMonth].fbDate;
                         delete app.users[idx].results[app.currentMonth].fbTime;
-                        app.storage.saveUsers().then(() => { this.loadUserEditor(); });
+                        app.storage.saveUsers().then(() => {
+                            this.renderCadastrosUserList();
+                            this.loadUserEditor();
+                        });
                     }
                 },
 
@@ -13089,6 +16074,7 @@
                 },
                 execClearAllUsersMonth() {
                     app.users.forEach(u => {
+                        if (!app.isUserQualidade(u)) return;
                         if (u.results && u.results[app.currentMonth]) { 
                             const monthData = u.results[app.currentMonth];
                             // Zera apenas as métricas operacionais manuais, protegendo as métricas automáticas (Atas e Ações)
@@ -13102,10 +16088,13 @@
                                 }
                             });
                             monthData.status = 'pendente';
+                            delete monthData.signedAt;
+                            delete monthData.signedByMat;
                         }
                     });
                     app.storage.saveUsers().then(() => { 
                         app.ui.showAlert("Feito", "Lançamentos operacionais apagados! As Calibrações e Ações foram preservadas com segurança.", "success"); 
+                        this.renderCadastrosUserList();
                         this.loadUserEditor(); 
                     });
                 },
@@ -13114,7 +16103,7 @@
                     const month = app.currentMonth;
                     if (!month) return app.ui.showAlert("Erro", "Mês não definido.", "error");
 
-                    const usersWithResults = app.users.filter(u => u.results && u.results[month] && Object.keys(u.results[month]).length > 0);
+                    const usersWithResults = app.users.filter(u => app.isUserQualidade(u) && u.results && u.results[month] && Object.keys(u.results[month]).length > 0);
                     if (usersWithResults.length === 0) return app.ui.showAlert("Aviso", "Nenhum resultado processado para exportar neste mês.", "error");
 
                     const rows = usersWithResults.map(u => {
@@ -13517,7 +16506,7 @@
                 }, // <--- CORRIGIDO: Apenas UMA chave para fechar 'calibragemAudio', mantendo o bloco 'admin' aberto!
 
             renderView_ApresentacoesMonitorias(container) {
-                  if(!app.isAdmin) return;
+                  if(!app.hasAdminAccess('apresentacoes_monitorias')) return;
 
                   // Injeta a biblioteca de "Fotografia de Tela" automaticamente no fundo
                     if(!window.html2canvas) {
@@ -14025,7 +17014,7 @@
                             if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
                             if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
                             
-                            let usersEncontrados = app.users.filter(u => nomesAlvo.includes(u.nome.toUpperCase().trim()) || u.matricula === ata.matricula);
+                            let usersEncontrados = app.users.filter(u => app.isUserQualidade(u) && (nomesAlvo.includes(u.nome.toUpperCase().trim()) || u.matricula === ata.matricula));
 
                             usersEncontrados.forEach(userEncontrado => {
                                 if(!userEncontrado.results) userEncontrado.results = {};
@@ -14043,7 +17032,7 @@
                         if(act.status === 'aprovado') {
                             const mesRef = act.month || app.currentMonth;
                             const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
-                            if(userIdx > -1) {
+                            if(userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
                                 const u = app.users[userIdx];
                                 if(!u.results) u.results = {};
                                 if(!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
@@ -14293,7 +17282,7 @@
                 },
 
                 renderView_GeradorGraficos(container) {
-                    if(!app.isAdmin) return;
+                    if(!app.hasAdminAccess('gerador_graficos')) return;
 
                     if(!window.html2canvas) {
                         const script = document.createElement('script');
@@ -14479,129 +17468,12 @@
             });
 
             // ==========================================
-            // CURSOR MOTION BLUR (ALTA PERFORMANCE)
+            // INICIALIZAÇÃO DE ALTA PERFORMANCE (SEM TRAVAMENTOS)
             // ==========================================
-            class MotionBlur {
-              constructor() {
-                this.root = document.body;
-                this.cursor = document.querySelector(".curzr");
-                this.filter = document.querySelector(".curzr-motion-blur");
-                this.position = { distanceX: 0, distanceY: 0, pointerX: 0, pointerY: 0 };
-                this.previousPointerX = 0;
-                this.previousPointerY = 0;
-                this.angle = 0;
-                this.previousAngle = 0;
-                this.angleDisplace = 0;
-                this.degrees = 57.296;
-                this.cursorSize = 25;
-                this.moving = false;
-
-                this.cursorStyle = {
-                  boxSizing: 'border-box',
-                  position: 'fixed',
-                  top: `${ this.cursorSize / -2 }px`,
-                  left: `${ this.cursorSize / -2 }px`,
-                  zIndex: '2147483647',
-                  width: `${ this.cursorSize }px`,
-                  height: `${ this.cursorSize }px`,
-                  borderRadius: '50%',
-                  overflow: 'visible',
-                  transition: '200ms, transform 10ms',
-                  userSelect: 'none',
-                  pointerEvents: 'none'
-                };
-
-                this.init(this.cursor, this.cursorStyle);
-              }
-
-              init(el, style) {
-                Object.assign(el.style, style);
-                this.cursor.removeAttribute("hidden");
-              }
-
-              move(event) {
-                this.previousPointerX = this.position.pointerX;
-                this.previousPointerY = this.position.pointerY;
-                // Ajustado para clientX/Y para manter sincronia com scroll
-                this.position.pointerX = event.clientX; 
-                this.position.pointerY = event.clientY;
-                this.position.distanceX = Math.min(Math.max(this.previousPointerX - this.position.pointerX, -20), 20);
-                this.position.distanceY = Math.min(Math.max(this.previousPointerY - this.position.pointerY, -20), 20);
-
-                this.cursor.style.transform = `translate3d(${this.position.pointerX}px, ${this.position.pointerY}px, 0)`;
-                this.rotate(this.position);
-                this.moving ? this.stop() : this.moving = true;
-              }
-
-              rotate(position) {
-                let unsortedAngle = Math.atan(Math.abs(position.distanceY) / Math.abs(position.distanceX)) * this.degrees;
-                if (isNaN(unsortedAngle)) {
-                  this.angle = this.previousAngle;
-                } else {
-                  if (unsortedAngle <= 45) {
-                    if (position.distanceX * position.distanceY >= 0) this.angle = +unsortedAngle;
-                    else this.angle = -unsortedAngle;
-                    this.filter.setAttribute('stdDeviation', `${Math.abs(this.position.distanceX / 2)}, 0`);
-                  } else {
-                    if (position.distanceX * position.distanceY <= 0) this.angle = 180 - unsortedAngle;
-                    else this.angle = unsortedAngle;
-                    this.filter.setAttribute('stdDeviation', `${Math.abs(this.position.distanceY / 2)}, 0`);
-                  }
-                }
-                this.cursor.style.transform += ` rotate(${this.angle}deg)`;
-                this.previousAngle = this.angle;
-              }
-
-              stop() {
-                setTimeout(() => {
-                  this.filter.setAttribute('stdDeviation', '0, 0');
-                  this.moving = false;
-                }, 50);
-              }
-
-              remove() {
-                this.cursor.remove();
-              }
-            }
-
-            const cursor = new MotionBlur();
-            // Bloqueia em celulares para não travar a navegação touch
-            if(!/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-                window.addEventListener('mousemove', function (event) {
-                    requestAnimationFrame(() => cursor.move(event));
-                });
-            } else {
-                cursor.remove();
-            }
+            // Remove elementos do cursor SVG customizado que causavam lentidão e repaints pesados na GPU
+            const legacyCursor = document.querySelector(".curzr");
+            if (legacyCursor) legacyCursor.remove();
+            document.body.classList.remove('custom-cursor');
             
             app.ui.init(); 
-
-            // Ligando o Motor do Scroll Amanteigado (Lenis)
-            if (typeof Lenis !== 'undefined') {
-                const lenis = new Lenis({
-                    duration: 1.2,
-                    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-                    direction: 'vertical',
-                    gestureDirection: 'vertical',
-                    smooth: true,
-                    smoothTouch: false,
-                });
-
-                // Escuta contínua de alta performance ativada a cada milímetro rolado
-                lenis.on('scroll', (e) => {
-                    document.querySelectorAll('.parallax-layer').forEach(layer => {
-                        // Captura a velocidade desejada definida no HTML (data-parallax-speed)
-                        const speed = parseFloat(layer.getAttribute('data-parallax-speed')) || 0.2;
-                        // Empurra o elemento para cima/baixo usando aceleração da Placa de Vídeo (translate3d)
-                        const yPos = e.animatedScroll * speed;
-                        layer.style.transform = `translate3d(0, ${yPos}px, 0)`;
-                    });
-                });
-
-                function raf(time) {
-                    lenis.raf(time);
-                    requestAnimationFrame(raf);
-                }
-                requestAnimationFrame(raf);
-            }
         });

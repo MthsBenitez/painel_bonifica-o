@@ -115,7 +115,8 @@
         .spark-bar-fill::after {
             content: ''; position: absolute; top: 0; right: 0; bottom: 0; left: 0;
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-            animation: elegant-sweep 2.5s infinite ease-in-out;
+            transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: none;
         }
 
         @keyframes elegant-sweep { 
@@ -147,13 +148,13 @@
            CURSOR MODERNO E PERSONALIZADO (BOLINHA DISCRETA)
            ======================================================== */
         body.custom-cursor, body.custom-cursor a, body.custom-cursor button, body.custom-cursor select, body.custom-cursor .cursor-pointer, body.custom-cursor [onclick] {
-            cursor: none !important;
+            cursor: auto !important;
         }
         body.custom-cursor input, body.custom-cursor textarea {
             cursor: text !important; 
         }
         body:not(.custom-cursor) .curzr {
-            display: none !important; /* Desaparece se a opção estiver desativada */
+            display: none !important; } .curzr, .custom-cursor-dot { display: none !important; /* Desaparece se a opção estiver desativada */
         }
 
         /* A Bolinha Minimalista */
