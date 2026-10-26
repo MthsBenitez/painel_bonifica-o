@@ -320,6 +320,15 @@
                             if (data.estoqueLogs) app.estoqueLogs = data.estoqueLogs; else app.estoqueLogs = {};
                             if (data.impressoes) app.impressoesList = data.impressoes; else app.impressoesList = {};
                             if (data.impressoesStats) app.impressoesStats = data.impressoesStats; else app.impressoesStats = { arquivos: 0, folhas: 0 };
+                            if (data.harmonyDeploy) {
+                                app.harmonyDeployList = data.harmonyDeploy;
+                            } else {
+                                try {
+                                    const localH = localStorage.getItem('soft_harmony_backup');
+                                    if (localH) app.harmonyDeployList = JSON.parse(localH);
+                                    else app.harmonyDeployList = {};
+                                } catch (e) { app.harmonyDeployList = {}; }
+                            }
                             if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
                                 app.visaoGeralData = this.normalizeVisaoGeralKeys(data.visaoGeralData);
                             } else if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
@@ -526,6 +535,16 @@
                 saveAnatel() { 
                     app.allAnatel[app.currentMonth] = app.anatelData; 
                     return firebase.database().ref('sistema_bonificacao/anatel').set(app.allAnatel || {}); 
+                },
+                saveHarmony() {
+                    try { localStorage.setItem('soft_harmony_backup', JSON.stringify(app.harmonyDeployList || {})); } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        const sanitized = this.sanitizeFirebaseObject(app.harmonyDeployList || {});
+                        return firebase.database().ref('sistema_bonificacao/harmonyDeploy').set(sanitized).catch(err => {
+                            console.warn("Aviso Firebase saveHarmony:", err);
+                        });
+                    }
+                    return Promise.resolve();
                 }
             },
 
@@ -543,6 +562,7 @@
             users: [],
             estoqueItems: {},
             estoqueLogs: {},
+            harmonyDeployList: {},
             monitoriasData: { ranking: [] },
             utils: {
                 playCuteSound() {
@@ -602,6 +622,16 @@
                               .replace(/Ãƒ/g, 'Ã').replace(/Ã /g, 'À');
                     // Remove lixo invisível do Excel e artefatos de cópia colada
                     return s.replace(/[\x00-\x1F\x7F-\x9F\u200B]/g, "").replace(/ert\{\}/gi, "").trim();
+                },
+
+                escapeHtml(str) {
+                    if (str == null) return '';
+                    return String(str)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
                 },
                 
                 getWeekNumber(d) {
@@ -672,7 +702,7 @@
 
             notifications: {
                 notify(userId, title, message, type = 'info') {
-                    app.utils.playCuteSound(); // 🎶 Toca o som fofo sempre que for chamado!
+                    app.utils.playCuteSound(); // Toca o som fofo sempre que for chamado!
                     const id = 'notif_' + Date.now() + Math.floor(Math.random()*1000);
                     app.notificationsList[id] = { id, userId, title, message, type, read: false, timestamp: Date.now() };
                     app.storage.saveNotifications();
@@ -730,7 +760,7 @@
                                         
                                         // Apenas alerta na tela do alvo
                                         if (app.isAdmin || app.currentUser.matricula === evt.matricula || evt.matricula === 'TODOS') {
-                                            app.ui.showAlert("🔔 Alerta de Agenda!", `O evento <strong>${evt.tema}</strong> (${evt.op}) está programado para começar em menos de 1 hora (às ${evt.hora}).`, "info");
+                                            app.ui.showAlert("Alerta de Agenda!", `O evento <strong>${evt.tema}</strong> (${evt.op}) está programado para começar em menos de 1 hora (às ${evt.hora}).`, "info");
                                             if (Notification.permission === "granted") {
                                                 new Notification("Portal de Resultados: Evento em 1 Hora!", { body: `${evt.tema} às ${evt.hora}` });
                                             }
@@ -2535,7 +2565,7 @@
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
-                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
+                    { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
@@ -2550,9 +2580,9 @@
 
                     const defaults = {
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'csat_nps', 'legal'])],
+                        'Treinamento': [...new Set(['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'csat_nps', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
                         'Gerente': allIds
                     };
 
@@ -2567,6 +2597,8 @@
                         base = base.filter(id => id !== 'operacoes');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
                         if (['Gestor', 'Gerente', 'Dev'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
+                        if (base.includes('hierarquia') && !base.includes('span_operacoes')) base.push('span_operacoes');
+                        if (base.includes('hierarquia') && !base.includes('implantacao_ia')) base.push('implantacao_ia');
                         result[g] = [...new Set(base)];
                     });
                     return result;
@@ -2580,8 +2612,10 @@
                     const savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes');
                     if (savedTabs.includes('gestao_equipe') && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('gestao_equipe')) savedTabs.push('gestao_equipe');
+                    if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
+                    if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas'];
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         // Se foi colocado em perfil de gestão mas ainda só tinha abas antigas de monitor, aplica o preset ADM do grupo automaticamente
                         if (!hasAnyAdminSaved) return [...new Set([...savedTabs, ...presetTabs])];
@@ -2921,8 +2955,7 @@
                         if (savedSort) this.visaoGeralSort = savedSort;
                         const savedStatus = localStorage.getItem('soft_vg_status');
                         if (savedStatus) this.visaoGeralFilterStatus = savedStatus;
-                        const savedView = localStorage.getItem('soft_vg_view');
-                        if (savedView) this.visaoGeralViewMode = savedView;
+                        // Modo lista (table) e o padrao definitivo para todos; preferencia antiga em cache e ignorada
                     } catch (e) {}
 
                     // É esta linha que carrega os usuários do Banco de Dados!
@@ -3428,6 +3461,8 @@
                             else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
                             else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
                             else if(tabId === 'hierarquia' || tabId === 'operacoes') this.renderView_Hierarquia(viewDiv);
+                            else if(tabId === 'span_operacoes') this.renderView_Span(viewDiv);
+                            else if(tabId === 'implantacao_ia') this.renderView_ImplantacaoIA(viewDiv);
                             else if(tabId === 'cadastros') this.renderView_Cadastros(viewDiv);
                             else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
                             else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
@@ -3462,7 +3497,7 @@
                                 this.renderTab(app.currentTab, true);
                             }
                         } catch (error) {
-                            console.error("🚨 Erro de Renderização na aba " + tabId + ":", error);
+                            console.error("Erro de Renderização na aba " + tabId + ":", error);
                             viewDiv.innerHTML = `
                                 <div class="p-12 text-center text-slate-500 glass-card rounded-3xl border-dashed border-2 border-red-300 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 flex flex-col items-center justify-center max-w-xl mx-auto mt-10">
                                     <div class="w-20 h-20 bg-red-100 text-red-500 dark:bg-red-900/40 dark:text-red-400 rounded-full flex items-center justify-center text-4xl mb-4 shadow-inner">
@@ -4667,7 +4702,7 @@
                 visaoGeralSort: 'realizadas_desc',
                 visaoGeralFilterStatus: 'todos',
                 visaoGeralSearch: '',
-                visaoGeralViewMode: 'cards',
+                visaoGeralViewMode: 'table',
 
                 excluirSetorVisaoGeral(setor) {
                     const setorEncoded = String(setor).replace(/'/g, "\\'");
@@ -4753,7 +4788,7 @@
                                 <div class="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                                     <div class="text-[11px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-2 flex items-center justify-between">
                                         <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> Operações do CSV sem vínculo (${orfaosQual.length})</span>
-                                        <span class="text-[9px] font-bold">Clique no ✔ para vincular</span>
+                                        <span class="text-[9px] font-bold">Clique no botão para vincular</span>
                                     </div>
                                     <div class="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
                                         ${orfaosQual.map((sq, idx) => `
@@ -4785,13 +4820,13 @@
                                     <label class="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">1. Nome no CSV de Qualidade (DE):</label>
                                     <select id="vg-depara-qual-select" onchange="const inp = document.getElementById('vg-depara-qual-custom'); if(this.value === '__CUSTOM__'){ inp.classList.remove('hidden'); inp.focus(); } else { inp.classList.add('hidden'); inp.value = ''; }" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500">
                                         <option value="">Selecione a operação lida no CSV de Qualidade...</option>
-                                        ${orfaosQual.length > 0 ? `<optgroup label="⚠️ Pendentes de Vínculo (${orfaosQual.length})">
-                                            ${orfaosQual.map(sq => `<option value="${sq}">⚠️ ${sq} (${qualidade[sq].count} mon.)</option>`).join('')}
+                                        ${orfaosQual.length > 0 ? `<optgroup label="Pendentes de Vínculo (${orfaosQual.length})">
+                                            ${orfaosQual.map(sq => `<option value="${sq}">${sq} (${qualidade[sq].count} mon.)</option>`).join('')}
                                         </optgroup>` : ''}
                                         ${naoVinculadosNoRH.length > 0 ? `<optgroup label="Operações do CSV (Unificar em outra operação)">
                                             ${naoVinculadosNoRH.map(sq => `<option value="${sq}">${sq} (${qualidade[sq].count} mon.)</option>`).join('')}
                                         </optgroup>` : ''}
-                                        <option value="__CUSTOM__">✍️ Digitar nome manualmente...</option>
+                                        <option value="__CUSTOM__">✍ Digitar nome manualmente...</option>
                                     </select>
                                     <input type="text" id="vg-depara-qual-custom" placeholder="Digite exatamente como vem no CSV de Qualidade..." class="hidden mt-2 w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-600 text-xs font-bold text-slate-700 dark:text-white outline-none">
                                 </div>
@@ -5715,11 +5750,11 @@
                                 <div class="glass-card p-6 rounded-[2rem] border border-slate-200/80 dark:border-slate-800">
                                     <div class="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
                                         <h3 class="font-bold text-lg text-slate-800 dark:text-white flex items-center gap-2">
-                                            <i class="fa-solid fa-ranking-star text-indigo-500"></i> Consumo por Usuário (Maior para o Menor)
+                                            <i class="fa-solid fa-users text-slate-400"></i> Consumo por Usuário
                                         </h3>
-                                        <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">${rankingUsuariosConsumo.length} colaboradores</span>
+                                        <span class="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">${rankingUsuariosConsumo.length} colaboradores</span>
                                     </div>
-                                    <div class="space-y-2.5 max-h-[240px] overflow-y-auto custom-scrollbar pr-2">
+                                    <div class="max-h-[260px] overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800">
                     `;
 
                     if (rankingUsuariosConsumo.length === 0) {
@@ -5729,24 +5764,23 @@
                         rankingUsuariosConsumo.forEach((usr, idx) => {
                             const pctBar = Math.min(100, Math.round((usr.qtdTotal / maxQtdUser) * 100));
                             const resumoItens = Object.entries(usr.itensMap).map(([nome, q]) => `${q}x ${nome}`).join(', ');
-                            const medalColor = idx === 0 ? 'bg-amber-400 text-slate-900' : (idx === 1 ? 'bg-slate-300 text-slate-800' : (idx === 2 ? 'bg-amber-700 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'));
                             html += `
-                                <div class="bg-white dark:bg-slate-800/90 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div class="py-2.5 px-1">
                                     <div class="flex items-center justify-between gap-3 mb-1.5">
-                                        <div class="flex items-center gap-2.5 min-w-0">
-                                            <span class="w-6 h-6 rounded-full ${medalColor} font-black text-xs flex items-center justify-center shrink-0">${idx + 1}º</span>
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <span class="w-6 text-xs font-semibold text-slate-400 tabular-nums">${String(idx + 1).padStart(2, '0')}</span>
                                             <div class="min-w-0">
-                                                <div class="font-extrabold text-sm text-slate-800 dark:text-white truncate">${usr.nome}</div>
-                                                <div class="text-[10px] text-slate-400 truncate" title="${resumoItens}">${resumoItens}</div>
+                                                <div class="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">${usr.nome}</div>
+                                                <div class="text-[11px] text-slate-400 truncate" title="${resumoItens}">${resumoItens}</div>
                                             </div>
                                         </div>
                                         <div class="text-right shrink-0">
-                                            <span class="text-base font-black text-orange-600 dark:text-orange-400">${usr.qtdTotal} unids.</span>
-                                            <div class="text-[9px] uppercase font-bold text-slate-400">${usr.retiradas} ${usr.retiradas === 1 ? 'ação' : 'ações'}</div>
+                                            <span class="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">${usr.qtdTotal} unid.</span>
+                                            <div class="text-[11px] text-slate-400">${usr.retiradas} ${usr.retiradas === 1 ? 'ação' : 'ações'}</div>
                                         </div>
                                     </div>
-                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                        <div class="h-full bg-gradient-to-r from-indigo-500 to-orange-500 rounded-full" style="width: ${pctBar}%"></div>
+                                    <div class="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden ml-9" style="width: calc(100% - 2.25rem)">
+                                        <div class="h-full bg-slate-400 dark:bg-slate-500 rounded-full" style="width: ${pctBar}%"></div>
                                     </div>
                                 </div>
                             `;
@@ -5776,7 +5810,7 @@
                                     <div class="flex-1 min-w-0">
                                         <div class="flex justify-between items-start mb-0.5">
                                             <strong class="text-sm text-slate-800 dark:text-white truncate pr-2">${log.nomeItem}</strong>
-                                            <span class="text-[10px] text-slate-400 font-mono shrink-0">${log.data || '-'} ${log.hora || ''}</span>
+                                            <span class="text-[10px] text-slate-400 tabular-nums shrink-0">${log.data || '-'} ${log.hora || ''}</span>
                                         </div>
                                         <div class="text-[11px] text-slate-500 dark:text-slate-400 font-bold leading-tight">
                                             Colaborador: <span class="text-indigo-600 dark:text-indigo-400 font-extrabold">${log.autor}</span> • Operação: <span class="text-slate-700 dark:text-slate-200">${log.op || 'Geral'}</span>
@@ -6072,29 +6106,29 @@
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-orange-500 shadow-sm">
-                                    <div class="w-12 h-12 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-clock"></i></div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-slate-300 dark:border-l-slate-600 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-clock"></i></div>
                                     <div>
                                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Fila Pendente</div>
                                         <div class="text-2xl font-black text-slate-800 dark:text-white">${pendentes.length} <span class="text-xs font-semibold text-slate-400">arq. (${folhasNaFila} fls)</span></div>
                                     </div>
                                 </div>
-                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-blue-500 shadow-sm">
-                                    <div class="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-file-circle-check"></i></div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-slate-300 dark:border-l-slate-600 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-file-circle-check"></i></div>
                                     <div>
                                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Arquivos Concluídos</div>
                                         <div class="text-2xl font-black text-slate-800 dark:text-white">${totalArquivosConcluidos} <span class="text-xs font-semibold text-slate-400">/ ${totalArquivosSolicitadosAtivos} solic.</span></div>
                                     </div>
                                 </div>
-                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-purple-500 shadow-sm">
-                                    <div class="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-copy"></i></div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-slate-300 dark:border-l-slate-600 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-copy"></i></div>
                                     <div>
                                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Folhas Usadas (Cópias)</div>
-                                        <div class="text-2xl font-black text-purple-600 dark:text-purple-400">${folhasUsadasConcluidas} <span class="text-xs font-semibold text-slate-400">(${folhasTotaisSolicitadas} c/ fila)</span></div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${folhasUsadasConcluidas} <span class="text-xs font-semibold text-slate-400">(${folhasTotaisSolicitadas} c/ fila)</span></div>
                                     </div>
                                 </div>
-                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-red-500 shadow-sm">
-                                    <div class="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-ban"></i></div>
+                                <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-slate-300 dark:border-l-slate-600 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-ban"></i></div>
                                     <div>
                                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Cancelados / Excluídos</div>
                                         <div class="text-2xl font-black text-slate-800 dark:text-white">${excluidos.length} <span class="text-xs font-semibold text-slate-400">pedidos</span></div>
@@ -6103,32 +6137,34 @@
                             </div>
 
                             <!-- Dashboard de Consumo de Folhas por Usuário -->
-                            <div class="glass-card p-6 rounded-[2rem] mb-8 border-t-4 border-t-purple-500">
-                                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
-                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-chart-Simple text-purple-500 mr-2"></i> Consumo de Folhas por Colaborador (Qtd. de Cópias)</h3>
-                                    <span class="text-xs text-slate-400 font-semibold">Ranking dos usuários que mais utilizam impressões</span>
+                            <div class="glass-card p-6 rounded-[2rem] mb-8 border border-slate-200/80 dark:border-slate-800">
+                                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+                                    <h3 class="font-bold text-lg text-slate-800 dark:text-white"><i class="fa-solid fa-chart-simple text-slate-400 mr-2"></i> Consumo de Folhas por Colaborador</h3>
+                                    <span class="text-xs text-slate-400 font-medium">Total de cópias solicitadas, em ordem decrescente</span>
                                 </div>
                                 ${rankingFolhas.length === 0 ? `
                                     <div class="text-center text-slate-400 italic py-4 text-sm">Nenhum consumo de folhas registrado até o momento.</div>
                                 ` : `
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                                    <div class="max-h-72 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800">
                                         ${rankingFolhas.map((u, idx) => {
                                             const pct = Math.min(100, Math.round((u.folhasTotal / maxFolhasUser) * 100));
-                                            const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx + 1}`));
                                             return `
-                                            <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                                                <div class="flex justify-between items-start gap-2 mb-2">
-                                                    <div class="min-w-0">
-                                                        <div class="font-extrabold text-xs text-slate-800 dark:text-white truncate" title="${u.nome}">${medal} ${u.nome}</div>
-                                                        <div class="text-[10px] text-slate-400">${u.arquivos} arquivo(s) solicitado(s)</div>
+                                            <div class="py-2.5 px-1">
+                                                <div class="flex justify-between items-center gap-3 mb-1.5">
+                                                    <div class="flex items-center gap-3 min-w-0">
+                                                        <span class="w-6 text-xs font-semibold text-slate-400 tabular-nums">${String(idx + 1).padStart(2, '0')}</span>
+                                                        <div class="min-w-0">
+                                                            <div class="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate" title="${u.nome}">${u.nome}</div>
+                                                            <div class="text-[11px] text-slate-400">${u.arquivos} arquivo(s) solicitado(s)</div>
+                                                        </div>
                                                     </div>
                                                     <div class="text-right shrink-0">
-                                                        <div class="text-sm font-black text-purple-600 dark:text-purple-400">${u.folhasTotal} fls</div>
-                                                        <div class="text-[9px] text-slate-400">${u.folhasUsadas} imp. / ${u.folhasPendentes} fila</div>
+                                                        <div class="text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">${u.folhasTotal} fls</div>
+                                                        <div class="text-[11px] text-slate-400 tabular-nums">${u.folhasUsadas} impressas / ${u.folhasPendentes} na fila</div>
                                                     </div>
                                                 </div>
-                                                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                    <div class="h-full bg-purple-500 rounded-full" style="width: ${pct}%"></div>
+                                                <div class="h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden ml-9">
+                                                    <div class="h-full bg-slate-400 dark:bg-slate-500 rounded-full" style="width: ${pct}%"></div>
                                                 </div>
                                             </div>`;
                                         }).join('')}
@@ -6153,7 +6189,7 @@
                                         <div class="flex-1 w-full min-w-0">
                                             <div class="flex items-center gap-2 mb-1">
                                                 <span class="bg-orange-100 text-orange-700 text-[9px] font-black uppercase px-2 py-0.5 rounded shadow-sm">Pendente</span>
-                                                <span class="text-[10px] text-slate-400 font-mono"><i class="fa-regular fa-clock"></i> ${p.data}</span>
+                                                <span class="text-[10px] text-slate-400"><i class="fa-regular fa-clock"></i> ${p.data}</span>
                                             </div>
                                             <div class="font-bold text-slate-800 dark:text-white truncate" title="${p.fileName}"><i class="fa-solid fa-file-lines text-slate-400 mr-1"></i> ${p.fileName}</div>
                                             <div class="text-xs text-slate-500 dark:text-slate-400 mt-1"><strong>Desc:</strong> ${p.desc}</div>
@@ -6271,7 +6307,7 @@
                                 html += `
                                     <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border ${isExcluido ? 'border-red-200 dark:border-red-900/50' : 'border-slate-200 dark:border-slate-700'} shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-3 relative ${isImpresso || isExcluido ? 'opacity-85' : ''}">
                                         <div class="flex-1 min-w-0 pr-4">
-                                            <div class="flex items-center gap-2 mb-1">${badgeStatus} <span class="text-[9px] text-slate-400 font-mono">${m.data}</span></div>
+                                            <div class="flex items-center gap-2 mb-1">${badgeStatus} <span class="text-[9px] text-slate-400 tabular-nums">${m.data}</span></div>
                                             <div class="font-bold text-slate-700 dark:text-slate-300 text-sm truncate" title="${m.fileName}"><i class="fa-regular fa-file-lines mr-1 text-slate-400"></i> ${m.fileName}</div>
                                             <div class="text-xs text-slate-500 mt-1 truncate">Descrição: ${m.desc}</div>
                                             ${isExcluido && m.motivoExclusao ? `<div class="text-[11px] text-red-600 dark:text-red-400 font-bold mt-1"><i class="fa-solid fa-comment-dots mr-1"></i>Motivo (${m.excluidoPor || 'Exclusão'}): ${m.motivoExclusao}</div>` : ''}
@@ -6358,7 +6394,7 @@
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Chave da API (Google AI Studio)</label>
                                 <div class="flex flex-col sm:flex-row gap-2">
-                                    <input type="password" id="cfg-gemini-key" value="${app.config.geminiApiKey || ''}" class="flex-1 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm font-mono" placeholder="Cole sua chave de API aqui...">
+                                    <input type="password" id="cfg-gemini-key" value="${app.config.geminiApiKey || ''}" class="flex-1 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm tabular-nums" placeholder="Cole sua chave de API aqui...">
                                     <button type="button" onclick="app.admin.testarChaveGemini()" id="btn-test-gemini" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-5 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm whitespace-nowrap">
                                         <i class="fa-solid fa-plug-circle-check"></i> Testar Conexão
                                     </button>
@@ -7568,16 +7604,15 @@
                             const ResponsaveisAtuais = app.users.filter(x => x.matricula !== u.matricula && (x.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase())).map(x => x.nome.split(' ')[0]);
                             return `
                                 <label class="flex items-center justify-between gap-3 p-3 rounded-2xl border ${isChecked ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} cursor-pointer hover:border-indigo-400 transition-all">
-                                    <div class="flex items-center gap-3 min-w-0">
+                                    <div class="flex items-center gap-3 min-w-0 flex-1">
                                         <input type="checkbox" value="${op.nome}" data-hc="${op.headcount || 0}" onchange="app.ui.atualizarPreviewSpanModal()" class="hier-op-check w-4 h-4 accent-indigo-600 rounded shrink-0" ${isChecked ? 'checked' : ''}>
                                         <div class="min-w-0">
-                                            <div class="text-xs font-extrabold text-slate-800 dark:text-white uppercase truncate">${op.nome}</div>
-                                            ${ResponsaveisAtuais.length > 0 ? `<div class="text-[10px] text-slate-400 truncate">Também com: ${ResponsaveisAtuais.join(', ')}</div>` : `<div class="text-[10px] text-emerald-500 font-bold">Disponível</div>`}
+                                            <div class="text-sm font-bold text-slate-800 dark:text-white leading-snug break-words">${app.utils.fixEncoding(op.nome)}</div>
+                                            ${ResponsaveisAtuais.length > 0 ? `<div class="text-[11px] text-slate-400 leading-snug break-words">Também com: ${ResponsaveisAtuais.join(', ')}</div>` : `<div class="text-[10px] text-emerald-500 font-bold">Disponível</div>`}
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-1.5 shrink-0">
-                                        <span class="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-black text-xs">${op.headcount || 0} op.</span>
-                                        <span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 font-bold text-[10px]">Regra: ${op.regraPorOp || 2}x</span>
+                                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs tabular-nums whitespace-nowrap">${op.headcount || 0} op.</span>
                                     </div>
                                 </label>
                             `;
@@ -7586,7 +7621,7 @@
 
                     const spanAtual = app.getSpanUsuario(u);
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-diagram-project text-indigo-500 mr-2"></i> Responsabilidade & Span — ${u.nome}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-diagram-project text-indigo-500 mr-2"></i> Responsabilidade & Span — ${app.utils.fixEncoding(u.nome)}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="space-y-4">
                             <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between shadow-md">
@@ -7607,7 +7642,7 @@
                                     <button type="button" onclick="document.querySelectorAll('.hier-op-check').forEach(c=>c.checked=false); app.ui.atualizarPreviewSpanModal();" class="text-rose-500 font-bold hover:underline">Limpar</button>
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
                                 ${listHtml}
                             </div>
                         </div>
@@ -7616,7 +7651,16 @@
                         <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
                         <button type="button" onclick="app.ui.salvarOperacoesMonitorHierarquia('${u.matricula}')" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg">Salvar Operações & Span</button>
                     `;
-                    document.getElementById('global-modal').classList.remove('hidden');
+                    const gm = document.getElementById('global-modal');
+                    const box = gm.firstElementChild;
+                    box.classList.remove('max-w-lg'); box.classList.add('max-w-4xl');
+                    if (!gm._wideObs) {
+                        gm._wideObs = new MutationObserver(() => {
+                            if (gm.classList.contains('hidden')) { box.classList.remove('max-w-4xl'); box.classList.add('max-w-lg'); }
+                        });
+                        gm._wideObs.observe(gm, { attributes: true, attributeFilter: ['class'] });
+                    }
+                    gm.classList.remove('hidden');
                 },
 
                 atualizarPreviewSpanModal() {
@@ -7768,6 +7812,1144 @@
                         const matchRole = role === 'todos' || userRole === role;
                         el.style.display = (matchTerm && matchRole) ? '' : 'none';
                     });
+                },
+
+                renderView_Span(container) {
+                    if (!app.hasAdminAccess('span_operacoes') && !app.hasAdminAccess('hierarquia')) return;
+                    app.syncOperacoesFromSetorial();
+                    const ops = app.getOperacoesSetoriais();
+                    const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                    const hcDe = (op) => parseInt(op.headcount) || 0;
+                    const monitores = app.users.filter(u => app.isUserQualidade(u));
+
+                    // Mapa operação -> monitores responsáveis
+                    const mapaOps = {};
+                    monitores.forEach(m => (m.operacoes || []).forEach(o => {
+                        const k = String(o).trim().toUpperCase();
+                        (mapaOps[k] = mapaOps[k] || []).push(m);
+                    }));
+
+                    const linhasOps = ops.map(op => {
+                        const resp = mapaOps[op.nome.toUpperCase()] || [];
+                        return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp };
+                    }).sort((a, b) => b.hc - a.hc);
+
+                    const totalHc = linhasOps.reduce((a, o) => a + o.hc, 0);
+                    const semCobertura = linhasOps.filter(o => o.resp.length === 0);
+                    const hcDescoberto = semCobertura.reduce((a, o) => a + o.hc, 0);
+                    const compartilhadas = linhasOps.filter(o => o.resp.length > 1);
+                    const pctCobertura = totalHc > 0 ? Math.round(((totalHc - hcDescoberto) / totalHc) * 100) : 100;
+
+                    const spans = monitores.map(m => ({ u: m, nome: app.utils.fixEncoding(m.nome), sp: app.getSpanUsuario(m) }))
+                        .map(x => ({ ...x, total: x.sp.totalOperadores || 0, nOps: (x.sp.detalhes || []).length }))
+                        .sort((a, b) => b.total - a.total);
+                    const media = spans.length ? Math.round(spans.reduce((a, s) => a + s.total, 0) / spans.length) : 0;
+                    const maxSpan = Math.max(1, ...spans.map(s => s.total));
+                    const limiteAlto = Math.round(media * 1.25);
+                    const limiteBaixo = Math.round(media * 0.5);
+                    const statusSpan = (t) => {
+                        if (t === 0) return { rotulo: 'Sem span', bar: 'bg-slate-300 dark:bg-slate-600', badge: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400', icon: 'fa-circle-minus' };
+                        if (media > 0 && t > limiteAlto) return { rotulo: 'Sobrecarga', bar: 'bg-red-500', badge: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300', icon: 'fa-triangle-exclamation' };
+                        if (media > 0 && t < limiteBaixo) return { rotulo: 'Subutilizado', bar: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', icon: 'fa-arrow-trend-down' };
+                        return { rotulo: 'Equilibrado', bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', icon: 'fa-circle-check' };
+                    };
+                    const sobrecarregados = spans.filter(s => statusSpan(s.total).rotulo === 'Sobrecarga').length;
+
+                    const kpi = (icon, label, valor, sub, alerta) => `
+                        <div class="rounded-2xl border ${alerta ? 'border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} p-4">
+                            <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider ${alerta ? 'text-red-600 dark:text-red-300' : 'text-slate-400'}"><i class="fa-solid ${icon}"></i>${label}</div>
+                            <div class="text-3xl font-black mt-2 ${alerta ? 'text-red-600 dark:text-red-300' : 'text-slate-800 dark:text-white'} tabular-nums">${valor}</div>
+                            <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${sub}</div>
+                        </div>`;
+
+                    const alertaCobertura = semCobertura.length === 0
+                        ? `<div class="flex items-center gap-3 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-900/10 text-sm text-emerald-700 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>Todas as operações do setorial possuem ao menos um monitor responsável.</div>`
+                        : `<div class="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10">
+                            <div class="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-300 mb-3"><i class="fa-solid fa-triangle-exclamation"></i>${semCobertura.length} operação(ões) sem monitor — ${hcDescoberto} operadores descobertos</div>
+                            <div class="flex flex-wrap gap-2">${semCobertura.map(o => `<span class="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 text-xs font-semibold text-slate-700 dark:text-slate-200">${esc(o.nome)}<span class="text-red-500 tabular-nums">${o.hc}</span></span>`).join('')}</div>
+                           </div>`;
+
+                    const linhaMonitor = (s) => {
+                        const st = statusSpan(s.total);
+                        const pct = Math.round((s.total / maxSpan) * 100);
+                        const nomesOps = (s.sp.detalhes || []).map(d => app.utils.fixEncoding(d.nome));
+                        const foto = s.u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.nome)}&background=e2e8f0&color=475569&size=128`;
+                        return `
+                            <div class="span-row p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer" onclick="app.ui.abrirModalOperacoesMonitor('${s.u.matricula}')" title="Editar operações e span">
+                                <div class="flex items-center gap-3">
+                                    <img src="${foto}" class="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${esc(s.nome)}</span>
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${st.badge} shrink-0"><i class="fa-solid ${st.icon}"></i>${st.rotulo}</span>
+                                        </div>
+                                        <div class="flex items-center gap-3 mt-1.5">
+                                            <div class="relative flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                <div class="h-full ${st.bar} rounded-full" style="width:${pct}%"></div>
+                                            </div>
+                                            <span class="text-sm font-black text-slate-800 dark:text-white tabular-nums w-14 text-right">${s.total}</span>
+                                        </div>
+                                        <div class="text-[11px] text-slate-400 mt-1 truncate" title="${esc(nomesOps.join(', '))}">${nomesOps.length ? esc(nomesOps.join(' · ')) : 'Sem operações atribuídas'}</div>
+                                    </div>
+                                </div>
+                            </div>`;
+                    };
+
+                    const linhaOp = (o) => {
+                        const pct = totalHc > 0 ? ((o.hc / totalHc) * 100) : 0;
+                        const sem = o.resp.length === 0;
+                        const dupla = o.resp.length > 1;
+                        const badge = sem
+                            ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300"><i class="fa-solid fa-triangle-exclamation"></i>Sem monitor</span>'
+                            : (dupla ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"><i class="fa-solid fa-people-arrows"></i>Compartilhada</span>'
+                                : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>Coberta</span>');
+                        return `
+                            <tr class="span-op-row border-t border-slate-100 dark:border-slate-800 ${sem ? 'bg-red-50/40 dark:bg-red-900/10' : ''}" data-status="${sem ? 'sem' : (dupla ? 'dupla' : 'ok')}">
+                                <td class="py-2.5 px-3 text-sm font-semibold text-slate-800 dark:text-slate-100">${esc(o.nome)}</td>
+                                <td class="py-2.5 px-3 text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums text-right">${o.hc}</td>
+                                <td class="py-2.5 px-3 w-40"><div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full ${sem ? 'bg-red-400' : 'bg-slate-400 dark:bg-slate-500'} rounded-full" style="width:${Math.min(100, pct * 3).toFixed(0)}%"></div></div><div class="text-[10px] text-slate-400 mt-0.5 tabular-nums">${pct.toFixed(1)}% do setor</div></td>
+                                <td class="py-2.5 px-3 text-xs text-slate-600 dark:text-slate-300">${sem ? '<span class="text-slate-400">Nenhum</span>' : o.resp.map(m => esc(app.utils.fixEncoding(m.nome))).join(', ')}</td>
+                                <td class="py-2.5 px-3 text-right">${badge}</td>
+                            </tr>`;
+                    };
+
+                    container.innerHTML = `
+                        <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+                            <div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Span &amp; Cobertura</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Distribuição de operadores por monitor de qualidade e cobertura das operações do setorial.</p>
+                            </div>
+                            <button type="button" onclick="app.ui.renderTab('hierarquia', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-sitemap mr-2"></i>Editar equipe e atribuições</button>
+                        </div>
+                        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+                            ${kpi('fa-layer-group', 'Operações', ops.length, `${totalHc} operadores no setorial`)}
+                            ${kpi('fa-shield-halved', 'Cobertura', pctCobertura + '%', 'operadores com monitor responsável', pctCobertura < 100)}
+                            ${kpi('fa-link-slash', 'Sem monitor', semCobertura.length, `${hcDescoberto} operadores descobertos`, semCobertura.length > 0)}
+                            ${kpi('fa-scale-balanced', 'Span médio', media, `${monitores.length} monitores de qualidade`)}
+                            ${kpi('fa-weight-hanging', 'Sobrecarga', sobrecarregados, `acima de ${limiteAlto} operadores`, sobrecarregados > 0)}
+                        </div>
+                        <div class="mb-6">${alertaCobertura}</div>
+                        <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                            <div class="xl:col-span-2 glass-card rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="font-bold text-slate-800 dark:text-white"><i class="fa-solid fa-user-group text-slate-400 mr-2"></i>Span por monitor</h3>
+                                    <span class="text-[11px] text-slate-400">média ${media}</span>
+                                </div>
+                                <div class="flex flex-wrap gap-3 text-[10px] text-slate-400 mb-3">
+                                    <span><span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-1"></span>Sobrecarga (&gt; ${limiteAlto})</span>
+                                    <span><span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1"></span>Equilibrado</span>
+                                    <span><span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1"></span>Subutilizado (&lt; ${limiteBaixo})</span>
+                                </div>
+                                <div class="max-h-[560px] overflow-y-auto custom-scrollbar space-y-1">
+                                    ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="text-center text-slate-400 italic p-6 text-sm">Nenhum usuário com perfil de Qualidade.</div>'}
+                                </div>
+                            </div>
+                            <div class="xl:col-span-3 glass-card rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5">
+                                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                    <h3 class="font-bold text-slate-800 dark:text-white"><i class="fa-solid fa-table-cells text-slate-400 mr-2"></i>Cobertura das operações</h3>
+                                    <div class="flex gap-1.5" id="span-filtro">
+                                        ${[['todas', 'Todas', linhasOps.length], ['sem', 'Sem monitor', semCobertura.length], ['dupla', 'Compartilhadas', compartilhadas.length]].map(([k, l, n]) => `<button type="button" data-k="${k}" onclick="app.ui.filtrarSpanOps('${k}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${k === 'todas' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">${l} <span class="tabular-nums opacity-70">${n}</span></button>`).join('')}
+                                    </div>
+                                </div>
+                                <div class="max-h-[560px] overflow-auto custom-scrollbar">
+                                    <table class="w-full text-left">
+                                        <thead class="sticky top-0 bg-white dark:bg-slate-900 z-10"><tr class="text-[10px] uppercase tracking-wider text-slate-400">
+                                            <th class="py-2 px-3 font-semibold">Operação</th><th class="py-2 px-3 font-semibold text-right">Operadores</th><th class="py-2 px-3 font-semibold">Peso</th><th class="py-2 px-3 font-semibold">Monitor(es)</th><th class="py-2 px-3 font-semibold text-right">Situação</th>
+                                        </tr></thead>
+                                        <tbody>${linhasOps.length ? linhasOps.map(linhaOp).join('') : '<tr><td colspan="5" class="p-6 text-center text-slate-400 italic text-sm">Importe a Base RH na Visão Geral Setorial para listar as operações.</td></tr>'}</tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>`;
+                },
+
+                filtrarSpanOps(k) {
+                    document.querySelectorAll('.span-op-row').forEach(tr => { tr.style.display = (k === 'todas' || tr.dataset.status === k) ? '' : 'none'; });
+                    document.querySelectorAll('#span-filtro button').forEach(b => {
+                        const on = b.dataset.k === k;
+                        b.classList.toggle('bg-slate-800', on); b.classList.toggle('text-white', on); b.classList.toggle('border-slate-800', on);
+                    });
+                },
+
+                // ============================================================
+                // IMPLANTAÇÃO DE IA — HARMONY & CRONOGRAMA GANTT
+                // ============================================================
+                _iaViewMode: 'gantt',
+                _iaFiltroStatus: 'todos',
+                _iaBusca: '',
+
+                _formatarDataBR(dataStr) {
+                    if (!dataStr) return '';
+                    if (dataStr.includes('/')) return dataStr;
+                    const partes = String(dataStr).split('-');
+                    if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
+                    return dataStr;
+                },
+
+                getDefaultEtapasHarmony(nomeMonitor = '', nomeTreinador = '') {
+                    const agora = Date.now();
+                    return [
+                        {
+                            id: 'etp_' + agora + '_1',
+                            nome: '1. Mapeamento & Calibração de Prompts',
+                            descricao: 'Revisão das regras operacionais e diretrizes técnicas. Criação e teste de prompts customizados do Harmony com lote piloto de chamadas gravadas.',
+                            diasEstimados: 5,
+                            qtdEstimada: '30 chamadas calibradas',
+                            responsavelTipo: 'Monitor',
+                            responsavelNome: nomeMonitor || 'Monitor de Qualidade',
+                            concluido: false,
+                            dataConclusao: ''
+                        },
+                        {
+                            id: 'etp_' + agora + '_2',
+                            nome: '2. Capacitação da Supervisão & Multiplicadores',
+                            descricao: 'Treinamento prático da liderança sobre leitura dos relatórios do Harmony, identificação de ofensores gerados por IA e fluxo de contestações.',
+                            diasEstimados: 3,
+                            qtdEstimada: '100% supervisores treinados',
+                            responsavelTipo: 'Treinador',
+                            responsavelNome: nomeTreinador || 'Treinador da Operação',
+                            concluido: false,
+                            dataConclusao: ''
+                        },
+                        {
+                            id: 'etp_' + agora + '_3',
+                            nome: '3. Piloto Operacional Assistido',
+                            descricao: 'Auditoria simultânea entre IA e monitoria humana, confrontando notas e critérios para garantir conformidade e assertividade antes da virada.',
+                            diasEstimados: 10,
+                            qtdEstimada: '150 chamadas auditadas',
+                            responsavelTipo: 'Monitor',
+                            responsavelNome: nomeMonitor || 'Monitor de Qualidade',
+                            concluido: false,
+                            dataConclusao: ''
+                        },
+                        {
+                            id: 'etp_' + agora + '_4',
+                            nome: '4. Alinhamento de Critérios aos Operadores',
+                            descricao: 'Workshops com os operadores da operação, apresentando o Harmony como copiloto de qualidade e esclarecendo regras avaliativas de feedback.',
+                            diasEstimados: 4,
+                            qtdEstimada: '100% operadores alinhados',
+                            responsavelTipo: 'Treinador',
+                            responsavelNome: nomeTreinador || 'Treinador da Operação',
+                            concluido: false,
+                            dataConclusao: ''
+                        },
+                        {
+                            id: 'etp_' + agora + '_5',
+                            nome: '5. Go-Live & Cobertura Total Harmony',
+                            descricao: 'Ativação oficial da IA Harmony em 100% da volumetria da operação, emissão dos primeiros dashboards analíticos e rotinas de feedback automatizado.',
+                            diasEstimados: 7,
+                            qtdEstimada: '100% volumetria ativa',
+                            responsavelTipo: 'Ambos',
+                            responsavelNome: (nomeMonitor && nomeTreinador) ? `${nomeMonitor} & ${nomeTreinador}` : 'Monitor & Treinador',
+                            concluido: false,
+                            dataConclusao: ''
+                        }
+                    ];
+                },
+
+                _getHarmonyKey(opNome) {
+                    if (!opNome) return '';
+                    return app.storage.sanitizeFirebaseKey(String(opNome).trim().toUpperCase());
+                },
+
+                renderView_ImplantacaoIA(container) {
+                    if (!app.hasAdminAccess('implantacao_ia') && !app.hasAdminAccess('hierarquia')) return;
+                    app.syncOperacoesFromSetorial();
+                    const opsSetoriais = app.getOperacoesSetoriais() || [];
+                    const esc = (s) => app.utils.escapeHtml(s);
+                    const deploys = app.harmonyDeployList || {};
+
+                    const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u) || (u.tipoAcesso || '') === 'Qualidade');
+                    const treinadores = app.users.filter(u => (u.tipoAcesso || '') === 'Treinamento' || (u.cargo || '').toLowerCase().includes('treina'));
+
+                    // Consolidação dos dados de cada operação
+                    const mapaDeploys = {};
+                    Object.entries(deploys).forEach(([k, d]) => {
+                        if (d && d.operacao) {
+                            const key = this._getHarmonyKey(d.operacao);
+                            mapaDeploys[key] = d;
+                        }
+                    });
+
+                    // Lista de todas as operações com seus planos (se houver)
+                    const totalOpsGlobal = opsSetoriais.length;
+                    const totalHcGlobal = opsSetoriais.reduce((acc, o) => acc + (parseInt(o.headcount) || 0), 0);
+
+                    const planosAtivos = [];
+                    const opsSemPlano = [];
+                    const chavesProcessadas = new Set();
+
+                    opsSetoriais.forEach(op => {
+                        const opKey = this._getHarmonyKey(op.nome);
+                        chavesProcessadas.add(opKey);
+                        const p = mapaDeploys[opKey] || deploys[opKey];
+                        const hc = parseInt(op.headcount) || parseInt(op.hc) || 0;
+                        if (p) {
+                            const etapas = Array.isArray(p.etapas) ? p.etapas : [];
+                            const concluidas = etapas.filter(e => e.concluido).length;
+                            const totalEtapas = etapas.length;
+                            const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
+                            const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados) || 0), 0);
+                            let statusCalculado = 'pendente';
+                            if (pct === 100) statusCalculado = 'implantado';
+                            else if (concluidas > 0 || pct > 0) statusCalculado = 'em_andamento';
+
+                            planosAtivos.push({
+                                key: opKey,
+                                operacao: app.utils.fixEncoding(op.nome),
+                                operacaoRaw: op.nome,
+                                hc,
+                                monitorNome: p.monitorNome || 'Não definido',
+                                monitorMatricula: p.monitorMatricula || '',
+                                treinadorNome: p.treinadorNome || 'Não definido',
+                                treinadorMatricula: p.treinadorMatricula || '',
+                                dataInicio: p.dataInicio || '',
+                                observacoes: p.observacoes || '',
+                                etapas,
+                                concluidas,
+                                totalEtapas,
+                                pct,
+                                diasTotais,
+                                status: statusCalculado
+                            });
+                        } else {
+                            opsSemPlano.push({
+                                key: opKey,
+                                nome: app.utils.fixEncoding(op.nome),
+                                nomeRaw: op.nome,
+                                hc
+                            });
+                        }
+                    });
+
+                    // Se houver algum plano cadastrado em deploys cuja operação não conste no setorial atual
+                    Object.entries(mapaDeploys).forEach(([k, p]) => {
+                        if (!chavesProcessadas.has(k) && p && p.operacao) {
+                            const etapas = Array.isArray(p.etapas) ? p.etapas : [];
+                            const concluidas = etapas.filter(e => e.concluido).length;
+                            const totalEtapas = etapas.length;
+                            const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
+                            const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados) || 0), 0);
+                            let statusCalculado = 'pendente';
+                            if (pct === 100) statusCalculado = 'implantado';
+                            else if (concluidas > 0 || pct > 0) statusCalculado = 'em_andamento';
+
+                            planosAtivos.push({
+                                key: k,
+                                operacao: app.utils.fixEncoding(p.operacao),
+                                operacaoRaw: p.operacao,
+                                hc: 0,
+                                monitorNome: p.monitorNome || 'Não definido',
+                                monitorMatricula: p.monitorMatricula || '',
+                                treinadorNome: p.treinadorNome || 'Não definido',
+                                treinadorMatricula: p.treinadorMatricula || '',
+                                dataInicio: p.dataInicio || '',
+                                observacoes: p.observacoes || '',
+                                etapas,
+                                concluidas,
+                                totalEtapas,
+                                pct,
+                                diasTotais,
+                                status: statusCalculado
+                            });
+                        }
+                    });
+
+                    // Ordena planos: Em Implantação primeiro, depois Pendentes, depois Concluídos
+                    planosAtivos.sort((a, b) => {
+                        if (a.status === 'em_andamento' && b.status !== 'em_andamento') return -1;
+                        if (b.status === 'em_andamento' && a.status !== 'em_andamento') return 1;
+                        return b.hc - a.hc;
+                    });
+
+                    // Estatísticas de Cobertura HARMONY
+                    const opsImplantadas = planosAtivos.filter(p => p.status === 'implantado');
+                    const opsEmAndamento = planosAtivos.filter(p => p.status === 'em_andamento');
+                    const opsPendentes = planosAtivos.filter(p => p.status === 'pendente');
+
+                    const totalOpsComPlano = planosAtivos.length;
+                    const pctCoberturaOps = totalOpsGlobal > 0 ? ((opsImplantadas.length / totalOpsGlobal) * 100).toFixed(1) : '0.0';
+                    const pctAndamentoOps = totalOpsGlobal > 0 ? ((opsEmAndamento.length / totalOpsGlobal) * 100).toFixed(1) : '0.0';
+
+                    const hcImplantado = opsImplantadas.reduce((acc, p) => acc + p.hc, 0);
+                    const hcEmAndamento = opsEmAndamento.reduce((acc, p) => acc + p.hc, 0);
+                    const hcTotalComHarmony = hcImplantado + hcEmAndamento;
+                    const pctHcImplantado = totalHcGlobal > 0 ? ((hcImplantado / totalHcGlobal) * 100).toFixed(1) : '0.0';
+
+                    const totalEtapasGeral = planosAtivos.reduce((acc, p) => acc + p.totalEtapas, 0);
+                    const totalEtapasConcluidas = planosAtivos.reduce((acc, p) => acc + p.concluidas, 0);
+                    const pctEtapasGeral = totalEtapasGeral > 0 ? Math.round((totalEtapasConcluidas / totalEtapasGeral) * 100) : 0;
+
+                    // Componente KPI
+                    const kpiBox = (icon, label, valor, sub, alerta, corIcon = 'text-indigo-600 dark:text-indigo-400') => `
+                        <div class="rounded-2xl border ${alerta ? 'border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} p-4 shadow-sm flex flex-col justify-between">
+                            <div class="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                <i class="fa-solid ${icon} ${corIcon}"></i> ${label}
+                            </div>
+                            <div class="text-3xl font-black mt-2 text-slate-800 dark:text-white tabular-nums">${valor}</div>
+                            <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">${sub}</div>
+                        </div>`;
+
+                    // Renderização de cada Plano e seu Gráfico de Gantt
+                    const renderPlanoCard = (p) => {
+                        const statusBadge = p.status === 'implantado'
+                            ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shadow-sm"><i class="fa-solid fa-circle-check text-emerald-600"></i> Harmony Implantado</span>`
+                            : (p.status === 'em_andamento'
+                                ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 shadow-sm"><i class="fa-solid fa-spinner animate-spin text-indigo-600"></i> Em Implantação (${p.pct}%)</span>`
+                                : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 shadow-sm"><i class="fa-regular fa-clock text-slate-400"></i> Planejado (0%)</span>`);
+
+                        // Construção das barras e marcos do Gráfico Gantt
+                        const totalDiasGantt = Math.max(1, p.diasTotais);
+                        let acumuladoDias = 0;
+
+                        const ganttSegments = p.etapas.map((etp, idx) => {
+                            const dur = Math.max(1, parseInt(etp.diasEstimados) || 1);
+                            const wPct = ((dur / totalDiasGantt) * 100).toFixed(2);
+                            const diaInicio = acumuladoDias;
+                            acumuladoDias += dur;
+                            const diaFim = acumuladoDias;
+
+                            let corSegmento = 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200';
+                            let statusTxt = 'Pendente';
+                            let iconeSeg = 'fa-regular fa-clock';
+
+                            if (etp.concluido) {
+                                corSegmento = 'bg-emerald-500 text-white shadow-sm';
+                                statusTxt = etp.dataConclusao ? `Concluído em ${app.ui._formatarDataBR(etp.dataConclusao)}` : 'Concluído';
+                                iconeSeg = 'fa-solid fa-check';
+                            } else if (idx === 0 || (idx > 0 && p.etapas[idx - 1].concluido)) {
+                                corSegmento = 'bg-indigo-600 text-white ring-2 ring-indigo-400/80 shadow-md';
+                                statusTxt = 'Em Execução';
+                                iconeSeg = 'fa-solid fa-play';
+                            }
+
+                            const tooltip = `${etp.nome}&#10;• Duração: ${dur} dias (Dia ${diaInicio} a ${diaFim})&#10;• Meta/Qtd: ${etp.qtdEstimada || 'Não informada'}&#10;• Responsável: ${etp.responsavelNome || etp.responsavelTipo}&#10;• O que é feito: ${etp.descricao}&#10;• Status: ${statusTxt}`;
+
+                            return `
+                                <div onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" title="${tooltip}" class="h-10 rounded-xl ${corSegmento} flex items-center justify-between px-2.5 cursor-pointer transition-all hover:scale-[1.01] hover:brightness-105 min-w-[70px] select-none" style="width: ${wPct}%">
+                                    <div class="flex items-center gap-1.5 truncate text-[11px] font-bold">
+                                        <i class="${iconeSeg} text-[10px]"></i>
+                                        <span class="truncate">Etp ${idx + 1}</span>
+                                    </div>
+                                    <span class="text-[10px] font-extrabold opacity-90 tabular-nums shrink-0 ml-1">${dur}d</span>
+                                </div>`;
+                        }).join('');
+
+                        // Construção da lista detalhada de etapas
+                        const etapasHtml = p.etapas.map((etp, idx) => {
+                            const isDone = etp.concluido;
+                            const dataFmt = etp.dataConclusao ? app.ui._formatarDataBR(etp.dataConclusao) : '';
+
+                            return `
+                                <div class="p-3.5 rounded-2xl border ${isDone ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
+                                    <div class="flex items-start gap-3 flex-1 min-w-0">
+                                        <label class="mt-0.5 relative flex items-center justify-center cursor-pointer shrink-0" title="Marcar/Desmarcar como concluído">
+                                            <input type="checkbox" ${isDone ? 'checked' : ''} onchange="app.ui.toggleEtapaConcluidaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" class="w-5 h-5 accent-emerald-600 rounded cursor-pointer">
+                                        </label>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span class="font-bold text-sm text-slate-800 dark:text-white">${esc(etp.nome)}</span>
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 tabular-nums">
+                                                    <i class="fa-regular fa-calendar-days text-slate-400"></i> ${etp.diasEstimados} dias
+                                                </span>
+                                                ${etp.qtdEstimada ? `
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
+                                                        <i class="fa-solid fa-bullseye text-indigo-500"></i> ${esc(etp.qtdEstimada)}
+                                                    </span>` : ''}
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300">
+                                                    <i class="fa-solid fa-user-check text-amber-500"></i> ${esc(etp.responsavelNome || etp.responsavelTipo || 'Responsável')}
+                                                </span>
+                                                ${isDone ? `
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                                                        <i class="fa-solid fa-circle-check text-emerald-600"></i> Concluído ${dataFmt ? 'em ' + dataFmt : ''}
+                                                    </span>` : `
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                        <i class="fa-regular fa-clock"></i> Pendente
+                                                    </span>`}
+                                            </div>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                                                <strong class="text-slate-600 dark:text-slate-300">O que é feito:</strong> ${esc(etp.descricao)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 self-end md:self-center shrink-0">
+                                        <button type="button" onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Editar Etapa">
+                                            <i class="fa-solid fa-pen-to-square"></i>
+                                        </button>
+                                        <button type="button" onclick="app.ui.excluirEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Etapa">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>`;
+                        }).join('');
+
+                        return `
+                            <div class="ia-plano-card glass-card rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 mb-6 shadow-sm" data-status="${p.status}" data-search="${esc(p.operacao)} ${esc(p.monitorNome)} ${esc(p.treinadorNome)}">
+                                <!-- Topo do Plano: Operação, Headcount e Status -->
+                                <div class="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white flex items-center justify-center text-xl shrink-0 shadow-md">
+                                            <i class="fa-solid fa-robot"></i>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2.5">
+                                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white truncate">${esc(p.operacao)}</h3>
+                                                <span class="px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold tabular-nums">
+                                                    <i class="fa-solid fa-users mr-1 text-slate-400"></i>${p.hc} operadores
+                                                </span>
+                                            </div>
+                                            <div class="text-xs text-slate-400 mt-0.5">
+                                                Cronograma estimado: <strong class="text-slate-600 dark:text-slate-300 tabular-nums">${p.diasTotais} dias úteis</strong> · Início: ${p.dataInicio ? app.ui._formatarDataBR(p.dataInicio) : 'Imediato'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        ${statusBadge}
+                                        <div class="flex items-center gap-1">
+                                            <button type="button" onclick="app.ui.abrirModalNovaImplantacaoIA(this.getAttribute('data-op'))" data-op="${esc(p.operacaoRaw)}" class="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Configurar Operação e Responsáveis">
+                                                <i class="fa-solid fa-sliders"></i>
+                                            </button>
+                                            <button type="button" onclick="app.ui.excluirImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Plano Desta Operação">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Responsáveis (Monitor de Qualidade & Treinador) + Barra de Progresso Global -->
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5 p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 flex items-center justify-center shrink-0">
+                                            <i class="fa-solid fa-headphones"></i>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Monitor Responsável (Qualidade)</span>
+                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">${esc(p.monitorNome)}</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                                            <i class="fa-solid fa-chalkboard-user"></i>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Treinador Responsável</span>
+                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">${esc(p.treinadorNome)}</span>
+                                        </div>
+                                    </div>
+                                    <div class="sm:col-span-2 lg:col-span-1 flex flex-col justify-center">
+                                        <div class="flex items-center justify-between text-xs mb-1">
+                                            <span class="font-bold text-slate-500 dark:text-slate-400">Progresso Geral</span>
+                                            <span class="font-black text-indigo-600 dark:text-indigo-400 tabular-nums">${p.concluidas}/${p.totalEtapas} etapas (${p.pct}%)</span>
+                                        </div>
+                                        <div class="w-full h-2 rounded-full bg-slate-200 dark:border-slate-800 overflow-hidden">
+                                            <div class="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500" style="width: ${p.pct}%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico Gantt (Linha do Tempo Visual das Etapas) -->
+                                <div class="mb-5 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+                                        <span class="flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+                                            <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Cronograma Gantt das Etapas
+                                        </span>
+                                        <span class="text-[11px] tabular-nums">Régua Total: ${p.diasTotais} dias</span>
+                                    </div>
+
+                                    <!-- Régua de Dias -->
+                                    <div class="flex justify-between text-[10px] font-bold text-slate-400 px-1 mb-1.5 tabular-nums">
+                                        <span>Início (0d)</span>
+                                        <span>Meio (${Math.round(p.diasTotais / 2)}d)</span>
+                                        <span>Conclusão (${p.diasTotais}d)</span>
+                                    </div>
+
+                                    <!-- Barra Horizontal Gantt com Fatias Proporcionais -->
+                                    <div class="w-full flex items-center gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 overflow-x-auto custom-scrollbar">
+                                        ${ganttSegments || '<div class="p-3 text-center text-xs text-slate-400 italic w-full">Nenhuma etapa cadastrada no cronograma.</div>'}
+                                    </div>
+                                </div>
+
+                                <!-- Checklist Detalhado das Etapas -->
+                                <div class="space-y-2 mb-4">
+                                    ${etapasHtml || '<div class="p-4 text-center text-xs text-slate-400 italic">Clique no botão abaixo para adicionar as etapas deste plano.</div>'}
+                                </div>
+
+                                <!-- Ações de Rodapé do Card -->
+                                <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                                    <button type="button" onclick="app.ui.abrirModalNovaEtapaIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3.5 py-2 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 font-bold transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-plus"></i> Adicionar Nova Etapa
+                                    </button>
+                                    <span class="text-slate-400 text-[11px]">
+                                        <i class="fa-solid fa-circle-info mr-1"></i>Clique no checkbox para marcar a conclusão da etapa em tempo real.
+                                    </span>
+                                </div>
+                            </div>`;
+                    };
+
+                    container.innerHTML = `
+                        <!-- Cabeçalho Principal -->
+                        <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+                            <div>
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-sm">
+                                        <i class="fa-solid fa-robot"></i>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Implantação IA — HARMONY</h2>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Gestão de cronograma Gantt, etapas editáveis, atribuição de Monitor & Treinador e cobertura de operações com IA.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2.5">
+                                <button type="button" onclick="app.ui.abrirModalNovaImplantacaoIA()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-transform hover:-translate-y-0.5 flex items-center gap-2">
+                                    <i class="fa-solid fa-plus"></i> Nova Implantação
+                                </button>
+                                <button type="button" onclick="app.ui.renderTab('span_operacoes', true)" class="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-scale-balanced text-slate-400"></i> Ver Span
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- KPIs de Cobertura HARMONY -->
+                        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-6">
+                            ${kpiBox('fa-shield-halved', 'Cobertura Operações', `${opsImplantadas.length} / ${totalOpsGlobal}`, `${pctCoberturaOps}% das operações com IA 100%`, opsImplantadas.length === 0, 'text-emerald-500')}
+                            ${kpiBox('fa-users', 'Operadores Cobertos', `${hcImplantado} op.`, `${pctHcImplantado}% do headcount setorial coberto`, false, 'text-blue-500')}
+                            ${kpiBox('fa-spinner', 'Em Implantação', `${opsEmAndamento.length} ops`, `${hcEmAndamento} operadores em fase de transição`, opsEmAndamento.length > 0, 'text-indigo-500')}
+                            ${kpiBox('fa-clock', 'Aguardando Início', `${opsPendentes.length + opsSemPlano.length} ops`, `${totalOpsGlobal - (opsImplantadas.length + opsEmAndamento.length)} operações pendentes`, (opsPendentes.length + opsSemPlano.length) > 0, 'text-amber-500')}
+                            ${kpiBox('fa-list-check', 'Etapas Globais', `${totalEtapasConcluidas} / ${totalEtapasGeral}`, `${pctEtapasGeral}% das etapas concluídas`, false, 'text-purple-500')}
+                        </div>
+
+                        <!-- Barra de Filtros e Busca -->
+                        <div class="flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+                            <div class="flex items-center gap-2 flex-1 min-w-[240px]">
+                                <i class="fa-solid fa-magnifying-glass text-slate-400 ml-2"></i>
+                                <input type="text" id="ia-search-input" oninput="app.ui.pesquisarImplantacaoIA(this.value)" placeholder="Buscar por operação, monitor ou treinador..." class="w-full bg-transparent text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400">
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1.5" id="ia-filtros-status">
+                                ${[
+                                    ['todos', 'Todas', planosAtivos.length],
+                                    ['implantado', 'Implantadas', opsImplantadas.length],
+                                    ['em_andamento', 'Em Implantação', opsEmAndamento.length],
+                                    ['pendente', 'Pendentes', opsPendentes.length]
+                                ].map(([k, lbl, count]) => `
+                                    <button type="button" data-k="${k}" onclick="app.ui.filtrarImplantacaoIA('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition border ${k === 'todos' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
+                                        ${lbl} <span class="tabular-nums opacity-75">(${count})</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Lista de Planos e Gráficos de Gantt -->
+                        <div id="ia-planos-container">
+                            ${planosAtivos.length > 0 
+                                ? planosAtivos.map(renderPlanoCard).join('') 
+                                : `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 my-4">
+                                    <i class="fa-solid fa-robot text-4xl mb-3 text-indigo-400 opacity-60"></i>
+                                    <h4 class="text-base font-bold text-slate-700 dark:text-slate-200">Nenhum plano de implantação cadastrado</h4>
+                                    <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">Inicie uma nova implantação do Harmony para as operações do setorial usando o botão acima.</p>
+                                   </div>`
+                            }
+                        </div>
+
+                        <!-- Painel de Operações Setoriais sem Harmony (Descobertas) -->
+                        ${opsSemPlano.length > 0 ? `
+                            <div class="mt-8 p-6 rounded-3xl border border-amber-300/80 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20">
+                                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                    <div>
+                                        <h3 class="font-extrabold text-base text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                                            <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Operações Setoriais sem Implantação Harmony (${opsSemPlano.length})
+                                        </h3>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">As operações abaixo foram identificadas no relatório Setorial, mas ainda não possuem cronograma do Harmony cadastrado.</p>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    ${opsSemPlano.map(op => `
+                                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 shadow-sm flex flex-col justify-between">
+                                            <div>
+                                                <div class="font-bold text-sm text-slate-800 dark:text-white truncate" title="${esc(op.nome)}">${esc(op.nome)}</div>
+                                                <div class="text-xs text-slate-400 mt-0.5 tabular-nums"><i class="fa-solid fa-users mr-1"></i>${op.hc} operadores</div>
+                                            </div>
+                                            <button type="button" onclick="app.ui.iniciarPlanoRapidoHarmony(this.getAttribute('data-op'))" data-op="${esc(op.nomeRaw)}" class="mt-3 w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
+                                                <i class="fa-solid fa-rocket"></i> Iniciar Harmony
+                                            </button>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>` : ''}
+                    `;
+                },
+
+                pesquisarImplantacaoIA(term) {
+                    const q = String(term || '').toLowerCase().trim();
+                    document.querySelectorAll('.ia-plano-card').forEach(card => {
+                        const searchMeta = String(card.getAttribute('data-search') || '').toLowerCase();
+                        card.style.display = (!q || searchMeta.includes(q)) ? '' : 'none';
+                    });
+                },
+
+                filtrarImplantacaoIA(status) {
+                    document.querySelectorAll('.ia-plano-card').forEach(card => {
+                        const s = card.getAttribute('data-status');
+                        card.style.display = (status === 'todos' || s === status) ? '' : 'none';
+                    });
+                    document.querySelectorAll('#ia-filtros-status button').forEach(b => {
+                        const on = b.getAttribute('data-k') === status;
+                        b.classList.toggle('bg-slate-800', on);
+                        b.classList.toggle('text-white', on);
+                        b.classList.toggle('border-slate-800', on);
+                    });
+                },
+
+                toggleEtapaConcluidaIA(opKey, etapaId) {
+                    try {
+                        const deploys = app.harmonyDeployList || {};
+                        const plano = deploys[opKey];
+                        if (!plano || !Array.isArray(plano.etapas)) return;
+
+                        const etapa = plano.etapas.find(e => e.id === etapaId);
+                        if (!etapa) return;
+
+                        etapa.concluido = !etapa.concluido;
+                        if (etapa.concluido) {
+                            etapa.dataConclusao = etapa.dataConclusao || new Date().toISOString().split('T')[0];
+                        } else {
+                            etapa.dataConclusao = '';
+                        }
+
+                        // Recalcula o status do plano
+                        const total = plano.etapas.length;
+                        const concluidas = plano.etapas.filter(e => e.concluido).length;
+                        if (concluidas === total && total > 0) plano.status = 'implantado';
+                        else if (concluidas > 0) plano.status = 'em_andamento';
+                        else plano.status = 'pendente';
+
+                        app.storage.saveHarmony().then(() => {
+                            app.ui.renderTab('implantacao_ia', true);
+                        });
+                    } catch (err) {
+                        console.error("Erro em toggleEtapaConcluidaIA:", err);
+                    }
+                },
+
+                iniciarPlanoRapidoHarmony(opNome) {
+                    this.abrirModalNovaImplantacaoIA(opNome);
+                },
+
+                abrirModalNovaImplantacaoIA(opNomePre = '') {
+                    try {
+                        const esc = (s) => app.utils.escapeHtml(s);
+                        app.syncOperacoesFromSetorial();
+                        const opsSetoriais = app.getOperacoesSetoriais() || [];
+                        const monitores = (app.users || []).filter(u => app.isUserQualidade(u) || (u.tipoAcesso || '') === 'Qualidade');
+                        const treinadores = (app.users || []).filter(u => (u.tipoAcesso || '') === 'Treinamento' || (u.cargo || '').toLowerCase().includes('treina'));
+
+                        // Localiza a operação de forma resiliente
+                        let selOp = '';
+                        if (opNomePre) {
+                            const opPreClean = String(opNomePre).trim().toUpperCase();
+                            const found = opsSetoriais.find(o => String(o.nome || '').trim().toUpperCase() === opPreClean);
+                            selOp = found ? found.nome : opNomePre;
+                        } else if (opsSetoriais.length > 0 && opsSetoriais[0]) {
+                            selOp = opsSetoriais[0].nome;
+                        }
+
+                        const opKey = selOp ? this._getHarmonyKey(selOp) : '';
+                        const planoExistente = opKey ? (app.harmonyDeployList && app.harmonyDeployList[opKey]) : null;
+
+                        // Auto-sugestão de monitor responsável baseado em u.operacoes
+                        let autoMonitor = planoExistente ? (planoExistente.monitorMatricula || '') : '';
+                        if (!autoMonitor && selOp) {
+                            const mFound = monitores.find(u => (u.operacoes || []).some(o => String(o || '').trim().toUpperCase() === selOp.toUpperCase()));
+                            if (mFound) autoMonitor = mFound.matricula;
+                        }
+
+                        let autoTreinador = planoExistente ? (planoExistente.treinadorMatricula || '') : (treinadores[0] ? treinadores[0].matricula : '');
+                        let dataIni = planoExistente ? (planoExistente.dataInicio || '') : new Date().toISOString().split('T')[0];
+                        let obs = planoExistente ? (planoExistente.observacoes || '') : '';
+
+                        const gm = document.getElementById('global-modal');
+                        if (!gm) return;
+                        const box = gm.firstElementChild;
+                        if (box) {
+                            box.classList.remove('max-w-lg');
+                            box.classList.add('max-w-3xl');
+                        }
+
+                        const titleEl = document.getElementById('modal-title');
+                        const contentEl = document.getElementById('modal-content');
+                        const actionsEl = document.getElementById('modal-actions');
+                        if (!titleEl || !contentEl || !actionsEl) return;
+
+                        titleEl.innerHTML = `
+                            <i class="fa-solid fa-robot text-indigo-600 mr-2"></i> ${planoExistente ? 'Configurar Implantação Harmony' : 'Nova Implantação de IA — HARMONY'}
+                        `;
+
+                        // Garante que a operação selecionada esteja listada nas opções
+                        let listaOps = [...opsSetoriais];
+                        if (selOp && !listaOps.some(o => String(o.nome || '').toUpperCase() === selOp.toUpperCase())) {
+                            listaOps.unshift({ nome: selOp, headcount: 0 });
+                        }
+
+                        contentEl.innerHTML = `
+                            <form id="form-implantacao-ia" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarImplantacaoIA();">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Operação Alvo</label>
+                                    <select id="ia-form-op" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                        ${listaOps.length > 0 ? listaOps.map(op => {
+                                            const nomeStr = String(op.nome || '');
+                                            const isSelected = selOp && nomeStr.toUpperCase() === selOp.toUpperCase();
+                                            return `<option value="${esc(nomeStr)}" ${isSelected ? 'selected' : ''}>${esc(app.utils.fixEncoding(nomeStr))} (${op.headcount || op.hc || 0} operadores)</option>`;
+                                        }).join('') : `<option value="">Nenhuma operação encontrada</option>`}
+                                    </select>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Monitor Responsável (Qualidade)</label>
+                                        <select id="ia-form-monitor" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="">Selecione o monitor...</option>
+                                            ${monitores.map(m => `<option value="${esc(m.matricula)}" ${m.matricula === autoMonitor ? 'selected' : ''}>${esc(app.utils.fixEncoding(m.nome))} (#${esc(m.matricula)})</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Treinador Responsável</label>
+                                        <select id="ia-form-treinador" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="">Selecione o treinador...</option>
+                                            ${treinadores.map(t => `<option value="${esc(t.matricula)}" ${t.matricula === autoTreinador ? 'selected' : ''}>${esc(app.utils.fixEncoding(t.nome))} (#${esc(t.matricula)})</option>`).join('')}
+                                            ${(app.users || []).filter(u => !treinadores.includes(u)).map(u => `<option value="${esc(u.matricula)}" ${u.matricula === autoTreinador ? 'selected' : ''}>${esc(app.utils.fixEncoding(u.nome))} (${esc(u.tipoAcesso || 'Colaborador')})</option>`).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data de Início Prevista</label>
+                                        <input type="date" id="ia-form-dataini" value="${esc(dataIni)}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Status Geral</label>
+                                        <select id="ia-form-status" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="auto">Automático (conforme etapas)</option>
+                                            <option value="em_andamento" ${planoExistente && planoExistente.status === 'em_andamento' ? 'selected' : ''}>Em Implantação</option>
+                                            <option value="implantado" ${planoExistente && planoExistente.status === 'implantado' ? 'selected' : ''}>Harmony Implantado</option>
+                                            <option value="pendente" ${planoExistente && planoExistente.status === 'pendente' ? 'selected' : ''}>Pendente / Planejado</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Observações & Metas de Cobertura</label>
+                                    <textarea id="ia-form-obs" rows="2" placeholder="Descreva os objetivos, volumetria esperada ou acordos específicos com o cliente/operação..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none focus:border-indigo-500">${esc(obs)}</textarea>
+                                </div>
+
+                                ${!planoExistente ? `
+                                    <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-900 dark:text-indigo-300">
+                                        <i class="fa-solid fa-circle-check text-indigo-600 mr-1.5"></i> Este plano será inicializado com as <strong>5 etapas padrão do Harmony</strong> (calibração de prompts, workshop de líderes, piloto assistido, alinhamento de operadores e go-live). Você poderá editar e adicionar novas etapas a qualquer momento.
+                                    </div>` : ''}
+                            </form>
+                        `;
+
+                        actionsEl.innerHTML = `
+                            <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                            <button type="button" onclick="app.ui.salvarImplantacaoIA()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-md">Salvar Implantação</button>
+                        `;
+
+                        gm.classList.remove('hidden');
+                    } catch (err) {
+                        console.error("Erro em abrirModalNovaImplantacaoIA:", err);
+                        app.ui.showAlert("Erro ao Abrir", "Não foi possível carregar a janela de implantação: " + (err.message || err), "error");
+                    }
+                },
+
+                salvarImplantacaoIA() {
+                    try {
+                        const opEl = document.getElementById('ia-form-op');
+                        if (!opEl) return;
+                        const selOp = (opEl.value || '').trim();
+                        if (!selOp) {
+                            app.ui.showAlert("Atenção", "Selecione uma operação para salvar o plano.", "warning");
+                            return;
+                        }
+
+                        const monMat = (document.getElementById('ia-form-monitor')?.value || '').trim();
+                        const treMat = (document.getElementById('ia-form-treinador')?.value || '').trim();
+                        const dataIni = document.getElementById('ia-form-dataini')?.value || '';
+                        const statusOpt = document.getElementById('ia-form-status')?.value || 'auto';
+                        const obs = (document.getElementById('ia-form-obs')?.value || '').trim();
+
+                        const monUser = (app.users || []).find(u => u.matricula === monMat);
+                        const treUser = (app.users || []).find(u => u.matricula === treMat);
+
+                        const monNome = monUser ? app.utils.fixEncoding(monUser.nome) : '';
+                        const treNome = treUser ? app.utils.fixEncoding(treUser.nome) : '';
+
+                        const opKey = this._getHarmonyKey(selOp);
+                        if (!app.harmonyDeployList) app.harmonyDeployList = {};
+
+                        const planoExistente = app.harmonyDeployList[opKey] || null;
+                        let etapas = planoExistente && Array.isArray(planoExistente.etapas) && planoExistente.etapas.length > 0
+                            ? planoExistente.etapas
+                            : this.getDefaultEtapasHarmony(monNome, treNome);
+
+                        // Atualiza responsáveis nas etapas caso ainda estivessem genéricos
+                        etapas.forEach(e => {
+                            if (e.responsavelTipo === 'Monitor' && monNome) e.responsavelNome = monNome;
+                            if (e.responsavelTipo === 'Treinador' && treNome) e.responsavelNome = treNome;
+                            if (e.responsavelTipo === 'Ambos' && monNome && treNome) e.responsavelNome = `${monNome} & ${treNome}`;
+                        });
+
+                        let statusFinal = statusOpt;
+                        if (statusFinal === 'auto') {
+                            const total = etapas.length;
+                            const conc = etapas.filter(e => e.concluido).length;
+                            if (conc === total && total > 0) statusFinal = 'implantado';
+                            else if (conc > 0) statusFinal = 'em_andamento';
+                            else statusFinal = 'pendente';
+                        }
+
+                        app.harmonyDeployList[opKey] = {
+                            id: opKey,
+                            operacao: selOp,
+                            monitorMatricula: monMat,
+                            monitorNome: monNome,
+                            treinadorMatricula: treMat,
+                            treinadorNome: treNome,
+                            dataInicio: dataIni,
+                            status: statusFinal,
+                            observacoes: obs,
+                            etapas,
+                            atualizadoEm: new Date().toISOString()
+                        };
+
+                        app.storage.saveHarmony().then(() => {
+                            const gm = document.getElementById('global-modal');
+                            if (gm) gm.classList.add('hidden');
+                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui.showAlert("Plano Salvo", `Implantação do Harmony para <strong>${app.utils.escapeHtml(selOp)}</strong> foi configurada com sucesso.`, "success");
+                        }).catch(err => {
+                            console.error("Erro ao salvar Harmony:", err);
+                            app.ui.showAlert("Erro ao Salvar", "Ocorreu um erro ao gravar o plano.", "error");
+                        });
+                    } catch (err) {
+                        console.error("Erro em salvarImplantacaoIA:", err);
+                        app.ui.showAlert("Erro", "Ocorreu um erro ao salvar o plano: " + (err.message || err), "error");
+                    }
+                },
+
+                abrirModalNovaEtapaIA(opKey) {
+                    this.abrirModalEditarEtapaIA(opKey, null);
+                },
+
+                abrirModalEditarEtapaIA(opKey, etapaId = null) {
+                    try {
+                        const esc = (s) => app.utils.escapeHtml(s);
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano) {
+                            app.ui.showAlert("Plano não encontrado", "Não foi possível localizar os registros desta operação.", "warning");
+                            return;
+                        }
+
+                        const etapa = etapaId ? (plano.etapas || []).find(e => e.id === etapaId) : null;
+
+                        const gm = document.getElementById('global-modal');
+                        if (!gm) return;
+                        const box = gm.firstElementChild;
+                        if (box) {
+                            box.classList.remove('max-w-lg');
+                            box.classList.add('max-w-2xl');
+                        }
+
+                        const nomeEtapa = etapa ? etapa.nome : '';
+                        const desc = etapa ? (etapa.descricao || '') : '';
+                        const dias = etapa ? (etapa.diasEstimados || 5) : 5;
+                        const qtd = etapa ? (etapa.qtdEstimada || '') : '';
+                        const respTipo = etapa ? (etapa.responsavelTipo || 'Monitor') : 'Monitor';
+                        const respNome = etapa ? (etapa.responsavelNome || '') : '';
+                        const concluido = etapa ? !!etapa.concluido : false;
+                        const dataConc = etapa ? (etapa.dataConclusao || '') : '';
+
+                        const titleEl = document.getElementById('modal-title');
+                        const contentEl = document.getElementById('modal-content');
+                        const actionsEl = document.getElementById('modal-actions');
+                        if (!titleEl || !contentEl || !actionsEl) return;
+
+                        titleEl.innerHTML = `
+                            <i class="fa-solid fa-list-check text-indigo-600 mr-2"></i> ${etapa ? 'Editar Etapa do Cronograma' : 'Nova Etapa — ' + esc(app.utils.fixEncoding(plano.operacao))}
+                        `;
+
+                        contentEl.innerHTML = `
+                            <form id="form-etapa-ia" data-opkey="${esc(opKey)}" data-etpid="${esc(etapaId || '')}" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'));">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome / Título da Etapa</label>
+                                    <input type="text" id="etp-form-nome" value="${esc(nomeEtapa)}" placeholder="Ex: Calibração dos Prompts e Métricas" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500" required>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">O que é feito nesta etapa (Atividades e Entregáveis)</label>
+                                    <textarea id="etp-form-desc" rows="3" placeholder="Descreva os procedimentos executados, objetivos e entregáveis esperados..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none focus:border-indigo-500 leading-relaxed">${esc(desc)}</textarea>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Dias Estimados (Gantt)</label>
+                                        <input type="number" min="1" max="180" id="etp-form-dias" value="${dias}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-black text-slate-800 dark:text-white outline-none focus:border-indigo-500 tabular-nums">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Quantidade Estimada / Meta</label>
+                                        <input type="text" id="etp-form-qtd" value="${esc(qtd)}" placeholder="Ex: 50 chamadas, 8 supervisores..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Tipo de Responsável</label>
+                                        <select id="etp-form-resptipo" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="Monitor" ${respTipo === 'Monitor' ? 'selected' : ''}>Monitor de Qualidade</option>
+                                            <option value="Treinador" ${respTipo === 'Treinador' ? 'selected' : ''}>Treinador</option>
+                                            <option value="Ambos" ${respTipo === 'Ambos' ? 'selected' : ''}>Ambos (Monitor & Treinador)</option>
+                                            <option value="Liderança" ${respTipo === 'Liderança' ? 'selected' : ''}>Liderança / Supervisão</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome do Responsável (Opcional)</label>
+                                        <input type="text" id="etp-form-respnome" value="${esc(respNome)}" placeholder="${esc(plano.monitorNome || 'Nome do colaborador')}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                    </div>
+                                </div>
+
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between gap-4">
+                                    <label class="flex items-center gap-2.5 cursor-pointer">
+                                        <input type="checkbox" id="etp-form-concluido" ${concluido ? 'checked' : ''} onchange="document.getElementById('etp-form-data').disabled = !this.checked;" class="w-5 h-5 accent-emerald-600 rounded">
+                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Etapa já foi concluída</span>
+                                    </label>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-slate-400">Data de conclusão:</span>
+                                        <input type="date" id="etp-form-data" value="${dataConc || (concluido ? new Date().toISOString().split('T')[0] : '')}" ${!concluido ? 'disabled' : ''} class="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-white outline-none disabled:opacity-40">
+                                    </div>
+                                </div>
+                            </form>
+                        `;
+
+                        actionsEl.innerHTML = `
+                            <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                            <button type="button" onclick="app.ui.salvarEtapaIA(document.getElementById('form-etapa-ia').getAttribute('data-opkey'), document.getElementById('form-etapa-ia').getAttribute('data-etpid'))" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-md">Salvar Etapa</button>
+                        `;
+
+                        gm.classList.remove('hidden');
+                    } catch (err) {
+                        console.error("Erro em abrirModalEditarEtapaIA:", err);
+                        app.ui.showAlert("Erro ao Abrir", "Não foi possível carregar a etapa: " + (err.message || err), "error");
+                    }
+                },
+
+                salvarEtapaIA(opKey, etapaId = null) {
+                    try {
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano) return;
+
+                        const nome = (document.getElementById('etp-form-nome')?.value || '').trim();
+                        if (!nome) {
+                            app.ui.showAlert("Atenção", "Informe o nome da etapa.", "warning");
+                            return;
+                        }
+
+                        const desc = (document.getElementById('etp-form-desc')?.value || '').trim();
+                        const dias = parseInt(document.getElementById('etp-form-dias')?.value) || 1;
+                        const qtd = (document.getElementById('etp-form-qtd')?.value || '').trim();
+                        const respTipo = document.getElementById('etp-form-resptipo')?.value || 'Monitor';
+                        const respNome = (document.getElementById('etp-form-respnome')?.value || '').trim() || (respTipo === 'Monitor' ? plano.monitorNome : (respTipo === 'Treinador' ? plano.treinadorNome : ''));
+                        const concluido = document.getElementById('etp-form-concluido')?.checked || false;
+                        let dataConc = document.getElementById('etp-form-data')?.value || '';
+                        if (concluido && !dataConc) dataConc = new Date().toISOString().split('T')[0];
+                        if (!concluido) dataConc = '';
+
+                        if (!Array.isArray(plano.etapas)) plano.etapas = [];
+
+                        if (etapaId) {
+                            const idx = plano.etapas.findIndex(e => e.id === etapaId);
+                            if (idx !== -1) {
+                                plano.etapas[idx] = {
+                                    ...plano.etapas[idx],
+                                    nome,
+                                    descricao: desc,
+                                    diasEstimados: dias,
+                                    qtdEstimada: qtd,
+                                    responsavelTipo: respTipo,
+                                    responsavelNome: respNome,
+                                    concluido,
+                                    dataConclusao: dataConc
+                                };
+                            }
+                        } else {
+                            plano.etapas.push({
+                                id: 'etp_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                                nome,
+                                descricao: desc,
+                                diasEstimados: dias,
+                                qtdEstimada: qtd,
+                                responsavelTipo: respTipo,
+                                responsavelNome: respNome,
+                                concluido,
+                                dataConclusao: dataConc
+                            });
+                        }
+
+                        // Recalcula o status geral
+                        const total = plano.etapas.length;
+                        const conc = plano.etapas.filter(e => e.concluido).length;
+                        if (conc === total && total > 0) plano.status = 'implantado';
+                        else if (conc > 0) plano.status = 'em_andamento';
+                        else plano.status = 'pendente';
+
+                        app.storage.saveHarmony().then(() => {
+                            const gm = document.getElementById('global-modal');
+                            if (gm) gm.classList.add('hidden');
+                            app.ui.renderTab('implantacao_ia', true);
+                        }).catch(err => {
+                            console.error("Erro ao salvar etapa Harmony:", err);
+                            app.ui.showAlert("Erro ao Salvar", "Ocorreu um erro ao gravar a etapa.", "error");
+                        });
+                    } catch (err) {
+                        console.error("Erro em salvarEtapaIA:", err);
+                        app.ui.showAlert("Erro", "Ocorreu um erro ao salvar a etapa: " + (err.message || err), "error");
+                    }
+                },
+
+                excluirEtapaIA(opKey, etapaId) {
+                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    if (!plano || !Array.isArray(plano.etapas)) return;
+
+                    app.ui.showConfirm(
+                        "Excluir Etapa",
+                        "Tem certeza que deseja remover esta etapa do cronograma?",
+                        () => {
+                            plano.etapas = plano.etapas.filter(e => e.id !== etapaId);
+                            const total = plano.etapas.length;
+                            const conc = plano.etapas.filter(e => e.concluido).length;
+                            if (conc === total && total > 0) plano.status = 'implantado';
+                            else if (conc > 0) plano.status = 'em_andamento';
+                            else plano.status = 'pendente';
+
+                            app.storage.saveHarmony().then(() => {
+                                app.ui.renderTab('implantacao_ia', true);
+                            });
+                        }
+                    );
+                },
+
+                excluirImplantacaoIA(opKey) {
+                    app.ui.showConfirm(
+                        "Excluir Plano Harmony",
+                        "Deseja remover o plano de implantação desta operação? As etapas e registros serão apagados.",
+                        () => {
+                            if (app.harmonyDeployList && app.harmonyDeployList[opKey]) {
+                                delete app.harmonyDeployList[opKey];
+                                app.storage.saveHarmony().then(() => {
+                                    app.ui.renderTab('implantacao_ia', true);
+                                    app.ui.showAlert("Plano Removido", "O cronograma desta operação foi excluído.", "info");
+                                });
+                            }
+                        }
+                    );
                 },
 
                 renderView_Hierarquia(container) {
@@ -7930,7 +9112,7 @@
                                     <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie colaboradores, grupos de acesso ADM, hierarquia de liderança e cobertura de operações do setorial.</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
-                                    <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-chart-Simple mr-1.5"></i>Visão Geral Setorial</button>
+                                    <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-chart-simple mr-1.5"></i>Visão Geral Setorial</button>
                                     <button type="button" onclick="app.ui.abrirModalPresetsGrupos()" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition"><i class="fa-solid fa-user-shield mr-1.5"></i>Abas por Grupo</button>
                                     <button type="button" onclick="app.ui.openAddUserModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"><i class="fa-solid fa-user-plus mr-1.5"></i>Novo Integrante</button>
                                 </div>
@@ -8298,7 +9480,7 @@
                                                         <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
                                                         <td class="py-3 px-4 text-center">${statusBadge}</td>
                                                         <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
-                                                        <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
+                                                        <td class="py-3 px-4 text-right text-xs text-slate-400 tabular-nums">${linha.data}</td>
                                                     </tr>
                                                     `;
                                                 }).join('')}
@@ -8577,7 +9759,7 @@
                                                             <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
                                                             <td class="py-3 px-4 text-center">${statusBadge}</td>
                                                             <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
-                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 font-mono">${linha.data}</td>
+                                                            <td class="py-3 px-4 text-right text-xs text-slate-400 tabular-nums">${linha.data}</td>
                                                         </tr>
                                                         `;
                                                     }).join('')}
@@ -8701,7 +9883,7 @@
                                         
                                         <div class="flex-1 flex flex-col justify-center">
                                             <input type="range" id="calib-progress" min="0" max="100" value="0" step="0.1" oninput="app.calibragemAudio.seekAudio(this)" class="w-full h-2 bg-slate-700/60 rounded-lg appearance-none cursor-pointer accent-blue-500 mb-2 backdrop-blur-sm border border-slate-600/50 shadow-inner">
-                                            <div class="flex justify-between text-[11px] font-bold text-slate-300 font-mono tracking-wider">
+                                            <div class="flex justify-between text-[11px] font-bold text-slate-300 tabular-nums tracking-wider">
                                                 <span id="calib-time-curr" class="text-blue-400">00:00</span>
                                                 <span id="calib-time-dur" class="opacity-70">00:00</span>
                                             </div>
@@ -8716,7 +9898,7 @@
                                     <div class="flex flex-col sm:flex-row gap-3 pt-2">
                                         <div class="w-full sm:w-28 shrink-0">
                                             <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1 px-1">Minutagem Exata</label>
-                                            <input type="text" id="calib-manual-time" placeholder="00:00" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 outline-none text-sm dark:text-white font-mono text-center shadow-inner" maxlength="5" oninput="this.value = this.value.replace(/[^0-9:]/g, '').replace(/^([0-9]{2})([0-9]+)/, '$1:$2').slice(0,5)" title="Formato MM:SS. Deixe em branco para usar o tempo atual do player.">
+                                            <input type="text" id="calib-manual-time" placeholder="00:00" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 outline-none text-sm dark:text-white tabular-nums text-center shadow-inner" maxlength="5" oninput="this.value = this.value.replace(/[^0-9:]/g, '').replace(/^([0-9]{2})([0-9]+)/, '$1:$2').slice(0,5)" title="Formato MM:SS. Deixe em branco para usar o tempo atual do player.">
                                         </div>
                                         <div class="flex-1">
                                             <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1 px-1">Apontamento / Observação</label>
@@ -8812,7 +9994,7 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">ID Ligação / Protocolo *</label>
-                                        <input type="text" id="laudo-id" required placeholder="Chave Única..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white font-mono shadow-sm">
+                                        <input type="text" id="laudo-id" required placeholder="Chave Única..." class="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 outline-none focus:ring-2 focus:ring-purple-500 dark:text-white tabular-nums shadow-sm">
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operador Avaliado *</label>
@@ -8984,7 +10166,7 @@
                                     </div>
                                     <div class="text-right flex flex-col items-end">
                                         <span class="${isOp ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-red-100 text-red-700 border-red-200'} px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm">${l.responsabilidade}</span>
-                                        <div class="text-[9px] text-slate-400 mt-2 font-mono"><i class="fa-solid fa-clock"></i> ${l.data}</div>
+                                        <div class="text-[9px] text-slate-400 mt-2 tabular-nums"><i class="fa-solid fa-clock"></i> ${l.data}</div>
                                     </div>
                                 </div>
                                 <div class="border-t border-slate-100 dark:border-slate-700 pt-3 mt-1 flex justify-end gap-2">
@@ -9619,7 +10801,7 @@
                             return `
                                 <tr class="hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors">
                                     <td class="py-3 px-3 font-medium text-slate-700 dark:text-slate-300 break-words whitespace-normal leading-snug border-b border-slate-100 dark:border-slate-700/50">${p.q}</td>
-                                    <td class="py-3 px-3 text-center font-mono text-slate-400 text-[10px] border-b border-slate-100 dark:border-slate-700/50 w-16">${p.p.toFixed(2)}</td>
+                                    <td class="py-3 px-3 text-center tabular-nums text-slate-400 text-[10px] border-b border-slate-100 dark:border-slate-700/50 w-16">${p.p.toFixed(2)}</td>
                                     <td class="py-3 px-3 text-right border-b border-slate-100 dark:border-slate-700/50 w-32">${respHtml}</td>
                                 </tr>
                             `;
@@ -9677,7 +10859,7 @@
                                             <span class="text-slate-600 dark:text-slate-300 ml-1"><i class="fa-solid fa-file-lines"></i> ${aval.formName}</span>
                                         </div>
                                         <div class="font-black text-slate-800 dark:text-white text-base"><i class="fa-solid fa-headset mr-1 text-slate-400"></i> ${aval.monitor}</div>
-                                        <div class="text-[10px] text-slate-500 mt-1 font-mono"><i class="fa-regular fa-calendar text-blue-400"></i> ${aval.data}</div>
+                                        <div class="text-[10px] text-slate-500 mt-1 tabular-nums"><i class="fa-regular fa-calendar text-blue-400"></i> ${aval.data}</div>
                                     </div>
                                     <div class="flex items-center gap-6 text-right">
                                         <div>
@@ -10079,6 +11261,95 @@
                     localStorage.removeItem('soft_quad_cfg');
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui._refreshComMemoriaDeScroll();
+                },
+
+                openMatConfigModal() {
+                    const c = this.getMatCfg();
+                    const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-lg font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
+                    const row = (id, cor, nome, val) => `
+                        <div class="flex items-center gap-3">
+                            <span class="w-2 h-10 rounded-full ${cor}"></span>
+                            <div class="flex-1">
+                                <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${nome}</div>
+                                <div class="text-[11px] text-slate-400" id="matcfg-hint-${id}"></div>
+                            </div>
+                            <div class="w-28"><input type="number" step="1" min="1" max="9999" id="matcfg-${id}" value="${val}" oninput="app.ui.previewMatConfig()" class="${inp}"></div>
+                        </div>`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-orange-500 mr-2"></i> Faixas do Ciclo de Maturidade`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4">
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Defina o limite em dias de tempo de casa de cada nível. O nível Veterano recebe tudo que passar do Pleno.</p>
+                            ${row('m1', 'bg-orange-500', 'Ramp-Up · até', c.m1)}
+                            ${row('m2', 'bg-emerald-500', 'Júnior · até', c.m2)}
+                            ${row('m3', 'bg-blue-500', 'Pleno · até', c.m3)}
+                            <div class="flex h-3 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800" id="matcfg-bar"></div>
+                            <div id="matcfg-error" class="hidden text-xs font-bold text-red-500"></div>
+                        </div>`;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="app.ui.resetMatConfig()" class="px-4 py-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl font-bold text-sm">Restaurar padrão</button>
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                        <button type="button" onclick="app.ui.saveMatConfig()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Aplicar</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                    this.previewMatConfig();
+                },
+
+                getMatCfg() {
+                    const def = { m1: 90, m2: 180, m3: 365 };
+                    try {
+                        const c = JSON.parse(localStorage.getItem('soft_mat_cfg') || 'null');
+                        if (c && c.m1 > 0 && c.m2 > c.m1 && c.m3 > c.m2) return { m1: +c.m1, m2: +c.m2, m3: +c.m3 };
+                    } catch (e) {}
+                    return def;
+                },
+
+                previewMatConfig() {
+                    const v = ['m1', 'm2', 'm3'].map(k => parseInt((document.getElementById('matcfg-' + k) || {}).value));
+                    const [a, b, c] = v;
+                    const ok = v.every(n => !isNaN(n)) && a > 0 && b > a && c > b;
+                    const set = (id, t) => { const el = document.getElementById('matcfg-hint-' + id); if (el) el.textContent = t; };
+                    if (ok) {
+                        set('m1', `De 0 a ${a} dias`);
+                        set('m2', `De ${a + 1} a ${b} dias`);
+                        set('m3', `De ${b + 1} a ${c} dias`);
+                        const bar = document.getElementById('matcfg-bar');
+                        if (bar) {
+                            const tot = c * 1.25;
+                            bar.innerHTML = [[a, 'bg-orange-500'], [b - a, 'bg-emerald-500'], [c - b, 'bg-blue-500'], [tot - c, 'bg-purple-500']].map(([w, cls]) => `<div class="${cls}" style="width:${(w / tot) * 100}%"></div>`).join('');
+                        }
+                    }
+                    const err = document.getElementById('matcfg-error');
+                    if (err) {
+                        err.classList.toggle('hidden', ok);
+                        err.textContent = ok ? '' : 'Use valores crescentes: Ramp-Up < Júnior < Pleno.';
+                    }
+                    return ok;
+                },
+
+                saveMatConfig() {
+                    if (!this.previewMatConfig()) return;
+                    const cfg = { m1: parseInt(document.getElementById('matcfg-m1').value), m2: parseInt(document.getElementById('matcfg-m2').value), m3: parseInt(document.getElementById('matcfg-m3').value) };
+                    localStorage.setItem('soft_mat_cfg', JSON.stringify(cfg));
+                    this._aplicarMatCfg();
+                },
+
+                resetMatConfig() {
+                    localStorage.removeItem('soft_mat_cfg');
+                    this._aplicarMatCfg();
+                },
+
+                _aplicarMatCfg() {
+                    const c = this.getMatCfg();
+                    document.getElementById('global-modal').classList.add('hidden');
+                    if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                        app.analiseCSVDinamicoData.consolidado.matConfig = [
+                            { id: 'm1', nome: 'Ramp-Up', maxDias: c.m1 },
+                            { id: 'm2', nome: 'Júnior', maxDias: c.m2 },
+                            { id: 'm3', nome: 'Pleno', maxDias: c.m3 },
+                            { id: 'm4', nome: 'Veterano', maxDias: 99999 }
+                        ];
+                        app.admin.gerarInteligenciaCSV();
+                    }
+                    app.ui.renderTab('analise_csv_dinamico', true);
                 },
 
                 openQuadranteModal(qName) {
@@ -10927,7 +12198,7 @@
                         `;
                     }
 
-                    // --- PREPARAÃ‡ÃƒO DOS QUADRANTES (faixas configurÃ¡veis) ---
+                    // --- PREPARAÇÃO DOS QUADRANTES (faixas configuráveis) ---
                     const qc = app.ui.getQuadCfg();
                     let q1 = [], q2 = [], q3 = [], q4 = [];
                     data.rankOperadores.forEach(op => {
@@ -10940,32 +12211,32 @@
 
                     // --- MATRIZ DE DESEMPENHO (QUADRANTES) ---
                     const tOps = data.rankOperadores.length || 1;
-                    const mediaDe = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + parseFloat(b.media), 0) / arr.length).toFixed(1) : 'â€”';
+                    const mediaDe = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + parseFloat(b.media), 0) / arr.length).toFixed(1) : '—';
                     const fmtLim = (n) => (Math.round(n * 10) / 10).toString();
                     const quadCards = [
                         { id: 'Q1', nome: 'Excelente', lista: q1, bar: 'bg-emerald-500', txt: 'text-emerald-600 dark:text-emerald-400', faixa: `${fmtLim(qc.q1)} a 100` },
                         { id: 'Q2', nome: 'Bom', lista: q2, bar: 'bg-blue-500', txt: 'text-blue-600 dark:text-blue-400', faixa: `${fmtLim(qc.q2)} a ${fmtLim(qc.q1 - 0.1)}` },
                         { id: 'Q3', nome: 'Regular', lista: q3, bar: 'bg-orange-500', txt: 'text-orange-600 dark:text-orange-400', faixa: `${fmtLim(qc.q3)} a ${fmtLim(qc.q2 - 0.1)}` },
-                        { id: 'Q4', nome: 'AtenÃ§Ã£o', lista: q4, bar: 'bg-red-500', txt: 'text-red-600 dark:text-red-400', faixa: `abaixo de ${fmtLim(qc.q3)}` }
+                        { id: 'Q4', nome: 'Atenção', lista: q4, bar: 'bg-red-500', txt: 'text-red-600 dark:text-red-400', faixa: `abaixo de ${fmtLim(qc.q3)}` }
                     ].map(c => {
                         const pct = ((c.lista.length / tOps) * 100).toFixed(1);
                         return `
                             <div onclick="app.ui.openQuadranteModal('${c.id}')" class="cursor-pointer bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
                                 <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                                    <span><span class="${c.txt}">${c.id}</span> Â· ${c.nome}</span>
+                                    <span><span class="${c.txt}">${c.id}</span> · ${c.nome}</span>
                                     <span>${c.faixa}</span>
                                 </div>
                                 <div class="flex items-baseline gap-2 mt-2">
                                     <span class="text-3xl font-black text-slate-800 dark:text-white">${c.lista.length}</span>
-                                    <span class="text-xs text-slate-400">operadores Â· ${pct}%</span>
+                                    <span class="text-xs text-slate-400">operadores · ${pct}%</span>
                                 </div>
                                 <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-3 overflow-hidden"><div class="h-full ${c.bar} rounded-full" style="width:${pct}%"></div></div>
-                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2">MÃ©dia do grupo: <strong class="${c.txt}">${mediaDe(c.lista)}</strong></div>
+                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2">Média do grupo: <strong class="${c.txt}">${mediaDe(c.lista)}</strong></div>
                             </div>
                         `;
                     }).join('');
 
-                    html += renderChapterTitle('Matriz de Desempenho', 'ClassificaÃ§Ã£o dos operadores em quadrantes com base na qualidade tÃ©cnica para aÃ§Ãµes de desenvolvimento direcionadas.', 'fa-border-all', 'orange');
+                    html += renderChapterTitle('Matriz de Desempenho', 'Classificação dos operadores em quadrantes com base na qualidade técnica para ações de desenvolvimento direcionadas.', 'fa-border-all', 'orange');
                     html += `
                         <div class="hideable-box relative mb-8 animate-fade-in">
                             ${btnHideCode}
@@ -11093,83 +12364,45 @@
 
                     // Só mostra essa área se existir arquivo de RH importado cruzando dados (tcTotalOp > 0)
                     if (tcTotalOp > 0 || app.isAdmin) {
+                        const matVis = [
+                            { bar: 'bg-orange-500', txt: 'text-orange-600 dark:text-orange-400' },
+                            { bar: 'bg-emerald-500', txt: 'text-emerald-600 dark:text-emerald-400' },
+                            { bar: 'bg-blue-500', txt: 'text-blue-600 dark:text-blue-400' },
+                            { bar: 'bg-purple-500', txt: 'text-purple-600 dark:text-purple-400' }
+                        ];
+                        const matCards = matStats.map((st, index) => {
+                            const v = matVis[index % matVis.length];
+                            const textDias = index === 0 ? `até ${st.maxDias} dias` : (index === matStats.length - 1 ? `acima de ${matStats[index-1].maxDias} dias` : `${matStats[index-1].maxDias + 1} a ${st.maxDias} dias`);
+                            return `
+                                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
+                                    <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                        <span><span class="${v.txt}">N${index + 1}</span> · ${st.nome}</span>
+                                        <span>${textDias}</span>
+                                    </div>
+                                    <div class="flex items-baseline gap-2 mt-2">
+                                        <span class="text-3xl font-black text-slate-800 dark:text-white">${st.qtd}</span>
+                                        <span class="text-xs text-slate-400">operadores · ${st.pct}%</span>
+                                    </div>
+                                    <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-3 overflow-hidden"><div class="h-full ${v.bar} rounded-full" style="width:${st.pct}%"></div></div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2">Média do grupo: <strong class="${v.txt}">${st.media}</strong></div>
+                                </div>`;
+                        }).join('');
                         html += renderChapterTitle('Ciclo de Maturidade', 'Acompanhamento do impacto do Tempo de Empresa (Curva de Aprendizado) na qualidade das entregas.', 'fa-seedling', 'teal');
                         html += `
-                            <div class="hideable-box relative mb-8 animate-fade-in glass-card p-6 md:p-8 rounded-3xl border-t-4 border-t-emerald-500 shadow-sm bg-slate-50 dark:bg-slate-900">
-                                ${btnHideCode}${!this.analiseEditMode ? `
-                                    <div class="flex flex-col md:flex-row items-center justify-between bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 relative z-20 gap-4">
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg"><i class="fa-solid fa-sliders"></i></div>
-                                            <div>
-                                                <div class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Configuração do Ciclo</div>
-                                                <div class="text-[10px] text-slate-500">Defina a linha de corte dos níveis em dias.</div>
-                                            </div>
-                                        </div>
-                                        <div class="flex flex-wrap items-center justify-center gap-3 w-full md:w-auto">
-                                            <div class="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700">
-                                                <span class="text-[10px] font-bold text-slate-500 uppercase">Ramp-Up até:</span>
-                                                <input type="number" id="inline-mat-ramp" value="${matStats[0].maxDias}" class="w-14 bg-transparent text-center text-sm font-black text-slate-800 dark:text-white outline-none border-b-2 border-dashed border-slate-300 focus:border-emerald-500 transition-colors">
-                                                <span class="text-[10px] font-bold text-slate-500 uppercase">dias</span>
-                                            </div>
-                                            <div class="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700">
-                                                <span class="text-[10px] font-bold text-slate-500 uppercase">Júnior até:</span>
-                                                <input type="number" id="inline-mat-jr" value="${matStats[1].maxDias}" class="w-14 bg-transparent text-center text-sm font-black text-slate-800 dark:text-white outline-none border-b-2 border-dashed border-slate-300 focus:border-emerald-500 transition-colors">
-                                                <span class="text-[10px] font-bold text-slate-500 uppercase">dias</span>
-                                            </div>
-                                            <button onclick="app.ui.salvarMaturidadeInline()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-transform hover:-translate-y-0.5 w-full sm:w-auto"><i class="fa-solid fa-check mr-2"></i> Aplicar</button>
-                                        </div>
-                                    </div>
-                                ` : ''}
-                                
-                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
-                                    <!-- Cartões Dinâmicos de Quadrante -->
-                                    <div class="lg:col-span-2 grid grid-cols-2 md:grid-cols-${matStats.length > 4 ? 4 : matStats.length} gap-4">
-                        `;
-                        
-                        matStats.forEach((st, index) => {
-                            // Helper para cores Tailwind
-                            let cText = `text-${st.cor}-600 dark:text-${st.cor}-400`;
-                            let cBg = `bg-${st.cor}-100 dark:bg-${st.cor}-900/30 text-${st.cor}-700`;
-                            let cBorder = `border-${st.cor}-200 dark:border-${st.cor}-800`;
-                            let cIcon = `text-${st.cor}-100 dark:text-${st.cor}-900/30`;
-                            
-                            // Criação inteligente da String de dias (Ex: "Até 90 Dias" ou "91 a 180 Dias")
-                            let textDias = index === 0 ? `Até ${st.maxDias} dias` : (index === matStats.length - 1 ? `Mais de ${matStats[index-1].maxDias} dias` : `De ${matStats[index-1].maxDias + 1} a ${st.maxDias} dias`);
-                            
-                            html += `
-                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border ${cBorder} shadow-sm flex flex-col relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:border-${st.cor}-400">
-                                    <div class="absolute -right-3 -bottom-3 text-6xl ${cIcon} group-hover:scale-110 transition-transform"><i class="fa-solid ${st.icone}"></i></div>
-                                    <div class="flex justify-between items-start mb-2 relative z-10">
-                                        <div>
-                                            <div class="text-xs font-black uppercase ${cText} tracking-widest truncate max-w-[80px]" title="${st.nome}">${st.nome}</div>
-                                            <div class="text-[9px] text-slate-500 font-medium mt-0.5 truncate">${textDias}</div>
-                                        </div>
-                                        <div class="text-[10px] font-bold ${cBg} px-2 py-1 rounded-lg shadow-sm">${st.pct}%</div>
-                                    </div>
-                                    <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700/50 relative z-10 flex items-end justify-between">
-                                        <div>
-                                            <span class="block text-[9px] font-bold uppercase text-slate-400 mb-0.5">Média</span>
-                                            <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${st.media}</span>
-                                        </div>
-                                        <div class="text-[10px] font-bold ${cText} flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                            <i class="fa-solid fa-users"></i> ${st.qtd} Op.
-                                        </div>
-                                    </div>
+                            <div class="hideable-box relative mb-8 animate-fade-in">
+                                ${btnHideCode}
+                                ${app.isGuest ? '' : `
+                                <div class="flex justify-end mb-3">
+                                    <button type="button" onclick="app.ui.openMatConfigModal()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                        <i class="fa-solid fa-sliders mr-1.5"></i>Configurar faixas
+                                    </button>
+                                </div>`}
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${matCards}</div>
+                                <div class="mt-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Desempenho x Tempo</div>
+                                    <div class="relative w-full h-48"><canvas id="chart-curva-aprendizado"></canvas></div>
                                 </div>
-                            `;
-                        });
-
-                        html += `
-                                    </div>
-                                    
-                                    <!-- NOVO Gráfico Curva de Aprendizado EM BARRAS -->
-                                    <div class="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-full min-h-[220px]">
-                                        <div class="text-xs uppercase font-bold text-slate-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-simple text-emerald-500"></i> Desempenho x Tempo</div>
-                                        <div class="flex-1 relative w-full h-full min-h-[160px]"><canvas id="chart-curva-aprendizado"></canvas></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>`;
+                            </div>`;
                     }
                     
                     // --- NOVO CAPÍTULO: MOTIVOS DE CONTATO (ASSUNTOS) ---
@@ -13137,7 +14370,7 @@
                                 else naoPareadasSet.add(mStr);
                             });
 
-                            const badge = (col) => col ? `<span class="text-emerald-600 font-black">✅ "${app.utils.fixEncoding(col)}"</span>` : `<span class="text-red-500 font-black">❌ Não encontrada</span>`;
+                            const badge = (col) => col ? `<span class="text-emerald-600 font-black"><i class="fa-solid fa-check mr-1"></i>"${app.utils.fixEncoding(col)}"</span>` : `<span class="text-red-500 font-black">Não encontrada</span>`;
 
                             document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-amber-500"></i> Diagnóstico do Relatório Padrão`;
                             document.getElementById('modal-content').innerHTML = `
@@ -13163,13 +14396,13 @@
                                     ${naoPareadasSet.size > 0 ? `
                                         <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                                             <div class="font-black text-amber-700 dark:text-amber-400 mb-1"><i class="fa-solid fa-triangle-exclamation"></i> ${naoPareadasSet.size} Nome(s) de Monitor sem vínculo na Equipe:</div>
-                                            <div class="max-h-24 overflow-y-auto text-[11px] text-amber-800 dark:text-amber-300 font-mono">${Array.from(naoPareadasSet).join(' | ')}</div>
+                                            <div class="max-h-24 overflow-y-auto text-[11px] text-amber-800 dark:text-amber-300 tabular-nums">${Array.from(naoPareadasSet).join(' | ')}</div>
                                         </div>
                                     ` : ''}
 
                                     <div>
                                         <div class="font-black uppercase text-[10px] text-slate-400 mb-1">Todas as Colunas Encontradas no Cabeçalho (${headers.length}):</div>
-                                        <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-mono text-[10px] max-h-28 overflow-y-auto text-slate-700 dark:text-slate-300">
+                                        <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 tabular-nums text-[10px] max-h-28 overflow-y-auto text-slate-700 dark:text-slate-300">
                                             ${headers.map(h => `<span class="inline-block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded m-0.5">${app.utils.fixEncoding(h)}</span>`).join('')}
                                         </div>
                                     </div>
@@ -13817,7 +15050,7 @@
                     this.fecharModalImportacaoTripla();
                     app.ui.showAlert("Iniciando Raio-X...", "Abra o <b>Console (F12)</b>! Estou imprimindo tabelas e dados brutos nele agora mesmo.", "info");
 
-                    console.group("%c🕵️‍♂️ MODO DEBUG: IMPORTAÇÃO TRIPLA", "font-size:18px; color:#a855f7; font-weight:bold; background:#f3e8ff; padding: 5px; border-radius: 5px;");
+                    console.group("%cMODO DEBUG: IMPORTAÇÃO TRIPLA", "font-size:18px; color:#a855f7; font-weight:bold; background:#f3e8ff; padding: 5px; border-radius: 5px;");
 
                     const filesToProcess = [base, fb, qa];
                     const nomesText = ["1. ARQUIVO BASE (XLSX)", "2. ARQUIVO FEEDBACK (XLSX)", "3. SESSÕES/FORMULÁRIO (CSV)"];
@@ -13831,7 +15064,7 @@
                         };
                         reader.readAsArrayBuffer(f);
                     }))).then(datasets => {
-                        let relatorioHTML = `<div class="text-[11px] text-left font-mono space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">`;
+                        let relatorioHTML = `<div class="text-[11px] text-left tabular-nums space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">`;
 
                         // Função Idêntica à original para garantir que testamos as mesmas chaves
                         const extrairIDSeguro = (rowObj) => {
@@ -13869,11 +15102,11 @@
                                 // DETECÇÃO CRÍTICA DO CSV "COLADO"
                                 if (index === 2 && headers.length === 1 && (headers[0].includes(';') || headers[0].includes(','))) {
                                     const msg = `CRÍTICO: O arquivo 3 (CSV) falhou na leitura das colunas! O Excel exportou tudo em uma coluna única usando separador (${headers[0].includes(';') ? ';' : ','}). Converta ele para .XLSX antes de subir!`;
-                                    console.warn("🚨 " + msg);
+                                    console.warn("" + msg);
                                     relatorioHTML += `<div class="bg-red-50 text-red-600 p-3 rounded-lg font-bold border border-red-300 mt-2 flex gap-2 items-start"><i class="fa-solid fa-triangle-exclamation mt-1"></i> <div>${msg}</div></div>`;
                                 }
                             } else {
-                                console.warn("🚨 ARQUIVO VAZIO!");
+                                console.warn("ARQUIVO VAZIO!");
                                 relatorioHTML += `<div class="bg-red-50 text-red-600 p-3 rounded-lg border border-red-200"><strong>${nomesText[index]}:</strong> VAZIO OU CORROMPIDO!</div>`;
                             }
                             console.groupEnd();
@@ -14131,7 +15364,7 @@
                         document.getElementById('modal-content').innerHTML = `
                             <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Envie este link para convidados, clientes ou diretoria. Eles terão acesso <b>apenas ao Modo de Apresentação</b> desta tela, sem poder editar ou ver o resto do sistema. O link expira automaticamente em 72 horas.</p>
                             <div class="p-3 bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg flex items-center justify-between gap-3 shadow-inner">
-                                <input type="text" readonly value="${shareUrl}" class="w-full bg-transparent outline-none text-xs font-mono text-slate-600 dark:text-slate-300 truncate" id="share-url-input">
+                                <input type="text" readonly value="${shareUrl}" class="w-full bg-transparent outline-none text-xs tabular-nums text-slate-600 dark:text-slate-300 truncate" id="share-url-input">
                                 <button onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value); app.ui.showAlert('Copiado!', 'Link copiado para a área de transferência!', 'success');" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors shadow-sm whitespace-nowrap"><i class="fa-regular fa-copy"></i> Copiar</button>
                             </div>
                         `;
@@ -14147,7 +15380,7 @@
                     const file = input.files[0];
                     if (!file) return;
 
-                    app.ui.showAlert("🔍 Escaneando Pesos...", "Abrindo a planilha para diagnosticar o formato das colunas de avaliação...", "info");
+                    app.ui.showAlert("Escaneando Pesos...", "Abrindo a planilha para diagnosticar o formato das colunas de avaliação...", "info");
 
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -14216,7 +15449,7 @@
                                 htmlDebug += `
                                 <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm transition-hover hover:border-purple-300">
                                     <div class="font-black text-slate-500 text-[10px] uppercase tracking-widest mb-1">Nome exato da Coluna:</div>
-                                    <div class="text-xs font-mono mb-4 text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100 break-words leading-relaxed">${col}</div>
+                                    <div class="text-xs tabular-nums mb-4 text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100 break-words leading-relaxed">${col}</div>
                                     
                                     <div class="grid grid-cols-2 gap-3 mb-4">
                                         <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col justify-center items-center text-center">
@@ -14232,7 +15465,7 @@
                                     <div class="border-t border-slate-100 pt-3">
                                         <div class="text-[10px] font-bold text-slate-400 uppercase mb-2">Simulação de Leitura (1ª Linha):</div>
                                         <div class="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                                            Valor detectado na célula: <b class="font-mono bg-white px-1 border border-slate-200 rounded">"${valorLinha1}"</b><br>
+                                            Valor detectado na célula: <b class="tabular-nums bg-white px-1 border border-slate-200 rounded">"${valorLinha1}"</b><br>
                                             <div class="mt-2 pt-2 border-t border-slate-200 border-dashed">${interpretacaoResp}</div>
                                         </div>
                                     </div>
@@ -14922,9 +16155,10 @@
                     const mesesOrdenados = Array.from(mesesDisp).sort();
                     const ciclosOrdenados = Array.from(ciclosDisp).sort((a,b) => parseInt(a) - parseInt(b));
 
+                    const _mc = app.ui.getMatCfg();
                     let matConfigFallback = app.analiseCSVDinamicoData?.consolidado?.matConfig || [
-                        { id: 'm1', nome: 'Ramp-Up', maxDias: 90 }, { id: 'm2', nome: 'Júnior', maxDias: 180 },
-                        { id: 'm3', nome: 'Pleno', maxDias: 365 }, { id: 'm4', nome: 'Veterano', maxDias: 99999 }
+                        { id: 'm1', nome: 'Ramp-Up', maxDias: _mc.m1 }, { id: 'm2', nome: 'Júnior', maxDias: _mc.m2 },
+                        { id: 'm3', nome: 'Pleno', maxDias: _mc.m3 }, { id: 'm4', nome: 'Veterano', maxDias: 99999 }
                     ];
 
                     // [NOVO] Resgatando a memória do usuário antes de recriar a estrutura!
@@ -15479,11 +16713,11 @@
                         throw new Error(data.error ? data.error.message : `Erro HTTP: ${response.status}`);
                     }
 
-                    app.ui.showAlert("Conexão Bem-Sucedida! 🟢", "A chave é válida e a Inteligência Artificial respondeu corretamente. Não esqueça de clicar no botão verde <b>Salvar Nova Estrutura</b> lá embaixo!", "success");
+                    app.ui.showAlert("Conexão Bem-Sucedida!", "A chave é válida e a Inteligência Artificial respondeu corretamente. Não esqueça de clicar no botão verde <b>Salvar Nova Estrutura</b> lá embaixo!", "success");
 
                 } catch (error) {
                     console.error("Teste Gemini Erro:", error);
-                    app.ui.showAlert("Falha na Conexão 🔴", `A chave informada foi recusada pelo Google.<br><br><b>Motivo:</b> ${error.message}`, "error");
+                    app.ui.showAlert("Falha na Conexão", `A chave informada foi recusada pelo Google.<br><br><b>Motivo:</b> ${error.message}`, "error");
                 } finally {
                     btnTest.disabled = false;
                     btnTest.innerHTML = '<i class="fa-solid fa-plug-circle-check"></i> Testar Conexão';
@@ -15578,7 +16812,7 @@
                                 <div>
                                     <div class="flex items-center gap-2 flex-wrap">
                                         <h3 class="text-lg font-black text-slate-800 dark:text-white">${u.nome}</h3>
-                                        <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">#${u.matricula}</span>
+                                        <span class="text-xs tabular-nums px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">#${u.matricula}</span>
                                     </div>
                                     <div class="text-[11px] text-slate-400 mt-0.5">${(u.operacoes && u.operacoes.length) ? u.operacoes.join(' • ') : 'Sem operação vinculada'}</div>
                                     <div class="mt-2 flex flex-wrap gap-2">${statusHeaderBadge}</div>
@@ -16028,7 +17262,7 @@
 
                     document.getElementById('global-modal').classList.add('hidden');
                     app.storage.saveUsers().then(() => {
-                        app.ui.showAlert("Validado com Sucesso! ✅", `Bonificação de <strong>${u.nome}</strong> assinada digitalmente com a senha do colaborador e travada.`, "success");
+                        app.ui.showAlert("Validado com Sucesso!", `Bonificação de <strong>${u.nome}</strong> assinada digitalmente com a senha do colaborador e travada.`, "success");
                         this.renderCadastrosUserList();
                         this.loadUserEditor();
                     });
@@ -16970,7 +18204,7 @@
                     // Tenta entrar em Tela Cheia
                             document.documentElement.requestFullscreen().catch(e => console.log("O navegador preferiu não expandir sozinho."));
                             
-                            app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br>💡 <b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para criar um PDF de <b>página única e alta resolução</b> englobando toda a sua tabela.", "success");
+                            app.ui.showAlert("Modo Apresentação Ativo", "A tela foi adaptada para reunião! <br><br><b>Dica de Ouro:</b> Pressione <b>Ctrl + P</b>. Ajustamos o sistema para criar um PDF de <b>página única e alta resolução</b> englobando toda a sua tabela.", "success");
                         },
 
                 reprocessarPontuacoes() {
@@ -17343,7 +18577,7 @@
                                     <button onclick="app.admin.addBarraGrafico()" class="text-[10px] bg-green-100 text-green-700 hover:bg-green-200 font-bold px-3 py-2 rounded-lg transition-colors shadow-sm shrink-0"><i class="fa-solid fa-plus mr-1"></i> Adicionar</button>
                                 </div>
                                 
-                                <textarea id="graf-excel-paste" onpaste="setTimeout(() => app.admin.handleExcelPaste(), 50)" class="w-full p-2 mb-3 text-[10px] font-mono border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 outline-none focus:border-blue-500 dark:text-slate-300 resize-none h-12 transition-colors" placeholder="Colar do Excel em lote... (Copie as 2 colunas e aperte Ctrl+V aqui)"></textarea>
+                                <textarea id="graf-excel-paste" onpaste="setTimeout(() => app.admin.handleExcelPaste(), 50)" class="w-full p-2 mb-3 text-[10px] tabular-nums border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 outline-none focus:border-blue-500 dark:text-slate-300 resize-none h-12 transition-colors" placeholder="Colar do Excel em lote... (Copie as 2 colunas e aperte Ctrl+V aqui)"></textarea>
 
                                 <div id="graf-barras-container" class="space-y-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
                                 </div>
@@ -17443,7 +18677,7 @@
             // Sistema Global de Proteção contra Erros (Ativa a tela visual)
             window.addEventListener('error', function(e) {
             // Imprime o erro no Console (F12) para ajudar no diagnóstico
-                console.error("🚨 Erro detectado pelo sistema:", e.error || e.message);
+                console.error("Erro detectado pelo sistema:", e.error || e.message);
 
             // Captura apenas erros reais de script, ignora pequenos erros de carregamento de imagem externa
                 if(e.filename && e.filename.includes(window.location.hostname)) {
