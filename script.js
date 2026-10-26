@@ -248,6 +248,10 @@
                                             if (localCfg.deParaSetoresVG) app.config.deParaSetoresVG = { ...(app.config.deParaSetoresVG || {}), ...localCfg.deParaSetoresVG };
                                             if (localCfg.metasSetoresVG) app.config.metasSetoresVG = { ...(app.config.metasSetoresVG || {}), ...localCfg.metasSetoresVG };
                                             if (localCfg.metaPadraoVG !== undefined) app.config.metaPadraoVG = localCfg.metaPadraoVG;
+                                            if (localCfg.metasSetoresVG_Monitor) app.config.metasSetoresVG_Monitor = { ...(app.config.metasSetoresVG_Monitor || {}), ...localCfg.metasSetoresVG_Monitor };
+                                            if (localCfg.metasSetoresVG_Supervisor) app.config.metasSetoresVG_Supervisor = { ...(app.config.metasSetoresVG_Supervisor || {}), ...localCfg.metasSetoresVG_Supervisor };
+                                            if (localCfg.metaPadraoVG_Monitor !== undefined) app.config.metaPadraoVG_Monitor = localCfg.metaPadraoVG_Monitor;
+                                            if (localCfg.metaPadraoVG_Supervisor !== undefined) app.config.metaPadraoVG_Supervisor = localCfg.metaPadraoVG_Supervisor;
                                             if (Array.isArray(localCfg.ignoredSetoresRH)) app.config.ignoredSetoresRH = localCfg.ignoredSetoresRH;
                                             if (localCfg.aliases) app.config.aliases = { ...(app.config.aliases || {}), ...localCfg.aliases };
                                             if (localCfg.headcountRH && (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0)) app.config.headcountRH = localCfg.headcountRH;
@@ -255,6 +259,17 @@
                                         }
                                     }
                                 } catch (e) { console.warn("Aviso ao ler backup local de config:", e); }
+
+                                // Preserva as metas setoriais e gerais legadas do usuário para que nenhuma operação fique com meta 0
+                                if ((!app.config.metasSetoresVG_Monitor || Object.keys(app.config.metasSetoresVG_Monitor).length === 0) && app.config.metasSetoresVG && Object.keys(app.config.metasSetoresVG).length > 0) {
+                                    app.config.metasSetoresVG_Monitor = { ...app.config.metasSetoresVG };
+                                }
+                                if (app.config.metaPadraoVG_Monitor === undefined || isNaN(parseFloat(app.config.metaPadraoVG_Monitor)) || parseFloat(app.config.metaPadraoVG_Monitor) <= 0) {
+                                    app.config.metaPadraoVG_Monitor = (app.config.metaPadraoVG !== undefined && parseFloat(app.config.metaPadraoVG) > 0) ? parseFloat(app.config.metaPadraoVG) : 2;
+                                }
+                                if (app.config.metaPadraoVG_Supervisor === undefined || isNaN(parseFloat(app.config.metaPadraoVG_Supervisor)) || parseFloat(app.config.metaPadraoVG_Supervisor) <= 0) {
+                                    app.config.metaPadraoVG_Supervisor = 4;
+                                }
                                 
                                 // CORREÇÃO: Previne o erro "Ops! Algo quebrou" se as metas estiverem vazias
                                 if (!app.config.goals) app.config.goals = [];
@@ -328,6 +343,15 @@
                                     if (localH) app.harmonyDeployList = JSON.parse(localH);
                                     else app.harmonyDeployList = {};
                                 } catch (e) { app.harmonyDeployList = {}; }
+                            }
+                            if (data.csatNpsProvas) {
+                                app.csatNpsProvas = data.csatNpsProvas;
+                            } else {
+                                try {
+                                    const localP = localStorage.getItem('soft_csat_nps_provas');
+                                    if (localP) app.csatNpsProvas = JSON.parse(localP);
+                                    else app.csatNpsProvas = {};
+                                } catch (e) { app.csatNpsProvas = {}; }
                             }
                             if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
                                 app.visaoGeralData = this.normalizeVisaoGeralKeys(data.visaoGeralData);
@@ -496,9 +520,31 @@
                     Object.keys(rawObj).forEach(k => {
                         const cleanK = app.utils.fixEncoding(String(k || '')).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
                         if (!cleanK) return;
-                        if (!norm[cleanK]) norm[cleanK] = { count: 0, somaNotas: 0 };
-                        norm[cleanK].count += (rawObj[k]?.count || 0);
-                        norm[cleanK].somaNotas += (rawObj[k]?.somaNotas || 0);
+                        if (!norm[cleanK]) {
+                            norm[cleanK] = {
+                                count: 0,
+                                somaNotas: 0,
+                                monitor: { count: 0, somaNotas: 0 },
+                                supervisor: { count: 0, somaNotas: 0 }
+                            };
+                        }
+                        const item = rawObj[k] || {};
+                        norm[cleanK].count += (item.count || 0);
+                        norm[cleanK].somaNotas += (item.somaNotas || 0);
+
+                        if (item.monitor) {
+                            norm[cleanK].monitor.count += (item.monitor.count || 0);
+                            norm[cleanK].monitor.somaNotas += (item.monitor.somaNotas || 0);
+                        }
+                        if (item.supervisor) {
+                            norm[cleanK].supervisor.count += (item.supervisor.count || 0);
+                            norm[cleanK].supervisor.somaNotas += (item.supervisor.somaNotas || 0);
+                        }
+                        // Fallback para dados legados sem divisão por cargo
+                        if (!item.monitor && !item.supervisor && item.count > 0) {
+                            norm[cleanK].monitor.count += (item.count || 0);
+                            norm[cleanK].monitor.somaNotas += (item.somaNotas || 0);
+                        }
                     });
                     return norm;
                 },
@@ -545,6 +591,16 @@
                         });
                     }
                     return Promise.resolve();
+                },
+                saveCsatNpsProvas() {
+                    try { localStorage.setItem('soft_csat_nps_provas', JSON.stringify(app.csatNpsProvas || {})); } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        const sanitized = this.sanitizeFirebaseObject(app.csatNpsProvas || {});
+                        return firebase.database().ref('sistema_bonificacao/csatNpsProvas').set(sanitized).catch(err => {
+                            console.warn("Aviso Firebase saveCsatNpsProvas:", err);
+                        });
+                    }
+                    return Promise.resolve();
                 }
             },
 
@@ -563,6 +619,7 @@
             estoqueItems: {},
             estoqueLogs: {},
             harmonyDeployList: {},
+            csatNpsProvas: {},
             monitoriasData: { ranking: [] },
             utils: {
                 playCuteSound() {
@@ -2553,6 +2610,1051 @@
                     }
                 }
             },
+
+            csatNpsExam: {
+    estadoAtivo: null,
+    _intervalId: null,
+    _listeners: null,
+    _ultimoAvisoTs: 0,
+
+    bancoQuestoes: [
+        {
+            id: 1,
+            pergunta: "Uma operação de atendimento realizou 1.200 atendimentos no mês. Desses, 200 clientes responderam à pesquisa de NPS: 90 deram nota 10, 30 nota 9, 40 nota 8, 10 nota 7, 10 nota 6, 10 nota 3 e 10 nota 1. Qual é o NPS final apurado e qual a leitura metodológica correta sobre os clientes neutros?",
+            opcoes: [
+                "+45; os 50 clientes neutros (notas 7 e 8) compõem a base total de respondentes no denominador (200), mas não entram na subtração do numerador.",
+                "+35; clientes neutros devem ser deduzidos proporcionalmente na taxa de 50% entre promotores e detratores.",
+                "+7,5; o cálculo deve considerar o total de 1.200 atendimentos no denominador para evitar distorção amostral.",
+                "+55; as notas 7 e 8 são consideradas promotores de baixa intensidade no padrão internacional de contact centers."
+            ],
+            correta: 0,
+            explicacao: "Promotores (9 e 10): 90 + 30 = 120 (60%). Detratores (0 a 6): 10 + 10 + 10 = 30 (15%). Neutros (7 e 8): 40 + 10 = 50 (25%). NPS = % Promotores (60%) - % Detratores (15%) = +45. Os neutros entram no total de 200 respostas para compor as porcentagens, mas não entram no numerador da subtração."
+        },
+        {
+            id: 2,
+            pergunta: "Um cliente contatou o suporte com um problema crítico de faturamento. O atendente resolveu a falha com cordialidade, mas o cliente precisou aguardar 40 minutos em fila e ser transferido por 3 setores antes da resolução. Na pesquisa transacional imediata da chamada, o cliente avaliou CSAT 5 (Muito Satisfeito), mas 15 dias depois, em pesquisa relacional de NPS da marca, deu nota 4 (Detrator). Qual fenômeno de CX explica tecnicamente essa disparidade?",
+            opcoes: [
+                "O CSAT é episódico/transacional e mede o alívio imediato da resolução pontual, enquanto o NPS é cumulativo/relacional e penaliza o alto esforço do cliente (Customer Effort Score) e o histórico de atritos da jornada.",
+                "Houve erro na coleta de dados, pois um cliente que concede CSAT 5 é estatisticamente obrigado a ser Promotor (nota 9 ou 10) no NPS.",
+                "O cliente foi influenciado por viés de ancoragem no CSAT e por viés de recência positivo no NPS.",
+                "O CSAT reflete a lealdade de longo prazo com o contrato, enquanto o NPS avalia unicamente o comportamento da URA e da fila de espera."
+            ],
+            correta: 0,
+            explicacao: "O CSAT fotografa a satisfação transacional pontual com o atendimento recebido (onde o atendente resolveu). O NPS é uma métrica relacional e holística: o cliente pondera todo o histórico, o esforço excessivo para ser atendido (CES) e a recorrência do problema, tornando-se detrator da empresa."
+        },
+        {
+            id: 3,
+            pergunta: "Uma central registrou índice de First Contact Resolution (FCR) de 91%, porém o CSAT do mesmo canal permaneceu estagnado em 64%. Qual auditoria de Qualidade identifica a causa raiz técnica desse descompasso?",
+            opcoes: [
+                "O critério de FCR foi medido pelo sistema (ausência de reabertura pelo mesmo protocolo em 72h), enquanto na ótica do cliente o problema não foi resolvido ou exigiu busca em canais paralelos não integrados.",
+                "O CSAT está invertido, pois matematicamente o CSAT é sempre equivalente ao FCR multiplicado pelo fator de produtividade dos supervisores.",
+                "A amostra de CSAT coletada continha exclusivamente promotores de vendas, que costumam atribuir notas mais baixas do que clientes de SAC.",
+                "O cálculo do FCR considerou chamadas com abandono na fila como resolvidas no primeiro contato."
+            ],
+            correta: 0,
+            explicacao: "A discordância clássica entre FCR alto e CSAT baixo decorre de métricas 'internas' de FCR (ex: sistema que marca resolvido se o cliente não ligar de volta em 3 dias), enquanto o cliente ficou insatisfeito, desistiu de ligar por frustração, ou precisou recorrer ao Reclame Aqui ou canal presencial."
+        },
+        {
+            id: 4,
+            pergunta: "Em uma pesquisa de CSAT com escala de 1 a 5, 200 clientes avaliaram um canal: 80 deram nota 5, 40 nota 4, 70 nota 3 e 10 nota 1. Qual é o CSAT Top-2-Box apurado e por que a média aritmética simples (3,85) seria uma métrica perigosa para a gestão de qualidade?",
+            opcoes: [
+                "CSAT Top-2-Box é 60%; a média simples (3,85) mascara a insatisfação oculta porque dilui os 70 clientes neutros (nota 3), que no Top-2-Box não são considerados satisfeitos e possuem alto risco de cancelamento (churn).",
+                "CSAT Top-2-Box é 95%; a média simples (3,85) subestima o resultado ao não aplicar o peso logarítmico exigido pela metodologia ISO 9001.",
+                "CSAT Top-2-Box é 40%; a média simples é superior porque elimina o impacto das notas extremas 1 e 5.",
+                "CSAT Top-2-Box é 77%; a média aritmética simples sempre superestima notas 4 e subestima notas 2."
+            ],
+            correta: 0,
+            explicacao: "Top-2-Box considera apenas as notas 4 e 5: (80 + 40) / 200 = 120 / 200 = 60%. A nota 3 (neutra) representa 35% da base; tratá-la como 'quase 4' na média aritmética (3,85) ilude a liderança, pois clientes nota 3 estão indiferentes e mudam de fornecedor à primeira oportunidade."
+        },
+        {
+            id: 5,
+            pergunta: "Em um processo de Governança de Closed-Loop Feedback (Tratativa de Detratores), qual protocolo segue rigorosamente a metodologia oficial de Fred Reichheld para maximizar o resgate do cliente?",
+            opcoes: [
+                "Acionar o detrator em até 24h a 48h (D+1/D+2) por uma liderança ou equipe dedicada, focando na escuta empática e na eliminação da causa raiz sistêmica, sem jamais tentar coagir o cliente a alterar a nota atribuída.",
+                "Enviar um cupom de desconto imediato por e-mail automatizado solicitando a exclusão da nota 0 do banco de dados.",
+                "Transferir o detrator imediatamente para o próprio operador que causou a nota baixa para que ele se retrate pessoalmente.",
+                "Excluir os detratores que atribuíram nota motivada por preço ou instabilidade técnica externa, mantendo apenas falhas comportamentais de script."
+            ],
+            correta: 0,
+            explicacao: "O fechamento do loop com detratores exige agilidade (D+1/D+2), liderança com autonomia para resolver o problema estrutural e foco no aprendizado operacional, e nunca em negociar nota ou mascarar dados."
+        },
+        {
+            id: 6,
+            pergunta: "Um operador, visando garantir sua bonificação, encerra todos os atendimentos dizendo: 'Se você puder me avaliar com nota 10 na pesquisa que vai tocar agora, isso ajuda muito a manter meu emprego'. Sob a ótica de Qualidade e Governança de CX, como essa prática deve ser classificada?",
+            opcoes: [
+                "Vício grave de indução e deturpação de pesquisa (Goodhart's Law / Bias), que invalida a fidedignidade dos dados, camufla falhas reais do atendimento e deve ser tratada como falta disciplinar ou desvio de conformidade.",
+                "Comportamento assertivo de engajamento de metas, recomendável para operações que precisam migrar da Zona de Aperfeiçoamento para a Zona de Qualidade.",
+                "Prática neutra e aceitável, desde que o operador não tenha cometido falhas de procedimento durante a ligação.",
+                "Estratégia padrão de Call Center conhecida como 'Fechamento de Padrão Ouro', respaldada pelas normas da Anatel."
+            ],
+            correta: 0,
+            explicacao: "A indução de nota ('pedir 10 para salvar emprego') é uma violação grave de compliance de CX. Quando uma métrica vira meta individual agressiva sem controle, ela deixa de ser uma métrica confiável (Lei de Goodhart) e cega a empresa para suas reais falhas operacionais."
+        },
+        {
+            id: 7,
+            pergunta: "Uma operação apresenta uma curva de distribuição de NPS bimodal, com concentração massiva de notas 10 (Promotores) e notas 0 (Detratores), e praticamente zero respostas entre 3 e 8. Qual é a interpretação técnica mandatória dessa distribuição?",
+            opcoes: [
+                "Existe polarização extrema na jornada: a empresa entrega valor substancial para um perfil de cliente, mas possui uma falha grave/sistêmica no processo que destrói completamente a experiência de outro segmento.",
+                "A pesquisa está com erro de codificação matemática, pois a distribuição de NPS por teorema estatístico deve sempre seguir uma curva gaussiana normal.",
+                "Indica que a operação atingiu a Zona de Excelência, visto que o volume de promotores compensa qualquer anomalia de detratores.",
+                "Significa que os clientes neutros foram automaticamente expurgados pelo algoritmo da plataforma de pesquisa."
+            ],
+            correta: 0,
+            explicacao: "Curvas bimodais em CX (picos em 0 e 10) demonstram consistência zero e polarização aguda: o produto atende perfeitamente quando não há imprevistos, mas quando ocorre uma falha ou exceção, o processo desaba e abandona o cliente."
+        },
+        {
+            id: 8,
+            pergunta: "A gerência de um contact center decidiu cortar a meta de TMA (Tempo Médio de Atendimento) de 360 para 220 segundos como medida de redução de custos. Nos dois meses seguintes, o CSAT despencou de 84% para 59% e as rechamadas subiram 35%. Qual a relação técnica de causa e efeito demonstrada?",
+            opcoes: [
+                "Subordinação da resolutividade à pressa: a pressão pelo tempo forçou os operadores a desligarem chamadas prematuramente sem solucionar a demanda, transferindo custo para rechamadas e gerando frustração profunda no cliente.",
+                "O corte de TMA aumentou a fadiga auditiva dos clientes, que preferiram atribuir notas baixas na pesquisa para protestar contra a rapidez do sistema.",
+                "A diminuição do TMA sempre aumenta o FCR e o NPS simultaneamente, sendo a queda do CSAT uma correlação espúria e temporária.",
+                "Os operadores passaram a transferir ligações para canais digitais, o que automaticamente converte clientes neutros em detratores."
+            ],
+            correta: 0,
+            explicacao: "O trade-off clássico entre TMA e CSAT: forçar a queda artificial do TMA sem simplificar processos gera encerramentos precipitados, falta de escuta ativa e falso FCR, destruindo o CSAT e explodindo o custo com reatendimentos."
+        },
+        {
+            id: 9,
+            pergunta: "Em uma auditoria de monitoria de qualidade, um operador cometeu uma Falha Crítica Regulatória de quebra de sigilo bancário/LGPD, mas foi extremamente atencioso, empático e rápido, recebendo nota 5 do cliente no CSAT da ligação. Qual a conduta regulamentar da Gestão de Qualidade?",
+            opcoes: [
+                "A monitoria técnica zera a nota da chamada (0%) com aplicação de feedback de conformidade imediato; a nota máxima do cliente no CSAT não mitiga nem elide o risco legal e regulatório da falha crítica cometida.",
+                "A nota da monitoria técnica deve ser ajustada para a média ponderada entre o CSAT do cliente (100%) e o peso da falha (50%), resultando em 75%.",
+                "O CSAT soberano do cliente anula a falha de monitoria interna, pois a satisfação percebida é o critério legal supremo exigido pelos órgãos reguladores.",
+                "A falha crítica deve ser reclassificada como falha não-crítica caso o cliente confirme por e-mail que não sofreu prejuízo financeiro."
+            ],
+            correta: 0,
+            explicacao: "Qualidade Interna (compliance, regulação, segurança, LGPD) e Qualidade Percebida (CSAT) são dimensões complementares, não substitutas. O cliente não possui conhecimento técnico da lei para avaliar segurança de dados; simpatia jamais compensa violação de compliance."
+        },
+        {
+            id: 10,
+            pergunta: "Qual é a razão metodológica pela qual a escala de NPS utiliza 11 pontos (de 0 a 10) em vez da escala clássica de 10 pontos (1 a 10)?",
+            opcoes: [
+                "A inclusão do 0 permite representar a rejeição absoluta e aversão total à marca, além de definir com exatidão matemática o ponto neutro médio e calibrar a propensão comportamental de recomendação ativa.",
+                "A escala de 0 a 10 foi adotada exclusivamente para compatibilidade com o sistema binário de computadores nos anos 1990.",
+                "Para que o somatório de Promotores (9-10) tenha exatamente a mesma quantidade de alternativas que o somatório de Detratores (0-6).",
+                "A escala 1 a 10 é proibida internacionalmente pelas diretrizes de governança da ISO 27001 para pesquisas de experiência."
+            ],
+            correta: 0,
+            explicacao: "Fred Reichheld testou dezenas de escalas. A escala 0 a 10 (11 pontos) provou ser a mais correlacionada com comportamento real de recompra e churn. O '0' é psicológico: quem dá zero está ativamente furioso e afasta clientes da marca."
+        },
+        {
+            id: 11,
+            pergunta: "Uma operação de SAC obteve NPS de +62 no trimestre consolidado. Segundo a classificação benchmark oficial do Net Promoter System, em qual zona de excelência a operação se localiza?",
+            opcoes: [
+                "Zona de Qualidade (50 a 74), caracterizada por sólido número de defensores da marca, superior à Zona de Aperfeiçoamento (1 a 49) e abaixo da Zona de Excelência (75 a 100).",
+                "Zona de Excelência (50 a 70), pois nenhum mercado de telecomunicações ou contact center opera acima de 60 pontos.",
+                "Zona Crítica (-100 a +70), exigindo plano de contingência e demissão das equipes com índice inferior a 70.",
+                "Zona Neutra ou Transitória, aplicável a operações que dependem de menos de 80% de promotores."
+            ],
+            correta: 0,
+            explicacao: "As 4 zonas oficiais de NPS são: Zona Crítica (de -100 a 0), Zona de Aperfeiçoamento (de 1 a 49), Zona de Qualidade (de 50 a 74) e Zona de Excelência (de 75 a 100). O valor +62 posiciona a operação confortavelmente na Zona de Qualidade."
+        },
+        {
+            id: 12,
+            pergunta: "O que caracteriza tecnicamente o 'Efeito Halo' (Halo Effect) em pesquisas de satisfação de atendimento e como ele afeta os diagnósticos de Qualidade?",
+            opcoes: [
+                "Quando uma única impressão marcante (positiva como a extrema empatia, ou negativa como a demora em fila) contamina e distorce o julgamento do cliente sobre todos os outros itens avaliados da pesquisa.",
+                "A tendência estatística de que clientes com nomes iniciados em vogais tendem a atribuir notas 10% superiores aos demais.",
+                "O aumento artificial da nota de CSAT provocado por músicas de espera agradáveis selecionadas por inteligência artificial.",
+                "A migração voluntária de clientes neutros para promotores devido ao encerramento cordato de chamadas telefônicas."
+            ],
+            correta: 0,
+            explicacao: "O Efeito Halo é um viés cognitivo clássico onde um único aspecto emocional predominante (ex: empatia radiante ou espera insuportável) cega o respondente, fazendo-o avaliar todos os outros critérios (clareza, sistema, segurança, pós-atendimento) sob a mesma luz positiva ou negativa."
+        },
+        {
+            id: 13,
+            pergunta: "Uma empresa envia pesquisa de CSAT por dois canais simultâneos: URA interativa imediata pós-ligação (IVR) e e-mail marketing disparado 48 horas depois. Tipicamente, qual comportamento de resposta e viés amostral é observado entre esses dois canais?",
+            opcoes: [
+                "A URA imediata tem maior taxa de conversão e capta o sentimento fresco do contato operacional; o e-mail tem menor taxa de conversão e sofre viés de auto-seleção, sendo respondido predominantemente por clientes com insatisfações agudas e não resolvidas.",
+                "O e-mail sempre registra CSAT superior à URA, pois clientes que leem e-mails possuem maior escolaridade e renda média comprovada.",
+                "A URA possui taxa de resposta nula porque os clientes desligam o telefone antes de transferir para a pesquisa de voz.",
+                "Ambos os canais possuem idêntica distribuição paramétrica, sem qualquer influência do tempo decorrido sobre a memória da experiência."
+            ],
+            correta: 0,
+            explicacao: "Canal e timing afetam radicalmente o CSAT. Pesquisas imediatas (URA/chat) capturam a média do dia a dia. Pesquisas enviadas dias depois por e-mail têm baixa adesão e atraem quem ainda está com dor de cabeça com o problema, gerando viés desproporcional para baixo."
+        },
+        {
+            id: 14,
+            pergunta: "Em um estudo de correlação entre NPS e Churn (cancelamento) em uma carteira de assinaturas, qual foi a conclusão empírica constatada por Reichheld e Bain & Company sobre os clientes Neutros (notas 7 e 8)?",
+            opcoes: [
+                "Clientes neutros não são clientes seguros; sua taxa de churn e deserção pode ser até 3 vezes maior do que a de promotores, sendo altamente vulneráveis a ofertas da concorrência.",
+                "Clientes neutros possuem fidelidade vitalícia idêntica à de promotores, sendo dispensável qualquer ação de retenção para essa faixa de nota.",
+                "Clientes neutros convertem-se espontaneamente em promotores após 6 meses sem necessidade de intervenção operacional.",
+                "Clientes neutros nunca cancelam contratos, mas exigem maior custo operacional do que os clientes detratores."
+            ],
+            correta: 0,
+            explicacao: "O maior perigo em CX é achar que neutro (7 e 8) está 'garantido'. Eles não reclamam na central, mas compram da concorrência no momento em que houver uma oferta ou preço melhor. A taxa de churn de neutros é historicamente até 3x maior que a de promotores."
+        },
+        {
+            id: 15,
+            pergunta: "Qual das seguintes afirmações sobre a fórmula do Net Promoter Score (NPS) é estritamente VERDADEIRA sob o ponto de vista matemático e conceitual?",
+            opcoes: [
+                "O NPS é expresso como um número absoluto inteiro que varia de -100 a +100, e não como uma porcentagem, embora resulte da subtração de duas porcentagens (% Promotores - % Detratores); se 100% dos clientes forem neutros, o NPS é 0.",
+                "O NPS é uma média ponderada das 11 notas possíveis multiplicada pela raiz quadrada do número total de respondentes da amostra.",
+                "O resultado do NPS é sempre um percentual obrigatório expresso com o símbolo '%', devendo variar entre 0% e 100%.",
+                "Se uma empresa tiver 100 respondentes e todos derem nota 8, o NPS da empresa será de +80."
+            ],
+            correta: 0,
+            explicacao: "O NPS é um índice/número puro (ex: +45, -20, +72), e NÃO uma porcentagem! Se 100 clientes derem nota 8 (neutros), o % de Promotores é 0% e o % de Detratores é 0%, portanto o NPS será exatamente ZERO (0), demonstrando que neutros não geram pontos positivos."
+        }
+    ],
+
+    verificarStatus(matricula = null) {
+        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+        const base = (typeof app !== 'undefined' && app.csatNpsProvas) ? app.csatNpsProvas : {};
+        const reg = base[mat];
+        if (!reg) return { podeFazer: true, status: 'pendente', matricula: mat, registro: null };
+        if (reg.status === 'aprovado') {
+            return { podeFazer: false, status: 'aprovado', registro: reg, matricula: mat };
+        }
+        if (reg.dataBloqueioAte) {
+            const bloqueio = new Date(reg.dataBloqueioAte);
+            const agora = new Date();
+            if (agora < bloqueio) {
+                const diffMs = bloqueio.getTime() - agora.getTime();
+                const diffHoras = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffMin = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                return {
+                    podeFazer: false,
+                    status: 'bloqueado',
+                    registro: reg,
+                    matricula: mat,
+                    bloqueioAte: bloqueio,
+                    dataLiberacaoFmt: bloqueio.toLocaleDateString('pt-BR'),
+                    tempoRestanteTexto: `${diffHoras}h ${diffMin}min`
+                };
+            }
+        }
+        return { podeFazer: true, status: 'reprovado_liberado', registro: reg, matricula: mat };
+    },
+
+    abrirBriefingModal() {
+        const st = this.verificarStatus();
+        if (!st.podeFazer) {
+            if (st.status === 'aprovado') {
+                return app.ui.showAlert("Aprovado!", "Você já concluiu com êxito esta certificação.", "success");
+            }
+            if (st.status === 'bloqueado') {
+                return app.ui.showAlert("Tentativa Bloqueada", `Você já realizou a avaliação hoje. Nova tentativa liberada em ${st.dataLiberacaoFmt} (faltam ${st.tempoRestanteTexto}).`, "warning");
+            }
+        }
+
+        const modalExist = document.getElementById('csat-briefing-modal');
+        if (modalExist) modalExist.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'csat-briefing-modal';
+        modal.className = 'fixed inset-0 z-[9990] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100">
+                <div class="flex items-center gap-3 mb-5 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Instruções Oficiais</div>
+                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Avaliação Técnica de CSAT & NPS</h3>
+                    </div>
+                </div>
+
+                <div class="space-y-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p>Esta é uma prova de certificação rigorosa que avalia conceitos aprofundados de governança, fórmulas matemáticas, amostragem e vieses de satisfação do cliente.</p>
+
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2.5">
+                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+                            <i class="fa-solid fa-list-check text-indigo-500 mt-0.5"></i>
+                            <span><strong>10 Questões Situacionais:</strong> Sorteadas aleatoriamente com alternativas embaralhadas a cada tentativa.</span>
+                        </div>
+                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+                            <i class="fa-solid fa-stopwatch text-indigo-500 mt-0.5"></i>
+                            <span><strong>Tempo Limite:</strong> 12 minutos ininterruptos. Encerramento automático ao esgotar.</span>
+                        </div>
+                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+                            <i class="fa-solid fa-shield-halved text-amber-500 mt-0.5"></i>
+                            <span><strong>Protocolo Anti-Cola Rigoroso:</strong> É proibido trocar de aba, minimizar a janela, copiar texto ou inspecionar código. Na 1ª saída você recebe aviso; na 2ª infração, a prova é <strong>anulada imediatamente</strong> com nota zero.</span>
+                        </div>
+                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+                            <i class="fa-solid fa-calendar-xmark text-red-500 mt-0.5"></i>
+                            <span><strong>Nota de Corte & Bloqueio:</strong> Mínimo de 70% de acertos (7 de 10). Se reprovar ou for desclassificado, o sistema <strong>bloqueia novas tentativas até amanhã às 00:00</strong>.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex flex-col sm:flex-row items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="document.getElementById('csat-briefing-modal').remove()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">Cancelar</button>
+                    <button onclick="app.csatNpsExam.iniciarProva()" class="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-extrabold text-sm shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-violet-700 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-play"></i> Iniciar Avaliação Agora
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    iniciarProva(matricula = null) {
+        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+        const nome = (typeof app !== 'undefined' && app.currentUser ? app.currentUser.nome : 'Administrador');
+
+        const st = this.verificarStatus(mat);
+        if (!st.podeFazer) {
+            if (st.status === 'aprovado') {
+                return app.ui.showAlert("Aprovado!", "Você já concluiu esta certificação.", "success");
+            }
+            if (st.status === 'bloqueado') {
+                return app.ui.showAlert("Tentativa Bloqueada", `Você já realizou a avaliação hoje. Nova tentativa liberada em ${st.dataLiberacaoFmt} (${st.tempoRestanteTexto}).`, "warning");
+            }
+        }
+
+        const briefing = document.getElementById('csat-briefing-modal');
+        if (briefing) briefing.remove();
+
+        // 1. Sorteia 10 questoes do banco de 15 sem repeticao
+        const poolCopia = [...this.bancoQuestoes];
+        for (let i = poolCopia.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [poolCopia[i], poolCopia[j]] = [poolCopia[j], poolCopia[i]];
+        }
+        const questoesSelecionadas = poolCopia.slice(0, 10);
+
+        // 2. Embaralha as 4 alternativas de cada questao e mapeia a nova correta
+        const questoesProcessadas = questoesSelecionadas.map(q => {
+            const corretaTexto = q.opcoes[q.correta];
+            const opcoesShuffled = [...q.opcoes];
+            for (let i = opcoesShuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [opcoesShuffled[i], opcoesShuffled[j]] = [opcoesShuffled[j], opcoesShuffled[i]];
+            }
+            const novaCorreta = opcoesShuffled.indexOf(corretaTexto);
+            return {
+                id: q.id,
+                pergunta: q.pergunta,
+                opcoes: opcoesShuffled,
+                correta: novaCorreta,
+                explicacao: q.explicacao
+            };
+        });
+
+        // 3. Monta o estado ativo
+        this.estadoAtivo = {
+            matricula: mat,
+            nome: nome,
+            questoes: questoesProcessadas,
+            indiceAtual: 0,
+            respostas: {}, // { [indice]: opcaoIdx }
+            tempoRestanteSegundos: 12 * 60,
+            advertencias: 0,
+            desqualificado: false,
+            finalizado: false,
+            inicioIso: new Date().toISOString()
+        };
+        this._ultimoAvisoTs = 0;
+
+        // 4. Injeta overlay tela cheia
+        const telaAntiga = document.getElementById('csat-nps-exam-screen');
+        if (telaAntiga) telaAntiga.remove();
+
+        const screen = document.createElement('div');
+        screen.id = 'csat-nps-exam-screen';
+        screen.className = 'fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-md flex flex-col select-none overflow-y-auto custom-scrollbar text-slate-100';
+        document.body.appendChild(screen);
+
+        this.renderExamScreen();
+
+        // 5. Ativa escutas anti-cola
+        this.ativarSegurancaAntiCola();
+
+        // 6. Inicia cronometro
+        if (this._intervalId) clearInterval(this._intervalId);
+        this._intervalId = setInterval(() => {
+            if (!this.estadoAtivo || this.estadoAtivo.finalizado) {
+                clearInterval(this._intervalId);
+                return;
+            }
+            this.estadoAtivo.tempoRestanteSegundos--;
+            this.atualizarTimerUI();
+            if (this.estadoAtivo.tempoRestanteSegundos <= 0) {
+                clearInterval(this._intervalId);
+                this.finalizarProva(true, "Tempo limite de 12 minutos esgotado!");
+            }
+        }, 1000);
+    },
+
+    ativarSegurancaAntiCola() {
+        const prevent = (e) => { e.preventDefault(); return false; };
+
+        const onKeyDown = (e) => {
+            if (e.key === 'F12' ||
+                (e.ctrlKey && e.shiftKey && ['I', 'J', 'C'].includes(e.key.toUpperCase())) ||
+                (e.ctrlKey && ['U', 'C', 'V', 'A', 'S', 'P'].includes(e.key.toUpperCase()))
+            ) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+        };
+
+        const onVisibilityChange = () => {
+            if (document.hidden && this.estadoAtivo && !this.estadoAtivo.finalizado) {
+                this.registrarAdvertencia("Detecção de saída da tela da prova (troca de aba ou janela minimizada).");
+            }
+        };
+
+        let blurTimeout = null;
+        const onWindowBlur = () => {
+            if (blurTimeout) clearTimeout(blurTimeout);
+            blurTimeout = setTimeout(() => {
+                if (this.estadoAtivo && !this.estadoAtivo.finalizado) {
+                    this.registrarAdvertencia("Detecção de perda de foco da janela de avaliação.");
+                }
+            }, 300);
+        };
+
+        document.addEventListener('contextmenu', prevent);
+        document.addEventListener('copy', prevent);
+        document.addEventListener('cut', prevent);
+        document.addEventListener('paste', prevent);
+        document.addEventListener('selectstart', prevent);
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('blur', onWindowBlur);
+
+        this._listeners = {
+            prevent,
+            onKeyDown,
+            onVisibilityChange,
+            onWindowBlur
+        };
+    },
+
+    desativarSegurancaAntiCola() {
+        if (!this._listeners) return;
+        const { prevent, onKeyDown, onVisibilityChange, onWindowBlur } = this._listeners;
+        document.removeEventListener('contextmenu', prevent);
+        document.removeEventListener('copy', prevent);
+        document.removeEventListener('cut', prevent);
+        document.removeEventListener('paste', prevent);
+        document.removeEventListener('selectstart', prevent);
+        document.removeEventListener('keydown', onKeyDown);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        window.removeEventListener('blur', onWindowBlur);
+        this._listeners = null;
+    },
+
+    registrarAdvertencia(motivo) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+
+        const agora = Date.now();
+        if (agora - this._ultimoAvisoTs < 2500) return; // Cooldown anti-duplicidade
+        this._ultimoAvisoTs = agora;
+
+        this.estadoAtivo.advertencias++;
+        const adv = this.estadoAtivo.advertencias;
+
+        const advBadge = document.getElementById('csat-exam-adv-badge');
+        if (advBadge) {
+            advBadge.textContent = `${adv}/1 advertência`;
+            advBadge.className = 'text-xs font-black px-2.5 py-1 rounded-lg bg-red-900/60 text-red-300 border border-red-700 animate-pulse';
+        }
+
+        if (adv === 1) {
+            this.mostrarModalAdvertencia(motivo);
+        } else if (adv >= 2) {
+            this.estadoAtivo.desqualificado = true;
+            this.finalizarProva(false, "Desclassificado por violação reincidente do protocolo anti-cola (troca de aba/janela).");
+        }
+    },
+
+    mostrarModalAdvertencia(motivo) {
+        const modalAdvExist = document.getElementById('csat-exam-adv-modal');
+        if (modalAdvExist) modalAdvExist.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'csat-exam-adv-modal';
+        modal.className = 'fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-slate-900 border-2 border-red-500 rounded-3xl max-w-md w-full p-6 text-center text-white shadow-2xl animate-bounce-once">
+                <div class="w-16 h-16 rounded-full bg-red-950 text-red-500 border border-red-500/50 flex items-center justify-center text-2xl mx-auto mb-4 animate-pulse">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div class="text-[11px] font-black uppercase tracking-widest text-red-400">Alerta de Segurança Anti-Cola</div>
+                <h4 class="text-xl font-black mt-1 text-white">1ª e Última Advertência</h4>
+                <p class="text-xs text-slate-300 mt-3 leading-relaxed">
+                    ${motivo}<br><br>
+                    <strong class="text-red-400">Atenção máxima:</strong> Se você sair da tela novamente ou perder o foco da página, sua avaliação será <strong>imediatamente anulada com nota ZERO</strong> e você ficará bloqueado até amanhã.
+                </p>
+                <button onclick="document.getElementById('csat-exam-adv-modal').remove()" class="mt-6 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm transition">
+                    Entendido, retornar à prova
+                </button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    renderExamScreen() {
+        const screen = document.getElementById('csat-nps-exam-screen');
+        if (!screen || !this.estadoAtivo) return;
+
+        const { matricula, nome, questoes, indiceAtual, respostas, tempoRestanteSegundos, advertencias } = this.estadoAtivo;
+        const qAtual = questoes[indiceAtual];
+        const respondidasQtd = Object.keys(respostas).length;
+
+        const formatTimer = (s) => {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        };
+
+        const letras = ['A', 'B', 'C', 'D'];
+
+        screen.innerHTML = `
+            <!-- Topbar de Monitoramento -->
+            <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-20 px-4 md:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-600/30 text-indigo-400 border border-indigo-500/40 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-400 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Prova Monitorada Anti-Cola
+                        </div>
+                        <div class="text-sm font-extrabold text-white truncate max-w-[200px] md:max-w-xs">${app.utils.escapeHtml(nome)} <span class="text-xs text-slate-400 font-normal">(${matricula})</span></div>
+                    </div>
+                </div>
+
+                <!-- Chips de Navegação de Questões 1 a 10 -->
+                <div class="flex items-center gap-1.5 flex-wrap justify-center">
+                    ${questoes.map((q, idx) => {
+                        const isAtiva = idx === indiceAtual;
+                        const respondida = respostas[idx] !== undefined;
+                        let chipCls = 'w-7 h-7 md:w-8 md:h-8 rounded-lg text-xs font-black flex items-center justify-center transition tabular-nums ';
+                        if (isAtiva) {
+                            chipCls += 'ring-2 ring-indigo-400 bg-indigo-600 text-white shadow-md';
+                        } else if (respondida) {
+                            chipCls += 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-800/80';
+                        } else {
+                            chipCls += 'bg-slate-800/80 text-slate-400 border border-slate-700/60 hover:bg-slate-700';
+                        }
+                        return `<button onclick="app.csatNpsExam.irParaQuestao(${idx})" class="${chipCls}">${idx + 1}</button>`;
+                    }).join('')}
+                </div>
+
+                <!-- Timer e Advertências -->
+                <div class="flex items-center gap-3">
+                    <div id="csat-exam-adv-badge" class="text-xs font-bold px-2.5 py-1 rounded-lg ${advertencias > 0 ? 'bg-red-900/60 text-red-300 border border-red-700' : 'bg-slate-800 text-slate-400'}">
+                        ${advertencias}/1 advertência
+                    </div>
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <i class="fa-solid fa-clock text-indigo-400 text-xs"></i>
+                        <span id="csat-exam-timer" class="tabular-nums font-black text-sm md:text-base ${tempoRestanteSegundos < 120 ? 'text-red-400 animate-pulse' : 'text-white'}">
+                            ${formatTimer(tempoRestanteSegundos)}
+                        </span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Área Central da Questão -->
+            <main class="flex-1 max-w-4xl w-full mx-auto p-4 md:p-8 flex flex-col justify-center">
+                <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative">
+                    <div class="flex items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-800">
+                        <span class="px-3 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/60 text-[11px] font-black uppercase tracking-widest tabular-nums">
+                            Questão ${indiceAtual + 1} de 10
+                        </span>
+                        <span class="text-xs text-slate-400 font-bold tabular-nums">
+                            Respondidas: ${respondidasQtd} de 10
+                        </span>
+                    </div>
+
+                    <h3 class="text-base md:text-lg font-bold text-slate-100 leading-relaxed mb-6">
+                        ${app.utils.escapeHtml(qAtual.pergunta)}
+                    </h3>
+
+                    <!-- Lista de Alternativas -->
+                    <div class="space-y-3">
+                        ${qAtual.opcoes.map((opcaoTexto, altIdx) => {
+                            const isSelected = respostas[indiceAtual] === altIdx;
+                            let altCls = 'w-full text-left p-4 rounded-2xl border transition flex items-start gap-3.5 cursor-pointer ';
+                            if (isSelected) {
+                                altCls += 'bg-indigo-950/70 border-indigo-500 shadow-md ring-1 ring-indigo-500';
+                            } else {
+                                altCls += 'bg-slate-800/50 border-slate-700/60 hover:bg-slate-800 hover:border-slate-600';
+                            }
+                            const chipCls = isSelected 
+                                ? 'w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-black shrink-0' 
+                                : 'w-7 h-7 rounded-lg bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-black shrink-0';
+
+                            return `
+                                <div onclick="app.csatNpsExam.selecionarOpcao(${altIdx})" class="${altCls}">
+                                    <div class="${chipCls}">${letras[altIdx]}</div>
+                                    <div class="text-xs md:text-sm text-slate-200 leading-relaxed flex-1">${app.utils.escapeHtml(opcaoTexto)}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </main>
+
+            <!-- Rodapé de Ações -->
+            <footer class="border-t border-slate-800 bg-slate-900/90 px-4 md:px-8 py-4 sticky bottom-0 z-20 flex items-center justify-between gap-3">
+                <button onclick="app.csatNpsExam.anteriorQuestao()" ${indiceAtual === 0 ? 'disabled' : ''} class="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs md:text-sm hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none flex items-center gap-2">
+                    <i class="fa-solid fa-arrow-left"></i> Anterior
+                </button>
+
+                <button onclick="app.csatNpsExam.confirmarEntrega()" class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs md:text-sm shadow-lg shadow-emerald-900/40 transition flex items-center gap-2">
+                    <i class="fa-solid fa-check-double"></i> Entregar Avaliação
+                </button>
+
+                <button onclick="app.csatNpsExam.proximaQuestao()" ${indiceAtual === 9 ? 'disabled' : ''} class="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs md:text-sm hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none flex items-center gap-2">
+                    Próxima <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </footer>
+        `;
+    },
+
+    atualizarTimerUI() {
+        if (!this.estadoAtivo) return;
+        const timerEl = document.getElementById('csat-exam-timer');
+        if (!timerEl) return;
+        const s = this.estadoAtivo.tempoRestanteSegundos;
+        const m = Math.floor(s / 60);
+        const sec = s % 60;
+        timerEl.textContent = `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        if (s < 120) {
+            timerEl.className = 'tabular-nums font-black text-sm md:text-base text-red-400 animate-pulse';
+        }
+    },
+
+    selecionarOpcao(altIdx) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        this.estadoAtivo.respostas[this.estadoAtivo.indiceAtual] = altIdx;
+        this.renderExamScreen();
+    },
+
+    irParaQuestao(idx) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        if (idx >= 0 && idx < 10) {
+            this.estadoAtivo.indiceAtual = idx;
+            this.renderExamScreen();
+        }
+    },
+
+    proximaQuestao() {
+        if (!this.estadoAtivo) return;
+        if (this.estadoAtivo.indiceAtual < 9) {
+            this.irParaQuestao(this.estadoAtivo.indiceAtual + 1);
+        }
+    },
+
+    anteriorQuestao() {
+        if (!this.estadoAtivo) return;
+        if (this.estadoAtivo.indiceAtual > 0) {
+            this.irParaQuestao(this.estadoAtivo.indiceAtual - 1);
+        }
+    },
+
+    confirmarEntrega() {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        const respondidas = Object.keys(this.estadoAtivo.respostas).length;
+        if (respondidas < 10) {
+            const faltam = 10 - respondidas;
+            const ok = confirm(`Você respondeu ${respondidas} de 10 questões (faltam ${faltam}). Questões em branco serão computadas como erro.\n\nTem certeza que deseja entregar a avaliação agora?`);
+            if (!ok) return;
+        } else {
+            const ok = confirm("Deseja confirmar a entrega definitiva da sua avaliação?");
+            if (!ok) return;
+        }
+        this.finalizarProva(false);
+    },
+
+    finalizarProva(tempoEsgotado = false, motivoEspecial = null) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        this.estadoAtivo.finalizado = true;
+
+        if (this._intervalId) {
+            clearInterval(this._intervalId);
+            this._intervalId = null;
+        }
+
+        this.desativarSegurancaAntiCola();
+
+        const screen = document.getElementById('csat-nps-exam-screen');
+        if (screen) screen.remove();
+
+        const { matricula, nome, questoes, respostas, desqualificado } = this.estadoAtivo;
+
+        let acertos = 0;
+        if (!desqualificado) {
+            questoes.forEach((q, idx) => {
+                if (respostas[idx] === q.correta) {
+                    acertos++;
+                }
+            });
+        }
+
+        const nota = Math.round((acertos / 10) * 100);
+        const aprovado = nota >= 70 && !desqualificado;
+
+        let dataBloqueioAte = null;
+        if (!aprovado) {
+            const amanha = new Date();
+            amanha.setDate(amanha.getDate() + 1);
+            amanha.setHours(0, 0, 0, 0);
+            dataBloqueioAte = amanha.toISOString();
+        }
+
+        const certId = aprovado ? `CERT-CX-${matricula}-${Date.now().toString(36).toUpperCase()}` : null;
+
+        const resumoRespostas = questoes.map((q, idx) => ({
+            id: q.id,
+            pergunta: q.pergunta,
+            opcaoMarcada: respostas[idx] !== undefined ? q.opcoes[respostas[idx]] : "Não respondeu",
+            opcaoCorreta: q.opcoes[q.correta],
+            acertou: respostas[idx] === q.correta,
+            explicacao: q.explicacao
+        }));
+
+        if (!app.csatNpsProvas) app.csatNpsProvas = {};
+        app.csatNpsProvas[matricula] = {
+            matricula: matricula,
+            nome: nome,
+            status: aprovado ? 'aprovado' : 'reprovado',
+            desqualificado: !!desqualificado,
+            motivoDesqualificacao: motivoEspecial || (tempoEsgotado ? 'Tempo limite esgotado' : null),
+            nota: nota,
+            acertos: acertos,
+            totalQuestoes: 10,
+            dataTentativa: new Date().toISOString(),
+            dataBloqueioAte: dataBloqueioAte,
+            certificadoId: certId,
+            resumoRespostas: resumoRespostas
+        };
+
+        if (app.storage && typeof app.storage.saveCsatNpsProvas === 'function') {
+            app.storage.saveCsatNpsProvas();
+        }
+
+        this.estadoAtivo = null;
+
+        // Atualiza a visualização caso esteja na aba csat_nps
+        const container = document.getElementById('view-container') || document.querySelector('.main-content');
+        if (container && app.ui && app.ui.currentTab === 'csat_nps') {
+            app.ui.renderView_CsatNps(container);
+        }
+
+        // Abre o modal de resultado imediato com feedback detalhado
+        this.abrirModalResultado(matricula);
+    },
+
+    abrirModalResultado(matricula) {
+        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+        const reg = app.csatNpsProvas && app.csatNpsProvas[mat];
+        if (!reg) return;
+
+        const modalExist = document.getElementById('csat-result-modal');
+        if (modalExist) modalExist.remove();
+
+        const aprovado = reg.status === 'aprovado';
+        const modal = document.createElement('div');
+        modal.id = 'csat-result-modal';
+        modal.className = 'fixed inset-0 z-[9995] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
+
+        let badgeHeader = '';
+        if (aprovado) {
+            badgeHeader = `
+                <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                    <i class="fa-solid fa-award"></i>
+                </div>
+                <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Certificação Concluída</div>
+                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Parabéns! Você foi Aprovado</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Você demonstrou proficiência técnica nas métricas avançadas de CSAT & NPS.</p>
+            `;
+        } else if (reg.desqualificado) {
+            badgeHeader = `
+                <div class="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/60 text-red-500 border border-red-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                    <i class="fa-solid fa-ban"></i>
+                </div>
+                <div class="text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Desclassificação Anti-Cola</div>
+                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Avaliação Anulada</h3>
+                <p class="text-xs text-red-500 dark:text-red-400 font-bold mt-2">${reg.motivoDesqualificacao || "Violação de segurança detectada."}</p>
+            `;
+        } else {
+            badgeHeader = `
+                <div class="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/60 text-red-500 border border-red-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                    <i class="fa-solid fa-circle-xmark"></i>
+                </div>
+                <div class="text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Avaliação Não Concluída</div>
+                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Aproveitamento Insuficiente</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">A nota mínima de aprovação é de 70% (7 acertos).</p>
+            `;
+        }
+
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+                <div class="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
+                    ${badgeHeader}
+
+                    <!-- Placar -->
+                    <div class="grid grid-cols-2 gap-4 max-w-xs mx-auto mt-6">
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aproveitamento</div>
+                            <div class="text-3xl font-black tabular-nums mt-1 ${aprovado ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">${reg.nota}%</div>
+                        </div>
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Acertos</div>
+                            <div class="text-3xl font-black tabular-nums mt-1 text-slate-800 dark:text-white">${reg.acertos}/10</div>
+                        </div>
+                    </div>
+
+                    ${!aprovado ? `
+                        <div class="mt-4 p-3 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs text-red-700 dark:text-red-300 font-bold flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-lock"></i>
+                            <span>Bloqueio de tentativa ativo: você só poderá refazer esta prova amanhã (a partir das 00:00).</span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <!-- Gabarito com Justificativas Pedagógicas -->
+                <div class="mt-6">
+                    <h4 class="text-xs font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-book-open"></i> Revisão Técnica das Questões
+                    </h4>
+                    <div class="space-y-4 max-h-[340px] overflow-y-auto custom-scrollbar pr-1">
+                        ${(reg.resumoRespostas || []).map((r, i) => `
+                            <div class="p-4 rounded-2xl border ${r.acertou ? 'border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20' : 'border-red-200 bg-red-50/40 dark:border-red-900/40 dark:bg-red-950/20'}">
+                                <div class="flex items-start justify-between gap-2 mb-2">
+                                    <span class="text-xs font-extrabold text-slate-800 dark:text-white tabular-nums">Questão ${i + 1}</span>
+                                    <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${r.acertou ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}">
+                                        ${r.acertou ? 'Acertou' : 'Errou'}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-3">${app.utils.escapeHtml(r.pergunta)}</p>
+                                <div class="text-[11px] space-y-1">
+                                    <div><span class="text-slate-400 font-bold">Sua resposta:</span> <span class="${r.acertou ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-red-600 dark:text-red-400 font-semibold'}">${app.utils.escapeHtml(r.opcaoMarcada)}</span></div>
+                                    ${!r.acertou ? `<div><span class="text-slate-400 font-bold">Resposta correta:</span> <span class="text-emerald-600 dark:text-emerald-400 font-semibold">${app.utils.escapeHtml(r.opcaoCorreta)}</span></div>` : ''}
+                                </div>
+                                <div class="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    <strong>Explicação Técnica:</strong> ${app.utils.escapeHtml(r.explicacao)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="mt-6 flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="document.getElementById('csat-result-modal').remove()" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                        Fechar
+                    </button>
+                    ${aprovado ? `
+                        <button onclick="document.getElementById('csat-result-modal').remove(); app.csatNpsExam.abrirCertificado('${mat}')" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 hover:from-emerald-700 hover:to-teal-700 transition flex items-center gap-2">
+                            <i class="fa-solid fa-award"></i> Ver Certificado Oficial
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    abrirCertificado(matricula) {
+        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+        const reg = app.csatNpsProvas && app.csatNpsProvas[mat];
+        if (!reg || reg.status !== 'aprovado') {
+            return app.ui.showAlert("Sem Certificado", "Apenas colaboradores aprovados na avaliação possuem certificado oficial.", "warning");
+        }
+
+        const modalExist = document.getElementById('csat-cert-modal');
+        if (modalExist) modalExist.remove();
+
+        const dataFmt = new Date(reg.dataTentativa).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+        const modal = document.createElement('div');
+        modal.id = 'csat-cert-modal';
+        modal.className = 'fixed inset-0 z-[9996] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
+        modal.innerHTML = `
+            <div class="max-w-3xl w-full my-6 flex flex-col items-center">
+                <!-- Certificado Imprimível -->
+                <div id="csat-printable-certificate" class="w-full bg-white text-slate-900 rounded-3xl p-8 md:p-12 border-8 border-double border-indigo-900 shadow-2xl relative overflow-hidden">
+                    <!-- Fundo decorativo -->
+                    <div class="absolute -right-20 -bottom-20 w-72 h-72 rounded-full bg-indigo-50/60 pointer-events-none"></div>
+                    <div class="absolute -left-20 -top-20 w-72 h-72 rounded-full bg-indigo-50/60 pointer-events-none"></div>
+
+                    <div class="text-center relative z-10">
+                        <div class="w-16 h-16 rounded-2xl bg-indigo-900 text-amber-400 flex items-center justify-center text-3xl mx-auto mb-4 shadow-md">
+                            <i class="fa-solid fa-award"></i>
+                        </div>
+                        <div class="text-[11px] font-black uppercase tracking-[0.3em] text-indigo-900">Portal Qualidade & Treinamento</div>
+                        <h2 class="text-2xl md:text-3xl font-black text-slate-900 mt-2 uppercase tracking-wide">Certificado de Proficiência Técnica</h2>
+                        <div class="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Métricas Avançadas de Experiência do Cliente: CSAT & NPS</div>
+
+                        <div class="w-32 h-1 bg-gradient-to-r from-indigo-500 via-amber-400 to-indigo-500 mx-auto my-6 rounded-full"></div>
+
+                        <p class="text-sm md:text-base text-slate-700 leading-relaxed max-w-xl mx-auto">
+                            Certificamos que <strong class="text-slate-900 text-lg underline decoration-indigo-500 decoration-2">${app.utils.escapeHtml(reg.nome)}</strong>, 
+                            matrícula <strong class="text-slate-900">${reg.matricula}</strong>, concluiu com êxito a avaliação técnica de capacitação sobre 
+                            <strong>CSAT & NPS</strong>, demonstrando domínio das fórmulas oficiais, amostragem, escalas psicométricas e governança de qualidade com aproveitamento de:
+                        </p>
+
+                        <div class="my-6 inline-flex items-center gap-3 px-6 py-2 rounded-2xl bg-indigo-50 border border-indigo-200">
+                            <span class="text-xs font-bold uppercase tracking-wider text-indigo-900">Aproveitamento Oficial:</span>
+                            <span class="text-2xl font-black text-indigo-900 tabular-nums">${reg.nota}%</span>
+                            <span class="text-xs text-indigo-700 font-bold tabular-nums">(${reg.acertos}/10 acertos)</span>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 mt-4 border-t border-slate-200 text-left text-xs text-slate-600">
+                            <div>
+                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Data de Emissão</div>
+                                <div class="font-extrabold text-slate-800 tabular-nums">${dataFmt}</div>
+                            </div>
+                            <div class="text-center md:text-center">
+                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Chave de Autenticidade</div>
+                                <div class="font-extrabold text-indigo-900 tracking-wider tabular-nums">${reg.certificadoId || 'CERT-CX-OK'}</div>
+                            </div>
+                            <div class="text-right md:text-right">
+                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validação</div>
+                                <div class="font-extrabold text-emerald-700"><i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i> Certificado Válido</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botoes de Ação fora da impressão -->
+                <div class="mt-4 flex items-center justify-center gap-3 w-full">
+                    <button onclick="document.getElementById('csat-cert-modal').remove()" class="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-sm hover:bg-slate-700 transition">
+                        Fechar
+                    </button>
+                    <button onclick="window.print()" class="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-extrabold text-sm shadow-lg hover:bg-indigo-500 transition flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> Imprimir Certificado
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    abrirPainelAdmin() {
+        if (!app.isAdmin && !app.hasAdminAccess('csat_nps')) {
+            return app.ui.showAlert("Acesso Restrito", "Apenas perfis de gestão têm acesso a este painel.", "error");
+        }
+
+        const modalExist = document.getElementById('csat-admin-modal');
+        if (modalExist) modalExist.remove();
+
+        const base = app.csatNpsProvas || {};
+        const lista = Object.values(base).sort((a, b) => new Date(b.dataTentativa) - new Date(a.dataTentativa));
+
+        const modal = document.createElement('div');
+        modal.id = 'csat-admin-modal';
+        modal.className = 'fixed inset-0 z-[9997] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-users-gear"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-black text-slate-800 dark:text-white">Gestão das Avaliações de CSAT & NPS</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Histórico de provas, notas e liberação de novas tentativas.</p>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('csat-admin-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="mt-6 overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase tracking-wider text-slate-400">
+                                <th class="py-2.5 px-3">Colaborador</th>
+                                <th class="py-2.5 px-3">Matrícula</th>
+                                <th class="py-2.5 px-3 text-center">Status</th>
+                                <th class="py-2.5 px-3 text-center">Nota</th>
+                                <th class="py-2.5 px-3">Data</th>
+                                <th class="py-2.5 px-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            ${lista.length === 0 ? `
+                                <tr><td colspan="6" class="text-center py-8 text-slate-400 italic">Nenhuma avaliação realizada até o momento.</td></tr>
+                            ` : lista.map(item => {
+                                const aprovado = item.status === 'aprovado';
+                                const bloqueado = item.dataBloqueioAte && (new Date() < new Date(item.dataBloqueioAte));
+                                const dataFmt = new Date(item.dataTentativa).toLocaleDateString('pt-BR') + ' ' + new Date(item.dataTentativa).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                                return `
+                                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                        <td class="py-3 px-3 font-bold text-slate-800 dark:text-white">${app.utils.escapeHtml(item.nome)}</td>
+                                        <td class="py-3 px-3 text-slate-500 tabular-nums">${item.matricula}</td>
+                                        <td class="py-3 px-3 text-center">
+                                            ${aprovado ? `
+                                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                    <i class="fa-solid fa-check"></i> Aprovado
+                                                </span>
+                                            ` : bloqueado ? `
+                                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                                                    <i class="fa-solid fa-lock"></i> Bloqueado
+                                                </span>
+                                            ` : `
+                                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                                    Liberado
+                                                </span>
+                                            `}
+                                        </td>
+                                        <td class="py-3 px-3 text-center font-black tabular-nums ${aprovado ? 'text-emerald-600' : 'text-red-600'}">
+                                            ${item.nota}% (${item.acertos}/10)
+                                        </td>
+                                        <td class="py-3 px-3 text-slate-500 tabular-nums">${dataFmt}</td>
+                                        <td class="py-3 px-3 text-right space-x-1">
+                                            <button onclick="app.csatNpsExam.abrirModalResultado('${item.matricula}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition font-bold" title="Ver Gabarito">
+                                                <i class="fa-solid fa-eye"></i>
+                                            </button>
+                                            ${aprovado ? `
+                                                <button onclick="app.csatNpsExam.abrirCertificado('${item.matricula}')" class="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition font-bold" title="Ver Certificado">
+                                                    <i class="fa-solid fa-award"></i>
+                                                </button>
+                                            ` : ''}
+                                            <button onclick="app.csatNpsExam.resetarTentativa('${item.matricula}')" class="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition font-bold" title="Liberar Nova Tentativa">
+                                                <i class="fa-solid fa-unlock"></i> Liberar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-6 flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="document.getElementById('csat-admin-modal').remove()" class="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-sm">Fechar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    resetarTentativa(matricula) {
+        if (!confirm(`Deseja desbloquear e liberar imediatamente uma nova tentativa para a matrícula ${matricula}?`)) return;
+
+        if (app.csatNpsProvas && app.csatNpsProvas[matricula]) {
+            app.csatNpsProvas[matricula].dataBloqueioAte = null;
+            if (app.storage && typeof app.storage.saveCsatNpsProvas === 'function') {
+                app.storage.saveCsatNpsProvas().then(() => {
+                    app.ui.showAlert("Tentativa Liberada", `O bloqueio do colaborador ${matricula} foi cancelado. Ele já pode realizar uma nova prova.`, "success");
+                    const adminModal = document.getElementById('csat-admin-modal');
+                    if (adminModal) {
+                        adminModal.remove();
+                        app.csatNpsExam.abrirPainelAdmin();
+                    }
+                    const container = document.getElementById('view-container') || document.querySelector('.main-content');
+                    if (container && app.ui && app.ui.currentTab === 'csat_nps') {
+                        app.ui.renderView_CsatNps(container);
+                    }
+                });
+            }
+        }
+    }
+},
 
             ui: {
                 currentActionFilter: 'pendente',
@@ -4931,18 +6033,54 @@
                     }
                 },
 
-                salvarMetaSetorVG(setor, valor) {
+                salvarMetaSetorVG(setor, valor, tipoCargo = null) {
                     const num = Math.max(0, parseFloat(valor) || 0);
+                    const cargo = tipoCargo || this.visaoGeralCargoFilter || 'monitor';
                     const safeSetor = app.storage.sanitizeFirebaseKey(setor);
-                    if (setor === '__PADRAO__') {
-                        app.config.metaPadraoVG = num;
-                    } else {
-                        if (!app.config.metasSetoresVG || typeof app.config.metasSetoresVG !== 'object') {
-                            app.config.metasSetoresVG = {};
+
+                    if (cargo === 'supervisor') {
+                        if (setor === '__PADRAO__') {
+                            app.config.metaPadraoVG_Supervisor = num > 0 ? num : 4;
+                        } else {
+                            if (!app.config.metasSetoresVG_Supervisor || typeof app.config.metasSetoresVG_Supervisor !== 'object') {
+                                app.config.metasSetoresVG_Supervisor = {};
+                            }
+                            app.config.metasSetoresVG_Supervisor[safeSetor] = num;
+                            app.config.metasSetoresVG_Supervisor[setor] = num;
                         }
-                        app.config.metasSetoresVG[safeSetor] = num;
+                    } else if (cargo === 'monitor') {
+                        if (setor === '__PADRAO__') {
+                            app.config.metaPadraoVG_Monitor = num > 0 ? num : 2;
+                        } else {
+                            if (!app.config.metasSetoresVG_Monitor || typeof app.config.metasSetoresVG_Monitor !== 'object') {
+                                app.config.metasSetoresVG_Monitor = {};
+                            }
+                            app.config.metasSetoresVG_Monitor[safeSetor] = num;
+                            app.config.metasSetoresVG_Monitor[setor] = num;
+                            if (!app.config.metasSetoresVG || typeof app.config.metasSetoresVG !== 'object') {
+                                app.config.metasSetoresVG = {};
+                            }
+                            app.config.metasSetoresVG[safeSetor] = num;
+                            app.config.metasSetoresVG[setor] = num;
+                        }
+                    } else {
+                        if (setor === '__PADRAO__') {
+                            app.config.metaPadraoVG = num > 0 ? num : 2;
+                        } else {
+                            if (!app.config.metasSetoresVG || typeof app.config.metasSetoresVG !== 'object') {
+                                app.config.metasSetoresVG = {};
+                            }
+                            app.config.metasSetoresVG[safeSetor] = num;
+                            app.config.metasSetoresVG[setor] = num;
+                        }
                     }
                     app.storage.saveConfig();
+                    this.renderTab('analitico_visao_geral', true);
+                },
+
+                setVisaoGeralCargoFilter(filtro) {
+                    this.visaoGeralCargoFilter = filtro;
+                    try { localStorage.setItem('soft_vg_cargo_filter', filtro); } catch (e) {}
                     this.renderTab('analitico_visao_geral', true);
                 },
 
@@ -4951,11 +6089,61 @@
                     app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.visaoGeralData || {});
                     const ignorados = Array.isArray(app.config.ignoredSetoresRH) ? app.config.ignoredSetoresRH : [];
                     const dePara = app.config.deParaSetoresVG || {};
-                    const metasSetores = app.config.metasSetoresVG || {};
-                    const metaPadrao = app.config.metaPadraoVG !== undefined ? parseFloat(app.config.metaPadraoVG) : 2;
                     const headcounts = app.config.headcountRH || {};
                     const qualidadeRaw = app.visaoGeralData || {};
                     const qtdOrfaosQual = Object.keys(qualidadeRaw).filter(sq => !headcounts[sq] && !dePara[sq]).length;
+
+                    // Filtro de cargo: padrão 'monitor' (inicialmente ver só a do monitor)
+                    const cargoFilter = this.visaoGeralCargoFilter || (function() {
+                        try {
+                            const saved = localStorage.getItem('soft_vg_cargo_filter');
+                            if (saved) return saved;
+                        } catch (e) {}
+                        return 'monitor';
+                    })();
+                    this.visaoGeralCargoFilter = cargoFilter;
+
+                    // Metas padrão configuráveis
+                    const metaPadraoMon = app.config.metaPadraoVG_Monitor !== undefined ? parseFloat(app.config.metaPadraoVG_Monitor) : 2;
+                    const metaPadraoSup = app.config.metaPadraoVG_Supervisor !== undefined ? parseFloat(app.config.metaPadraoVG_Supervisor) : 4;
+                    const metaPadraoJunto = metaPadraoMon + metaPadraoSup;
+
+                    const metasSetoresMon = app.config.metasSetoresVG_Monitor || {};
+                    const metasSetoresSup = app.config.metasSetoresVG_Supervisor || {};
+
+                    // Top Bar Header com input de meta específico do cargo
+                    let metaTopHtml = '';
+                    if (cargoFilter === 'monitor') {
+                        metaTopHtml = `
+                            <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-sm" title="Regra padrão de monitorias por operador para MONITORES">
+                                <span class="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 whitespace-nowrap"><i class="fa-solid fa-headset mr-1"></i>Meta Monitor/Op:</span>
+                                <input type="number" min="0" step="1" value="${metaPadraoMon}" onchange="app.ui.salvarMetaSetorVG('__PADRAO__', this.value, 'monitor')" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500">
+                            </div>
+                        `;
+                    } else if (cargoFilter === 'supervisor') {
+                        metaTopHtml = `
+                            <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-sm" title="Regra padrão de monitorias por operador para SUPERVISORES">
+                                <span class="text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 whitespace-nowrap"><i class="fa-solid fa-user-tie mr-1"></i>Meta Supervisor/Op:</span>
+                                <input type="number" min="0" step="1" value="${metaPadraoSup}" onchange="app.ui.salvarMetaSetorVG('__PADRAO__', this.value, 'supervisor')" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-purple-600 dark:text-purple-400 outline-none focus:border-purple-500">
+                            </div>
+                        `;
+                    } else {
+                        metaTopHtml = `
+                            <div class="flex items-center gap-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-sm" title="Metas padrão de Monitores e Supervisores somadas na visão consolidada">
+                                <div class="flex items-center gap-1">
+                                    <span class="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 whitespace-nowrap"><i class="fa-solid fa-headset mr-1"></i>Mon:</span>
+                                    <input type="number" min="0" step="1" value="${metaPadraoMon}" onchange="app.ui.salvarMetaSetorVG('__PADRAO__', this.value, 'monitor')" class="w-11 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500" title="Meta Monitor/Op">
+                                </div>
+                                <span class="text-slate-300 dark:text-slate-600 font-bold">+</span>
+                                <div class="flex items-center gap-1">
+                                    <span class="text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 whitespace-nowrap"><i class="fa-solid fa-user-tie mr-1"></i>Sup:</span>
+                                    <input type="number" min="0" step="1" value="${metaPadraoSup}" onchange="app.ui.salvarMetaSetorVG('__PADRAO__', this.value, 'supervisor')" class="w-11 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-purple-600 dark:text-purple-400 outline-none focus:border-purple-500" title="Meta Supervisor/Op">
+                                </div>
+                                <span class="text-slate-300 dark:text-slate-600 font-bold">=</span>
+                                <span class="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums" title="Meta Total Combinada por operador">${metaPadraoJunto}/op</span>
+                            </div>
+                        `;
+                    }
 
                     let html = `
                         <div class="mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -4964,13 +6152,10 @@
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Cenário macro de produtividade de avaliações e saúde operacional.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-3">
-                                <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-sm" title="Regra padrão de monitorias por operador (pode ser personalizada individualmente em cada operação abaixo)">
-                                    <span class="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Meta Padrão/Op:</span>
-                                    <input type="number" min="0" step="1" value="${metaPadrao}" onchange="app.ui.salvarMetaSetorVG('__PADRAO__', this.value)" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500">
-                                </div>
+                                ${metaTopHtml}
                                 <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border ${qtdOrfaosQual > 0 ? 'border-amber-400 dark:border-amber-500' : 'border-slate-200 dark:border-slate-700'} font-bold w-11 h-11 rounded-xl shadow-sm transition-all flex items-center justify-center text-sm" title="Vincular Operações DE/PARA">
                                     <i class="fa-solid fa-link"></i>
-                                    ${qtdOrfaosQual > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">${qtdOrfaosQual}</span>` : ''}
+                                    ${qtdOrfaosQual > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse tabular-nums">${qtdOrfaosQual}</span>` : ''}
                                 </button>
                                 <button onclick="app.ui.abrirModalOcultosVisaoGeral()" class="bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold py-3 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Gerenciar operações excluídas permanentemente">
                                     <i class="fa-solid fa-eye-slash text-slate-400"></i> Ocultos (${ignorados.length})
@@ -4992,44 +6177,140 @@
                     } else {
                         // Consolida os dados de Qualidade aplicando a tabela DE/PARA permanente
                         const qualidade = {};
+                        let totalGeralAvaliacoes = 0;
+                        let totalGeralMon = 0;
+                        let totalGeralSup = 0;
+
                         Object.keys(qualidadeRaw).forEach(sQual => {
                             const destinoRH = dePara[sQual] || sQual;
                             if (!qualidade[destinoRH]) {
-                                qualidade[destinoRH] = { count: 0, somaNotas: 0, origens: [] };
+                                qualidade[destinoRH] = {
+                                    count: 0,
+                                    somaNotas: 0,
+                                    monitor: { count: 0, somaNotas: 0 },
+                                    supervisor: { count: 0, somaNotas: 0 },
+                                    origens: []
+                                };
                             }
-                            qualidade[destinoRH].count += (qualidadeRaw[sQual].count || 0);
-                            qualidade[destinoRH].somaNotas += (qualidadeRaw[sQual].somaNotas || 0);
+                            const item = qualidadeRaw[sQual] || {};
+                            const itemTot = item.count || 0;
+                            const itemSoma = item.somaNotas || 0;
+
+                            const monCount = item.monitor ? (item.monitor.count || 0) : (item.supervisor ? 0 : itemTot);
+                            const monSoma = item.monitor ? (item.monitor.somaNotas || 0) : (item.supervisor ? 0 : itemSoma);
+                            const supCount = item.supervisor ? (item.supervisor.count || 0) : 0;
+                            const supSoma = item.supervisor ? (item.supervisor.somaNotas || 0) : 0;
+
+                            qualidade[destinoRH].count += itemTot;
+                            qualidade[destinoRH].somaNotas += itemSoma;
+                            qualidade[destinoRH].monitor.count += monCount;
+                            qualidade[destinoRH].monitor.somaNotas += monSoma;
+                            qualidade[destinoRH].supervisor.count += supCount;
+                            qualidade[destinoRH].supervisor.somaNotas += supSoma;
+
+                            totalGeralAvaliacoes += itemTot;
+                            totalGeralMon += monCount;
+                            totalGeralSup += supCount;
+
                             if (dePara[sQual] && !qualidade[destinoRH].origens.includes(sQual)) {
                                 qualidade[destinoRH].origens.push(sQual);
                             }
                         });
-                        
-                        // Prepara um array combinando os dois mundos (RH + Qualidade), filtrando os excluídos permanentemente
+
+                        // Prepara um array combinando os dois mundos (RH + Qualidade), garantindo que todas as operações ativas sejam analisadas
                         let relatorioFinal = [];
-                        Object.keys(headcounts).forEach(setor => {
-                            if (ignorados.includes(setor)) return; // Ignora permanentemente
-                            const hCount = headcounts[setor];
-                            const metaPorOp = metasSetores[setor] !== undefined ? parseFloat(metasSetores[setor]) : metaPadrao;
-                            const meta = Math.round(hCount * metaPorOp);
-                            const dQualidade = qualidade[setor] || { count: 0, somaNotas: 0, origens: [] };
+                        const todosSetoresSet = new Set([
+                            ...Object.keys(headcounts),
+                            ...Object.keys(qualidade)
+                        ]);
+
+                        todosSetoresSet.forEach(setor => {
+                            const safeS = app.storage.sanitizeFirebaseKey(setor);
+                            const upperS = String(setor || '').trim().toUpperCase();
+                            if (ignorados.includes(setor) || ignorados.includes(safeS) || ignorados.includes(upperS)) return; // Ignora permanentemente
+
+                            const dQualidade = qualidade[setor] || {
+                                count: 0,
+                                somaNotas: 0,
+                                monitor: { count: 0, somaNotas: 0 },
+                                supervisor: { count: 0, somaNotas: 0 },
+                                origens: []
+                            };
                             const origensVinculadas = Object.keys(dePara).filter(k => dePara[k] === setor);
-                            const realizadas = dQualidade.count;
+
+                            // Resolução resiliente do Headcount da operação:
+                            // 1. Chave direta do setor
+                            // 2. Chave sanitizada do setor
+                            // 3. getHeadcountOperacao (busca por aproximação e cadastros gerais)
+                            // 4. Origens vinculadas via DE/PARA
+                            // 5. Fallback: Se houver avaliações realizadas, usa 1 para não zerar a meta
+                            let hCount = parseInt(headcounts[setor]) || parseInt(headcounts[safeS]) || 0;
+                            if (!hCount) {
+                                hCount = app.getHeadcountOperacao(setor);
+                            }
+                            if (!hCount && dQualidade.origens && dQualidade.origens.length > 0) {
+                                for (const orig of dQualidade.origens) {
+                                    const hOrig = app.getHeadcountOperacao(orig);
+                                    if (hOrig > 0) { hCount = hOrig; break; }
+                                }
+                            }
+                            const effectiveHC = hCount > 0 ? hCount : (dQualidade.count > 0 ? 1 : 0);
+
+                            // Resolução das metas por operador (com fallback em cadeia para preservar metas já configuradas pelo usuário)
+                            let metaOpMon = (metasSetoresMon[setor] !== undefined && metasSetoresMon[setor] !== '') ? parseFloat(metasSetoresMon[setor]) :
+                                            (metasSetoresMon[safeS] !== undefined && metasSetoresMon[safeS] !== '') ? parseFloat(metasSetoresMon[safeS]) :
+                                            (app.config.metasSetoresVG?.[safeS] !== undefined && app.config.metasSetoresVG?.[safeS] !== '') ? parseFloat(app.config.metasSetoresVG[safeS]) :
+                                            (app.config.metasSetoresVG?.[setor] !== undefined && app.config.metasSetoresVG?.[setor] !== '') ? parseFloat(app.config.metasSetoresVG[setor]) :
+                                            (app.config.regrasMonitoriaVG?.[upperS] !== undefined) ? parseFloat(app.config.regrasMonitoriaVG[upperS]) :
+                                            (metaPadraoMon > 0 ? metaPadraoMon : (app.config.metaPadraoVG > 0 ? parseFloat(app.config.metaPadraoVG) : 2));
+
+                            if (isNaN(metaOpMon) || metaOpMon <= 0) metaOpMon = (metaPadraoMon > 0 ? metaPadraoMon : 2);
+
+                            let metaOpSup = (metasSetoresSup[setor] !== undefined && metasSetoresSup[setor] !== '') ? parseFloat(metasSetoresSup[setor]) :
+                                            (metasSetoresSup[safeS] !== undefined && metasSetoresSup[safeS] !== '') ? parseFloat(metasSetoresSup[safeS]) :
+                                            (metaPadraoSup > 0 ? metaPadraoSup : 4);
+
+                            if (isNaN(metaOpSup) || metaOpSup <= 0) metaOpSup = (metaPadraoSup > 0 ? metaPadraoSup : 4);
+
+                            const metaOpJunto = metaOpMon + metaOpSup;
+
+                            let metaPorOp = metaOpMon;
+                            let realizadas = dQualidade.monitor.count;
+                            let somaNotas = dQualidade.monitor.somaNotas;
+
+                            if (cargoFilter === 'supervisor') {
+                                metaPorOp = metaOpSup;
+                                realizadas = dQualidade.supervisor.count;
+                                somaNotas = dQualidade.supervisor.somaNotas;
+                            } else if (cargoFilter === 'junto') {
+                                metaPorOp = metaOpJunto;
+                                realizadas = dQualidade.count;
+                                somaNotas = dQualidade.somaNotas;
+                            }
+
+                            // Meta calculada: se houver operadores ou avaliações, a meta é calculada baseada na equipe e regra; nunca fica em 0 injustamente
+                            const meta = effectiveHC > 0 ? Math.max(1, Math.round(effectiveHC * metaPorOp)) : metaPorOp;
                             const pctMetaNum = meta > 0 ? (realizadas / meta) * 100 : (realizadas > 0 ? 100 : 0);
                             const pctMeta = pctMetaNum.toFixed(1);
-                            const mediaNotaNum = realizadas > 0 ? (dQualidade.somaNotas / realizadas) : 0;
+                            const mediaNotaNum = realizadas > 0 ? (somaNotas / realizadas) : 0;
                             const mediaNota = realizadas > 0 ? mediaNotaNum.toFixed(2) : '0.00';
-                            
+
                             relatorioFinal.push({
                                 setor,
                                 hCount,
                                 metaPorOp,
+                                metaOpMon,
+                                metaOpSup,
+                                metaOpJunto,
                                 meta,
                                 realizadas,
+                                realizadasMon: dQualidade.monitor.count,
+                                realizadasSup: dQualidade.supervisor.count,
                                 pctMeta,
                                 pctMetaNum,
                                 mediaNota,
                                 mediaNotaNum,
-                                somaNotas: dQualidade.somaNotas || 0,
+                                somaNotas,
                                 origensVinculadas
                             });
                         });
@@ -5042,6 +6323,14 @@
                         const pctGeral = totalMeta > 0 ? ((totalRealizadas / totalMeta) * 100).toFixed(1) : '0.0';
                         const somaNotasGeral = relatorioFinal.reduce((acc, r) => acc + r.somaNotas, 0);
                         const mediaGeral = totalRealizadas > 0 ? (somaNotasGeral / totalRealizadas).toFixed(2) : '0.00';
+
+                        // Subtítulo do card de avaliações de acordo com o filtro ativo
+                        let subtituloMetaKpi = `Padrão de ${metaPadraoMon} monitoria(s)/op (Monitor)`;
+                        if (cargoFilter === 'supervisor') {
+                            subtituloMetaKpi = `Padrão de ${metaPadraoSup} monitoria(s)/op (Supervisor)`;
+                        } else if (cargoFilter === 'junto') {
+                            subtituloMetaKpi = `Padrão de ${metaPadraoMon} (Mon) + ${metaPadraoSup} (Sup) = ${metaPadraoJunto}/op`;
+                        }
 
                         // Filtros de Status e Busca
                         const termoBusca = (this.visaoGeralSearch || '').trim().toUpperCase();
@@ -5077,40 +6366,59 @@
                             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Operações Ativas</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${totalSetores}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1">${totalHC} colaboradores mapeados</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalSetores}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1 tabular-nums">${totalHC} colaboradores mapeados</div>
                                 </div>
                                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-clipboard-check text-blue-500 mr-1"></i> Monitorias vs Meta</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white">${totalRealizadas} <span class="text-sm font-semibold text-slate-400">/ ${totalMeta}</span></div>
-                                    <div class="text-[11px] text-slate-400 mt-1">Padrão de ${metaPadrao} monitoria(s) por operador</div>
+                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-clipboard-check text-blue-500 mr-1"></i> Avaliações vs Meta</div>
+                                    <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalRealizadas} <span class="text-sm font-semibold text-slate-400">/ ${totalMeta}</span></div>
+                                    <div class="text-[11px] text-slate-400 mt-1">${subtituloMetaKpi}</div>
                                 </div>
                                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-bullseye text-emerald-500 mr-1"></i> Cobertura Geral</div>
-                                    <div class="text-3xl font-black ${parseFloat(pctGeral) >= 100 ? 'text-emerald-500' : (parseFloat(pctGeral) >= 80 ? 'text-blue-500' : 'text-orange-500')}">${pctGeral}%</div>
+                                    <div class="text-3xl font-black ${parseFloat(pctGeral) >= 100 ? 'text-emerald-500' : (parseFloat(pctGeral) >= 80 ? 'text-blue-500' : 'text-orange-500')} tabular-nums">${pctGeral}%</div>
                                     <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
                                         <div class="h-full bg-indigo-500 rounded-full" style="width: ${Math.min(100, parseFloat(pctGeral))}%"></div>
                                     </div>
                                 </div>
                                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-star text-amber-500 mr-1"></i> Média Geral Qualidade</div>
-                                    <div class="text-3xl font-black ${parseFloat(mediaGeral) >= 90 ? 'text-green-500' : (parseFloat(mediaGeral) >= 80 ? 'text-blue-500' : 'text-red-500')}">${mediaGeral}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1">Média ponderada das avaliações</div>
+                                    <div class="text-3xl font-black ${parseFloat(mediaGeral) >= 90 ? 'text-green-500' : (parseFloat(mediaGeral) >= 80 ? 'text-blue-500' : 'text-red-500')} tabular-nums">${mediaGeral}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">Média ponderada do grupo selecionado</div>
                                 </div>
                             </div>
 
-                            <!-- Barra de Organização: Busca, Filtros, Ordenação e Modo de Exibição -->
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
-                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-                                    <div class="relative flex-1 max-w-xs">
+                            <!-- Barra de Organização: Grupo Cargo (Pills), Busca, Filtros, Ordenação e Modo de Exibição -->
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col gap-4">
+                                <!-- Linha 1: Filtro de Cargo em destaque + Busca rápida -->
+                                <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 whitespace-nowrap"><i class="fa-solid fa-filter mr-1"></i>Visão Cargo:</span>
+                                        <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
+                                            <button onclick="app.ui.setVisaoGeralCargoFilter('monitor')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'monitor' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'}">
+                                                <i class="fa-solid fa-headset text-[11px]"></i> Monitor <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'monitor' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralMon}</span>
+                                            </button>
+                                            <button onclick="app.ui.setVisaoGeralCargoFilter('supervisor')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'supervisor' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'}">
+                                                <i class="fa-solid fa-user-tie text-[11px]"></i> Supervisor <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'supervisor' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralSup}</span>
+                                            </button>
+                                            <button onclick="app.ui.setVisaoGeralCargoFilter('junto')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'junto' ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-800'}">
+                                                <i class="fa-solid fa-users-viewfinder text-[11px]"></i> Junto <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'junto' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralAvaliacoes}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="relative flex-1 max-w-sm">
                                         <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                                         <input type="text" value="${this.visaoGeralSearch || ''}" oninput="app.ui.visaoGeralSearch = this.value; app.ui.renderTab('analitico_visao_geral', true); const el = document.getElementById('vg-search-input'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }" id="vg-search-input" placeholder="Buscar operação/setor..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:border-indigo-500 dark:text-white">
                                     </div>
+                                </div>
 
+                                <!-- Linha 2: Filtros de status, ordenação e alternador de visão -->
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-700/60">
                                     <div class="flex flex-wrap items-center gap-1.5">
                                         ${[
                                             { id: 'todos', label: 'Todos' },
-                                            { id: 'com_mon', label: 'Com Monitoria' },
+                                            { id: 'com_mon', label: 'Com Avaliação' },
                                             { id: 'sem_mon', label: 'Zerados (0)' },
                                             { id: 'batida', label: 'Meta >= 100%' },
                                             { id: 'pendente', label: 'Abaixo da Meta' }
@@ -5118,26 +6426,26 @@
                                             <button onclick="app.ui.visaoGeralFilterStatus = '${f.id}'; try{localStorage.setItem('soft_vg_status','${f.id}');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${this.visaoGeralFilterStatus === f.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">${f.label}</button>
                                         `).join('')}
                                     </div>
-                                </div>
 
-                                <div class="flex flex-wrap items-center gap-3">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-bold uppercase text-slate-400"><i class="fa-solid fa-arrow-down-wide-short mr-1"></i>Ordenar:</span>
-                                        <select onchange="app.ui.visaoGeralSort = this.value; try{localStorage.setItem('soft_vg_sort',this.value);}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
-                                            <option value="realizadas_desc" ${sortKey === 'realizadas_desc' ? 'selected' : ''}>Mais Monitorias Realizadas</option>
-                                            <option value="pct_desc" ${sortKey === 'pct_desc' ? 'selected' : ''}>Maior % Atingimento</option>
-                                            <option value="pct_asc" ${sortKey === 'pct_asc' ? 'selected' : ''}>Menor % Atingimento (Críticos)</option>
-                                            <option value="hc_desc" ${sortKey === 'hc_desc' ? 'selected' : ''}>Maior Equipe (Headcount)</option>
-                                            <option value="hc_asc" ${sortKey === 'hc_asc' ? 'selected' : ''}>Menor Equipe (Headcount)</option>
-                                            <option value="nota_desc" ${sortKey === 'nota_desc' ? 'selected' : ''}>Maior Média de Nota</option>
-                                            <option value="nota_asc" ${sortKey === 'nota_asc' ? 'selected' : ''}>Menor Média de Nota</option>
-                                            <option value="az" ${sortKey === 'az' ? 'selected' : ''}>Ordem Alfabética (A - Z)</option>
-                                        </select>
-                                    </div>
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] font-bold uppercase text-slate-400"><i class="fa-solid fa-arrow-down-wide-short mr-1"></i>Ordenar:</span>
+                                            <select onchange="app.ui.visaoGeralSort = this.value; try{localStorage.setItem('soft_vg_sort',this.value);}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                                <option value="realizadas_desc" ${sortKey === 'realizadas_desc' ? 'selected' : ''}>Mais Avaliações Realizadas</option>
+                                                <option value="pct_desc" ${sortKey === 'pct_desc' ? 'selected' : ''}>Maior % Atingimento</option>
+                                                <option value="pct_asc" ${sortKey === 'pct_asc' ? 'selected' : ''}>Menor % Atingimento (Críticos)</option>
+                                                <option value="hc_desc" ${sortKey === 'hc_desc' ? 'selected' : ''}>Maior Equipe (Headcount)</option>
+                                                <option value="hc_asc" ${sortKey === 'hc_asc' ? 'selected' : ''}>Menor Equipe (Headcount)</option>
+                                                <option value="nota_desc" ${sortKey === 'nota_desc' ? 'selected' : ''}>Maior Média de Nota</option>
+                                                <option value="nota_asc" ${sortKey === 'nota_asc' ? 'selected' : ''}>Menor Média de Nota</option>
+                                                <option value="az" ${sortKey === 'az' ? 'selected' : ''}>Ordem Alfabética (A - Z)</option>
+                                            </select>
+                                        </div>
 
-                                    <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
-                                        <button onclick="app.ui.visaoGeralViewMode = 'cards'; try{localStorage.setItem('soft_vg_view','cards');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode !== 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Cards"><i class="fa-solid fa-grip"></i></button>
-                                        <button onclick="app.ui.visaoGeralViewMode = 'table'; try{localStorage.setItem('soft_vg_view','table');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode === 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Tabela"><i class="fa-solid fa-table-list"></i></button>
+                                        <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
+                                            <button onclick="app.ui.visaoGeralViewMode = 'cards'; try{localStorage.setItem('soft_vg_view','cards');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode !== 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Cards"><i class="fa-solid fa-grip"></i></button>
+                                            <button onclick="app.ui.visaoGeralViewMode = 'table'; try{localStorage.setItem('soft_vg_view','table');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode === 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Tabela"><i class="fa-solid fa-table-list"></i></button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -5147,6 +6455,7 @@
                             html += `<div class="p-12 text-center bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 text-sm">Nenhuma operação encontrada para os filtros selecionados.</div>`;
                         } else if (this.visaoGeralViewMode === 'table') {
                             // MODO TABELA EXECUTIVA COMPACTA
+                            const labelCargoRegra = cargoFilter === 'monitor' ? 'Mon/Op' : (cargoFilter === 'supervisor' ? 'Sup/Op' : 'Total/Op');
                             html += `
                                 <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                                     <div class="overflow-x-auto custom-scrollbar">
@@ -5155,7 +6464,7 @@
                                                 <tr>
                                                     <th class="py-3.5 px-5">Operação / Setor</th>
                                                     <th class="py-3.5 px-4 text-center">Equipe (RH)</th>
-                                                    <th class="py-3.5 px-4 text-center">Regra (Mon/Op)</th>
+                                                    <th class="py-3.5 px-4 text-center">Regra (${labelCargoRegra})</th>
                                                     <th class="py-3.5 px-4 text-center">Realizadas / Meta</th>
                                                     <th class="py-3.5 px-4 text-center">Média Qualidade</th>
                                                     <th class="py-3.5 px-5 w-56">Progresso da Meta</th>
@@ -5177,18 +6486,25 @@
                                                             <div>${r.setor}</div>
                                                             ${r.origensVinculadas && r.origensVinculadas.length > 0 ? `<div class="text-[10px] font-bold text-indigo-500 mt-0.5"><i class="fa-solid fa-link mr-1"></i>DE: ${r.origensVinculadas.join(', ')}</div>` : ''}
                                                         </td>
-                                                        <td class="py-3.5 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold px-2.5 py-1 rounded-lg">${r.hCount} op.</span></td>
+                                                        <td class="py-3.5 px-4 text-center"><span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold px-2.5 py-1 rounded-lg tabular-nums">${r.hCount} op.</span></td>
                                                         <td class="py-3.5 px-4 text-center">
-                                                            <input type="number" min="0" step="1" value="${r.metaPorOp}" onchange="app.ui.salvarMetaSetorVG('${sSafe}', this.value)" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500" title="Monitorias por operador nesta operação (Salva automaticamente)">
+                                                            ${cargoFilter === 'junto' ? `
+                                                                <span class="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700" title="Mon: ${r.metaOpMon} + Sup: ${r.metaOpSup}">${r.metaPorOp}/op</span>
+                                                            ` : `
+                                                                <input type="number" min="0" step="1" value="${r.metaPorOp}" onchange="app.ui.salvarMetaSetorVG('${sSafe}', this.value, '${cargoFilter}')" class="w-14 p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center text-xs font-black ${cargoFilter === 'supervisor' ? 'text-purple-600 dark:text-purple-400' : 'text-indigo-600 dark:text-indigo-400'} outline-none focus:border-indigo-500" title="Meta por operador para ${cargoFilter === 'supervisor' ? 'Supervisor' : 'Monitor'} (Salva automaticamente)">
+                                                            `}
                                                         </td>
-                                                        <td class="py-3.5 px-4 text-center font-black text-slate-700 dark:text-slate-200">${r.realizadas} <span class="text-xs text-slate-400 font-normal">/ ${r.meta}</span></td>
-                                                        <td class="py-3.5 px-4 text-center font-black text-base ${mediaColor}">${r.realizadas > 0 ? r.mediaNota : '-'}</td>
+                                                        <td class="py-3.5 px-4 text-center font-black text-slate-700 dark:text-slate-200">
+                                                            <div class="tabular-nums">${r.realizadas} <span class="text-xs text-slate-400 font-normal">/ ${r.meta}</span></div>
+                                                            ${cargoFilter === 'junto' ? `<div class="text-[10px] text-slate-400 font-bold tabular-nums">Mon: ${r.realizadasMon} · Sup: ${r.realizadasSup}</div>` : ''}
+                                                        </td>
+                                                        <td class="py-3.5 px-4 text-center font-black text-base ${mediaColor} tabular-nums">${r.realizadas > 0 ? r.mediaNota : '-'}</td>
                                                         <td class="py-3.5 px-5">
                                                             <div class="flex items-center gap-3">
                                                                 <div class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                                                                     <div class="h-full ${barColor} rounded-full" style="width: ${Math.min(100, r.pctMetaNum)}%"></div>
                                                                 </div>
-                                                                <span class="text-xs font-black ${textColor} w-12 text-right">${r.pctMeta}%</span>
+                                                                <span class="text-xs font-black ${textColor} w-12 text-right tabular-nums">${r.pctMeta}%</span>
                                                             </div>
                                                         </td>
                                                         <td class="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
@@ -5209,7 +6525,7 @@
                         } else {
                             // MODO GRADE DE CARDS ORGANIZADA
                             html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">`;
-                            
+
                             listaFiltrada.forEach(r => {
                                 const isEmerald = r.pctMetaNum >= 100;
                                 const isBlue = r.pctMetaNum >= 80 && r.pctMetaNum < 100;
@@ -5218,6 +6534,7 @@
                                 const pctTextColor = isEmerald ? 'text-emerald-600 dark:text-emerald-400' : (isBlue ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500');
                                 const mediaColor = r.realizadas === 0 ? 'text-slate-400' : (r.mediaNotaNum >= 90 ? 'text-green-500' : (r.mediaNotaNum >= 80 ? 'text-blue-500' : 'text-red-500'));
                                 const sSafe = String(r.setor).replace(/'/g, "\\'");
+                                const labelCargoCard = cargoFilter === 'monitor' ? 'Monitor' : (cargoFilter === 'supervisor' ? 'Supervisor' : 'Total');
 
                                 html += `
                                     <div class="glass-card rounded-2xl p-5 shadow-sm border border-slate-200/80 dark:border-slate-700 border-t-4 ${borderColor} hover:-translate-y-1 transition-all flex flex-col h-full bg-white dark:bg-slate-800 relative group">
@@ -5227,7 +6544,7 @@
                                                 ${r.origensVinculadas && r.origensVinculadas.length > 0 ? `<div class="text-[10px] font-bold text-indigo-500 truncate mt-0.5" title="Vinculado com: ${r.origensVinculadas.join(', ')}"><i class="fa-solid fa-link mr-1"></i>${r.origensVinculadas.join(', ')}</div>` : ''}
                                             </div>
                                             <div class="flex items-center gap-1 shrink-0">
-                                                <span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-2 py-1 rounded-md border border-slate-200 dark:border-slate-600" title="Quantidade de operadores no RH">
+                                                <span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-2 py-1 rounded-md border border-slate-200 dark:border-slate-600 tabular-nums" title="Quantidade de operadores no RH">
                                                     <i class="fa-solid fa-users mr-1 text-slate-400"></i>${r.hCount}
                                                 </span>
                                                 <button onclick="app.ui.abrirModalDeParaVisaoGeral('${sSafe}')" class="w-7 h-7 rounded-md bg-slate-100 dark:bg-slate-700/70 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-400 hover:text-indigo-600 flex items-center justify-center transition-colors" title="Vincular com operação do CSV de Qualidade (DE/PARA)">
@@ -5242,23 +6559,34 @@
                                         <div class="grid grid-cols-2 gap-2.5 mb-3">
                                             <div class="bg-slate-50 dark:bg-slate-900/80 rounded-xl p-3 border border-slate-100 dark:border-slate-700/70">
                                                 <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Média de Nota</div>
-                                                <div class="text-xl font-black ${mediaColor}">${r.realizadas > 0 ? r.mediaNota : '-'}</div>
+                                                <div class="text-xl font-black ${mediaColor} tabular-nums">${r.realizadas > 0 ? r.mediaNota : '-'}</div>
                                             </div>
                                             <div class="bg-slate-50 dark:bg-slate-900/80 rounded-xl p-3 border border-slate-100 dark:border-slate-700/70">
-                                                <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Monitorias</div>
-                                                <div class="text-xl font-black text-slate-700 dark:text-slate-200">${r.realizadas} <span class="text-xs text-slate-400 font-medium">/ ${r.meta}</span></div>
+                                                <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Avaliações (${labelCargoCard})</div>
+                                                <div class="text-xl font-black text-slate-700 dark:text-slate-200 tabular-nums">${r.realizadas} <span class="text-xs text-slate-400 font-medium">/ ${r.meta}</span></div>
                                             </div>
                                         </div>
 
+                                        ${cargoFilter === 'junto' ? `
+                                            <div class="flex items-center justify-between text-[11px] font-bold px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 mb-3">
+                                                <span class="text-indigo-600 dark:text-indigo-400 tabular-nums"><i class="fa-solid fa-headset mr-1"></i>Mon: ${r.realizadasMon}</span>
+                                                <span class="text-purple-600 dark:text-purple-400 tabular-nums"><i class="fa-solid fa-user-tie mr-1"></i>Sup: ${r.realizadasSup}</span>
+                                            </div>
+                                        ` : ''}
+
                                         <div class="flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/50 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-700/60 mb-3">
-                                            <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-sliders text-indigo-400 mr-1"></i>Monitorias / Operador:</span>
-                                            <input type="number" min="0" step="1" value="${r.metaPorOp}" onchange="app.ui.salvarMetaSetorVG('${sSafe}', this.value)" class="w-12 p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-center text-xs font-black text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500" title="Alterar meta por operador desta operação (Salva automaticamente)">
+                                            <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-sliders text-indigo-400 mr-1"></i>Meta (${labelCargoCard}) / Op:</span>
+                                            ${cargoFilter === 'junto' ? `
+                                                <span class="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums" title="Mon: ${r.metaOpMon} + Sup: ${r.metaOpSup}">${r.metaPorOp}</span>
+                                            ` : `
+                                                <input type="number" min="0" step="1" value="${r.metaPorOp}" onchange="app.ui.salvarMetaSetorVG('${sSafe}', this.value, '${cargoFilter}')" class="w-12 p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-center text-xs font-black ${cargoFilter === 'supervisor' ? 'text-purple-600 dark:text-purple-400' : 'text-indigo-600 dark:text-indigo-400'} outline-none focus:border-indigo-500" title="Alterar meta por operador desta operação para ${labelCargoCard} (Salva automaticamente)">
+                                            `}
                                         </div>
 
                                         <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700/70">
                                             <div class="flex justify-between items-center mb-1.5">
                                                 <span class="text-[10px] font-bold text-slate-400 uppercase">Atingimento da Meta</span>
-                                                <span class="text-xs font-black ${pctTextColor}">${r.pctMeta}%</span>
+                                                <span class="text-xs font-black ${pctTextColor} tabular-nums">${r.pctMeta}%</span>
                                             </div>
                                             <div class="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                                                 <div class="h-full ${barColor} rounded-full transition-all duration-500" style="width: ${Math.min(100, r.pctMetaNum)}%"></div>
@@ -6715,6 +8043,114 @@
                     const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
                     const lblCls = 'text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 block text-center';
 
+                                        // Status da AvaliaÃ§Ã£o do UsuÃ¡rio Logado
+                    const examStatus = (app.csatNpsExam && typeof app.csatNpsExam.verificarStatus === 'function') 
+                        ? app.csatNpsExam.verificarStatus() 
+                        : { podeFazer: true, status: 'pendente' };
+                    const isGestor = app.isAdmin || (typeof app.hasAdminAccess === 'function' && app.hasAdminAccess('csat_nps'));
+
+                    let examCardHtml = '';
+                    if (examStatus.status === 'aprovado' && examStatus.registro) {
+                        examCardHtml = `
+                            <!-- CARD CERTIFICAÃ‡ÃƒO APROVADA -->
+                            <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-800 text-white p-6 md:p-8 shadow-xl border border-emerald-400/30">
+                                <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-3xl shrink-0">
+                                            <i class="fa-solid fa-award text-amber-300"></i>
+                                        </div>
+                                        <div>
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest text-emerald-100">
+                                                <i class="fa-solid fa-circle-check"></i> CertificaÃ§Ã£o Oficial Aprovada
+                                            </span>
+                                            <h3 class="text-xl md:text-2xl font-black mt-1">Aprovado em CSAT & NPS</h3>
+                                            <p class="text-xs md:text-sm text-emerald-100 mt-1">
+                                                Aproveitamento: <strong class="text-white text-sm tabular-nums">${examStatus.registro.nota}% (${examStatus.registro.acertos}/10 acertos)</strong> â€¢ CÃ³digo: <span class="tabular-nums font-bold">${examStatus.registro.certificadoId || 'CERT-CX-OK'}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3 shrink-0 flex-wrap justify-center">
+                                        <button onclick="app.csatNpsExam.abrirModalResultado()" class="px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
+                                            <i class="fa-solid fa-book-open"></i> Ver Gabarito
+                                        </button>
+                                        <button onclick="app.csatNpsExam.abrirCertificado()" class="px-5 py-2.5 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-black text-xs md:text-sm shadow-lg transition flex items-center gap-2">
+                                            <i class="fa-solid fa-print"></i> Certificado Oficial
+                                        </button>
+                                        ${isGestor ? `
+                                            <button onclick="app.csatNpsExam.abrirPainelAdmin()" class="px-4 py-2.5 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
+                                                <i class="fa-solid fa-users-gear"></i> Painel da Equipe
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (examStatus.status === 'bloqueado') {
+                        examCardHtml = `
+                            <!-- CARD TENTATIVA BLOQUEADA (ANTI-COLA / REPROVAÃ‡ÃƒO) -->
+                            <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-rose-700 via-red-700 to-amber-800 text-white p-6 md:p-8 shadow-xl border border-red-400/30">
+                                <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-3xl shrink-0">
+                                            <i class="fa-solid fa-lock text-amber-300"></i>
+                                        </div>
+                                        <div>
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest text-red-200">
+                                                <i class="fa-solid fa-shield-halved"></i> Tentativa do Dia ConcluÃ­da
+                                            </span>
+                                            <h3 class="text-xl md:text-2xl font-black mt-1">AvaliaÃ§Ã£o Bloqueada atÃ© AmanhÃ£</h3>
+                                            <p class="text-xs md:text-sm text-red-100 mt-1">
+                                                VocÃª jÃ¡ realizou a avaliaÃ§Ã£o hoje. Nova tentativa liberada em <strong>${examStatus.dataLiberacaoFmt} Ã s 00:00</strong> (tempo restante: <strong class="tabular-nums">${examStatus.tempoRestanteTexto}</strong>).
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3 shrink-0 flex-wrap justify-center">
+                                        <button onclick="app.csatNpsExam.abrirModalResultado()" class="px-5 py-2.5 rounded-xl bg-white text-red-900 hover:bg-red-50 font-black text-xs md:text-sm shadow-lg transition flex items-center gap-2">
+                                            <i class="fa-solid fa-book-open"></i> Revisar QuestÃµes & ExplicaÃ§Ãµes
+                                        </button>
+                                        ${isGestor ? `
+                                            <button onclick="app.csatNpsExam.abrirPainelAdmin()" class="px-4 py-2.5 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
+                                                <i class="fa-solid fa-users-gear"></i> Painel da Equipe
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        examCardHtml = `
+                            <!-- CARD DISPONÃVEL PARA FAZER -->
+                            <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-900 via-indigo-800 to-violet-900 text-white p-6 md:p-8 shadow-xl border border-indigo-400/30">
+                                <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-16 h-16 rounded-2xl bg-indigo-500/20 backdrop-blur-md flex items-center justify-center text-3xl shrink-0">
+                                            <i class="fa-solid fa-graduation-cap text-indigo-300"></i>
+                                        </div>
+                                        <div>
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/15 text-[10px] font-black uppercase tracking-widest text-indigo-200">
+                                                <i class="fa-solid fa-shield-halved"></i> CertificaÃ§Ã£o ObrigatÃ³ria com Anti-Cola
+                                            </span>
+                                            <h3 class="text-xl md:text-2xl font-black mt-1">AvaliaÃ§Ã£o Oficial de ProficiÃªncia em CSAT & NPS</h3>
+                                            <p class="text-xs md:text-sm text-indigo-200 mt-1 leading-relaxed max-w-xl">
+                                                10 questÃµes avanÃ§adas de cÃ¡lculo, amostragem e governanÃ§a. Prova monitorada com trava anti-cola (saÃ­da da tela ou perda de foco gera advertÃªncia/anulaÃ§Ã£o). Nota mÃ­nima: 70%.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3 shrink-0 flex-wrap justify-center">
+                                        <button onclick="app.csatNpsExam.abrirBriefingModal()" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-black text-sm shadow-xl shadow-emerald-500/30 transition flex items-center gap-2.5">
+                                            <i class="fa-solid fa-play"></i> Iniciar AvaliaÃ§Ã£o (12 min)
+                                        </button>
+                                        ${isGestor ? `
+                                            <button onclick="app.csatNpsExam.abrirPainelAdmin()" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
+                                                <i class="fa-solid fa-users-gear"></i> Painel da Equipe
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
                     container.innerHTML = `
                         <div class="max-w-6xl mx-auto space-y-8 animate-fade-in">
 
@@ -6728,6 +8164,9 @@
                                     <p class="text-white/85 mt-4 text-sm md:text-base leading-relaxed">Duas perguntas simples que dizem muito sobre o cliente: <strong>"gostou do atendimento?"</strong> e <strong>"você indicaria a gente?"</strong>. Entenda o que cada uma mede, como calcular e como interpretar.</p>
                                 </div>
                             </div>
+
+                            <!-- CARD AVALIAÃ‡ÃƒO CSAT & NPS -->
+                            ${examCardHtml}
 
                             <!-- COMPARATIVO RAPIDO -->
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -15157,19 +16596,68 @@
                             if (rows.length === 0) return app.ui.showAlert("Erro", "O CSV de Monitorias está vazio.", "error");
 
                             app.visaoGeralData = {}; // Zera os dados velhos
+                            let totalLidas = 0;
+                            let totalMonitor = 0;
+                            let totalSupervisor = 0;
 
                             rows.forEach(row => {
-                                const getVal = (keywords) => {
-                                    const key = Object.keys(row).find(k => {
-                                        const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
-                                        const norm = app.utils.fixEncoding(kClean).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
-                                        return keywords.some(kw => norm.includes(kw));
-                                    });
-                                    return key ? row[key] : undefined;
+                                const getVal = (keywords, exactList = []) => {
+                                    if (exactList.length > 0) {
+                                        for (const pref of exactList) {
+                                            const foundExact = Object.keys(row).find(k => {
+                                                const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim().toUpperCase();
+                                                return kClean === pref.toUpperCase();
+                                            });
+                                            if (foundExact && row[foundExact] !== undefined && String(row[foundExact]).trim() !== "") {
+                                                return row[foundExact];
+                                            }
+                                        }
+                                    }
+                                    for (const kw of keywords) {
+                                        const found = Object.keys(row).find(k => {
+                                            const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                            const norm = app.utils.fixEncoding(kClean).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
+                                            return norm.includes(kw);
+                                        });
+                                        if (found && row[found] !== undefined && String(row[found]).trim() !== "") {
+                                            return row[found];
+                                        }
+                                    }
+                                    return undefined;
                                 };
 
-                                const setor = getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
+                                const setor = getVal(
+                                    ['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'ILHA', 'CAMPANHA', 'SETOR'],
+                                    ['OPERAÇÃO/SETOR', 'OPERAÇÃO / SETOR', 'OPERACAO/SETOR', 'OPERACAO / SETOR', 'OPERACAO', 'OPERAÇÃO', 'SETOR']
+                                );
                                 const notaRaw = getVal(['NOTAMONITORIA', 'NOTA', 'RESULTADO', 'PONTUACAO']);
+
+                                // Captura a coluna CARGO|APLICADOR ou suas variações
+                                const cargoRaw = getVal(
+                                    ['CARGOAPLICADOR', 'CARGODOAPLICADOR', 'APLICADOR', 'CARGO'],
+                                    ['CARGO|APLICADOR', 'CARGO | APLICADOR', 'CARGO/APLICADOR', 'CARGO / APLICADOR', 'CARGO_APLICADOR', 'CARGO APLICADOR', 'CARGO']
+                                );
+
+                                // Regra: Primeira palavra SUPERVISOR -> Supervisor | MONITOR -> Monitor | Diferente -> SUPERVISOR
+                                const getCargoGrupo = (raw) => {
+                                    if (!raw) return 'Supervisor';
+                                    const str = app.utils.fixEncoding(String(raw))
+                                        .normalize('NFD')
+                                        .replace(/[\u0300-\u036f]/g, '')
+                                        .toUpperCase()
+                                        .trim();
+                                    if (!str) return 'Supervisor';
+                                    const primeiraPalavra = str.split(/[\s\/\-_|.,;:]+/)[0] || '';
+                                    if (primeiraPalavra === 'MONITOR' || primeiraPalavra.startsWith('MONITOR')) {
+                                        return 'Monitor';
+                                    }
+                                    if (primeiraPalavra === 'SUPERVISOR' || primeiraPalavra.startsWith('SUPERVISOR')) {
+                                        return 'Supervisor';
+                                    }
+                                    return 'Supervisor';
+                                };
+
+                                const cargoGrupo = getCargoGrupo(cargoRaw);
 
                                 if (setor && typeof setor === 'string' && notaRaw !== undefined && notaRaw !== "") {
                                     const setorLimpo = app.utils.fixEncoding(String(setor)).toUpperCase().replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
@@ -15177,17 +16665,49 @@
                                     
                                     if (!isNaN(notaFormatada) && setorLimpo !== "") {
                                         if (!app.visaoGeralData[setorLimpo]) {
-                                            app.visaoGeralData[setorLimpo] = { count: 0, somaNotas: 0 };
+                                            app.visaoGeralData[setorLimpo] = {
+                                                count: 0,
+                                                somaNotas: 0,
+                                                monitor: { count: 0, somaNotas: 0 },
+                                                supervisor: { count: 0, somaNotas: 0 }
+                                            };
                                         }
+                                        if (!app.visaoGeralData[setorLimpo].monitor) {
+                                            app.visaoGeralData[setorLimpo].monitor = { count: 0, somaNotas: 0 };
+                                        }
+                                        if (!app.visaoGeralData[setorLimpo].supervisor) {
+                                            app.visaoGeralData[setorLimpo].supervisor = { count: 0, somaNotas: 0 };
+                                        }
+
                                         app.visaoGeralData[setorLimpo].count++;
                                         app.visaoGeralData[setorLimpo].somaNotas += notaFormatada;
+                                        totalLidas++;
+
+                                        if (cargoGrupo === 'Monitor') {
+                                            app.visaoGeralData[setorLimpo].monitor.count++;
+                                            app.visaoGeralData[setorLimpo].monitor.somaNotas += notaFormatada;
+                                            totalMonitor++;
+                                        } else {
+                                            app.visaoGeralData[setorLimpo].supervisor.count++;
+                                            app.visaoGeralData[setorLimpo].supervisor.somaNotas += notaFormatada;
+                                            totalSupervisor++;
+                                        }
                                     }
                                 }
                             });
 
                             // Salva na nuvem (Firebase) + LocalStorage + LocalForage e recarrega
                             app.storage.saveVisaoGeral().then(() => {
-                                app.ui.showAlert("Triangulação Concluída!", "O sistema cruzou com sucesso a quantidade de funcionários do RH com as monitorias deste CSV e salvou permanentemente.", "success");
+                                app.ui.showAlert(
+                                    "Triangulação Concluída!",
+                                    `O sistema cruzou com sucesso a quantidade de colaboradores do RH com as avaliações deste arquivo.<br><br>` +
+                                    `<div class="text-left bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-1">` +
+                                    `<div><b>Total de avaliações:</b> <span class="tabular-nums font-bold">${totalLidas}</span></div>` +
+                                    `<div class="text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-headset mr-1"></i><b>Monitor:</b> <span class="tabular-nums font-bold">${totalMonitor}</span> avaliações</div>` +
+                                    `<div class="text-purple-600 dark:text-purple-400"><i class="fa-solid fa-user-tie mr-1"></i><b>Supervisor:</b> <span class="tabular-nums font-bold">${totalSupervisor}</span> avaliações</div>` +
+                                    `</div>`,
+                                    "success"
+                                );
                                 app.ui.renderTab('analitico_visao_geral', true);
                             });
 
