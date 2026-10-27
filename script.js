@@ -391,6 +391,24 @@ storage: {
                                     else app.csatNpsProvas = {};
                                 } catch (e) { app.csatNpsProvas = {}; }
                             }
+                            if (data.reportes) {
+                                app.reportesList = data.reportes;
+                            } else {
+                                try {
+                                    const localR = localStorage.getItem('portal_reportes_list');
+                                    if (localR) app.reportesList = JSON.parse(localR);
+                                    else app.reportesList = {};
+                                } catch (e) { app.reportesList = {}; }
+                            }
+                            if (data.fcrProvas) {
+                                app.fcrProvas = data.fcrProvas;
+                            } else {
+                                try {
+                                    const localF = localStorage.getItem('portal_fcr_provas');
+                                    if (localF) app.fcrProvas = JSON.parse(localF);
+                                    else app.fcrProvas = {};
+                                } catch (e) { app.fcrProvas = {}; }
+                            }
                             if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
                                 app.visaoGeralData = this.normalizeVisaoGeralKeys(data.visaoGeralData);
                             } else if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
@@ -643,13 +661,36 @@ storage: {
                         });
                     }
                     return Promise.resolve();
+                },
+                saveReportes() {
+                    try { localStorage.setItem('portal_reportes_list', JSON.stringify(app.reportesList || {})); } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        const sanitized = this.sanitizeFirebaseObject(app.reportesList || {});
+                        return firebase.database().ref('sistema_bonificacao/reportes').set(sanitized).catch(err => {
+                            console.warn("Aviso Firebase saveReportes:", err);
+                        });
+                    }
+                    return Promise.resolve();
+                },
+                saveFcrProvas() {
+                    try { localStorage.setItem('portal_fcr_provas', JSON.stringify(app.fcrProvas || {})); } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        const sanitized = this.sanitizeFirebaseObject(app.fcrProvas || {});
+                        return firebase.database().ref('sistema_bonificacao/fcrProvas').set(sanitized).catch(err => {
+                            console.warn("Aviso Firebase saveFcrProvas:", err);
+                        });
+                    }
+                    return Promise.resolve();
                 }
             },
 
             hasAdminAccess(tabId) {
                 if (this.isAdmin) return true;
                 if (!this.currentUser) return false;
-                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(this.currentUser.tipoAcesso);
+                const tipo = this.currentUser.tipoAcesso;
+                if (tipo === 'Dev' || tipo === 'Gerente') return true;
+                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps')) return true;
+                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
                 const userAbas = (this.ui && typeof this.ui.getEffectiveUserTabs === 'function')
                     ? this.ui.getEffectiveUserTabs(this.currentUser)
                     : (Array.isArray(this.currentUser.abasLiberadas) ? this.currentUser.abasLiberadas : []);
@@ -661,6 +702,8 @@ storage: {
             estoqueItems: {},
             estoqueLogs: {},
             harmonyDeployList: {},
+            reportesList: {},
+            fcrProvas: {},
             csatNpsProvas: {},
             monitoriasData: { ranking: [] },
             utils: {
@@ -3629,13 +3672,13 @@ storage: {
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamento_capacitacao', label:'Treinamento & CapacitaÃ§Ã£o'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'dashboard_firebase_dev', label:'Consumo Firebase (Dev)'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
-                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamento_capacitacao', label:'Treinamento & CapacitaÃ§Ã£o'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
                 gruposAcessoLista: ['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
@@ -4537,7 +4580,8 @@ storage: {
                             else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
                             else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
                             else if(tabId === 'regras') this.renderView_Regras(viewDiv);
-                            else if(tabId === 'csat_nps') this.renderView_CsatNps(viewDiv);
+                            else if(tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') this.renderView_TreinamentoCapacitacao(viewDiv);
+                            else if(tabId === 'gestao_reportes') { this.abrirModalGestaoReportesDev(); return; }
                             else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
                             else if(tabId === 'legal') this.renderView_Legal(viewDiv);
                             else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
@@ -10135,12 +10179,17 @@ storage: {
                 },
 
                 renderView_Span(container) {
-                    if (!app.hasAdminAccess('span_operacoes') && !app.hasAdminAccess('hierarquia')) return;
+                    if (!app.hasAdminAccess('span_operacoes') && !app.hasAdminAccess('hierarquia') && !app.isGestor() && !app.isSuperAdmin()) return;
                     app.syncOperacoesFromSetorial();
                     const ops = app.getOperacoesSetoriais();
                     const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
                     const hcDe = (op) => parseInt(op.headcount) || 0;
-                    const monitores = app.users.filter(u => app.isUserQualidade(u));
+
+                    const isGestor = app.isGestor();
+                    const subordinados = app.getSubordinados();
+                    const monitores = isGestor
+                        ? subordinados.filter(u => app.isUserQualidade(u))
+                        : app.users.filter(u => app.isUserQualidade(u));
 
                     // Mapa operação -> monitores responsáveis
                     const mapaOps = {};
@@ -10149,7 +10198,10 @@ storage: {
                         (mapaOps[k] = mapaOps[k] || []).push(m);
                     }));
 
-                    const linhasOps = ops.map(op => {
+                    const linhasOps = (isGestor
+                        ? ops.filter(op => (mapaOps[op.nome.toUpperCase()] || []).length > 0)
+                        : ops
+                    ).map(op => {
                         const resp = mapaOps[op.nome.toUpperCase()] || [];
                         return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp };
                     }).sort((a, b) => b.hc - a.hc);
@@ -10161,7 +10213,7 @@ storage: {
                     const pctCobertura = totalHc > 0 ? Math.round(((totalHc - hcDescoberto) / totalHc) * 100) : 100;
 
                     const spans = monitores.map(m => ({ u: m, nome: app.utils.fixEncoding(m.nome), sp: app.getSpanUsuario(m) }))
-                        .map(x => ({ ...x, total: x.sp.totalOperadores || 0, nOps: (x.sp.detalhes || []).length }))
+                        .map(x => ({ ...x, total: x.sp.span !== undefined ? x.sp.span : (x.sp.totalOperadores || 0), nOps: (x.sp.detalhes || []).length }))
                         .sort((a, b) => b.total - a.total);
                     const media = spans.length ? Math.round(spans.reduce((a, s) => a + s.total, 0) / spans.length) : 0;
                     const maxSpan = Math.max(1, ...spans.map(s => s.total));
@@ -10183,7 +10235,7 @@ storage: {
                         </div>`;
 
                     const alertaCobertura = semCobertura.length === 0
-                        ? `<div class="flex items-center gap-3 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-900/10 text-sm text-emerald-700 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>Todas as operações do setorial possuem ao menos um monitor responsável.</div>`
+                        ? `<div class="flex items-center gap-3 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-900/10 text-sm text-emerald-700 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>${isGestor ? 'Todas as operações da sua equipe possuem monitor responsável.' : 'Todas as operações do setorial possuem ao menos um monitor responsável.'}</div>`
                         : `<div class="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10">
                             <div class="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-300 mb-3"><i class="fa-solid fa-triangle-exclamation"></i>${semCobertura.length} operação(ões) sem monitor — ${hcDescoberto} operadores descobertos</div>
                             <div class="flex flex-wrap gap-2">${semCobertura.map(o => `<span class="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 text-xs font-semibold text-slate-700 dark:text-slate-200">${esc(o.nome)}<span class="text-red-500 tabular-nums">${o.hc}</span></span>`).join('')}</div>
@@ -10194,186 +10246,120 @@ storage: {
                         const pct = Math.round((s.total / maxSpan) * 100);
                         const nomesOps = (s.sp.detalhes || []).map(d => {
                             const nome = app.utils.fixEncoding(d.nome);
-                            return d.compartilhado ? `${nome} (div. ${d.qtdMonitores}x: ${d.hc} op.)` : `${nome} (${d.hc} op.)`;
+                            return d.compartilhado
+                                ? `${nome} (div. ${d.qtdMonitores})`
+                                : nome;
                         });
-                        const foto = s.u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.nome)}&background=e2e8f0&color=475569&size=128`;
+                        const opsTexto = nomesOps.length === 0
+                            ? '<span class="text-slate-400">Sem operações</span>'
+                            : esc(nomesOps.slice(0, 3).join(' · ')) + (nomesOps.length > 3 ? ` <span class="text-slate-400">+${nomesOps.length - 3}</span>` : '');
                         return `
-                            <div class="span-row p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer" onclick="app.ui.abrirModalOperacoesMonitor('${s.u.matricula}')" title="Editar operações e span">
-                                <div class="flex items-center gap-3">
-                                    <img src="${foto}" class="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0">
+                            <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors bg-white dark:bg-slate-900">
+                                <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0 flex-1">
-                                        <div class="flex items-center justify-between gap-2">
-                                            <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${esc(s.nome)}</span>
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${st.badge} shrink-0"><i class="fa-solid ${st.icon}"></i>${st.rotulo}</span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-extrabold text-sm text-slate-800 dark:text-white truncate" title="${esc(s.nome)}">${esc(s.nome)}</span>
+                                            <span class="text-[11px] text-slate-400 shrink-0 tabular-nums">#${s.u.matricula}</span>
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${st.badge} shrink-0"><i class="fa-solid ${st.icon} text-[9px]"></i>${st.rotulo}</span>
                                         </div>
-                                        <div class="flex items-center gap-3 mt-1.5">
-                                            <div class="relative flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                                <div class="h-full ${st.bar} rounded-full" style="width:${pct}%"></div>
-                                            </div>
-                                            <span class="text-sm font-black text-slate-800 dark:text-white tabular-nums w-14 text-right">${s.total}</span>
-                                        </div>
-                                        <div class="text-[11px] text-slate-400 mt-1 truncate" title="${esc(nomesOps.join(', '))}">${nomesOps.length ? esc(nomesOps.join(' · ')) : 'Sem operações atribuídas'}</div>
+                                        <div class="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate" title="${esc(nomesOps.join(', '))}">${opsTexto}</div>
                                     </div>
+                                    <div class="text-right shrink-0">
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${s.total}</div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">operadores</div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                        <div class="h-full rounded-full ${st.bar} transition-all duration-500" style="width: ${Math.max(4, pct)}%"></div>
+                                    </div>
+                                    <div class="flex items-center justify-between text-[11px] text-slate-400 mt-1">
+                                        <span>${s.nOps} operação(ões)</span>
+                                        <span class="tabular-nums">${pct}% do maior span</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                                    <span class="text-[11px] text-slate-400 font-medium">Meta mensal estimada: <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.sp.totalMonitoriasEsperadas || 0} mon.</strong></span>
+                                    <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${s.u.matricula}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"><i class="fa-solid fa-pen-to-square mr-1"></i>Editar Operações</button>
                                 </div>
                             </div>`;
                     };
 
                     const linhaOp = (o) => {
-                        const pct = totalHc > 0 ? ((o.hc / totalHc) * 100) : 0;
-                        const sem = o.resp.length === 0;
-                        const dupla = o.resp.length > 1;
-                        const badge = sem
-                            ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300"><i class="fa-solid fa-triangle-exclamation"></i>Sem monitor</span>'
-                            : (dupla ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"><i class="fa-solid fa-people-arrows"></i>Compartilhada (${o.resp.length}x · ${Math.round(o.hc / o.resp.length)} op./cada)</span>`
-                                : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>Coberta</span>');
+                        const n = o.resp.length;
+                        const nomes = o.resp.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]).join(', ');
+                        const badge = n === 0
+                            ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Sem monitor</span>'
+                            : n === 1
+                            ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">1 monitor</span>'
+                            : `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">${n} monitores (dividido)</span>`;
                         return `
-                            <tr class="span-op-row border-t border-slate-100 dark:border-slate-800 ${sem ? 'bg-red-50/40 dark:bg-red-900/10' : ''}" data-status="${sem ? 'sem' : (dupla ? 'dupla' : 'ok')}">
-                                <td class="py-2.5 px-3 text-sm font-semibold text-slate-800 dark:text-slate-100">${esc(o.nome)}</td>
-                                <td class="py-2.5 px-3 text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums text-right">${o.hc}</td>
-                                <td class="py-2.5 px-3 w-40"><div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full ${sem ? 'bg-red-400' : 'bg-slate-400 dark:bg-slate-500'} rounded-full" style="width:${Math.min(100, pct * 3).toFixed(0)}%"></div></div><div class="text-[10px] text-slate-400 mt-0.5 tabular-nums">${pct.toFixed(1)}% do setor</div></td>
-                                <td class="py-2.5 px-3 text-xs text-slate-600 dark:text-slate-300">${sem ? '<span class="text-slate-400">Nenhum</span>' : o.resp.map(m => esc(app.utils.fixEncoding(m.nome))).join(', ')}</td>
-                                <td class="py-2.5 px-3 text-right">${badge}</td>
-                            </tr>`;
+                            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-extrabold text-xs text-slate-800 dark:text-white uppercase truncate" title="${esc(o.nome)}">${esc(o.nome)}</span>
+                                        ${badge}
+                                    </div>
+                                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">${nomes ? esc(nomes) : '<span class="italic text-slate-400">Ninguém cuidando</span>'}</div>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <div class="text-base font-black text-slate-800 dark:text-white tabular-nums">${o.hc}</div>
+                                    <div class="text-[9px] uppercase font-bold text-slate-400 tracking-wider">headcount</div>
+                                </div>
+                            </div>`;
                     };
 
                     container.innerHTML = `
-                        <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
-                            <div>
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Span &amp; Cobertura</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Distribuição de operadores por monitor de qualidade e cobertura das operações do setorial.</p>
-                            </div>
-                            <button type="button" onclick="app.ui.renderTab('hierarquia', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-sitemap mr-2"></i>Editar equipe e atribuições</button>
-                        </div>
-                        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-                            ${kpi('fa-layer-group', 'Operações', ops.length, `${totalHc} operadores no setorial`)}
-                            ${kpi('fa-shield-halved', 'Cobertura', pctCobertura + '%', 'operadores com monitor responsável', pctCobertura < 100)}
-                            ${kpi('fa-link-slash', 'Sem monitor', semCobertura.length, `${hcDescoberto} operadores descobertos`, semCobertura.length > 0)}
-                            ${kpi('fa-scale-balanced', 'Span médio', media, `${monitores.length} monitores de qualidade`)}
-                            ${kpi('fa-weight-hanging', 'Sobrecarga', sobrecarregados, `acima de ${limiteAlto} operadores`, sobrecarregados > 0)}
-                        </div>
-                        <div class="mb-6">${alertaCobertura}</div>
-                        <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
-                            <div class="xl:col-span-2 glass-card rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5">
-                                <div class="flex items-center justify-between mb-1">
-                                    <h3 class="font-bold text-slate-800 dark:text-white"><i class="fa-solid fa-user-group text-slate-400 mr-2"></i>Span por monitor</h3>
-                                    <span class="text-[11px] text-slate-400">média ${media}</span>
+                        <div class="space-y-6 animate-fade-in max-w-7xl mx-auto">
+                            <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                                <div>
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-wider border border-indigo-200 dark:border-indigo-800">
+                                            <i class="fa-solid fa-chart-pie mr-1"></i> ${isGestor ? 'Equipe Sob Gestão' : 'Operações & Equipe'}
+                                        </span>
+                                    </div>
+                                    <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${isGestor ? 'Span & Cobertura da Minha Equipe' : 'Span & Cobertura de Operações'}</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${isGestor ? 'Equilíbrio da carga operacional e monitorias esperadas dos seus liderados.' : 'Monitore o equilíbrio de carga entre monitores e garanta 100% de cobertura dos operadores do setorial.'}</p>
                                 </div>
-                                <div class="flex flex-wrap gap-3 text-[10px] text-slate-400 mb-3">
-                                    <span><span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-1"></span>Sobrecarga (&gt; ${limiteAlto})</span>
-                                    <span><span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1"></span>Equilibrado</span>
-                                    <span><span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1"></span>Subutilizado (&lt; ${limiteBaixo})</span>
-                                </div>
-                                <div class="max-h-[560px] overflow-y-auto custom-scrollbar space-y-1">
-                                    ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="text-center text-slate-400 italic p-6 text-sm">Nenhum usuário com perfil de Qualidade.</div>'}
+                                <div class="flex flex-wrap gap-2">
+                                    <button type="button" onclick="app.ui.renderTab('hierarquia', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-sitemap mr-1.5"></i>Organograma</button>
                                 </div>
                             </div>
-                            <div class="xl:col-span-3 glass-card rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5">
-                                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                                    <h3 class="font-bold text-slate-800 dark:text-white"><i class="fa-solid fa-table-cells text-slate-400 mr-2"></i>Cobertura das operações</h3>
-                                    <div class="flex gap-1.5" id="span-filtro">
-                                        ${[['todas', 'Todas', linhasOps.length], ['sem', 'Sem monitor', semCobertura.length], ['dupla', 'Compartilhadas', compartilhadas.length]].map(([k, l, n]) => `<button type="button" data-k="${k}" onclick="app.ui.filtrarSpanOps('${k}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${k === 'todas' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">${l} <span class="tabular-nums opacity-70">${n}</span></button>`).join('')}
+
+                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                ${kpi('fa-users', isGestor ? 'Monitores na Equipe' : 'Monitores de Qualidade', monitores.length, isGestor ? 'liderados diretos' : `${app.users.length} total colaboradores`, false)}
+                                ${kpi('fa-chart-line', 'Span Médio', media, 'operadores / monitor', sobrecarregados > 0)}
+                                ${kpi('fa-layer-group', isGestor ? 'Operações da Equipe' : 'Operações Setoriais', linhasOps.length, `${compartilhadas.length} compartilhadas`, false)}
+                                ${kpi('fa-shield-halved', 'Cobertura Setorial', `${pctCobertura}%`, isGestor ? 'da carga da equipe' : `${semCobertura.length} operações descobertas`, semCobertura.length > 0)}
+                            </div>
+
+                            ${alertaCobertura}
+
+                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                                <div class="lg:col-span-2 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-scale-balanced mr-2 text-indigo-500"></i>Carga por Monitor (${spans.length})</h3>
+                                        <span class="text-xs text-slate-400 font-medium">Equilíbrio sugerido: ~${limiteBaixo} a ${limiteAlto} op.</span>
+                                    </div>
+                                    <div class="space-y-3">
+                                        ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhum monitor de qualidade cadastrado.</div>'}
                                     </div>
                                 </div>
-                                <div class="max-h-[560px] overflow-auto custom-scrollbar">
-                                    <table class="w-full text-left">
-                                        <thead class="sticky top-0 bg-white dark:bg-slate-900 z-10"><tr class="text-[10px] uppercase tracking-wider text-slate-400">
-                                            <th class="py-2 px-3 font-semibold">Operação</th><th class="py-2 px-3 font-semibold text-right">Operadores</th><th class="py-2 px-3 font-semibold">Peso</th><th class="py-2 px-3 font-semibold">Monitor(es)</th><th class="py-2 px-3 font-semibold text-right">Situação</th>
-                                        </tr></thead>
-                                        <tbody>${linhasOps.length ? linhasOps.map(linhaOp).join('') : '<tr><td colspan="5" class="p-6 text-center text-slate-400 italic text-sm">Importe a Base RH na Visão Geral Setorial para listar as operações.</td></tr>'}</tbody>
-                                    </table>
+
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-building mr-2 text-indigo-500"></i>Operações (${linhasOps.length})</h3>
+                                        <span class="text-xs text-slate-400 font-medium">${totalHc} op. total</span>
+                                    </div>
+                                    <div class="space-y-2 max-h-[720px] overflow-y-auto pr-1">
+                                        ${linhasOps.length ? linhasOps.map(linhaOp).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhuma operação importada.</div>'}
+                                    </div>
                                 </div>
                             </div>
-                        </div>`;
+                        </div>
+                    `;
                 },
 
-                filtrarSpanOps(k) {
-                    document.querySelectorAll('.span-op-row').forEach(tr => { tr.style.display = (k === 'todas' || tr.dataset.status === k) ? '' : 'none'; });
-                    document.querySelectorAll('#span-filtro button').forEach(b => {
-                        const on = b.dataset.k === k;
-                        b.classList.toggle('bg-slate-800', on); b.classList.toggle('text-white', on); b.classList.toggle('border-slate-800', on);
-                    });
-                },
-
-                // ============================================================
-                // IMPLANTAÇÃO DE IA — HARMONY & CRONOGRAMA GANTT
-                // ============================================================
-                _iaViewMode: 'gantt',
-                _iaFiltroStatus: 'todos',
-                _iaBusca: '',
-
-                _formatarDataBR(dataStr) {
-                    if (!dataStr) return '';
-                    if (dataStr.includes('/')) return dataStr;
-                    const partes = String(dataStr).split('-');
-                    if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
-                    return dataStr;
-                },
-
-                getDefaultEtapasHarmony(nomeMonitor = '', nomeTreinador = '') {
-                    const agora = Date.now();
-                    return [
-                        {
-                            id: 'etp_' + agora + '_1',
-                            nome: '1. Mapeamento & Calibração de Prompts',
-                            descricao: 'Revisão das regras operacionais e diretrizes técnicas. Criação e teste de prompts customizados do Harmony com lote piloto de chamadas gravadas.',
-                            diasEstimados: 5,
-                            qtdEstimada: '30 chamadas calibradas',
-                            responsavelTipo: 'Monitor',
-                            responsavelNome: nomeMonitor || 'Monitor de Qualidade',
-                            concluido: false,
-                            dataConclusao: ''
-                        },
-                        {
-                            id: 'etp_' + agora + '_2',
-                            nome: '2. Capacitação da Supervisão & Multiplicadores',
-                            descricao: 'Treinamento prático da liderança sobre leitura dos relatórios do Harmony, identificação de ofensores gerados por IA e fluxo de contestações.',
-                            diasEstimados: 3,
-                            qtdEstimada: '100% supervisores treinados',
-                            responsavelTipo: 'Treinador',
-                            responsavelNome: nomeTreinador || 'Treinador da Operação',
-                            concluido: false,
-                            dataConclusao: ''
-                        },
-                        {
-                            id: 'etp_' + agora + '_3',
-                            nome: '3. Piloto Operacional Assistido',
-                            descricao: 'Auditoria simultânea entre IA e monitoria humana, confrontando notas e critérios para garantir conformidade e assertividade antes da virada.',
-                            diasEstimados: 10,
-                            qtdEstimada: '150 chamadas auditadas',
-                            responsavelTipo: 'Monitor',
-                            responsavelNome: nomeMonitor || 'Monitor de Qualidade',
-                            concluido: false,
-                            dataConclusao: ''
-                        },
-                        {
-                            id: 'etp_' + agora + '_4',
-                            nome: '4. Alinhamento de Critérios aos Operadores',
-                            descricao: 'Workshops com os operadores da operação, apresentando o Harmony como copiloto de qualidade e esclarecendo regras avaliativas de feedback.',
-                            diasEstimados: 4,
-                            qtdEstimada: '100% operadores alinhados',
-                            responsavelTipo: 'Treinador',
-                            responsavelNome: nomeTreinador || 'Treinador da Operação',
-                            concluido: false,
-                            dataConclusao: ''
-                        },
-                        {
-                            id: 'etp_' + agora + '_5',
-                            nome: '5. Go-Live & Cobertura Total Harmony',
-                            descricao: 'Ativação oficial da IA Harmony em 100% da volumetria da operação, emissão dos primeiros dashboards analíticos e rotinas de feedback automatizado.',
-                            diasEstimados: 7,
-                            qtdEstimada: '100% volumetria ativa',
-                            responsavelTipo: 'Ambos',
-                            responsavelNome: (nomeMonitor && nomeTreinador) ? `${nomeMonitor} & ${nomeTreinador}` : 'Monitor & Treinador',
-                            concluido: false,
-                            dataConclusao: ''
-                        }
-                    ];
-                },
-
-                _getHarmonyKey(opNome) {
-                    if (!opNome) return '';
-                    return app.storage.sanitizeFirebaseKey(String(opNome).trim().toUpperCase());
-                },
 
                 renderView_ImplantacaoIA(container) {
                     if (!app.hasAdminAccess('implantacao_ia') && !app.hasAdminAccess('hierarquia')) return;
@@ -11275,25 +11261,21 @@ storage: {
                     );
                 },
 
-                renderView_Hierarquia(container) {
-                    if (!app.hasAdminAccess('hierarquia') && !app.hasAdminAccess('gestao_equipe')) return;
+                                renderView_Hierarquia(container) {
+                    if (!app.hasAdminAccess('hierarquia') && !app.hasAdminAccess('gestao_equipe') && !app.isGestor() && !app.isSuperAdmin()) return;
                     app.syncOperacoesFromSetorial();
                     const opsSetoriais = app.getOperacoesSetoriais();
                     const totalOperadoresGlobal = opsSetoriais.reduce((acc, op) => acc + (parseInt(op.headcount) || 0), 0);
 
                     const cargoDe = (u) => u.tipoAcesso || 'Qualidade';
+                    const isGestor = app.isGestor();
+                    const isSuper = app.isSuperAdmin();
+
                     const gerentes = app.users.filter(u => cargoDe(u) === 'Gerente');
                     const gestores = app.users.filter(u => cargoDe(u) === 'Gestor');
                     const operacionais = app.users.filter(u => !['Gerente', 'Gestor'].includes(cargoDe(u)));
                     const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u));
                     const logados = app.users.filter(u => u.loginCount > 0).length;
-                    const mediaSpanMonitor = monitoresQualidade.length > 0
-                        ? Math.round(monitoresQualidade.reduce((acc, m) => acc + app.getSpanUsuario(m).totalOperadores, 0) / monitoresQualidade.length)
-                        : 0;
-
-                    const opsCobertasSet = new Set();
-                    app.users.forEach(u => (u.operacoes || []).forEach(op => opsCobertasSet.add(String(op).trim().toUpperCase())));
-                    const opsSemMonitor = opsSetoriais.filter(op => !opsCobertasSet.has(op.nome.toUpperCase()));
 
                     const dot = { Gerente: 'bg-rose-500', Gestor: 'bg-amber-500', Qualidade: 'bg-blue-500', Treinamento: 'bg-emerald-500', Dev: 'bg-purple-500' };
                     const roleBadgeStyle = {
@@ -11310,11 +11292,15 @@ storage: {
                         const cargo = cargoDe(u);
                         const nomeClean = app.utils.fixEncoding(u.nome);
                         const sp = app.getSpanUsuario(u);
+                        const spanValor = sp.span !== undefined ? sp.span : (sp.totalOperadores || 0);
                         const nomesOps = sp.detalhes.map(d => app.utils.fixEncoding(d.nome));
                         const opsResumo = nomesOps.length === 0
                             ? '<span class="text-slate-400">Sem operações</span>'
                             : nomesOps.slice(0, 2).join(' · ') + (nomesOps.length > 2 ? ` <span class="text-slate-400">+${nomesOps.length - 2}</span>` : '');
                         const searchMeta = `${nomeClean} ${u.matricula} ${cargo} ${nomesOps.join(' ')}`.replace(/"/g, '');
+
+                        const podeGerenciar = isSuper || (isGestor && String(u.gestorMatricula || '').trim() === String(app.currentUser?.matricula || '').trim());
+
                         return `
                             <div data-search="${searchMeta}" data-role="${cargo}" class="hierarquia-user-row group flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                                 <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -11325,26 +11311,36 @@ storage: {
                                     <div class="min-w-0 flex-1">
                                         <div class="flex items-center gap-2">
                                             <span class="text-sm font-bold text-slate-800 dark:text-slate-100 truncate" title="${nomeClean}">${nomeClean}</span>
-                                            <span class="text-[11px] font-medium text-slate-400 shrink-0">#${u.matricula}</span>
+                                            <span class="text-[11px] font-medium text-slate-400 shrink-0 tabular-nums">#${u.matricula}</span>
                                         </div>
                                         <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" title="${nomesOps.join(', ')}">${opsResumo}</div>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2 shrink-0 ml-auto">
-                                    <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
-                                        ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
-                                    </select>
-                                    <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${u.matricula}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-right transition" title="Atribuir operações do setorial e ajustar Span">
-                                        <div class="text-xs font-black text-slate-800 dark:text-slate-100 leading-none tabular-nums">${sp.totalOperadores}</div>
+                                    ${isSuper ? `
+                                        <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
+                                            ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
+                                        </select>
+                                    ` : `
+                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}">${cargo}</span>
+                                    `}
+                                    <button type="button" onclick="${podeGerenciar ? `app.ui.abrirModalOperacoesMonitor('${u.matricula}')` : ''}" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-right transition" title="Atribuir operações do setorial e ajustar Span">
+                                        <div class="text-xs font-black text-slate-800 dark:text-slate-100 leading-none tabular-nums">${spanValor}</div>
                                         <div class="text-[8px] uppercase tracking-wider text-slate-400 mt-0.5">span</div>
                                     </button>
                                     <div class="flex items-center gap-0.5">
-                                        <button type="button" onclick="app.ui.abrirModalEditarMembro('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition" title="Alterar gestor imediato na hierarquia"><i class="fa-solid fa-sitemap text-xs"></i></button>
-                                        <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition" title="Editar perfil completo e abas ADM liberadas"><i class="fa-solid fa-sliders text-xs"></i></button>
+                                        ${isSuper ? `
+                                            <button type="button" onclick="app.ui.abrirModalEditarMembro('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition" title="Alterar gestor imediato na hierarquia"><i class="fa-solid fa-sitemap text-xs"></i></button>
+                                            <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition" title="Editar perfil completo e abas ADM liberadas"><i class="fa-solid fa-sliders text-xs"></i></button>
+                                        ` : ''}
                                         <button type="button" onclick="app.ui.viewUserProfile('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" title="Ver perfil e log de atividade"><i class="fa-solid fa-address-card text-xs"></i></button>
-                                        <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition" title="Resetar senha para 12345"><i class="fa-solid fa-key text-xs"></i></button>
-                                        <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition" title="Solicitar nova assinatura LGPD"><i class="fa-solid fa-shield-halved text-xs"></i></button>
-                                        <button type="button" onclick="app.admin.deleteUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition" title="Remover colaborador"><i class="fa-solid fa-trash text-xs"></i></button>
+                                        ${podeGerenciar ? `
+                                            <button type="button" onclick="app.admin.forcePasswordReset('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition" title="Resetar senha para 12345"><i class="fa-solid fa-key text-xs"></i></button>
+                                            <button type="button" onclick="app.admin.resetTermos('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition" title="Solicitar nova assinatura LGPD"><i class="fa-solid fa-shield-halved text-xs"></i></button>
+                                        ` : ''}
+                                        ${isSuper ? `
+                                            <button type="button" onclick="app.admin.deleteUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition" title="Remover colaborador"><i class="fa-solid fa-trash text-xs"></i></button>
+                                        ` : ''}
                                     </div>
                                 </div>
                             </div>
@@ -11367,16 +11363,80 @@ storage: {
                         </section>
                     `;
 
+                    const kpi = (label, valor, sub = '') => `
+                        <div class="px-4 py-3">
+                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${label}</div>
+                            <div class="text-xl font-black text-slate-800 dark:text-white mt-0.5 tabular-nums">${valor}</div>
+                            ${sub ? `<div class="text-[11px] text-slate-400 mt-0.5">${sub}</div>` : ''}
+                        </div>
+                    `;
+
+                    // SE FOR GESTOR: Visão Restrita Exclusivamente à sua Equipe
+                    if (isGestor) {
+                        const gestor = app.currentUser;
+                        const matGestor = String(gestor?.matricula || '').trim();
+                        const liderados = operacionais.filter(u => String(u.gestorMatricula || '').trim() === matGestor);
+                        const monitoresEquipe = liderados.filter(u => app.isUserQualidade(u));
+                        const spanEquipe = liderados.reduce((acc, m) => acc + (app.getSpanUsuario(m).span || 0), 0);
+                        const mediaSpanEquipe = monitoresEquipe.length > 0 ? Math.round(spanEquipe / monitoresEquipe.length) : 0;
+
+                        const corpo = renderPessoa(gestor) +
+                            `<div class="mx-3 my-1.5 border-t border-dashed border-slate-200 dark:border-slate-700"></div>` +
+                            (liderados.length > 0
+                                ? liderados.map(renderPessoa).join('')
+                                : `<div class="text-xs text-slate-400 italic px-3 py-3">Nenhum liderado vinculado à sua gestão.</div>`);
+                        const btn = `<button type="button" onclick="app.ui.abrirModalAlocarEquipeGestor('${gestor.matricula}')" class="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-600 transition"><i class="fa-solid fa-user-plus mr-1"></i>Alocar Equipe</button>`;
+                        const equipePanel = painel(`Minha Equipe (${app.utils.fixEncoding(gestor.nome).split(' ')[0]})`, `${liderados.length} liderado(s) · span total ${spanEquipe} op.`, corpo, 'bg-amber-500', btn);
+
+                        container.innerHTML = `
+                            <div class="space-y-5 animate-fade-in max-w-7xl mx-auto">
+                                <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <span class="px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-300 dark:border-amber-800">
+                                                <i class="fa-solid fa-user-tie mr-1"></i> Painel do Gestor
+                                            </span>
+                                        </div>
+                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Minha Equipe & Liderados</h2>
+                                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gestão focada dos monitores vinculados diretamente à sua liderança.</p>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button type="button" onclick="app.ui.abrirModalAlocarEquipeGestor('${gestor.matricula}')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"><i class="fa-solid fa-user-plus mr-1.5"></i>Alocar Monitores</button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                    ${kpi('Liderados Vinculados', liderados.length, `${monitoresEquipe.length} monitores de qualidade`)}
+                                    ${kpi('Span Total da Equipe', spanEquipe, 'operadores sob gestão')}
+                                    ${kpi('Span Médio / Monitor', mediaSpanEquipe, 'operadores por monitor')}
+                                    ${kpi('Acesso Ativo', liderados.filter(u => u.loginCount > 0).length, 'colaboradores já acessaram')}
+                                </div>
+
+                                <div class="space-y-4">
+                                    ${equipePanel}
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // SE FOR SUPERADMIN (DEV / GERENTE): Visão Geral Completa
+                    const mediaSpanMonitor = monitoresQualidade.length > 0
+                        ? Math.round(monitoresQualidade.reduce((acc, m) => acc + (app.getSpanUsuario(m).span || 0), 0) / monitoresQualidade.length)
+                        : 0;
+
+                    const totalLideradosComGestor = operacionais.filter(u => u.gestorMatricula && gestores.some(g => g.matricula === u.gestorMatricula)).length;
+
                     // Gerência
                     const gerenciaHtml = gerentes.length === 0
                         ? `<div class="text-xs text-slate-400 italic p-3">Defina um colaborador com o cargo <strong>Gerente</strong> para ocupar o topo.</div>`
                         : gerentes.map(renderPessoa).join('');
                     const gerenciaPanel = painel('Gerência Geral', `${gerentes.length} gerente(s) · ${totalOperadoresGlobal} operadores no setorial`, gerenciaHtml, 'bg-rose-500');
 
-                    // Gestores e suas equipes
+                    // Gestores e suas equipes com span exato baseado nos liderados
                     const gestoresPanels = gestores.map(gestor => {
                         const liderados = operacionais.filter(u => u.gestorMatricula === gestor.matricula);
-                        const spanEquipe = app.getSpanUsuario(gestor).totalOperadores;
+                        const spanEquipe = liderados.reduce((acc, m) => acc + (app.getSpanUsuario(m).span || 0), 0);
                         const corpo = renderPessoa(gestor) +
                             `<div class="mx-3 my-1.5 border-t border-dashed border-slate-200 dark:border-slate-700"></div>` +
                             (liderados.length > 0
@@ -11393,30 +11453,6 @@ storage: {
                         ? painel('Sem Gestor Vinculado', `${semGestor.length} integrante(s) aguardando vínculo`, semGestor.map(renderPessoa).join(''), 'bg-slate-400')
                         : '';
 
-                    // Operações (recolhível)
-                    const opsHtml = opsSetoriais.map(op => {
-                        const resps = app.users.filter(u => (u.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase()));
-                        const ok = resps.length > 0;
-                        const cleanOpNome = app.utils.fixEncoding(op.nome);
-                        return `
-                            <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${ok ? 'bg-slate-50 dark:bg-slate-800/50' : 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-300/60'}">
-                                <div class="min-w-0">
-                                    <div class="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase truncate" title="${cleanOpNome}">${cleanOpNome}</div>
-                                    <div class="text-[10px] ${ok ? 'text-slate-500 dark:text-slate-400' : 'text-amber-600 dark:text-amber-400 font-bold'} truncate">${ok ? resps.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]).join(', ') : 'Sem monitor atribuído'}</div>
-                                </div>
-                                <span class="text-xs font-black text-slate-700 dark:text-slate-200 shrink-0 tabular-nums">${op.headcount || 0}</span>
-                            </div>
-                        `;
-                    }).join('');
-
-                    const kpi = (label, valor, sub = '') => `
-                        <div class="px-4 py-3">
-                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${label}</div>
-                            <div class="text-xl font-black text-slate-800 dark:text-white mt-0.5 tabular-nums">${valor}</div>
-                            ${sub ? `<div class="text-[11px] text-slate-400 mt-0.5">${sub}</div>` : ''}
-                        </div>
-                    `;
-
                     const activeRole = this._hierarquiaCargo || 'todos';
                     const rolePills = [
                         { id: 'todos', label: 'Todos', count: app.users.length },
@@ -11425,14 +11461,14 @@ storage: {
                         { id: 'Qualidade', label: 'Qualidade', count: app.users.filter(u => cargoDe(u) === 'Qualidade').length },
                         { id: 'Treinamento', label: 'Treinamento', count: app.users.filter(u => cargoDe(u) === 'Treinamento').length },
                         { id: 'Dev', label: 'Dev', count: app.users.filter(u => cargoDe(u) === 'Dev').length }
-                    ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5">${r.count}</span></button>`).join('');
+                    ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5 tabular-nums">${r.count}</span></button>`).join('');
 
                     container.innerHTML = `
                         <div class="space-y-5 animate-fade-in max-w-7xl mx-auto">
                             <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                                 <div>
                                     <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Equipe, Hierarquia & Span</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie colaboradores, grupos de acesso ADM, hierarquia de liderança e cobertura de operações do setorial.</p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie colaboradores, grupos de acesso ADM e hierarquia de liderança da equipe.</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
                                     <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-chart-simple mr-1.5"></i>Visão Geral Setorial</button>
@@ -11445,7 +11481,7 @@ storage: {
                                 ${kpi('Colaboradores', app.users.length, `${logados} acessaram a plataforma`)}
                                 ${kpi('Operadores no Setorial', totalOperadoresGlobal, `${opsSetoriais.length} operações ativas`)}
                                 ${kpi('Span Médio / Monitor', mediaSpanMonitor, `${monitoresQualidade.length} monitor(es) de qualidade`)}
-                                ${kpi('Operações Cobertas', `${opsSetoriais.length - opsSemMonitor.length}/${opsSetoriais.length}`, opsSemMonitor.length > 0 ? `${opsSemMonitor.length} sem monitor atribuído` : '100% cobertas')}
+                                ${kpi('Liderados Vinculados', `${totalLideradosComGestor}/${operacionais.length}`, operacionais.length - totalLideradosComGestor > 0 ? `${operacionais.length - totalLideradosComGestor} sem gestor` : '100% vinculados')}
                             </div>
 
                             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -11463,22 +11499,13 @@ storage: {
                                     ${semGestorPanel}
                                 </div>
                             </div>
-
-                            <details class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800" ${opsSemMonitor.length > 0 ? 'open' : ''}>
-                                <summary class="px-4 py-3 cursor-pointer flex items-center justify-between text-sm font-extrabold text-slate-800 dark:text-white select-none">
-                                    <span><i class="fa-solid fa-layer-group text-slate-400 mr-2"></i>Cobertura de Operações do Setorial (${opsSetoriais.length})${opsSemMonitor.length > 0 ? ` <span class="ml-2 text-[11px] font-bold text-amber-600">${opsSemMonitor.length} sem monitor</span>` : ''}</span>
-                                    <i class="fa-solid fa-chevron-down text-xs text-slate-400"></i>
-                                </summary>
-                                <div class="p-3 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-                                    ${opsHtml || '<div class="col-span-full text-center text-slate-400 italic p-4 text-sm">Importe a Base RH na Visão Geral Setorial para listar as operações.</div>'}
-                                </div>
-                            </details>
                         </div>
                     `;
                     if (this._hierarquiaSearch || (this._hierarquiaCargo && this._hierarquiaCargo !== 'todos')) {
                         this.filterHierarquiaView(this._hierarquiaSearch || '', this._hierarquiaCargo || 'todos');
                     }
                 },
+
 
                 renderView_ImportMonitorias(container) {
                     const canManageMon = app.hasAdminAccess('import_monitorias');
@@ -21135,6 +21162,1807 @@ storage: {
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
         }; // Feche o objeto app aqui com ponto e vírgula
+
+// =========================================================================
+// MODULOS ACOPLADOS: CENTRAL DE REPORTES & TREINAMENTO / CERTIFICACOES
+// =========================================================================
+Object.assign(app, {
+            // --- GESTÃO DE ACESSO HIERÁRQUICO ---
+            isSuperAdmin() {
+                if (this.isAdmin) return true;
+                const tipo = this.currentUser?.tipoAcesso;
+                return tipo === 'Dev' || tipo === 'Gerente';
+            },
+
+            isGestor() {
+                return !this.isSuperAdmin() && this.currentUser?.tipoAcesso === 'Gestor';
+            },
+
+            getSubordinados(user = null) {
+                const u = user || this.currentUser;
+                if (!u) return [];
+                if (this.isSuperAdmin() && !user) {
+                    return this.users || [];
+                }
+                const tipo = u.tipoAcesso;
+                if (tipo === 'Gerente' || tipo === 'Dev') {
+                    return this.users || [];
+                }
+                if (tipo === 'Gestor') {
+                    const mat = String(u.matricula || '').trim();
+                    return (this.users || []).filter(sub => String(sub.gestorMatricula || '').trim() === mat);
+                }
+                return (this.users || []).filter(sub => String(sub.matricula || '').trim() === String(u.matricula || '').trim());
+            },
+
+            canAccessUser(targetMatricula) {
+                if (this.isSuperAdmin()) return true;
+                if (!this.currentUser) return false;
+                const mat = String(targetMatricula || '').trim();
+                if (String(this.currentUser.matricula || '').trim() === mat) return true;
+                if (this.isGestor()) {
+                    const subs = this.getSubordinados();
+                    return subs.some(s => String(s.matricula || '').trim() === mat);
+                }
+                return false;
+            },
+
+            getUsersAcesso() {
+                if (this.isSuperAdmin()) return this.users || [];
+                if (this.isGestor()) {
+                    const subs = this.getSubordinados();
+                    return [this.currentUser, ...subs];
+                }
+                return this.currentUser ? [this.currentUser] : [];
+            },
+
+});
+
+Object.assign(app.ui, {
+                // =========================================================================
+                // CENTRAL DE REPORTES (BUGS & SUGESTÕES)
+                // =========================================================================
+                abrirModalReporte() {
+                    const modalExist = document.getElementById('report-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const modal = document.createElement('div');
+                    modal.id = 'report-modal';
+                    modal.className = 'fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    let selectedTipo = 'erro'; // 'erro' ou 'sugestao'
+                    const telaAtual = app.currentTab || 'Geral';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative my-8">
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center text-xl shrink-0">
+                                        <i class="fa-solid fa-bullhorn"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Reportar ao Desenvolvedor</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Envie um problema encontrado ou uma sugestão de melhoria.</p>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('report-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark text-lg"></i>
+                                </button>
+                            </div>
+
+                            <form id="form-reporte" class="space-y-4 mt-5" onsubmit="event.preventDefault(); app.ui.enviarReporte();">
+                                <!-- Seletor Tipo de Reporte -->
+                                <div>
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Tipo de Notificação</label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <label id="btn-tipo-erro" class="flex items-center gap-2.5 p-3 rounded-2xl border-2 border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 font-bold text-xs cursor-pointer transition">
+                                            <input type="radio" name="tipo_reporte" value="erro" checked class="hidden" onchange="app.ui._setReporteTipo('erro')">
+                                            <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                                            <span>Bug / Erro</span>
+                                        </label>
+                                        <label id="btn-tipo-sugestao" class="flex items-center gap-2.5 p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs cursor-pointer transition">
+                                            <input type="radio" name="tipo_reporte" value="sugestao" class="hidden" onchange="app.ui._setReporteTipo('sugestao')">
+                                            <i class="fa-solid fa-lightbulb text-base"></i>
+                                            <span>Sugestão</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Título Resumido -->
+                                <div>
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Título / Resumo</label>
+                                    <input type="text" id="report-titulo" required placeholder="Ex: Meta da tela Visão Geral aparecendo zerada" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                                </div>
+
+                                <!-- Tela / Aba Envolvida -->
+                                <div>
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Aba / Tela do Sistema</label>
+                                    <input type="text" id="report-tela" value="${telaAtual}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                                </div>
+
+                                <!-- Detalhamento -->
+                                <div>
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Descrição Detalhada</label>
+                                    <textarea id="report-descricao" required rows="4" placeholder="Explique o que aconteceu, os passos para reproduzir ou como você gostaria que funcionasse..." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white custom-scrollbar"></textarea>
+                                </div>
+
+                                <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                                    ${(app.isSuperAdmin && app.isSuperAdmin()) || app.isAdmin ? `
+                                        <button type="button" onclick="document.getElementById('report-modal').remove(); app.ui.abrirModalGestaoReportesDev();" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5">
+                                            <i class="fa-solid fa-sliders"></i> Gerenciar Reportes (Dev)
+                                        </button>
+                                    ` : '<div></div>'}
+                                    <div class="flex items-center gap-2">
+                                        <button type="button" onclick="document.getElementById('report-modal').remove()" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                            Cancelar
+                                        </button>
+                                        <button type="submit" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-2">
+                                            <i class="fa-solid fa-paper-plane"></i> Enviar ao Dev
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                _setReporteTipo(tipo) {
+                    const btnErro = document.getElementById('btn-tipo-erro');
+                    const btnSug = document.getElementById('btn-tipo-sugestao');
+                    if (tipo === 'erro') {
+                        if (btnErro) btnErro.className = 'flex items-center gap-2.5 p-3 rounded-2xl border-2 border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 font-bold text-xs cursor-pointer transition';
+                        if (btnSug) btnSug.className = 'flex items-center gap-2.5 p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs cursor-pointer transition';
+                    } else {
+                        if (btnSug) btnSug.className = 'flex items-center gap-2.5 p-3 rounded-2xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-bold text-xs cursor-pointer transition';
+                        if (btnErro) btnErro.className = 'flex items-center gap-2.5 p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs cursor-pointer transition';
+                    }
+                },
+
+                enviarReporte() {
+                    const tipo = document.querySelector('input[name="tipo_reporte"]:checked')?.value || 'erro';
+                    const titulo = (document.getElementById('report-titulo')?.value || '').trim();
+                    const tela = (document.getElementById('report-tela')?.value || app.currentTab || 'Geral').trim();
+                    const descricao = (document.getElementById('report-descricao')?.value || '').trim();
+
+                    if (!titulo || !descricao) {
+                        return app.ui.showAlert('Atenção', 'Preencha o título e a descrição.', 'warning');
+                    }
+
+                    if (!app.reportesList) app.reportesList = {};
+                    const id = 'rep_' + Date.now();
+                    const now = new Date();
+                    const dataFmt = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+                    app.reportesList[id] = {
+                        id,
+                        tipo,
+                        titulo,
+                        descricao,
+                        tela,
+                        autor: app.currentUser?.nome || 'Usuário',
+                        matricula: app.currentUser?.matricula || '',
+                        cargo: app.currentUser?.tipoAcesso || 'Colaborador',
+                        data: dataFmt,
+                        timestamp: Date.now(),
+                        status: 'pendente', // 'pendente' | 'em_andamento' | 'implementado' | 'descartado'
+                        devNota: ''
+                    };
+
+                    app.storage.saveReportes().then(() => {
+                        const m = document.getElementById('report-modal');
+                        if (m) m.remove();
+                        app.ui.showAlert(
+                            tipo === 'erro' ? 'Erro Reportado' : 'Sugestão Enviada',
+                            'Seu reporte foi registrado com sucesso e enviado ao desenvolvedor.',
+                            'success'
+                        );
+                    });
+                },
+
+                abrirModalGestaoReportesDev(filtroStatus = 'todos') {
+                    if (!app.isSuperAdmin && !app.isAdmin) return;
+                    const modalExist = document.getElementById('dev-reportes-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const reportes = Object.values(app.reportesList || {}).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                    const total = reportes.length;
+                    const pendentes = reportes.filter(r => (r.status || 'pendente') === 'pendente').length;
+                    const emAndamento = reportes.filter(r => r.status === 'em_andamento').length;
+                    const implementados = reportes.filter(r => r.status === 'implementado').length;
+                    const descartados = reportes.filter(r => r.status === 'descartado').length;
+
+                    const filtrados = filtroStatus === 'todos'
+                        ? reportes
+                        : reportes.filter(r => (r.status || 'pendente') === filtroStatus);
+
+                    const modal = document.createElement('div');
+                    modal.id = 'dev-reportes-modal';
+                    modal.className = 'fixed inset-0 z-[9998] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-5xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                            <!-- Cabeçalho -->
+                            <div class="flex items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl shrink-0">
+                                        <i class="fa-solid fa-list-check"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Painel do Desenvolvedor</div>
+                                        <h3 class="text-xl font-black text-slate-800 dark:text-white">Central de Feedback & Reportes da Equipe</h3>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('dev-reportes-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark text-lg"></i>
+                                </button>
+                            </div>
+
+                            <!-- KPIs de Reportes -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Recebido</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white mt-0.5 tabular-nums">${total}</div>
+                                </div>
+                                <div class="p-3.5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Pendentes</div>
+                                    <div class="text-2xl font-black text-amber-600 dark:text-amber-400 mt-0.5 tabular-nums">${pendentes}</div>
+                                </div>
+                                <div class="p-3.5 rounded-2xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/50">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Em Andamento</div>
+                                    <div class="text-2xl font-black text-blue-600 dark:text-blue-400 mt-0.5 tabular-nums">${emAndamento}</div>
+                                </div>
+                                <div class="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Implementados</div>
+                                    <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 tabular-nums">${implementados}</div>
+                                </div>
+                            </div>
+
+                            <!-- Filtros por Status -->
+                            <div class="flex items-center gap-1.5 mt-5 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-x-auto custom-scrollbar">
+                                ${[
+                                    { id: 'todos', label: 'Todos', count: total },
+                                    { id: 'pendente', label: 'Pendentes', count: pendentes },
+                                    { id: 'em_andamento', label: 'Em Andamento', count: emAndamento },
+                                    { id: 'implementado', label: 'Implementados', count: implementados },
+                                    { id: 'descartado', label: 'Descartados', count: descartados }
+                                ].map(f => `
+                                    <button onclick="app.ui.abrirModalGestaoReportesDev('${f.id}')" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${filtroStatus === f.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'}">
+                                        ${f.label} <span class="text-[10px] opacity-75 tabular-nums">(${f.count})</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+
+                            <!-- Lista de Reportes -->
+                            <div class="mt-4 space-y-3 max-h-[460px] overflow-y-auto custom-scrollbar pr-1">
+                                ${filtrados.length === 0 ? `
+                                    <div class="text-center text-slate-400 italic p-12 text-sm bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                                        Nenhum reporte encontrado nesta categoria.
+                                    </div>
+                                ` : filtrados.map(r => {
+                                    const isErro = r.tipo === 'erro';
+                                    const st = r.status || 'pendente';
+                                    const badgeTipo = isErro
+                                        ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Erro / Bug</span>`
+                                        : `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800"><i class="fa-solid fa-lightbulb mr-1"></i>Sugestão</span>`;
+
+                                    let badgeStatus = '';
+                                    if (st === 'implementado') badgeStatus = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"><i class="fa-solid fa-circle-check mr-1"></i>Implementado</span>`;
+                                    else if (st === 'em_andamento') badgeStatus = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"><i class="fa-solid fa-spinner mr-1 animate-spin"></i>Em Andamento</span>`;
+                                    else if (st === 'descartado') badgeStatus = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400"><i class="fa-solid fa-ban mr-1"></i>Descartado</span>`;
+                                    else badgeStatus = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"><i class="fa-solid fa-clock mr-1"></i>Pendente</span>`;
+
+                                    return `
+                                        <div class="p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 shadow-sm transition hover:shadow-md">
+                                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-700/60">
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    ${badgeTipo}
+                                                    ${badgeStatus}
+                                                    <span class="text-xs font-bold text-slate-400">Aba: <strong>${app.utils.escapeHtml(r.tela || 'Geral')}</strong></span>
+                                                </div>
+                                                <div class="text-[11px] text-slate-400 tabular-nums">
+                                                    ${r.data || '-'} • Por: <strong class="text-slate-700 dark:text-slate-200">${app.utils.escapeHtml(r.autor || 'Usuário')}</strong> (${r.cargo || ''})
+                                                </div>
+                                            </div>
+
+                                            <div class="mt-2.5">
+                                                <h4 class="text-sm font-extrabold text-slate-800 dark:text-white">${app.utils.escapeHtml(r.titulo || '')}</h4>
+                                                <p class="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60 whitespace-pre-wrap">${app.utils.escapeHtml(r.descricao || '')}</p>
+                                            </div>
+
+                                            <!-- Ações Rápidas do Desenvolvedor -->
+                                            <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+                                                <div class="flex items-center gap-1.5 flex-wrap">
+                                                    <span class="text-[10px] font-bold uppercase text-slate-400 mr-1">Mudar Status:</span>
+                                                    <button onclick="app.ui.alterarStatusReporte('${r.id}', 'implementado')" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 dark:text-emerald-300 text-[10px] font-bold transition flex items-center gap-1">
+                                                        <i class="fa-solid fa-check"></i> Implementado
+                                                    </button>
+                                                    <button onclick="app.ui.alterarStatusReporte('${r.id}', 'em_andamento')" class="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 dark:text-blue-300 text-[10px] font-bold transition flex items-center gap-1">
+                                                        <i class="fa-solid fa-spinner"></i> Em Andamento
+                                                    </button>
+                                                    <button onclick="app.ui.alterarStatusReporte('${r.id}', 'pendente')" class="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 dark:text-amber-300 text-[10px] font-bold transition flex items-center gap-1">
+                                                        <i class="fa-solid fa-rotate-left"></i> Pendente
+                                                    </button>
+                                                    <button onclick="app.ui.alterarStatusReporte('${r.id}', 'descartado')" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-300 text-[10px] font-bold transition flex items-center gap-1">
+                                                        <i class="fa-solid fa-ban"></i> Descartar
+                                                    </button>
+                                                </div>
+
+                                                <button onclick="app.ui.removerReporte('${r.id}')" class="text-slate-400 hover:text-red-500 text-xs transition p-1" title="Excluir reporte permanentemente">
+                                                    <i class="fa-solid fa-trash-can"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+
+                            <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                                <button onclick="document.getElementById('dev-reportes-modal').remove()" class="px-5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition">
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                alterarStatusReporte(id, novoStatus) {
+                    if (!app.reportesList || !app.reportesList[id]) return;
+                    app.reportesList[id].status = novoStatus;
+                    app.storage.saveReportes().then(() => {
+                        this.abrirModalGestaoReportesDev(document.querySelector('#dev-reportes-modal .bg-indigo-600')?.textContent?.trim()?.toLowerCase() || 'todos');
+                    });
+                },
+
+                removerReporte(id) {
+                    if (!confirm('Deseja realmente remover este reporte?')) return;
+                    if (app.reportesList && app.reportesList[id]) {
+                        delete app.reportesList[id];
+                        app.storage.saveReportes().then(() => {
+                            this.abrirModalGestaoReportesDev('todos');
+                        });
+                    }
+                },
+
+                // =========================================================================
+                // MÓDULO DE TREINAMENTO, FCR & CERTIFICAÇÕES OFICIAIS
+                // =========================================================================
+                setTreinamentoSubaba(subaba) {
+                    this._treinamentoSubaba = subaba;
+                    this.renderTab('treinamento_capacitacao', true);
+                },
+
+                renderView_TreinamentoCapacitacao(container) {
+                    const subabaAtiva = this._treinamentoSubaba || 'csat'; // 'csat' | 'fcr' | 'certificacoes'
+                    const currentUser = app.currentUser || { matricula: 'admin', nome: 'Administrador', tipoAcesso: 'Dev' };
+                    const mat = String(currentUser.matricula || 'admin').trim();
+
+                    // Status das provas do usuário ativo
+                    const csatStatus = app.csatNpsExam.verificarStatus(mat);
+                    const fcrStatus = app.fcrExam.verificarStatus(mat);
+
+                    const regCsat = app.csatNpsProvas && app.csatNpsProvas[mat];
+                    const regFcr = app.fcrProvas && app.fcrProvas[mat];
+
+                    const csatAprovado = regCsat && regCsat.status === 'aprovado';
+                    const fcrAprovado = regFcr && regFcr.status === 'aprovado';
+
+                    const totalConquistados = (csatAprovado ? 1 : 0) + (fcrAprovado ? 1 : 0);
+
+                    let html = `
+                        <div class="space-y-6 animate-fade-in max-w-7xl mx-auto pb-12">
+                            <!-- Cabeçalho Principal -->
+                            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-950 p-6 md:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                                <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                <div class="relative z-10">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <span class="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-widest border border-indigo-400/30">
+                                            <i class="fa-solid fa-graduation-cap mr-1"></i> Academia de Excelência & Qualificação
+                                        </span>
+                                        <span class="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-widest border border-emerald-400/30">
+                                            <i class="fa-solid fa-medal mr-1"></i> ${totalConquistados}/2 Certificações
+                                        </span>
+                                    </div>
+                                    <h2 class="text-2xl md:text-3xl font-black tracking-tight">Treinamento & Capacitação Técnica</h2>
+                                    <p class="text-slate-300 text-xs md:text-sm mt-1 max-w-2xl leading-relaxed">
+                                        Qualificação continuada para transformar nossa equipe em referência de autonomia, auditoria analítica e excelência no atendimento.
+                                    </p>
+                                </div>
+
+                                <!-- Seletor de Subabas -->
+                                <div class="relative z-10 flex flex-wrap items-center gap-1.5 p-1.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10">
+                                    <button onclick="app.ui.setTreinamentoSubaba('csat')" class="px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${subabaAtiva === 'csat' ? 'bg-white text-slate-900 shadow-md' : 'text-white/80 hover:text-white hover:bg-white/10'}">
+                                        <i class="fa-solid fa-chart-line text-sm"></i>
+                                        <span>CSAT & NPS</span>
+                                        ${csatAprovado ? `<i class="fa-solid fa-circle-check text-emerald-500 text-xs ml-0.5"></i>` : ''}
+                                    </button>
+                                    <button onclick="app.ui.setTreinamentoSubaba('fcr')" class="px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${subabaAtiva === 'fcr' ? 'bg-white text-slate-900 shadow-md' : 'text-white/80 hover:text-white hover:bg-white/10'}">
+                                        <i class="fa-solid fa-headset text-sm"></i>
+                                        <span>FCR no Call Center</span>
+                                        ${fcrAprovado ? `<i class="fa-solid fa-circle-check text-emerald-500 text-xs ml-0.5"></i>` : ''}
+                                    </button>
+                                    <button onclick="app.ui.setTreinamentoSubaba('certificacoes')" class="px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${subabaAtiva === 'certificacoes' ? 'bg-white text-slate-900 shadow-md' : 'text-white/80 hover:text-white hover:bg-white/10'}">
+                                        <i class="fa-solid fa-award text-amber-400 text-sm"></i>
+                                        <span>Minhas Conquistas</span>
+                                        <span class="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40 tabular-nums">${totalConquistados}</span>
+                                    </button>
+                                </div>
+                            </div>
+                    `;
+
+                    // Renderização do Conteúdo de Cada Subaba
+                    if (subabaAtiva === 'csat') {
+                        html += `<div id="subaba-csat-container"></div>`;
+                    } else if (subabaAtiva === 'fcr') {
+                        html += this._renderSubabaFCR(currentUser, mat, fcrStatus, regFcr);
+                    } else {
+                        html += this._renderSubabaCertificacoes(currentUser, mat, csatAprovado, fcrAprovado, regCsat, regFcr);
+                    }
+
+                    html += `</div>`;
+                    container.innerHTML = html;
+
+                    // Se a subaba for CSAT & NPS, renderiza o componente interno
+                    if (subabaAtiva === 'csat') {
+                        const csatWrapper = document.getElementById('subaba-csat-container');
+                        if (csatWrapper) {
+                            this.renderView_CsatNps(csatWrapper);
+                        }
+                    }
+                },
+
+                // -------------------------------------------------------------------------
+                // SUBABA 2: FCR NO CALL CENTER (TREINAMENTO COMPLETO + PROVA)
+                // -------------------------------------------------------------------------
+                _renderSubabaFCR(currentUser, mat, fcrStatus, regFcr) {
+                    const aprovado = regFcr && regFcr.status === 'aprovado';
+                    const desqualificado = regFcr && regFcr.desqualificado;
+
+                    let cardProvaHtml = '';
+                    if (aprovado) {
+                        cardProvaHtml = `
+                            <div class="p-6 rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-3xl shrink-0 border border-white/30">
+                                        <i class="fa-solid fa-award text-amber-300"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-emerald-200">Certificação Oficial Conquistada</div>
+                                        <h3 class="text-xl font-black">Especialista em FCR & Eficiência Resolutiva</h3>
+                                        <p class="text-xs text-emerald-100 mt-1">Aproveitamento: <strong class="tabular-nums">${regFcr.nota}% (${regFcr.acertos}/10)</strong> • Concluído em ${regFcr.dataConclusao || 'Outubro/2026'}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3 w-full md:w-auto">
+                                    <button onclick="app.ui.abrirModalResultadoFCR('${mat}')" class="px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition flex items-center gap-2">
+                                        <i class="fa-solid fa-chart-simple"></i> Ver Resultado
+                                    </button>
+                                    <button onclick="app.ui.abrirCertificadoOficial('fcr', '${mat}')" class="px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs shadow-md transition flex items-center gap-2">
+                                        <i class="fa-solid fa-award"></i> Ver Certificado Oficial
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    } else if (!fcrStatus.podeFazer) {
+                        cardProvaHtml = `
+                            <div class="p-6 rounded-3xl bg-gradient-to-r from-red-600 via-rose-700 to-pink-800 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-3xl shrink-0 border border-white/30">
+                                        <i class="fa-solid fa-lock text-white"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-rose-200">${desqualificado ? 'Desclassificação Anti-Cola' : 'Avaliação Não Concluída'}</div>
+                                        <h3 class="text-xl font-black">Nova Tentativa Liberada Amanhã</h3>
+                                        <p class="text-xs text-rose-100 mt-1">${fcrStatus.motivoBloqueio || 'Para manter o rigor e fixação do treinamento, novas tentativas ocorrem após revisão do guia.'}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <button onclick="app.ui.abrirModalResultadoFCR('${mat}')" class="px-5 py-2.5 rounded-xl bg-white text-rose-900 hover:bg-rose-50 font-black text-xs shadow-lg transition flex items-center gap-2">
+                                        <i class="fa-solid fa-chart-simple"></i> Ver Resultado
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        cardProvaHtml = `
+                            <div class="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 text-white shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 border border-indigo-400/30">
+                                <div>
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <span class="px-3 py-1 rounded-full bg-white/20 text-white text-[10px] font-black uppercase tracking-wider backdrop-blur-sm">
+                                            <i class="fa-solid fa-shield-halved mr-1"></i> Prova Oficial Anti-Cola
+                                        </span>
+                                        <span class="px-3 py-1 rounded-full bg-amber-400/20 text-amber-200 text-[10px] font-black uppercase tracking-wider border border-amber-400/40">
+                                            10 Questões • Mínimo 70%
+                                        </span>
+                                    </div>
+                                    <h3 class="text-2xl font-black">Avaliação de Certificação: FCR & Causa Raiz</h3>
+                                    <p class="text-xs md:text-sm text-indigo-100 mt-1.5 max-w-2xl leading-relaxed">
+                                        Teste seus conhecimentos práticos sobre recontato, TMT fake, resolução na primeira chamada e técnicas de auditoria. Bloqueio automático de troca de aba ativo.
+                                    </p>
+                                </div>
+                                <button onclick="app.fcrExam.iniciarProva('${mat}')" class="px-8 py-4 rounded-2xl bg-white hover:bg-indigo-50 text-indigo-900 font-black text-sm shadow-xl transition-all duration-300 hover:scale-105 flex items-center gap-3 shrink-0">
+                                    <i class="fa-solid fa-play text-indigo-600"></i> Iniciar Prova de FCR
+                                </button>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <!-- Card de Ação da Prova -->
+                        ${cardProvaHtml}
+
+                        <!-- Guia Teórico Didático Completo de FCR -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            <!-- Coluna Esquerda: O Conceito e a Fórmula -->
+                            <div class="lg:col-span-7 space-y-6">
+                                <!-- Card 1: O que é FCR -->
+                                <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                    <div class="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-800 mb-5">
+                                        <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg shrink-0">
+                                            <i class="fa-solid fa-bullseye"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">1. O que é First Contact Resolution (FCR)?</h3>
+                                            <p class="text-xs text-slate-400">A métrica rainha de eficiência operacional e satisfação no atendimento.</p>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs md:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        O <strong>FCR (Resolução no Primeiro Contato)</strong> mede a capacidade da operação de solucionar a solicitação do cliente em uma única interação, sem necessidade de recontato, transferências indevidas ou abertura de protocolos repetidos.
+                                    </p>
+
+                                    <!-- Fórmula -->
+                                    <div class="my-5 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-center">
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-2">Fórmula Matemática do FCR</div>
+                                        <div class="text-base md:text-lg font-black text-slate-800 dark:text-white">
+                                            FCR (%) = (Atendimentos Resolvidos no 1º Contato ÷ Total de Atendimentos) × 100
+                                        </div>
+                                        <p class="text-[11px] text-slate-400 mt-2">Um aumento de 1% no FCR reduz chamadas repetidas e alavanca o CSAT em até 1,5%.</p>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-3 text-xs">
+                                        <div class="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50">
+                                            <strong class="text-emerald-700 dark:text-emerald-300 block mb-1">Impacto Positivo:</strong>
+                                            Menos custos de fila, menor tempo de espera para outros clientes e clientes promotores da marca.
+                                        </div>
+                                        <div class="p-3 rounded-xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/50">
+                                            <strong class="text-rose-700 dark:text-rose-300 block mb-1">Impacto da Falha:</strong>
+                                            Clientes que precisam ligar mais de uma vez têm chance 4x maior de atribuir nota de Detrator no NPS.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Card 2: A Janela de Recontato e Regras Práticas -->
+                                <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                    <div class="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-800 mb-5">
+                                        <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-lg shrink-0">
+                                            <i class="fa-solid fa-clock-rotate-left"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">2. Janela de Recontato & Regras de Call Center</h3>
+                                            <p class="text-xs text-slate-400">Como o discador e o CRM identificam a quebra de resolução.</p>
+                                        </div>
+                                    </div>
+
+                                    <ul class="space-y-3 text-xs md:text-sm text-slate-600 dark:text-slate-300">
+                                        <li class="flex items-start gap-2.5">
+                                            <i class="fa-solid fa-calendar-day text-blue-500 mt-1 shrink-0"></i>
+                                            <div>
+                                                <strong>Janela de Recontato (24h, 48h ou 72h):</strong> Se o mesmo CPF ou número telefônico retornar à central dentro desse período pelo mesmo assunto, o sistema computa uma quebra de FCR (reiteração).
+                                            </div>
+                                        </li>
+                                        <li class="flex items-start gap-2.5">
+                                            <i class="fa-solid fa-arrows-split-up-and-left text-amber-500 mt-1 shrink-0"></i>
+                                            <div>
+                                                <strong>Reiteração vs Nova Demanda:</strong> Se o cliente ligou para contestar fatura e depois liga para ativar roaming, são demandas distintas. A reiteração só se configura quando a dor original permaneceu sem solução.
+                                            </div>
+                                        </li>
+                                        <li class="flex items-start gap-2.5">
+                                            <i class="fa-solid fa-people-arrows text-rose-500 mt-1 shrink-0"></i>
+                                            <div>
+                                                <strong>Transferências "Ping-Pong":</strong> Transferir a ligação sem resolver ou fazer transferências cegas que derrubam a chamada são as maiores vilãs do FCR no call center.
+                                            </div>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- Coluna Direita: A Analogia e O Papel do Monitor de Qualidade -->
+                            <div class="lg:col-span-5 space-y-6">
+                                <!-- Card 3: A Analogia do Mecânico -->
+                                <div class="bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent rounded-3xl p-6 md:p-8 border-2 border-amber-400/60 dark:border-amber-500/40 shadow-sm">
+                                    <div class="flex items-center gap-3 pb-3 border-b border-amber-200/60 dark:border-amber-800/60 mb-4">
+                                        <div class="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center text-lg shrink-0 shadow-sm">
+                                            <i class="fa-solid fa-wrench"></i>
+                                        </div>
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">Analogia para Fixação</div>
+                                            <h3 class="text-base font-black text-slate-800 dark:text-white">A Oficina Mecânica e o Falso Despacho</h3>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs md:text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
+                                        Imagine que você leva o carro à oficina porque o freio está com ruído. O mecânico limpa a poeira superficialmente em 10 minutos para cumprir a meta de velocidade e te entrega o carro dizendo: <em>"Prontinho, pode rodar!"</em>.
+                                    </p>
+                                    <p class="text-xs md:text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
+                                        No dia seguinte, o freio volta a chiar e você precisa retornar à oficina, perdendo outro dia de trabalho. A oficina atendeu rápido, mas gerou custo duplo, retrabalho e quebrou sua confiança.
+                                    </p>
+                                    <div class="p-3 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 font-bold">
+                                        <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i> Resolver de primeira exige: <strong>Diagnosticar a causa raiz + Executar a correção no sistema + Testar antes de desligar</strong>.
+                                    </div>
+                                </div>
+
+                                <!-- Card 4: O Monitor de Qualidade na Prática -->
+                                <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                    <div class="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-800 mb-5">
+                                        <div class="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-lg shrink-0">
+                                            <i class="fa-solid fa-user-check"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">3. Como o Monitor de Qualidade Audita o FCR</h3>
+                                            <p class="text-xs text-slate-400">Ir além da polidez para enxergar a efetividade real.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-3 text-xs md:text-sm text-slate-600 dark:text-slate-300">
+                                        <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                            <strong class="text-indigo-600 dark:text-indigo-400 block mb-1">Cuidado com o "Despacho Rápido" (TMT Fake):</strong>
+                                            Operadores pressionados por tempo desligam rápido dando prazos irreais ("aguarde 24h"). O monitor deve pontuar isso como falha grave de resolutividade.
+                                        </div>
+                                        <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                            <strong class="text-indigo-600 dark:text-indigo-400 block mb-1">Sondagem e Causa Raiz:</strong>
+                                            O operador fez perguntas investigativas para entender o problema real ou apenas aplicou uma resposta padrão de script?
+                                        </div>
+                                        <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                            <strong class="text-indigo-600 dark:text-indigo-400 block mb-1">Confirmação Ativa na Linha:</strong>
+                                            Ex: <em>"O senhor consegue abrir o aplicativo agora enquanto estamos na linha para confirmar se liberou o acesso?"</em>
+                                        </div>
+                                        <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                            <strong class="text-indigo-600 dark:text-indigo-400 block mb-1">Checagem de Histórico no CRM:</strong>
+                                            O bom monitor abre os protocolos anteriores do cliente para verificar se ele já havia ligado ontem e quem causou o retrabalho.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
+
+                // -------------------------------------------------------------------------
+                // SUBABA 3: GALERIA DE CERTIFICAÇÕES ("MINHAS CONQUISTAS & DOPAMINA")
+                // -------------------------------------------------------------------------
+                _renderSubabaCertificacoes(currentUser, mat, csatAprovado, fcrAprovado, regCsat, regFcr) {
+                    const totalConquistados = (csatAprovado ? 1 : 0) + (fcrAprovado ? 1 : 0);
+                    const nivel = totalConquistados === 2 ? 'Nível 2 — Especialista Pleno em Qualidade' : (totalConquistados === 1 ? 'Nível 1 — Especialista em Formação' : 'Nível Inicial — Aspirante');
+                    const pctBar = totalConquistados === 2 ? 100 : (totalConquistados === 1 ? 50 : 15);
+
+                    return `
+                        <!-- Banner Gamificado Dopamina -->
+                        <div class="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-amber-500 via-orange-600 to-amber-700 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                            <div class="absolute -right-8 -top-8 w-60 h-60 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+                            <div class="relative z-10 flex items-center gap-5">
+                                <div class="w-16 h-16 md:w-20 md:h-20 rounded-3xl bg-white/20 backdrop-blur-md flex items-center justify-center text-3xl md:text-4xl shadow-inner border border-white/30 shrink-0">
+                                    <i class="fa-solid fa-crown text-amber-200"></i>
+                                </div>
+                                <div>
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-amber-200">Galeria de Troféus & Coleção Oficial</div>
+                                    <h3 class="text-2xl md:text-3xl font-black">${app.utils.escapeHtml(currentUser.nome || 'Colaborador')}</h3>
+                                    <p class="text-xs text-amber-100 mt-1">${nivel} • Matrícula #${mat}</p>
+                                </div>
+                            </div>
+
+                            <div class="relative z-10 w-full md:w-72 bg-black/20 p-4 rounded-2xl border border-white/20 backdrop-blur-sm">
+                                <div class="flex items-center justify-between text-xs font-bold mb-1.5">
+                                    <span>Progresso na Trilha</span>
+                                    <span class="tabular-nums font-black text-amber-200">${totalConquistados}/2 Certificados</span>
+                                </div>
+                                <div class="h-2.5 rounded-full bg-white/20 overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-yellow-300 to-amber-200 rounded-full transition-all duration-700" style="width: ${pctBar}%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Grade de Certificados Conquistados e a Conquistar -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                            <!-- Card 1: CSAT & NPS Master -->
+                            <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border-2 ${csatAprovado ? 'border-emerald-500 shadow-emerald-500/10' : 'border-slate-200 dark:border-slate-800'} shadow-lg flex flex-col justify-between transition hover:-translate-y-1">
+                                <div>
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div class="w-12 h-12 rounded-2xl ${csatAprovado ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'} flex items-center justify-center text-2xl">
+                                            <i class="fa-solid fa-medal"></i>
+                                        </div>
+                                        ${csatAprovado ? `
+                                            <span class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] font-black uppercase flex items-center gap-1.5 shadow-sm">
+                                                <i class="fa-solid fa-circle-check"></i> Conquistado
+                                            </span>
+                                        ` : `
+                                            <span class="px-3 py-1 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-black uppercase flex items-center gap-1.5">
+                                                <i class="fa-solid fa-lock"></i> Pendente
+                                            </span>
+                                        `}
+                                    </div>
+                                    <h4 class="text-base font-black text-slate-800 dark:text-white">Especialista em CSAT & NPS</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Métricas de percepção pontual, lealdade de longo prazo, escalas de 1 a 5 e 0 a 10, zonas de mercado e comentários qualitativos.</p>
+                                    ${csatAprovado ? `
+                                        <div class="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs">
+                                            <div class="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                                                <span>Aproveitamento:</span>
+                                                <strong class="text-emerald-600 dark:text-emerald-400 tabular-nums">${regCsat.nota}% (${regCsat.acertos}/10)</strong>
+                                            </div>
+                                            <div class="flex justify-between items-center text-slate-400 text-[10px] mt-1">
+                                                <span>Data de Expedição:</span>
+                                                <span class="tabular-nums">${regCsat.dataConclusao || 'Outubro/2026'}</span>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+
+                                <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    ${csatAprovado ? `
+                                        <button onclick="app.ui.abrirCertificadoOficial('csat', '${mat}')" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-2">
+                                            <i class="fa-solid fa-award"></i> Visualizar Certificado Oficial
+                                        </button>
+                                    ` : `
+                                        <button onclick="app.ui.setTreinamentoSubaba('csat')" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-2">
+                                            <i class="fa-solid fa-arrow-right"></i> Ir para o Treinamento & Prova
+                                        </button>
+                                    `}
+                                </div>
+                            </div>
+
+                            <!-- Card 2: FCR Specialist -->
+                            <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border-2 ${fcrAprovado ? 'border-amber-500 shadow-amber-500/10' : 'border-slate-200 dark:border-slate-800'} shadow-lg flex flex-col justify-between transition hover:-translate-y-1">
+                                <div>
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div class="w-12 h-12 rounded-2xl ${fcrAprovado ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'} flex items-center justify-center text-2xl">
+                                            <i class="fa-solid fa-headset"></i>
+                                        </div>
+                                        ${fcrAprovado ? `
+                                            <span class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[10px] font-black uppercase flex items-center gap-1.5 shadow-sm">
+                                                <i class="fa-solid fa-circle-check"></i> Conquistado
+                                            </span>
+                                        ` : `
+                                            <span class="px-3 py-1 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-black uppercase flex items-center gap-1.5">
+                                                <i class="fa-solid fa-lock"></i> Pendente
+                                            </span>
+                                        `}
+                                    </div>
+                                    <h4 class="text-base font-black text-slate-800 dark:text-white">Especialista em FCR & Causa Raiz</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Resolução no Primeiro Contato para call center, janelas de 24h a 72h, combate ao TMT fake, confirmação na linha e reiterações.</p>
+                                    ${fcrAprovado ? `
+                                        <div class="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs">
+                                            <div class="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                                                <span>Aproveitamento:</span>
+                                                <strong class="text-amber-600 dark:text-amber-400 tabular-nums">${regFcr.nota}% (${regFcr.acertos}/10)</strong>
+                                            </div>
+                                            <div class="flex justify-between items-center text-slate-400 text-[10px] mt-1">
+                                                <span>Data de Expedição:</span>
+                                                <span class="tabular-nums">${regFcr.dataConclusao || 'Outubro/2026'}</span>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+
+                                <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    ${fcrAprovado ? `
+                                        <button onclick="app.ui.abrirCertificadoOficial('fcr', '${mat}')" class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2">
+                                            <i class="fa-solid fa-award"></i> Visualizar Certificado Oficial
+                                        </button>
+                                    ` : `
+                                        <button onclick="app.ui.setTreinamentoSubaba('fcr')" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-2">
+                                            <i class="fa-solid fa-arrow-right"></i> Ir para o Treinamento & Prova
+                                        </button>
+                                    `}
+                                </div>
+                            </div>
+
+                            <!-- Card 3: Calibração & Auditoria (Em Breve) -->
+                            <div class="bg-white/60 dark:bg-slate-900/40 rounded-3xl p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col justify-between opacity-80">
+                                <div>
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 flex items-center justify-center text-2xl">
+                                            <i class="fa-solid fa-sliders"></i>
+                                        </div>
+                                        <span class="px-3 py-1 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-black uppercase flex items-center gap-1.5">
+                                            <i class="fa-solid fa-lock"></i> Em Breve
+                                        </span>
+                                    </div>
+                                    <h4 class="text-base font-black text-slate-800 dark:text-white">Calibração Técnica & Auditoria</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Nível 3 Avançado: Alinhamento de pesos, curvas de desvio padrão e mediação de divergências em mesas de calibração.</p>
+                                </div>
+                                <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    <div class="text-center text-xs text-slate-400 font-bold py-2">
+                                        Disponível após conclusão do Nível 2
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
+
+                // -------------------------------------------------------------------------
+                // CERTIFICADO VISUAL OFICIAL LINDO, PROFISSIONAL E CORPORATIVO
+                // -------------------------------------------------------------------------
+                abrirCertificadoOficial(tipo, matricula) {
+                    const mat = String(matricula || (app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+                    const user = (app.users || []).find(u => String(u.matricula).trim() === mat) || app.currentUser || { nome: 'Colaborador de Qualidade', matricula: mat };
+                    const nomeColaborador = app.utils.fixEncoding(user.nome || 'Colaborador');
+
+                    let reg = null;
+                    let tituloCurso = '';
+                    let subtituloCurso = '';
+                    let hashCert = '';
+
+                    if (tipo === 'fcr') {
+                        reg = app.fcrProvas && app.fcrProvas[mat];
+                        tituloCurso = 'Especialista em Resolução no Primeiro Contato (FCR)';
+                        subtituloCurso = 'Eficiência Resolutiva, Identificação de Causa Raiz e Auditoria Técnica em Call Center';
+                        hashCert = `CERT-FCR-2026-${mat}-${Math.abs((user.nome || '').split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)).toString(16).toUpperCase()}`;
+                    } else {
+                        reg = app.csatNpsProvas && app.csatNpsProvas[mat];
+                        tituloCurso = 'Especialista em Métricas de Percepção: CSAT & NPS';
+                        subtituloCurso = 'Satisfação Pontual, Lealdade Relacional, Metodologias de Cálculo e Análise Qualitativa';
+                        hashCert = `CERT-CSAT-2026-${mat}-${Math.abs((user.nome || '').split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)).toString(16).toUpperCase()}`;
+                    }
+
+                    const nota = reg ? reg.nota : 100;
+                    const dataExpedicao = reg && reg.dataConclusao ? reg.dataConclusao : '27 de Outubro de 2026';
+
+                    const modalExist = document.getElementById('diploma-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const modal = document.createElement('div');
+                    modal.id = 'diploma-modal';
+                    modal.className = 'fixed inset-0 z-[9999] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800';
+
+                    modal.innerHTML = `
+                        <div class="relative max-w-4xl w-full my-auto">
+                            <!-- Botões de Controle Superior -->
+                            <div class="flex items-center justify-between pb-3 text-white print:hidden">
+                                <div class="flex items-center gap-2 text-xs font-bold text-amber-300">
+                                    <i class="fa-solid fa-award text-base"></i> Documento Oficial Autenticado
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="window.print()" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-2">
+                                        <i class="fa-solid fa-print"></i> Imprimir / Salvar PDF
+                                    </button>
+                                    <button onclick="document.getElementById('diploma-modal').remove()" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- O CERTIFICADO DIPLOMA -->
+                            <div id="certificado-imprimivel" class="bg-[#fcfbf9] text-slate-900 rounded-3xl p-8 md:p-14 shadow-2xl relative border-8 border-double border-amber-600/80 overflow-hidden select-none">
+                                <!-- Cantoneiras e Moldura Estilizada -->
+                                <div class="absolute top-3 left-3 w-16 h-16 border-t-2 border-l-2 border-amber-600/60 pointer-events-none"></div>
+                                <div class="absolute top-3 right-3 w-16 h-16 border-t-2 border-r-2 border-amber-600/60 pointer-events-none"></div>
+                                <div class="absolute bottom-3 left-3 w-16 h-16 border-b-2 border-l-2 border-amber-600/60 pointer-events-none"></div>
+                                <div class="absolute bottom-3 right-3 w-16 h-16 border-b-2 border-r-2 border-amber-600/60 pointer-events-none"></div>
+
+                                <!-- Marca d'água de fundo -->
+                                <div class="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none">
+                                    <i class="fa-solid fa-award text-[360px]"></i>
+                                </div>
+
+                                <!-- Cabeçalho do Diploma -->
+                                <div class="text-center relative z-10">
+                                    <div class="flex items-center justify-center gap-2 text-amber-700 text-xs font-black uppercase tracking-[0.3em] mb-1">
+                                        <span>Portal de Qualidade & Treinamento</span>
+                                    </div>
+                                    <h1 class="text-3xl md:text-5xl font-black tracking-tight text-slate-900 uppercase font-serif mt-2">
+                                        Certificado de Excelência
+                                    </h1>
+                                    <div class="w-32 h-1 bg-gradient-to-r from-transparent via-amber-600 to-transparent mx-auto mt-3 mb-6"></div>
+                                </div>
+
+                                <!-- Corpo de Concessão -->
+                                <div class="text-center relative z-10 max-w-2xl mx-auto space-y-4">
+                                    <p class="text-xs md:text-sm text-slate-600 uppercase tracking-widest font-semibold">
+                                        Certificamos com distinção e mérito profissional que
+                                    </p>
+
+                                    <!-- Nome do Aluno -->
+                                    <div class="text-2xl md:text-4xl font-extrabold text-slate-900 border-b-2 border-amber-500/40 pb-2 inline-block px-8 tracking-wide">
+                                        ${nomeColaborador}
+                                    </div>
+
+                                    <p class="text-xs text-slate-500 tracking-wider">
+                                        Matrícula: <strong>#${mat}</strong> • Cargo: <strong>${user.tipoAcesso || 'Qualidade'}</strong>
+                                    </p>
+
+                                    <p class="text-xs md:text-sm text-slate-700 leading-relaxed pt-2">
+                                        concluiu com êxito e rigor analítico o programa de formação continuada e foi aprovado(a) com aproveitamento de <strong class="text-amber-800 font-black tabular-nums">${nota}%</strong> no curso de certificação em:
+                                    </p>
+
+                                    <!-- Título do Curso -->
+                                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30">
+                                        <h2 class="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight">
+                                            ${tituloCurso}
+                                        </h2>
+                                        <p class="text-[11px] text-amber-900/80 font-medium mt-1">
+                                            ${subtituloCurso}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Rodapé do Diploma: Selo Dourado e Assinaturas -->
+                                <div class="mt-10 pt-6 border-t border-slate-200 grid grid-cols-1 md:grid-cols-3 items-center gap-6 text-center relative z-10">
+                                    <!-- Assinatura 1 -->
+                                    <div>
+                                        <div class="font-serif italic text-sm text-slate-700 border-b border-slate-300 pb-1 mx-4 font-bold">
+                                            Coordenação de Qualidade
+                                        </div>
+                                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Comitê de Auditoria & Métricas</div>
+                                    </div>
+
+                                    <!-- Selo Central Dourado -->
+                                    <div class="flex flex-col items-center justify-center">
+                                        <div class="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-white flex items-center justify-center text-2xl shadow-lg border-2 border-amber-200">
+                                            <i class="fa-solid fa-certificate"></i>
+                                        </div>
+                                        <span class="text-[9px] font-black uppercase tracking-widest text-amber-800 mt-1.5">Selo Oficial 2026</span>
+                                    </div>
+
+                                    <!-- Assinatura 2 -->
+                                    <div>
+                                        <div class="font-serif italic text-sm text-slate-700 border-b border-slate-300 pb-1 mx-4 font-bold">
+                                            Gestão de Treinamento
+                                        </div>
+                                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Desenvolvimento de Talentos</div>
+                                    </div>
+                                </div>
+
+                                <!-- Código de Autenticidade e Data -->
+                                <div class="mt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-400 pt-3 border-t border-slate-100">
+                                    <span>Expedido em: <strong class="text-slate-600">${dataExpedicao}</strong></span>
+                                    <span class="tabular-nums">Chave de Registro: <strong class="text-slate-600">${hashCert}</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                abrirModalResultadoFCR(matricula) {
+                    const mat = String(matricula || (app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+                    const reg = app.fcrProvas && app.fcrProvas[mat];
+                    if (!reg) return;
+
+                    const modalExist = document.getElementById('fcr-result-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const aprovado = reg.status === 'aprovado';
+                    const modal = document.createElement('div');
+                    modal.id = 'fcr-result-modal';
+                    modal.className = 'fixed inset-0 z-[9995] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+                            <div class="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
+                                ${aprovado ? `
+                                    <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                                        <i class="fa-solid fa-award"></i>
+                                    </div>
+                                    <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Certificação Oficial Concluída</div>
+                                    <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Parabéns! Você foi Aprovado</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Você demonstrou domínio completo nas regras de FCR, causa raiz e auditoria técnica.</p>
+                                ` : `
+                                    <div class="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-500 border border-rose-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                                        <i class="fa-solid fa-circle-xmark"></i>
+                                    </div>
+                                    <div class="text-[11px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">Avaliação Não Concluída</div>
+                                    <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Aproveitamento Insuficiente</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">A nota mínima para certificação é de 70% (7 acertos).</p>
+                                `}
+
+                                <div class="grid grid-cols-2 gap-4 max-w-xs mx-auto mt-6">
+                                    <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aproveitamento</div>
+                                        <div class="text-3xl font-black tabular-nums mt-1 ${aprovado ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${reg.nota}%</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total de Acertos</div>
+                                        <div class="text-3xl font-black tabular-nums mt-1 text-slate-800 dark:text-white">${reg.acertos}/10</div>
+                                    </div>
+                                </div>
+
+                                ${!aprovado ? `
+                                    <div class="mt-5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed text-left">
+                                        <div class="flex items-center gap-2 font-bold mb-1 text-amber-900 dark:text-amber-100">
+                                            <i class="fa-solid fa-lock text-amber-500"></i> Bloqueio Anti-Cola Ativo até Amanhã
+                                        </div>
+                                        <p>Você poderá realizar uma nova tentativa a partir das 00:00. O gabarito não é divulgado para garantir a integridade da prova e incentivar a leitura atenta do guia da página.</p>
+                                    </div>
+                                ` : `
+                                    <div class="mt-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 font-medium leading-relaxed text-left">
+                                        <div class="flex items-center gap-2 font-bold mb-1 text-emerald-900 dark:text-emerald-100">
+                                            <i class="fa-solid fa-shield-halved text-emerald-500"></i> Certificação Oficial Registrada
+                                        </div>
+                                        <p>Seu certificado de Especialista em FCR foi emitido com sucesso e adicionado à sua galeria de conquistas.</p>
+                                    </div>
+                                `}
+                            </div>
+
+                            <div class="mt-6 flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <button onclick="document.getElementById('fcr-result-modal').remove()" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    Fechar
+                                </button>
+                                ${aprovado ? `
+                                    <button onclick="document.getElementById('fcr-result-modal').remove(); app.ui.abrirCertificadoOficial('fcr', '${mat}')" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-slate-900 font-extrabold text-sm shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-amber-500 transition flex items-center gap-2">
+                                        <i class="fa-solid fa-award"></i> Ver Certificado Oficial
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+});
+
+// =========================================================================
+// MÓDULO EXAME FCR NO CALL CENTER (ANTI-COLA, 10 QUESTÕES DIFÍCEIS)
+// =========================================================================
+app.fcrExam = {
+    estadoAtivo: null,
+    _intervalId: null,
+    _listeners: null,
+    _ultimoAvisoTs: 0,
+
+    bancoQuestoes: [
+        {
+            id: 1,
+            pergunta: "No contexto técnico de auditoria de qualidade e governança operacional de Call Centers, o que define precisamente a métrica FCR (First Contact Resolution) e qual é o método padrão de apuração?",
+            opcoes: [
+                "Percentual de chamadas em que a demanda raiz do cliente é resolvida de forma definitiva no primeiro contato, sem que haja recontato ou reiteração dentro da janela regulamentar de apuração (ex: 24h a 72h).",
+                "Tempo médio em segundos que o atendente leva para desligar a ligação no primeiro contato com o cliente, independentemente do encaminhamento posterior.",
+                "Percentual de chamadas atendidas em menos de 20 segundos pelo primeiro atendente humano que atendeu a fila receptiva.",
+                "Total de chamadas transferidas com sucesso para o Nível 2 na primeira tentativa de roteamento da URA."
+            ],
+            correta: 0,
+            explicacao: "O FCR mede a resolutividade definitiva no primeiro contato sobre a demanda raiz, monitorada dentro da janela de recontato da operação."
+        },
+        {
+            id: 2,
+            pergunta: "Um cliente ligou na segunda-feira para negociar uma fatura vencida (Protocolo A). Na terça-feira (24 horas após), o mesmo cliente liga novamente porque o sinal de banda larga está oscilando em sua residência (Protocolo B). Sob a ótica do monitor de qualidade que audita o FCR, como este cenário deve ser classificado?",
+            opcoes: [
+                "Não configura quebra de FCR do atendimento financeiro (Protocolo A), pois a segunda chamada trata de uma demanda técnica totalmente distinta e sem nexo causal com a negociação prévia.",
+                "Configura quebra gravíssima de FCR com aplicação imediata de nota zero em qualidade para o operador do Protocolo A, pois o cliente retornou dentro de 24 horas.",
+                "Deve-se anular ambos os protocolos no sistema e reiniciar o cálculo do FCR da operação apenas na virada do mês.",
+                "O FCR só é mantido se o operador do Protocolo A tiver aberto previamente um chamado de banda larga antes mesmo do cliente solicitar."
+            ],
+            correta: 0,
+            explicacao: "Recontatos com demandas comprovadamente independentes não configuram reiteração da solicitação original do Protocolo A."
+        },
+        {
+            id: 3,
+            pergunta: "O treinamento corporativo utiliza a 'Analogia da Oficina Mecânica' para orientar a postura dos monitores de qualidade. Qual comportamento nocivo de atendimento essa analogia busca erradicar?",
+            opcoes: [
+                "Liberar o cliente rapidamente com soluções paliativas ou explicações vagas apenas para baixar artificialmente o TMT (Tempo Médio de Atendimento), gerando recontato inevitável, retrabalho e desconfiança.",
+                "Explicar detalhadamente o passo a passo da resolução sistêmica ao cliente, pois isso consome tempo produtivo da fila de atendimento.",
+                "Registrar detalhadamente no CRM o laudo técnico da chamada, pois o cliente prefere que não haja histórico registrado de suas queixas.",
+                "Transferir chamadas de clientes leigos para áreas de engenharia de telecomunicações sem autorização da diretoria."
+            ],
+            correta: 0,
+            explicacao: "A analogia da oficina mecânica demonstra que 'remendar o freio às pressas para bater meta de tempo' custa o dobro e gera acidentes e quebra de lealdade."
+        },
+        {
+            id: 4,
+            pergunta: "Em uma operação multicanal, o operador N1 transfere uma ligação de suporte complexo para o N2 em formato de 'transferência cega' (sem diálogo prévio com o especialista de N2 e sem contextualização no CRM). Qual o impacto direto dessa prática no FCR e na governança de qualidade?",
+            opcoes: [
+                "Compromete criticamente o FCR e eleva o CES (Customer Effort Score), pois força o cliente a repetir toda a narrativa com alto risco de queda de linha ou roteamento incorreto.",
+                "Melhora o FCR de N1 porque a ligação foi transferida em menos de 10 segundos, liberando a fila receptiva para o próximo cliente.",
+                "Não afeta o FCR, visto que a responsabilidade da resolução passa a ser 100% atribuída à equipe de supervisão de tráfego telefônico.",
+                "Aumenta a satisfação do cliente por eliminar conversas desnecessárias entre os colaboradores da empresa."
+            ],
+            correta: 0,
+            explicacao: "A transferência cega quebra a continuidade da resolução e causa retrabalho extremo ao consumidor, sendo falta grave em qualidade."
+        },
+        {
+            id: 5,
+            pergunta: "Durante a auditoria analítica de uma chamada de suporte técnico a sistemas, qual ação do atendente comprova a aplicação proativa e rigorosa da diretriz de garantia de resolutividade (FCR)?",
+            opcoes: [
+                "Solicitar ativamente que o cliente realize o teste de login, transação ou acesso em linha antes de finalizar o contato, confirmando em tempo real a superação do erro.",
+                "Orientar o cliente a desligar e aguardar até 72 horas para testar, pois procedimentos técnicos só surtem efeito após o reinício do sistema à meia-noite.",
+                "Informar que a solicitação foi encaminhada para a TI e sugerir que ele ligue amanhã para verificar se houve resposta.",
+                "Finalizar o contato sem confirmação para evitar que o cliente descubra novas dúvidas durante a chamada."
+            ],
+            correta: 0,
+            explicacao: "A validação em linha com o cliente operando o sistema é o pilar prático da garantia de FCR auditável."
+        },
+        {
+            id: 6,
+            pergunta: "Ao auditar um recontato ocorrido dentro de 48 horas, o monitor verifica que o Operador 2 teve conduta impecável. Todavia, a auditoria do histórico no CRM revela que a reiteração só ocorreu porque o Operador 1 errou a digitação do e-mail ao enviar o boleto acordado. A quem a falha de FCR deve ser imputada?",
+            opcoes: [
+                "Ao Operador 1, pois foi a desatenção na inserção de dados no primeiro contato que gerou a causa raiz da quebra de resolutividade e o recontato desnecessário.",
+                "Ao Operador 2, pois foi ele quem atendeu a ligação que registrou a métrica negativa de reiteração no sistema.",
+                "Ao cliente, por não ter solicitado a confirmação fonética do endereço eletrônico letra por letra antes do término do atendimento.",
+                "A nenhuma das partes, devendo o monitor excluir a chamada da amostragem para não distorcer os indicadores do setor."
+            ],
+            correta: 0,
+            explicacao: "A apuração de causa raiz em qualidade atribui o ofensor de FCR à interação onde o erro original foi perpetrado."
+        },
+        {
+            id: 7,
+            pergunta: "O que é o conceito de 'Atendimento Preditivo' (Next Issue Avoidance - NIA) e por que ele é tratado como a fronteira avançada do FCR pelos monitores de qualidade?",
+            opcoes: [
+                "É a antecipação proativa de dúvidas ou demandas secundárias previsíveis decorrentes da ação atual (ex: explicar a cobrança proporcional da próxima fatura após uma troca de plano), evitando futuros recontatos.",
+                "É a prática de adivinhar o nome do cliente antes de consultar a tela de identificação do CRM.",
+                "É a proibição de que o cliente realize mais de duas perguntas durante a mesma chamada para não estourar o TMT.",
+                "É o envio massivo de e-mails de marketing logo após a desconexão da chamada de reclamação."
+            ],
+            correta: 0,
+            explicacao: "Next Issue Avoidance (NIA) complementa o FCR evitando a próxima dúvida imediata decorrente da alteração solicitada."
+        },
+        {
+            id: 8,
+            pergunta: "Um supervisor reporta FCR de 99% alegando que todos os chamados de sua equipe são encerrados como 'Concluído' no sistema interno. No entanto, o CSAT do grupo está em 40% e a Ouvidoria bateu recorde de reclamações. Qual distorção crítica de qualidade está demonstrada?",
+            opcoes: [
+                "Confusão entre 'fechamento burocrático de status pelo operador' e a 'real resolutividade percebida pelo cliente', mascarando a ineficácia com finalizações unilaterais sem solução de causa raiz.",
+                "O FCR está excelente e o problema é exclusivamente uma falha metodológica dos questionários de satisfação da Ouvidoria.",
+                "Os clientes estão insatisfeitos com a velocidade do atendimento, devendo a empresa exigir que os chamados demorem mais para passar credibilidade.",
+                "Houve invasão do banco de dados por sistemas concorrentes que alteraram os dados da pesquisa de CSAT."
+            ],
+            correta: 0,
+            explicacao: "Fechar chamado no sistema não é resolver. A resolutividade autêntica exige que o problema do cliente tenha cessado na realidade."
+        },
+        {
+            id: 9,
+            pergunta: "Por que as diretorias de Operações e Experiência do Cliente tratam o FCR como a métrica 'Rainha' de equilíbrio entre custo operacional e satisfação do consumidor?",
+            opcoes: [
+                "Porque cada 1% de aumento sustentável no FCR reduz o volume de tráfego repetido nas filas (menor custo de folha/telefonia), eleva o CSAT e mitiga riscos de sanções em órgãos reguladores (Anatel/Procon).",
+                "Porque o FCR é a única métrica que permite aos operadores receberem bonificação salarial sem necessidade de metas de absenteísmo.",
+                "Porque o FCR elimina completamente a necessidade de treinamento de novos atendentes nas operações.",
+                "Porque substitui totalmente os laudos de monitoria e a necessidade de equipes de qualidade na empresa."
+            ],
+            correta: 0,
+            explicacao: "O FCR alinha diretamente a redução de custos com o aumento da lealdade e satisfação dos clientes."
+        },
+        {
+            id: 10,
+            pergunta: "Durante uma pane geral de infraestrutura (Down Time sistêmico massivo homologado pela Engenharia de TI), o operador atende com cordialidade, explica a contingência e passa o prazo oficial de reparo. Como o monitor de qualidade deve auditar o FCR desta chamada?",
+            opcoes: [
+                "Deve registrar a não-resolução sob a categoria 'Causa Sistêmica/Externa Excludente', preservando a avaliação individual de desempenho do atendente sem penalização injusta de sua nota técnica.",
+                "Deve zerar a pontuação de qualidade do atendente, pois ele não foi capaz de reestabelecer os servidores de engenharia da empresa sozinho.",
+                "Deve fingir que a chamada não existiu e apagar o arquivo de gravação do banco de dados.",
+                "Deve transferir a gravação para o cliente avaliar em suas redes sociais pessoais."
+            ],
+            correta: 0,
+            explicacao: "Falhas de contingência sistêmica externa não devem penalizar a nota técnica individual do colaborador na monitoria."
+        }
+    ],
+
+    verificarStatus(matricula = null) {
+        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+        const reg = app.fcrProvas && app.fcrProvas[mat];
+
+        if (!reg) return { podeFazer: true, status: 'pendente', matricula: mat, registro: null };
+        if (reg.status === 'aprovado') {
+            return { podeFazer: false, status: 'aprovado', motivo: 'Você já foi certificado nesta avaliação.', matricula: mat, registro: reg };
+        }
+        if (reg.dataBloqueioAte) {
+            const agora = new Date();
+            const bloqueioAte = new Date(reg.dataBloqueioAte);
+            if (agora < bloqueioAte) {
+                const diffMs = bloqueioAte - agora;
+                const horas = Math.floor(diffMs / (1000 * 60 * 60));
+                const minutos = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                return {
+                    podeFazer: false,
+                    status: 'bloqueado',
+                    motivo: `Bloqueio anti-cola ativo. Você poderá tentar novamente em ${horas}h ${minutos}min.`,
+                    matricula: mat,
+                    registro: reg,
+                    desbloqueioEm: bloqueioAte
+                };
+            }
+        }
+        return { podeFazer: true, status: 'liberado', matricula: mat, registro: reg };
+    },
+
+    abrirBriefingModal() {
+        const st = this.verificarStatus();
+        if (!st.podeFazer) {
+            return app.ui.showAlert("Acesso Bloqueado", st.motivo, "warning");
+        }
+
+        const modalExist = document.getElementById('fcr-briefing-modal');
+        if (modalExist) modalExist.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'fcr-briefing-modal';
+        modal.className = 'fixed inset-0 z-[9998] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                <div class="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl shrink-0">
+                        <i class="fa-solid fa-headset"></i>
+                    </div>
+                    <div>
+                        <span class="px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-black uppercase tracking-wider">Avaliação Técnica Oficial</span>
+                        <h3 class="text-xl font-black text-slate-800 dark:text-white mt-0.5">Certificação FCR no Call Center</h3>
+                    </div>
+                </div>
+
+                <div class="space-y-4 my-6 text-xs md:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p>Esta avaliação mede o domínio das regras práticas de First Contact Resolution (FCR), auditoria analítica e governança de qualidade.</p>
+
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2">
+                        <div class="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <i class="fa-solid fa-shield-halved text-indigo-600 dark:text-indigo-400"></i> Protocolos de Segurança Anti-Cola:
+                        </div>
+                        <ul class="list-disc list-inside space-y-1 text-xs text-slate-600 dark:text-slate-300 pl-1">
+                            <li><strong>10 Questões Desafiadoras:</strong> Focadas no conteúdo ensinado no guia de FCR.</li>
+                            <li><strong>Tempo Limite:</strong> 15 minutos para conclusão da prova inteira.</li>
+                            <li><strong>Mínimo de 70% para Aprovação:</strong> Exige 7 ou mais acertos.</li>
+                            <li><strong>Bloqueio de 24h em caso de reprovação:</strong> Nova tentativa apenas após 24 horas.</li>
+                            <li><strong>Gabarito Oculto:</strong> O gabarito não é exibido após a prova para preservar a integridade.</li>
+                            <li><strong>Anti-Abandono:</strong> Trocar de aba ou perder o foco da janela registrará advertências e cancelamento da prova.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="document.getElementById('fcr-briefing-modal').remove()" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                        Cancelar
+                    </button>
+                    <button onclick="app.fcrExam.iniciarProva()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-slate-900 text-white font-extrabold text-xs shadow-lg shadow-indigo-600/30 hover:opacity-95 transition flex items-center gap-2">
+                        <i class="fa-solid fa-play"></i> Iniciar Avaliação Agora
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    iniciarProva(matricula = null) {
+        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
+        const nome = (typeof app !== 'undefined' && app.currentUser ? app.currentUser.nome : 'Colaborador');
+        const st = this.verificarStatus(mat);
+
+        if (!st.podeFazer) {
+            return app.ui.showAlert("Acesso Bloqueado", st.motivo, "warning");
+        }
+
+        const briefing = document.getElementById('fcr-briefing-modal');
+        if (briefing) briefing.remove();
+
+        const questoes = this.bancoQuestoes.map((q, idx) => ({
+            ...q,
+            indiceOriginal: idx
+        }));
+
+        this.estadoAtivo = {
+            matricula: mat,
+            nome: nome,
+            questoes: questoes,
+            indiceAtual: 0,
+            respostas: Array(10).fill(null),
+            tempoRestanteSegundos: 15 * 60, // 15 minutos
+            advertencias: 0,
+            inicioTs: Date.now(),
+            finalizado: false
+        };
+
+        const telaAntiga = document.getElementById('fcr-exam-fullscreen');
+        if (telaAntiga) telaAntiga.remove();
+
+        const fullscreenEl = document.createElement('div');
+        fullscreenEl.id = 'fcr-exam-fullscreen';
+        fullscreenEl.className = 'fixed inset-0 z-[9999] bg-slate-950 text-slate-100 flex flex-col select-none overflow-hidden';
+        document.body.appendChild(fullscreenEl);
+
+        this.ativarSegurancaAntiCola();
+        this.renderExamScreen();
+
+        if (this._intervalId) clearInterval(this._intervalId);
+        this._intervalId = setInterval(() => {
+            if (!this.estadoAtivo || this.estadoAtivo.finalizado) {
+                clearInterval(this._intervalId);
+                return;
+            }
+            this.estadoAtivo.tempoRestanteSegundos--;
+            this.atualizarTimerUI();
+
+            if (this.estadoAtivo.tempoRestanteSegundos <= 0) {
+                clearInterval(this._intervalId);
+                this.finalizarProva(true, "Tempo Limite Esgotado!");
+            }
+        }, 1000);
+    },
+
+    ativarSegurancaAntiCola() {
+        this.desativarSegurancaAntiCola();
+        const self = this;
+
+        const onVisibilityChange = () => {
+            if (document.hidden && self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                self.registrarAdvertencia("Você alterou ou minimizou a aba do navegador!");
+            }
+        };
+
+        const onBlur = () => {
+            if (self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                self.registrarAdvertencia("Você saiu da janela da prova!");
+            }
+        };
+
+        const onContextMenu = (e) => { e.preventDefault(); return false; };
+        const onKeyDown = (e) => {
+            if (e.key === 'F12' || (e.ctrlKey && (e.key === 'c' || e.key === 'u' || e.key === 'i' || e.key === 'j'))) {
+                e.preventDefault();
+                self.registrarAdvertencia("Atalhos proibidos durante a avaliação!");
+                return false;
+            }
+        };
+
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('blur', onBlur);
+        document.addEventListener('contextmenu', onContextMenu);
+        document.addEventListener('keydown', onKeyDown);
+
+        this._listeners = { onVisibilityChange, onBlur, onContextMenu, onKeyDown };
+    },
+
+    desativarSegurancaAntiCola() {
+        if (!this._listeners) return;
+        document.removeEventListener('visibilitychange', this._listeners.onVisibilityChange);
+        window.removeEventListener('blur', this._listeners.onBlur);
+        document.removeEventListener('contextmenu', this._listeners.onContextMenu);
+        document.removeEventListener('keydown', this._listeners.onKeyDown);
+        this._listeners = null;
+    },
+
+    registrarAdvertencia(motivo) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+
+        const agora = Date.now();
+        if (agora - this._ultimoAvisoTs < 2500) return;
+        this._ultimoAvisoTs = agora;
+
+        this.estadoAtivo.advertencias++;
+        const adv = this.estadoAtivo.advertencias;
+
+        const advBadge = document.getElementById('fcr-adv-badge');
+        if (advBadge) {
+            advBadge.textContent = `${adv}/2`;
+            advBadge.classList.add('animate-bounce');
+            setTimeout(() => advBadge && advBadge.classList.remove('animate-bounce'), 1000);
+        }
+
+        if (adv === 1) {
+            this.mostrarModalAdvertencia(motivo);
+        } else if (adv >= 2) {
+            this.finalizarProva(false, "Desqualificado por Violação de Integridade Anti-Cola!");
+        }
+    },
+
+    mostrarModalAdvertencia(motivo) {
+        const modalAdvExist = document.getElementById('fcr-adv-modal');
+        if (modalAdvExist) modalAdvExist.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'fcr-adv-modal';
+        modal.className = 'fixed inset-0 z-[10000] bg-red-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-white text-center';
+        modal.innerHTML = `
+            <div class="bg-slate-900 border-2 border-red-500 rounded-3xl max-w-md w-full p-6 shadow-2xl">
+                <div class="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center text-3xl mx-auto mb-4 border border-red-500/40">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 class="text-xl font-black text-red-400 uppercase tracking-wide">Primeira Advertência!</h3>
+                <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+                    ${motivo}<br>
+                    <strong>Atenção:</strong> Se você trocar de aba ou sair da tela mais 1 vez, a avaliação será <strong>anulada imediatamente</strong> e você será bloqueado até amanhã.
+                </p>
+                <button onclick="document.getElementById('fcr-adv-modal').remove()" class="mt-6 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs uppercase tracking-wider transition">
+                    Entendido, Voltar à Prova
+                </button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    renderExamScreen() {
+        const screen = document.getElementById('fcr-exam-fullscreen');
+        if (!screen || !this.estadoAtivo) return;
+
+        const qIdx = this.estadoAtivo.indiceAtual;
+        const q = this.estadoAtivo.questoes[qIdx];
+        const respDada = this.estadoAtivo.respostas[qIdx];
+
+        screen.innerHTML = `
+            <!-- Topbar Anti-Cola -->
+            <header class="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg border border-indigo-500/30">
+                        <i class="fa-solid fa-headset"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-400">Avaliação Técnica FCR</div>
+                        <div class="text-xs font-bold text-white">${app.utils.escapeHtml(this.estadoAtivo.nome)} (${this.estadoAtivo.matricula})</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <!-- Advertências -->
+                    <div class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>Advertências: <strong id="fcr-adv-badge" class="tabular-nums">${this.estadoAtivo.advertencias}/2</strong></span>
+                    </div>
+
+                    <!-- Cronômetro -->
+                    <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200">
+                        <i class="fa-solid fa-clock text-indigo-400"></i>
+                        <span id="fcr-exam-timer" class="font-bold text-sm tabular-nums">--:--</span>
+                    </div>
+
+                    <button onclick="app.fcrExam.confirmarEntrega()" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition shadow-md flex items-center gap-1.5">
+                        <i class="fa-solid fa-check"></i> Entregar Prova
+                    </button>
+                </div>
+            </header>
+
+            <!-- Corpo Principal -->
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Barra Lateral de Navegação de Questões -->
+                <aside class="w-64 border-r border-slate-800 bg-slate-900/40 p-5 flex flex-col justify-between shrink-0 hidden md:flex">
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Questões da Prova</div>
+                        <div class="grid grid-cols-5 gap-2">
+                            ${this.estadoAtivo.questoes.map((_, i) => {
+                                const respondida = this.estadoAtivo.respostas[i] !== null;
+                                const ativa = i === qIdx;
+                                let cls = 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500';
+                                if (respondida) cls = 'border-indigo-500/60 bg-indigo-950/60 text-indigo-300 font-bold';
+                                if (ativa) cls = 'border-indigo-400 bg-indigo-600 text-white font-black shadow-lg shadow-indigo-600/40 ring-2 ring-indigo-400/40';
+
+                                return `
+                                    <button onclick="app.fcrExam.irParaQuestao(${i})" class="h-10 rounded-xl border text-xs flex items-center justify-center transition-all ${cls}">
+                                        ${i + 1}
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+
+                    <div class="p-3.5 rounded-2xl bg-slate-800/40 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                        <div class="flex items-center gap-1.5 font-bold text-slate-300">
+                            <i class="fa-solid fa-info-circle text-indigo-400"></i> Dica de Prova:
+                        </div>
+                        <p>Responda com atenção. Não há penalização por tempo sobrando; garanta a precisão técnica.</p>
+                    </div>
+                </aside>
+
+                <!-- Área Central da Questão -->
+                <main class="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col justify-between max-w-4xl mx-auto custom-scrollbar">
+                    <div class="space-y-6">
+                        <div class="flex items-center justify-between">
+                            <span class="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-black uppercase tracking-wider">
+                                Questão ${qIdx + 1} de 10
+                            </span>
+                            <span class="text-xs text-slate-400 font-medium">
+                                ${this.estadoAtivo.respostas.filter(r => r !== null).length} de 10 respondidas
+                            </span>
+                        </div>
+
+                        <div class="p-6 md:p-8 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl">
+                            <h2 class="text-base md:text-lg font-bold text-slate-100 leading-relaxed">
+                                ${q.pergunta}
+                            </h2>
+
+                            <div class="mt-6 space-y-3">
+                                ${q.opcoes.map((opcao, optIdx) => {
+                                    const selecionada = respDada === optIdx;
+                                    const letra = String.fromCharCode(65 + optIdx);
+                                    let optClass = 'border-slate-800 bg-slate-800/40 text-slate-300 hover:border-slate-700 hover:bg-slate-800/80';
+                                    if (selecionada) {
+                                        optClass = 'border-indigo-500 bg-indigo-950/50 text-white shadow-md ring-2 ring-indigo-500/30';
+                                    }
+
+                                    return `
+                                        <button onclick="app.fcrExam.selecionarOpcao(${optIdx})" class="w-full text-left p-4 rounded-2xl border transition flex items-start gap-3.5 group ${optClass}">
+                                            <div class="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black shrink-0 transition ${selecionada ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 group-hover:bg-slate-600'}">
+                                                ${letra}
+                                            </div>
+                                            <div class="text-xs md:text-sm leading-relaxed flex-1 pt-0.5">
+                                                ${opcao}
+                                            </div>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer com Navegação -->
+                    <div class="flex items-center justify-between pt-6 border-t border-slate-800 mt-6">
+                        <button onclick="app.fcrExam.anteriorQuestao()" class="px-5 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs hover:bg-slate-800 transition flex items-center gap-2 ${qIdx === 0 ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}">
+                            <i class="fa-solid fa-arrow-left"></i> Anterior
+                        </button>
+
+                        <div class="flex items-center gap-2">
+                            ${qIdx < 9 ? `
+                                <button onclick="app.fcrExam.proximaQuestao()" class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs transition flex items-center gap-2">
+                                    Próxima <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            ` : `
+                                <button onclick="app.fcrExam.confirmarEntrega()" class="px-7 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition flex items-center gap-2">
+                                    <i class="fa-solid fa-check-double"></i> Concluir Avaliação
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                </main>
+            </div>
+        `;
+
+        this.atualizarTimerUI();
+    },
+
+    atualizarTimerUI() {
+        if (!this.estadoAtivo) return;
+        const timerEl = document.getElementById('fcr-exam-timer');
+        if (!timerEl) return;
+
+        const s = this.estadoAtivo.tempoRestanteSegundos;
+        const min = Math.floor(s / 60);
+        const sec = s % 60;
+        timerEl.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+
+        if (s < 120) {
+            timerEl.parentElement.classList.remove('bg-slate-800');
+            timerEl.parentElement.classList.add('bg-red-500/20', 'border-red-500', 'text-red-400');
+        }
+    },
+
+    selecionarOpcao(altIdx) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        this.estadoAtivo.respostas[this.estadoAtivo.indiceAtual] = altIdx;
+        this.renderExamScreen();
+    },
+
+    irParaQuestao(idx) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        if (idx >= 0 && idx < 10) {
+            this.estadoAtivo.indiceAtual = idx;
+            this.renderExamScreen();
+        }
+    },
+
+    proximaQuestao() {
+        if (!this.estadoAtivo) return;
+        if (this.estadoAtivo.indiceAtual < 9) {
+            this.estadoAtivo.indiceAtual++;
+            this.renderExamScreen();
+        }
+    },
+
+    anteriorQuestao() {
+        if (!this.estadoAtivo) return;
+        if (this.estadoAtivo.indiceAtual > 0) {
+            this.estadoAtivo.indiceAtual--;
+            this.renderExamScreen();
+        }
+    },
+
+    confirmarEntrega() {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        const respondidas = this.estadoAtivo.respostas.filter(r => r !== null).length;
+        if (respondidas < 10) {
+            if (!confirm(`Você respondeu apenas ${respondidas} das 10 questões. Deseja realmente finalizar e entregar agora?`)) {
+                return;
+            }
+        } else {
+            if (!confirm("Deseja confirmar a entrega definitiva da sua prova?")) {
+                return;
+            }
+        }
+        this.finalizarProva();
+    },
+
+    finalizarProva(tempoEsgotado = false, motivoEspecial = null) {
+        if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+        this.estadoAtivo.finalizado = true;
+
+        if (this._intervalId) {
+            clearInterval(this._intervalId);
+            this._intervalId = null;
+        }
+        this.desativarSegurancaAntiCola();
+
+        const screen = document.getElementById('fcr-exam-fullscreen');
+        if (screen) screen.remove();
+
+        const mat = this.estadoAtivo.matricula;
+        const nome = this.estadoAtivo.nome;
+        const desqualificado = motivoEspecial !== null;
+
+        let acertos = 0;
+        if (!desqualificado) {
+            this.estadoAtivo.questoes.forEach((q, idx) => {
+                const respDada = this.estadoAtivo.respostas[idx];
+                if (respDada !== null && respDada === q.correta) {
+                    acertos++;
+                }
+            });
+        }
+
+        const notaPercent = Math.round((acertos / 10) * 100);
+        const aprovado = !desqualificado && acertos >= 7;
+
+        // Se reprovado, bloqueia até meia-noite do dia seguinte (mínimo 24 horas)
+        let bloqueioAte = null;
+        if (!aprovado) {
+            const dataBloq = new Date();
+            dataBloq.setHours(dataBloq.getHours() + 24);
+            bloqueioAte = dataBloq.toISOString();
+        }
+
+        const hashCertificado = aprovado ? ('CERT-FCR-' + mat + '-' + Math.random().toString(36).substring(2, 8).toUpperCase()) : null;
+
+        const registroProva = {
+            matricula: mat,
+            nome: nome,
+            status: aprovado ? 'aprovado' : 'reprovado',
+            nota: notaPercent,
+            acertos: acertos,
+            totalQuestoes: 10,
+            desqualificado: desqualificado,
+            motivoDesqualificacao: motivoEspecial,
+            dataTentativa: new Date().toISOString(),
+            dataBloqueioAte: bloqueioAte,
+            certificadoId: hashCertificado
+        };
+
+        if (!app.fcrProvas) app.fcrProvas = {};
+        app.fcrProvas[mat] = registroProva;
+
+        try {
+            localStorage.setItem('portal_fcr_provas', JSON.stringify(app.fcrProvas));
+        } catch (e) {
+            console.warn(e);
+        }
+
+        if (app.storage && typeof app.storage.saveFcrProvas === 'function') {
+            app.storage.saveFcrProvas().catch(e => console.error("Erro salvando fcrProvas:", e));
+        }
+
+        // Renderiza subaba de resultado sem divulgar gabarito
+        app.ui.abrirModalResultadoFCR(mat);
+
+        // Atualiza a visualização se estiver na aba de treinamento
+        const container = document.getElementById('view-container-treinamento_capacitacao') || document.getElementById('view-container-csat_nps');
+        if (container && app.ui) {
+            app.ui.renderView_TreinamentoCapacitacao(container);
+        }
+    },
+
+    abrirPainelAdmin() {
+        if (!app.isAdmin && !app.hasAdminAccess('treinamento_capacitacao')) {
+            return app.ui.showAlert("Acesso Restrito", "Apenas gestores têm acesso a este painel.", "error");
+        }
+
+        const modalExist = document.getElementById('fcr-admin-modal');
+        if (modalExist) modalExist.remove();
+
+        const base = app.fcrProvas || {};
+        const lista = Object.values(base).sort((a, b) => new Date(b.dataTentativa) - new Date(a.dataTentativa));
+
+        const modal = document.createElement('div');
+        modal.id = 'fcr-admin-modal';
+        modal.className = 'fixed inset-0 z-[9997] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-users-gear"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-black text-slate-800 dark:text-white">Gestão das Avaliações de FCR</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Histórico de provas, certificações e liberação de novas tentativas.</p>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('fcr-admin-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="mt-6 overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase tracking-wider text-slate-400">
+                                <th class="py-2.5 px-3">Colaborador</th>
+                                <th class="py-2.5 px-3">Matrícula</th>
+                                <th class="py-2.5 px-3 text-center">Status</th>
+                                <th class="py-2.5 px-3 text-center">Nota</th>
+                                <th class="py-2.5 px-3">Data</th>
+                                <th class="py-2.5 px-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            ${lista.length === 0 ? `
+                                <tr><td colspan="6" class="text-center py-8 text-slate-400 italic">Nenhuma avaliação de FCR realizada até o momento.</td></tr>
+                            ` : lista.map(item => {
+                                const aprovado = item.status === 'aprovado';
+                                const bloqueado = item.dataBloqueioAte && (new Date() < new Date(item.dataBloqueioAte));
+                                const dataFmt = new Date(item.dataTentativa).toLocaleDateString('pt-BR') + ' ' + new Date(item.dataTentativa).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                                return `
+                                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                        <td class="py-3 px-3 font-bold text-slate-800 dark:text-white">${app.utils.escapeHtml(item.nome)}</td>
+                                        <td class="py-3 px-3 text-slate-500 tabular-nums">${item.matricula}</td>
+                                        <td class="py-3 px-3 text-center">
+                                            ${aprovado ? `
+                                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                    <i class="fa-solid fa-check"></i> Aprovado
+                                                </span>
+                                            ` : bloqueado ? `
+                                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                                                    <i class="fa-solid fa-lock"></i> Bloqueado
+                                                </span>
+                                            ` : `
+                                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                                    Liberado
+                                                </span>
+                                            `}
+                                        </td>
+                                        <td class="py-3 px-3 text-center font-black tabular-nums ${aprovado ? 'text-emerald-600' : 'text-red-600'}">
+                                            ${item.nota}% (${item.acertos}/10)
+                                        </td>
+                                        <td class="py-3 px-3 text-slate-500 tabular-nums">${dataFmt}</td>
+                                        <td class="py-3 px-3 text-right space-x-1">
+                                            <button onclick="app.ui.abrirModalResultadoFCR('${item.matricula}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition font-bold" title="Ver Resultado">
+                                                <i class="fa-solid fa-eye"></i>
+                                            </button>
+                                            ${aprovado ? `
+                                                <button onclick="app.ui.abrirCertificadoOficial('fcr', '${item.matricula}')" class="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition font-bold" title="Ver Certificado">
+                                                    <i class="fa-solid fa-award"></i>
+                                                </button>
+                                            ` : ''}
+                                            <button onclick="app.fcrExam.resetarTentativa('${item.matricula}')" class="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition font-bold" title="Liberar Nova Tentativa">
+                                                <i class="fa-solid fa-unlock"></i> Liberar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-6 flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="document.getElementById('fcr-admin-modal').remove()" class="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-sm">Fechar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    resetarTentativa(matricula) {
+        if (!confirm(`Deseja desbloquear e liberar imediatamente uma nova tentativa para a matrícula ${matricula}?`)) return;
+
+        if (app.fcrProvas && app.fcrProvas[matricula]) {
+            app.fcrProvas[matricula].dataBloqueioAte = null;
+            if (app.storage && typeof app.storage.saveFcrProvas === 'function') {
+                app.storage.saveFcrProvas().then(() => {
+                    app.ui.showAlert("Tentativa Liberada", `O bloqueio do colaborador ${matricula} foi cancelado. Ele já pode realizar uma nova prova.`, "success");
+                    const adminModal = document.getElementById('fcr-admin-modal');
+                    if (adminModal) {
+                        adminModal.remove();
+                        app.fcrExam.abrirPainelAdmin();
+                    }
+                    const container = document.getElementById('view-container-treinamento_capacitacao');
+                    if (container && app.ui) {
+                        app.ui.renderView_TreinamentoCapacitacao(container);
+                    }
+                });
+            }
+        }
+    }
+};
+
+
 
         // ==========================================
         // BOOT DO APLICATIVO E UX PREMIUM
