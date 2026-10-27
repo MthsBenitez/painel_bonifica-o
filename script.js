@@ -128,16 +128,42 @@
                 const tipo = user.tipoAcesso || 'Qualidade';
                 const allOpsSetoriais = this.getOperacoesSetoriais();
                 const regras = this.config?.regrasMonitoriaVG || {};
-                const buildDetalhe = (nome) => {
+
+                // Mapeamento de quantos monitores de qualidade cuidam de cada operação
+                // para realizar a divisão proporcional do span compartilhado
+                const mapaMonitoresPorOp = {};
+                (this.users || []).forEach(u => {
+                    if (this.isUserQualidade(u)) {
+                        (u.operacoes || []).forEach(op => {
+                            const k = String(op || '').trim().toUpperCase();
+                            if (k) {
+                                mapaMonitoresPorOp[k] = (mapaMonitoresPorOp[k] || 0) + 1;
+                            }
+                        });
+                    }
+                });
+
+                const buildDetalhe = (nome, isIndividualMonitor = false) => {
+                    const normNome = String(nome || '').trim().toUpperCase();
                     const hcVal = this.getHeadcountOperacao(nome);
-                    const r = parseInt(regras[String(nome).trim().toUpperCase()]);
+                    const r = parseInt(regras[normNome]);
                     const regraPorOp = (!isNaN(r) && r > 0) ? r : 2;
+
+                    // Se a operação é compartilhada entre múltiplos monitores de qualidade,
+                    // o span é dividido proporcionalmente pela quantidade de monitores responsáveis
+                    const qtdMonitores = isIndividualMonitor ? Math.max(1, mapaMonitoresPorOp[normNome] || 1) : 1;
+                    const hcEfetivo = qtdMonitores > 1 ? Math.round(hcVal / qtdMonitores) : hcVal;
+                    const metaMonEfetiva = qtdMonitores > 1 ? Math.round((hcVal / qtdMonitores) * regraPorOp) : (hcVal * regraPorOp);
+
                     return {
                         nome,
-                        hc: hcVal,
-                        headcount: hcVal,
+                        hc: hcEfetivo,
+                        hcOriginal: hcVal,
+                        headcount: hcEfetivo,
+                        qtdMonitores,
+                        compartilhado: qtdMonitores > 1,
                         regraPorOp,
-                        metaMonitorias: hcVal * regraPorOp
+                        metaMonitorias: metaMonEfetiva
                     };
                 };
 
@@ -145,7 +171,7 @@
                     const opsUser = Array.isArray(user.operacoes) && user.operacoes.length > 0
                         ? user.operacoes.filter(Boolean)
                         : allOpsSetoriais.map(o => o.nome);
-                    const detalhes = opsUser.map(nome => buildDetalhe(nome));
+                    const detalhes = opsUser.map(nome => buildDetalhe(nome, false));
                     const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
                     const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
                     const subs = (this.users || []).filter(u => u.matricula !== user.matricula);
@@ -168,7 +194,7 @@
                         (sub.operacoes || []).forEach(op => { if (op) opsSet.add(String(op).trim().toUpperCase()); });
                     });
                     const opsArray = Array.from(opsSet).sort();
-                    const detalhes = opsArray.map(nome => buildDetalhe(nome));
+                    const detalhes = opsArray.map(nome => buildDetalhe(nome, false));
                     const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
                     const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
                     return {
@@ -182,7 +208,7 @@
                     };
                 }
 
-                // Qualidade, Treinamento, Dev
+                // Qualidade, Treinamento, Dev (Monitores individuais: aplicam a divisão por monitores compartilhados)
                 const opsUser = Array.isArray(user.operacoes) ? user.operacoes.filter(Boolean) : [];
                 const uniqueUpper = [];
                 const seen = new Set();
@@ -193,7 +219,7 @@
                         uniqueUpper.push(String(op).trim());
                     }
                 });
-                const detalhes = uniqueUpper.map(nome => buildDetalhe(nome));
+                const detalhes = uniqueUpper.map(nome => buildDetalhe(nome, true));
                 const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
                 const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
                 return {
@@ -207,7 +233,8 @@
                 };
             },
             
-            storage: {
+            
+storage: {
                 firebaseConfig: {
                     apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
                     authDomain: "painel-de-bonificacao.firebaseapp.com",
@@ -751,6 +778,7 @@
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
                 this.currentMonth = newMonthStr;
+                if (this.currentTab === 'controle_estoque') { this.ui.renderTab('controle_estoque', true); }
                 
                 // MÁGICA DE ISOLAMENTO: Troca as planilhas exibidas para o mês selecionado
                 if (this.allMonitorias) {
@@ -2635,183 +2663,123 @@
     bancoQuestoes: [
         {
             id: 1,
-            pergunta: "Uma operação de atendimento realizou 1.200 atendimentos no mês. Desses, 200 clientes responderam à pesquisa de NPS: 90 deram nota 10, 30 nota 9, 40 nota 8, 10 nota 7, 10 nota 6, 10 nota 3 e 10 nota 1. Qual é o NPS final apurado e qual a leitura metodológica correta sobre os clientes neutros?",
+            pergunta: "De acordo com o guia explicativo da página, qual é a principal diferença conceitual entre CSAT e NPS no que diz respeito ao que cada métrica avalia e ao seu horizonte de tempo?",
             opcoes: [
-                "+45; os 50 clientes neutros (notas 7 e 8) compõem a base total de respondentes no denominador (200), mas não entram na subtração do numerador.",
-                "+35; clientes neutros devem ser deduzidos proporcionalmente na taxa de 50% entre promotores e detratores.",
-                "+7,5; o cálculo deve considerar o total de 1.200 atendimentos no denominador para evitar distorção amostral.",
-                "+55; as notas 7 e 8 são consideradas promotores de baixa intensidade no padrão internacional de contact centers."
+                "O CSAT mede a satisfação pontual com uma experiência específica no curto prazo pós-atendimento; o NPS mede a lealdade e a disposição de recomendar a empresa no relacionamento de longo prazo.",
+                "O CSAT avalia a lealdade de longo prazo nos últimos 12 meses, enquanto o NPS verifica apenas a nota imediata da ligação telefônica.",
+                "Ambas as métricas medem rigorosamente a mesma coisa, mudando unicamente se o aplicador da pesquisa foi um supervisor ou um monitor.",
+                "O CSAT avalia o custo financeiro do atendimento por minuto, enquanto o NPS calcula o percentual de faltas da equipe."
             ],
             correta: 0,
-            explicacao: "Promotores (9 e 10): 90 + 30 = 120 (60%). Detratores (0 a 6): 10 + 10 + 10 = 30 (15%). Neutros (7 e 8): 40 + 10 = 50 (25%). NPS = % Promotores (60%) - % Detratores (15%) = +45. Os neutros entram no total de 200 respostas para compor as porcentagens, mas não entram no numerador da subtração."
+            explicacao: "Conforme ensinado na página: o CSAT mede a satisfação com uma experiência específica logo depois que ela acontece (curto prazo pós-atendimento). Já o NPS mede a lealdade e a disposição de recomendar a empresa no relacionamento de longo prazo."
         },
         {
             id: 2,
-            pergunta: "Um cliente contatou o suporte com um problema crítico de faturamento. O atendente resolveu a falha com cordialidade, mas o cliente precisou aguardar 40 minutos em fila e ser transferido por 3 setores antes da resolução. Na pesquisa transacional imediata da chamada, o cliente avaliou CSAT 5 (Muito Satisfeito), mas 15 dias depois, em pesquisa relacional de NPS da marca, deu nota 4 (Detrator). Qual fenômeno de CX explica tecnicamente essa disparidade?",
+            pergunta: "Na 'analogia do restaurante' apresentada na página para facilitar a fixação do conteúdo, como o CSAT e o NPS são representados?",
             opcoes: [
-                "O CSAT é episódico/transacional e mede o alívio imediato da resolução pontual, enquanto o NPS é cumulativo/relacional e penaliza o alto esforço do cliente (Customer Effort Score) e o histórico de atritos da jornada.",
-                "Houve erro na coleta de dados, pois um cliente que concede CSAT 5 é estatisticamente obrigado a ser Promotor (nota 9 ou 10) no NPS.",
-                "O cliente foi influenciado por viés de ancoragem no CSAT e por viés de recência positivo no NPS.",
-                "O CSAT reflete a lealdade de longo prazo com o contrato, enquanto o NPS avalia unicamente o comportamento da URA e da fila de espera."
+                "O CSAT é como o garçom perguntando na mesa 'O prato estava bom?' (fotografa aquele momento exato da refeição); o NPS é a pergunta no fim de semana 'Você levaria seus amigos lá?' (avalia toda a experiência acumulada).",
+                "O CSAT é o valor total da conta paga pelo cliente e o NPS é a gorjeta deixada voluntariamente para o garçom.",
+                "O CSAT é o pedido feito por aplicativo de entrega e o NPS é a visita presencial ao restaurante.",
+                "O CSAT representa a quantidade de mesas ocupadas no salão e o NPS é o cardápio de sobremesas."
             ],
             correta: 0,
-            explicacao: "O CSAT fotografa a satisfação transacional pontual com o atendimento recebido (onde o atendente resolveu). O NPS é uma métrica relacional e holística: o cliente pondera todo o histórico, o esforço excessivo para ser atendido (CES) e a recorrência do problema, tornando-se detrator da empresa."
+            explicacao: "Conforme a página ensina: na mesa, o garçom pergunta se o prato estava bom (CSAT pontual naquele momento). No fim da semana, perguntam se você levaria seus amigos lá (NPS avaliando o histórico completo)."
         },
         {
             id: 3,
-            pergunta: "Uma central registrou índice de First Contact Resolution (FCR) de 91%, porém o CSAT do mesmo canal permaneceu estagnado em 64%. Qual auditoria de Qualidade identifica a causa raiz técnica desse descompasso?",
+            pergunta: "Qual é a escala de notas padrão utilizada no CSAT e quais notas são contabilizadas como clientes satisfeitos no numerador da fórmula?",
             opcoes: [
-                "O critério de FCR foi medido pelo sistema (ausência de reabertura pelo mesmo protocolo em 72h), enquanto na ótica do cliente o problema não foi resolvido ou exigiu busca em canais paralelos não integrados.",
-                "O CSAT está invertido, pois matematicamente o CSAT é sempre equivalente ao FCR multiplicado pelo fator de produtividade dos supervisores.",
-                "A amostra de CSAT coletada continha exclusivamente promotores de vendas, que costumam atribuir notas mais baixas do que clientes de SAC.",
-                "O cálculo do FCR considerou chamadas com abandono na fila como resolvidas no primeiro contato."
+                "A escala é de 1 a 5, e somente as notas 4 e 5 entram no numerador como satisfeitos; a nota 3 é neutra e não conta como satisfeita.",
+                "A escala é de 0 a 10, e todas as notas de 3 a 10 são somadas como clientes satisfeitos.",
+                "A escala é de 1 a 5, e as notas 3, 4 e 5 entram no numerador da fórmula.",
+                "A escala é de 1 a 10, e apenas a nota 10 conta como cliente satisfeito."
             ],
             correta: 0,
-            explicacao: "A discordância clássica entre FCR alto e CSAT baixo decorre de métricas 'internas' de FCR (ex: sistema que marca resolvido se o cliente não ligar de volta em 3 dias), enquanto o cliente ficou insatisfeito, desistiu de ligar por frustração, ou precisou recorrer ao Reclame Aqui ou canal presencial."
+            explicacao: "Conforme a página destaca: na escala de 1 a 5 do CSAT, somente as notas 4 e 5 contam como clientes satisfeitos. A nota 3 é neutra e NÃO entra no numerador da conta."
         },
         {
             id: 4,
-            pergunta: "Em uma pesquisa de CSAT com escala de 1 a 5, 200 clientes avaliaram um canal: 80 deram nota 5, 40 nota 4, 70 nota 3 e 10 nota 1. Qual é o CSAT Top-2-Box apurado e por que a média aritmética simples (3,85) seria uma métrica perigosa para a gestão de qualidade?",
+            pergunta: "Segundo o exemplo resolvido no guia da página, se 200 clientes responderam à pesquisa de CSAT e 150 deles atribuíram nota 4 ou 5, qual é o CSAT apurado?",
             opcoes: [
-                "CSAT Top-2-Box é 60%; a média simples (3,85) mascara a insatisfação oculta porque dilui os 70 clientes neutros (nota 3), que no Top-2-Box não são considerados satisfeitos e possuem alto risco de cancelamento (churn).",
-                "CSAT Top-2-Box é 95%; a média simples (3,85) subestima o resultado ao não aplicar o peso logarítmico exigido pela metodologia ISO 9001.",
-                "CSAT Top-2-Box é 40%; a média simples é superior porque elimina o impacto das notas extremas 1 e 5.",
-                "CSAT Top-2-Box é 77%; a média aritmética simples sempre superestima notas 4 e subestima notas 2."
+                "75% (Cálculo: 150 respostas positivas ÷ 200 total de respostas × 100 = 75%).",
+                "50% (Cálculo: 150 − 50 = 50%).",
+                "+75 pontos de índice (sem unidade percentual).",
+                "85% (porque os 50 clientes neutros devem ser somados com peso de 50%)."
             ],
             correta: 0,
-            explicacao: "Top-2-Box considera apenas as notas 4 e 5: (80 + 40) / 200 = 120 / 200 = 60%. A nota 3 (neutra) representa 35% da base; tratá-la como 'quase 4' na média aritmética (3,85) ilude a liderança, pois clientes nota 3 estão indiferentes e mudam de fornecedor à primeira oportunidade."
+            explicacao: "Conforme o exemplo resolvido da página: CSAT (%) = respostas positivas (notas 4 e 5) ÷ total de respostas × 100. Logo, 150 ÷ 200 × 100 = 75%."
         },
         {
             id: 5,
-            pergunta: "Em um processo de Governança de Closed-Loop Feedback (Tratativa de Detratores), qual protocolo segue rigorosamente a metodologia oficial de Fred Reichheld para maximizar o resgate do cliente?",
+            pergunta: "Quais são as faixas de referência de mercado do CSAT explicadas na página?",
             opcoes: [
-                "Acionar o detrator em até 24h a 48h (D+1/D+2) por uma liderança ou equipe dedicada, focando na escuta empática e na eliminação da causa raiz sistêmica, sem jamais tentar coagir o cliente a alterar a nota atribuída.",
-                "Enviar um cupom de desconto imediato por e-mail automatizado solicitando a exclusão da nota 0 do banco de dados.",
-                "Transferir o detrator imediatamente para o próprio operador que causou a nota baixa para que ele se retrate pessoalmente.",
-                "Excluir os detratores que atribuíram nota motivada por preço ou instabilidade técnica externa, mantendo apenas falhas comportamentais de script."
+                "Abaixo de 60% é Crítico; de 60% a 74% é Atenção; de 75% a 84% é Bom; 85% ou mais é Excelente.",
+                "Abaixo de 20% é Ruim; de 20% a 50% é Regular; de 50% a 80% é Bom; acima de 80% é Excelente.",
+                "Menor que 0 é Crítico; de 0 a 50 é Médio; de 50 a 100 é Excelente.",
+                "Qualquer resultado abaixo de 90% é classificado automaticamente como Crítico."
             ],
             correta: 0,
-            explicacao: "O fechamento do loop com detratores exige agilidade (D+1/D+2), liderança com autonomia para resolver o problema estrutural e foco no aprendizado operacional, e nunca em negociar nota ou mascarar dados."
+            explicacao: "Conforme a tabela de faixas de mercado da página: Abaixo de 60% (Crítico), 60% a 74% (Atenção), 75% a 84% (Bom) e 85% ou mais (Excelente)."
         },
         {
             id: 6,
-            pergunta: "Um operador, visando garantir sua bonificação, encerra todos os atendimentos dizendo: 'Se você puder me avaliar com nota 10 na pesquisa que vai tocar agora, isso ajuda muito a manter meu emprego'. Sob a ótica de Qualidade e Governança de CX, como essa prática deve ser classificada?",
+            pergunta: "Na pesquisa de NPS, a escala vai de 0 a 10. Como os respondentes são classificados de acordo com a nota concedida?",
             opcoes: [
-                "Vício grave de indução e deturpação de pesquisa (Goodhart's Law / Bias), que invalida a fidedignidade dos dados, camufla falhas reais do atendimento e deve ser tratada como falta disciplinar ou desvio de conformidade.",
-                "Comportamento assertivo de engajamento de metas, recomendável para operações que precisam migrar da Zona de Aperfeiçoamento para a Zona de Qualidade.",
-                "Prática neutra e aceitável, desde que o operador não tenha cometido falhas de procedimento durante a ligação.",
-                "Estratégia padrão de Call Center conhecida como 'Fechamento de Padrão Ouro', respaldada pelas normas da Anatel."
+                "Promotores: notas 9 e 10; Neutros: notas 7 e 8; Detratores: notas de 0 a 6.",
+                "Promotores: notas 8, 9 e 10; Neutros: notas 6 e 7; Detratores: notas de 0 a 5.",
+                "Promotores: apenas nota 10; Neutros: notas de 5 a 9; Detratores: notas de 0 a 4.",
+                "Promotores: notas de 7 a 10; Neutros: nota 6; Detratores: notas de 0 a 5."
             ],
             correta: 0,
-            explicacao: "A indução de nota ('pedir 10 para salvar emprego') é uma violação grave de compliance de CX. Quando uma métrica vira meta individual agressiva sem controle, ela deixa de ser uma métrica confiável (Lei de Goodhart) e cega a empresa para suas reais falhas operacionais."
+            explicacao: "Conforme ensinado na página: Promotores são notas 9 e 10; Neutros são notas 7 e 8; Detratores são notas de 0 a 6."
         },
         {
             id: 7,
-            pergunta: "Uma operação apresenta uma curva de distribuição de NPS bimodal, com concentração massiva de notas 10 (Promotores) e notas 0 (Detratores), e praticamente zero respostas entre 3 e 8. Qual é a interpretação técnica mandatória dessa distribuição?",
+            pergunta: "De acordo com as regras de cálculo do NPS explicadas na página, qual é a função dos clientes Neutros (notas 7 e 8)?",
             opcoes: [
-                "Existe polarização extrema na jornada: a empresa entrega valor substancial para um perfil de cliente, mas possui uma falha grave/sistêmica no processo que destrói completamente a experiência de outro segmento.",
-                "A pesquisa está com erro de codificação matemática, pois a distribuição de NPS por teorema estatístico deve sempre seguir uma curva gaussiana normal.",
-                "Indica que a operação atingiu a Zona de Excelência, visto que o volume de promotores compensa qualquer anomalia de detratores.",
-                "Significa que os clientes neutros foram automaticamente expurgados pelo algoritmo da plataforma de pesquisa."
+                "Eles entram na soma do total de respostas para compor as porcentagens, mas não entram na subtração final (% Promotores − % Detratores).",
+                "Eles são somados aos promotores com desconto de 50%.",
+                "Eles são subtraídos diretamente dos detratores antes de calcular o percentual.",
+                "Eles são descartados imediatamente e não contam nem sequer no total de respostas."
             ],
             correta: 0,
-            explicacao: "Curvas bimodais em CX (picos em 0 e 10) demonstram consistência zero e polarização aguda: o produto atende perfeitamente quando não há imprevistos, mas quando ocorre uma falha ou exceção, o processo desaba e abandona o cliente."
+            explicacao: "Conforme a página destaca expressamente: os neutros (notas 7 e 8) aumentam o total de respostas no denominador, mas ficam de fora da subtração direta do NPS (% Promotores − % Detratores)."
         },
         {
             id: 8,
-            pergunta: "A gerência de um contact center decidiu cortar a meta de TMA (Tempo Médio de Atendimento) de 360 para 220 segundos como medida de redução de custos. Nos dois meses seguintes, o CSAT despencou de 84% para 59% e as rechamadas subiram 35%. Qual a relação técnica de causa e efeito demonstrada?",
+            pergunta: "Qual é a fórmula matemática do NPS e como o resultado final é expresso?",
             opcoes: [
-                "Subordinação da resolutividade à pressa: a pressão pelo tempo forçou os operadores a desligarem chamadas prematuramente sem solucionar a demanda, transferindo custo para rechamadas e gerando frustração profunda no cliente.",
-                "O corte de TMA aumentou a fadiga auditiva dos clientes, que preferiram atribuir notas baixas na pesquisa para protestar contra a rapidez do sistema.",
-                "A diminuição do TMA sempre aumenta o FCR e o NPS simultaneamente, sendo a queda do CSAT uma correlação espúria e temporária.",
-                "Os operadores passaram a transferir ligações para canais digitais, o que automaticamente converte clientes neutros em detratores."
+                "Fórmula: % Promotores − % Detratores. O resultado varia de −100 a +100 e é expresso como um número/índice (não é porcentagem).",
+                "Fórmula: (Promotores + Neutros) ÷ Total × 100. O resultado é sempre expresso como uma porcentagem de 0% a 100%.",
+                "Fórmula: Média aritmética das notas multiplicada por 10. O resultado varia de 0 a 100%.",
+                "Fórmula: Detratores ÷ Promotores. O resultado é um percentual relativo."
             ],
             correta: 0,
-            explicacao: "O trade-off clássico entre TMA e CSAT: forçar a queda artificial do TMA sem simplificar processos gera encerramentos precipitados, falta de escuta ativa e falso FCR, destruindo o CSAT e explodindo o custo com reatendimentos."
+            explicacao: "Conforme ensinado na página: NPS = % Promotores − % Detratores. O resultado varia entre −100 e +100 e não é uma porcentagem, é um índice numérico."
         },
         {
             id: 9,
-            pergunta: "Em uma auditoria de monitoria de qualidade, um operador cometeu uma Falha Crítica Regulatória de quebra de sigilo bancário/LGPD, mas foi extremamente atencioso, empático e rápido, recebendo nota 5 do cliente no CSAT da ligação. Qual a conduta regulamentar da Gestão de Qualidade?",
+            pergunta: "Quais são as quatro Zonas de Classificação do resultado de NPS ensinadas na página?",
             opcoes: [
-                "A monitoria técnica zera a nota da chamada (0%) com aplicação de feedback de conformidade imediato; a nota máxima do cliente no CSAT não mitiga nem elide o risco legal e regulatório da falha crítica cometida.",
-                "A nota da monitoria técnica deve ser ajustada para a média ponderada entre o CSAT do cliente (100%) e o peso da falha (50%), resultando em 75%.",
-                "O CSAT soberano do cliente anula a falha de monitoria interna, pois a satisfação percebida é o critério legal supremo exigido pelos órgãos reguladores.",
-                "A falha crítica deve ser reclassificada como falha não-crítica caso o cliente confirme por e-mail que não sofreu prejuízo financeiro."
+                "−100 a 0: Zona Crítica; 1 a 49: Zona de Aperfeiçoamento; 50 a 74: Zona de Qualidade; 75 a 100: Zona de Excelência.",
+                "−100 a −50: Zona Vermelha; −49 a 0: Zona Amarela; 1 a 50: Zona Azul; 51 a 100: Zona Ouro.",
+                "0 a 25: Baixa; 26 a 50: Média; 51 a 75: Boa; 76 a 100: Ótima.",
+                "Qualquer valor acima de zero é Zona de Excelência e qualquer valor negativo é Zona Crítica."
             ],
             correta: 0,
-            explicacao: "Qualidade Interna (compliance, regulação, segurança, LGPD) e Qualidade Percebida (CSAT) são dimensões complementares, não substitutas. O cliente não possui conhecimento técnico da lei para avaliar segurança de dados; simpatia jamais compensa violação de compliance."
+            explicacao: "Conforme os cards de Zonas do NPS na página: −100 a 0 (Zona Crítica), 1 a 49 (Zona de Aperfeiçoamento), 50 a 74 (Zona de Qualidade) e 75 a 100 (Zona de Excelência)."
         },
         {
             id: 10,
-            pergunta: "Qual é a razão metodológica pela qual a escala de NPS utiliza 11 pontos (de 0 a 10) em vez da escala clássica de 10 pontos (1 a 10)?",
+            pergunta: "Conforme ensinado nas seções 'Na Prática', 'Erros Comuns' e 'Dica de Ouro' da página, como a Qualidade deve utilizar o CSAT e qual é a principal fonte de valor da pesquisa?",
             opcoes: [
-                "A inclusão do 0 permite representar a rejeição absoluta e aversão total à marca, além de definir com exatidão matemática o ponto neutro médio e calibrar a propensão comportamental de recomendação ativa.",
-                "A escala de 0 a 10 foi adotada exclusivamente para compatibilidade com o sistema binário de computadores nos anos 1990.",
-                "Para que o somatório de Promotores (9-10) tenha exatamente a mesma quantidade de alternativas que o somatório de Detratores (0-6).",
-                "A escala 1 a 10 é proibida internacionalmente pelas diretrizes de governança da ISO 27001 para pesquisas de experiência."
+                "Deve cruzar o CSAT com as notas de monitoria técnica para identificar discrepâncias e ler os comentários qualitativos dos clientes (especialmente notas 1, 2 e detratores) para agir na causa raiz.",
+                "Deve considerar a nota 3 como satisfeita para atingir as metas operacionais com maior facilidade.",
+                "Deve incluir as notas de neutros (7 e 8) na subtração do NPS para nivelar os índices de excelência.",
+                "Deve analisar unicamente a média numérica e descartar os comentários descritivos dos clientes insatisfeitos."
             ],
             correta: 0,
-            explicacao: "Fred Reichheld testou dezenas de escalas. A escala 0 a 10 (11 pontos) provou ser a mais correlacionada com comportamento real de recompra e churn. O '0' é psicológico: quem dá zero está ativamente furioso e afasta clientes da marca."
-        },
-        {
-            id: 11,
-            pergunta: "Uma operação de SAC obteve NPS de +62 no trimestre consolidado. Segundo a classificação benchmark oficial do Net Promoter System, em qual zona de excelência a operação se localiza?",
-            opcoes: [
-                "Zona de Qualidade (50 a 74), caracterizada por sólido número de defensores da marca, superior à Zona de Aperfeiçoamento (1 a 49) e abaixo da Zona de Excelência (75 a 100).",
-                "Zona de Excelência (50 a 70), pois nenhum mercado de telecomunicações ou contact center opera acima de 60 pontos.",
-                "Zona Crítica (-100 a +70), exigindo plano de contingência e demissão das equipes com índice inferior a 70.",
-                "Zona Neutra ou Transitória, aplicável a operações que dependem de menos de 80% de promotores."
-            ],
-            correta: 0,
-            explicacao: "As 4 zonas oficiais de NPS são: Zona Crítica (de -100 a 0), Zona de Aperfeiçoamento (de 1 a 49), Zona de Qualidade (de 50 a 74) e Zona de Excelência (de 75 a 100). O valor +62 posiciona a operação confortavelmente na Zona de Qualidade."
-        },
-        {
-            id: 12,
-            pergunta: "O que caracteriza tecnicamente o 'Efeito Halo' (Halo Effect) em pesquisas de satisfação de atendimento e como ele afeta os diagnósticos de Qualidade?",
-            opcoes: [
-                "Quando uma única impressão marcante (positiva como a extrema empatia, ou negativa como a demora em fila) contamina e distorce o julgamento do cliente sobre todos os outros itens avaliados da pesquisa.",
-                "A tendência estatística de que clientes com nomes iniciados em vogais tendem a atribuir notas 10% superiores aos demais.",
-                "O aumento artificial da nota de CSAT provocado por músicas de espera agradáveis selecionadas por inteligência artificial.",
-                "A migração voluntária de clientes neutros para promotores devido ao encerramento cordato de chamadas telefônicas."
-            ],
-            correta: 0,
-            explicacao: "O Efeito Halo é um viés cognitivo clássico onde um único aspecto emocional predominante (ex: empatia radiante ou espera insuportável) cega o respondente, fazendo-o avaliar todos os outros critérios (clareza, sistema, segurança, pós-atendimento) sob a mesma luz positiva ou negativa."
-        },
-        {
-            id: 13,
-            pergunta: "Uma empresa envia pesquisa de CSAT por dois canais simultâneos: URA interativa imediata pós-ligação (IVR) e e-mail marketing disparado 48 horas depois. Tipicamente, qual comportamento de resposta e viés amostral é observado entre esses dois canais?",
-            opcoes: [
-                "A URA imediata tem maior taxa de conversão e capta o sentimento fresco do contato operacional; o e-mail tem menor taxa de conversão e sofre viés de auto-seleção, sendo respondido predominantemente por clientes com insatisfações agudas e não resolvidas.",
-                "O e-mail sempre registra CSAT superior à URA, pois clientes que leem e-mails possuem maior escolaridade e renda média comprovada.",
-                "A URA possui taxa de resposta nula porque os clientes desligam o telefone antes de transferir para a pesquisa de voz.",
-                "Ambos os canais possuem idêntica distribuição paramétrica, sem qualquer influência do tempo decorrido sobre a memória da experiência."
-            ],
-            correta: 0,
-            explicacao: "Canal e timing afetam radicalmente o CSAT. Pesquisas imediatas (URA/chat) capturam a média do dia a dia. Pesquisas enviadas dias depois por e-mail têm baixa adesão e atraem quem ainda está com dor de cabeça com o problema, gerando viés desproporcional para baixo."
-        },
-        {
-            id: 14,
-            pergunta: "Em um estudo de correlação entre NPS e Churn (cancelamento) em uma carteira de assinaturas, qual foi a conclusão empírica constatada por Reichheld e Bain & Company sobre os clientes Neutros (notas 7 e 8)?",
-            opcoes: [
-                "Clientes neutros não são clientes seguros; sua taxa de churn e deserção pode ser até 3 vezes maior do que a de promotores, sendo altamente vulneráveis a ofertas da concorrência.",
-                "Clientes neutros possuem fidelidade vitalícia idêntica à de promotores, sendo dispensável qualquer ação de retenção para essa faixa de nota.",
-                "Clientes neutros convertem-se espontaneamente em promotores após 6 meses sem necessidade de intervenção operacional.",
-                "Clientes neutros nunca cancelam contratos, mas exigem maior custo operacional do que os clientes detratores."
-            ],
-            correta: 0,
-            explicacao: "O maior perigo em CX é achar que neutro (7 e 8) está 'garantido'. Eles não reclamam na central, mas compram da concorrência no momento em que houver uma oferta ou preço melhor. A taxa de churn de neutros é historicamente até 3x maior que a de promotores."
-        },
-        {
-            id: 15,
-            pergunta: "Qual das seguintes afirmações sobre a fórmula do Net Promoter Score (NPS) é estritamente VERDADEIRA sob o ponto de vista matemático e conceitual?",
-            opcoes: [
-                "O NPS é expresso como um número absoluto inteiro que varia de -100 a +100, e não como uma porcentagem, embora resulte da subtração de duas porcentagens (% Promotores - % Detratores); se 100% dos clientes forem neutros, o NPS é 0.",
-                "O NPS é uma média ponderada das 11 notas possíveis multiplicada pela raiz quadrada do número total de respondentes da amostra.",
-                "O resultado do NPS é sempre um percentual obrigatório expresso com o símbolo '%', devendo variar entre 0% e 100%.",
-                "Se uma empresa tiver 100 respondentes e todos derem nota 8, o NPS da empresa será de +80."
-            ],
-            correta: 0,
-            explicacao: "O NPS é um índice/número puro (ex: +45, -20, +72), e NÃO uma porcentagem! Se 100 clientes derem nota 8 (neutros), o % de Promotores é 0% e o % de Detratores é 0%, portanto o NPS será exatamente ZERO (0), demonstrando que neutros não geram pontos positivos."
+            explicacao: "Conforme o guia ensina: a Qualidade deve cruzar o CSAT com a monitoria (para checar empatia e percepção) e a dica de ouro é ler os comentários qualitativos dos clientes insatisfeitos para descobrir a causa e agir."
         }
     ],
 
@@ -3379,9 +3347,9 @@
                 <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
                     <i class="fa-solid fa-award"></i>
                 </div>
-                <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Certificação Concluída</div>
+                <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Certificação Oficial Concluída</div>
                 <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Parabéns! Você foi Aprovado</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Você demonstrou proficiência técnica nas métricas avançadas de CSAT & NPS.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Você demonstrou domínio nas métricas e metodologias de CSAT & NPS ensinadas na página.</p>
             `;
         } else if (reg.desqualificado) {
             badgeHeader = `
@@ -3389,8 +3357,8 @@
                     <i class="fa-solid fa-ban"></i>
                 </div>
                 <div class="text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Desclassificação Anti-Cola</div>
-                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Avaliação Anulada</h3>
-                <p class="text-xs text-red-500 dark:text-red-400 font-bold mt-2">${reg.motivoDesqualificacao || "Violação de segurança detectada."}</p>
+                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Tentativa Anulada</h3>
+                <p class="text-xs text-red-500 dark:text-red-400 font-bold mt-2">${reg.motivoDesqualificacao || "Violação das regras de foco e segurança detectada."}</p>
             `;
         } else {
             badgeHeader = `
@@ -3399,60 +3367,42 @@
                 </div>
                 <div class="text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Avaliação Não Concluída</div>
                 <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Aproveitamento Insuficiente</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">A nota mínima de aprovação é de 70% (7 acertos).</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">A nota mínima para certificação é de 70% (7 acertos).</p>
             `;
         }
 
         modal.innerHTML = `
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
                 <div class="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
                     ${badgeHeader}
 
-                    <!-- Placar -->
+                    <!-- Placar de Resultados -->
                     <div class="grid grid-cols-2 gap-4 max-w-xs mx-auto mt-6">
                         <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aproveitamento</div>
                             <div class="text-3xl font-black tabular-nums mt-1 ${aprovado ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">${reg.nota}%</div>
                         </div>
                         <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
-                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Acertos</div>
+                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total de Acertos</div>
                             <div class="text-3xl font-black tabular-nums mt-1 text-slate-800 dark:text-white">${reg.acertos}/10</div>
                         </div>
                     </div>
 
                     ${!aprovado ? `
-                        <div class="mt-4 p-3 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs text-red-700 dark:text-red-300 font-bold flex items-center justify-center gap-2">
-                            <i class="fa-solid fa-lock"></i>
-                            <span>Bloqueio de tentativa ativo: você só poderá refazer esta prova amanhã (a partir das 00:00).</span>
-                        </div>
-                    ` : ''}
-                </div>
-
-                <!-- Gabarito com Justificativas Pedagógicas -->
-                <div class="mt-6">
-                    <h4 class="text-xs font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-2">
-                        <i class="fa-solid fa-book-open"></i> Revisão Técnica das Questões
-                    </h4>
-                    <div class="space-y-4 max-h-[340px] overflow-y-auto custom-scrollbar pr-1">
-                        ${(reg.resumoRespostas || []).map((r, i) => `
-                            <div class="p-4 rounded-2xl border ${r.acertou ? 'border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20' : 'border-red-200 bg-red-50/40 dark:border-red-900/40 dark:bg-red-950/20'}">
-                                <div class="flex items-start justify-between gap-2 mb-2">
-                                    <span class="text-xs font-extrabold text-slate-800 dark:text-white tabular-nums">Questão ${i + 1}</span>
-                                    <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${r.acertou ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}">
-                                        ${r.acertou ? 'Acertou' : 'Errou'}
-                                    </span>
-                                </div>
-                                <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-3">${app.utils.escapeHtml(r.pergunta)}</p>
-                                <div class="text-[11px] space-y-1">
-                                    <div><span class="text-slate-400 font-bold">Sua resposta:</span> <span class="${r.acertou ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-red-600 dark:text-red-400 font-semibold'}">${app.utils.escapeHtml(r.opcaoMarcada)}</span></div>
-                                    ${!r.acertou ? `<div><span class="text-slate-400 font-bold">Resposta correta:</span> <span class="text-emerald-600 dark:text-emerald-400 font-semibold">${app.utils.escapeHtml(r.opcaoCorreta)}</span></div>` : ''}
-                                </div>
-                                <div class="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                                    <strong>Explicação Técnica:</strong> ${app.utils.escapeHtml(r.explicacao)}
-                                </div>
+                        <div class="mt-5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed text-left">
+                            <div class="flex items-center gap-2 font-bold mb-1 text-amber-900 dark:text-amber-100">
+                                <i class="fa-solid fa-lock text-amber-500"></i> Bloqueio Anti-Cola Ativo até Amanhã
                             </div>
-                        `).join('')}
-                    </div>
+                            <p>Você poderá realizar uma nova tentativa a partir das 00:00. O gabarito não é divulgado para garantir a integridade da prova e incentivar a leitura do guia da página.</p>
+                        </div>
+                    ` : `
+                        <div class="mt-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 font-medium leading-relaxed text-left">
+                            <div class="flex items-center gap-2 font-bold mb-1 text-emerald-900 dark:text-emerald-100">
+                                <i class="fa-solid fa-shield-halved text-emerald-500"></i> Certificação Válida Registrada
+                            </div>
+                            <p>Seu resultado foi gravado com sucesso no banco de dados. Você pode visualizar e imprimir seu Certificado Oficial a qualquer momento.</p>
+                        </div>
+                    `}
                 </div>
 
                 <div class="mt-6 flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -3684,7 +3634,7 @@
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'dashboard_firebase_dev', label:'Consumo Firebase (Dev)'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -4460,7 +4410,9 @@
                     let activeGroup = null;
                     
                     menus.forEach((m) => {
-                        const isActiveGroup = m.items.some(i => i.id === app.currentTab);
+                        const normTab = (id) => (id === 'gestao_equipe' || id === 'operacoes') ? 'hierarquia' : id;
+                        const currentNorm = normTab(app.currentTab);
+                        const isActiveGroup = m.items.some(i => normTab(i.id) === currentNorm);
                         if (isActiveGroup) activeGroup = m;
                         
                         let btnClass = isActiveGroup 
@@ -4536,6 +4488,7 @@
                 },
 
                 renderTab(tabId, forceRefresh = false) {
+                    if (tabId === 'gestao_equipe' || tabId === 'operacoes') { tabId = 'hierarquia'; }
                     // Limpar cronômetro e renderizações pendentes ao mudar de tela ou trocar de mês
                     if(this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
                     if(this.renderTimeoutId) { clearTimeout(this.renderTimeoutId); this.renderTimeoutId = null; }
@@ -4607,6 +4560,7 @@
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
                             else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
                             else if(tabId === 'impressoes' || tabId === 'gestao_impressoes') this.renderView_Impressoes(viewDiv);
+                            else if(tabId === 'dashboard_firebase_dev') { this.abrirModalFirebaseDev(); this.renderTab('dashboard_adm', true); }
                             else {
                                 // Fallback Cirúrgico: Se a aba guardada não existir, força uma aba segura.
                                 app.currentTab = app.isAdmin ? 'dashboard_adm' : 'meu_painel';
@@ -5943,7 +5897,7 @@
                                         ${naoVinculadosNoRH.length > 0 ? `<optgroup label="Operações do CSV (Unificar em outra operação)">
                                             ${naoVinculadosNoRH.map(sq => `<option value="${sq}">${sq} (${qualidade[sq].count} mon.)</option>`).join('')}
                                         </optgroup>` : ''}
-                                        <option value="__CUSTOM__">✍ Digitar nome manualmente...</option>
+                                        <option value="__CUSTOM__">Digitar nome manualmente...</option>
                                     </select>
                                     <input type="text" id="vg-depara-qual-custom" placeholder="Digite exatamente como vem no CSV de Qualidade..." class="hidden mt-2 w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-600 text-xs font-bold text-slate-700 dark:text-white outline-none">
                                 </div>
@@ -5964,7 +5918,7 @@
                             <div>
                                 <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
                                     <span>Vínculos Salvos (${vinculosEntries.length})</span>
-                                    <span>Qualidade ➔ Base RH</span>
+                                    <span>Qualidade vs Base RH</span>
                                 </div>
                                 ${vinculosEntries.length === 0 ? `
                                     <div class="p-4 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 text-xs">
@@ -6652,6 +6606,269 @@
                 },
 
 
+                                abrirModalFirebaseDev() {
+                    const modalExist = document.getElementById('dev-firebase-modal');
+                    if (modalExist) modalExist.remove();
+
+                    // Coleta nós em memória e calcula tamanho serializado
+                    const colecoes = [
+                        { id: 'monitorias', path: 'sistema_bonificacao/monitorias', desc: 'Base histórica de monitorias e rankings por mês', data: app.allMonitorias },
+                        { id: 'users', path: 'sistema_bonificacao/users', desc: 'Colaboradores, credenciais, perfis e permissões de acesso', data: app.users },
+                        { id: 'config', path: 'sistema_bonificacao/config', desc: 'Metas, pesos, regras de negócio, DE/PARA e cargos de operadores', data: app.config },
+                        { id: 'actions', path: 'sistema_bonificacao/actions', desc: 'Ações presenciais, brindes e registros de aplicação', data: app.actionsList },
+                        { id: 'atas', path: 'sistema_bonificacao/atas', desc: 'Atas de reuniões, presenças e alinhamentos operacionais', data: app.atasList },
+                        { id: 'anatel', path: 'sistema_bonificacao/anatel', desc: 'Pesquisas Kantar / Anatel por mês', data: app.allAnatel },
+                        { id: 'estoque', path: 'sistema_bonificacao/estoque', desc: 'Itens de almoxarifado e insumos físicos', data: app.estoqueItems },
+                        { id: 'estoqueLogs', path: 'sistema_bonificacao/estoqueLogs', desc: 'Histórico de saídas e baixas de almoxarifado', data: app.estoqueLogs },
+                        { id: 'impressoes', path: 'sistema_bonificacao/impressoes', desc: 'Fila e histórico de solicitações de impressão', data: app.impressoesList },
+                        { id: 'impressoesStats', path: 'sistema_bonificacao/impressoesStats', desc: 'Estatísticas de arquivos e folhas gastas em impressão', data: app.impressoesStats },
+                        { id: 'harmonyDeploy', path: 'sistema_bonificacao/harmonyDeploy', desc: 'Implantação de Inteligência Artificial nas operações', data: app.harmonyDeployList },
+                        { id: 'csatNpsProvas', path: 'sistema_bonificacao/csatNpsProvas', desc: 'Tentativas de prova, notas e certificações oficiais CSAT & NPS', data: app.csatNpsProvas },
+                        { id: 'laudos', path: 'sistema_bonificacao/laudos', desc: 'Laudos técnicos e estudos especializados de Qualidade', data: app.laudosList },
+                        { id: 'apresentacoes', path: 'sistema_bonificacao/apresentacoes', desc: 'Apresentações executivas salvas na nuvem', data: app.apresentacoesList },
+                        { id: 'visaoGeralData', path: 'sistema_bonificacao/visaoGeralData', desc: 'Dados consolidados da Visão Geral Setorial (RH vs Qualidade)', data: app.visaoGeralData }
+                    ];
+
+                    let totalBytesMemoria = 0;
+                    const stats = colecoes.map(c => {
+                        let jsonStr = '';
+                        try { jsonStr = JSON.stringify(c.data || {}); } catch(e) { jsonStr = '{}'; }
+                        const bytes = new Blob([jsonStr]).size;
+                        totalBytesMemoria += bytes;
+                        let count = 0;
+                        if (c.data && typeof c.data === 'object') {
+                            count = Array.isArray(c.data) ? c.data.length : Object.keys(c.data).length;
+                        }
+                        return {
+                            ...c,
+                            bytes,
+                            kb: (bytes / 1024).toFixed(1),
+                            mb: (bytes / (1024 * 1024)).toFixed(3),
+                            count
+                        };
+                    }).sort((a, b) => b.bytes - a.bytes);
+
+                    const totalKB = (totalBytesMemoria / 1024).toFixed(1);
+                    const totalMB = (totalBytesMemoria / (1024 * 1024)).toFixed(2);
+                    const limiteSparkMB = 1024; // 1 GB no plano Spark
+                    const limiteBandaGB = 10;   // 10 GB/mês no plano Spark
+                    const pctSpark = Math.min(100, ((totalBytesMemoria / (1024 * 1024 * 1024)) * 100)).toFixed(2);
+
+                    const modal = document.createElement('div');
+                    modal.id = 'dev-firebase-modal';
+                    modal.className = 'fixed inset-0 z-[9998] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-5xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                            <!-- Cabeçalho -->
+                            <div class="flex items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-500 flex items-center justify-center text-2xl shrink-0">
+                                        <i class="fa-solid fa-fire"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Painel do Desenvolvedor</span>
+                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                <i class="fa-solid fa-circle text-[6px] mr-1 text-emerald-500 animate-pulse"></i> Online
+                                            </span>
+                                        </div>
+                                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Firebase Realtime DB — Consumo, Coleções & Limites</h3>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('dev-firebase-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <!-- Cards de KPIs Principais -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Armazenamento Total</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white mt-1 tabular-nums">${totalMB} <span class="text-xs font-normal text-slate-400">MB</span></div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5 tabular-nums">${totalKB} KB em memória</div>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cota Spark Utilizada</div>
+                                    <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">${pctSpark}%</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">de 1.024 MB (1 GB)</div>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Coleções Monitoradas</div>
+                                    <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1 tabular-nums">${stats.length}</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">nós no banco</div>
+                                </div>
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Conexões Simultâneas</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white mt-1 tabular-nums">Ativas</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">Limite: 100 conexões (Spark)</div>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Uso Visual -->
+                            <div class="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                <div class="flex items-center justify-between text-xs font-bold mb-2">
+                                    <span class="text-slate-600 dark:text-slate-300">Uso do Disco no Plano Gratuito (Spark):</span>
+                                    <span class="text-emerald-600 dark:text-emerald-400 tabular-nums">${totalMB} MB de 1.024 MB disponíveis (${pctSpark}%)</span>
+                                </div>
+                                <div class="h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500" style="width: ${Math.max(1, parseFloat(pctSpark))}%"></div>
+                                </div>
+                                <div class="flex items-center justify-between text-[10px] text-slate-400 mt-2">
+                                    <span>0 MB</span>
+                                    <span>256 MB</span>
+                                    <span>512 MB</span>
+                                    <span>768 MB</span>
+                                    <span>1.024 MB (1 GB)</span>
+                                </div>
+                            </div>
+
+                            <!-- Tabela Detalhada de Coleções / Nós -->
+                            <div class="mt-6">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                        <i class="fa-solid fa-table-list"></i> Detalhamento por Nó do Realtime DB
+                                    </h4>
+                                    <span class="text-xs text-slate-400">Ordenado pelo maior consumo</span>
+                                </div>
+
+                                <div class="overflow-x-auto max-h-[340px] custom-scrollbar border border-slate-200 dark:border-slate-800 rounded-2xl">
+                                    <table class="w-full text-left text-xs whitespace-nowrap">
+                                        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] font-black uppercase text-slate-400 sticky top-0 border-b border-slate-200 dark:border-slate-700">
+                                            <tr>
+                                                <th class="py-2.5 px-3">Caminho / Coleção</th>
+                                                <th class="py-2.5 px-3">Finalidade / Descrição</th>
+                                                <th class="py-2.5 px-3 text-right">Registros</th>
+                                                <th class="py-2.5 px-3 text-right">Tamanho</th>
+                                                <th class="py-2.5 px-3 text-right">% do Total</th>
+                                                <th class="py-2.5 px-3 text-center">Ações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                            ${stats.map(c => {
+                                                const pctNo = totalBytesMemoria > 0 ? ((c.bytes / totalBytesMemoria) * 100).toFixed(1) : 0;
+                                                return `
+                                                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                                        <td class="py-2 px-3 font-bold text-slate-800 dark:text-white">
+                                                            <span class="text-indigo-600 dark:text-indigo-400 font-extrabold">${c.path}</span>
+                                                        </td>
+                                                        <td class="py-2 px-3 text-slate-500 dark:text-slate-400 max-w-xs truncate" title="${c.desc}">
+                                                            ${c.desc}
+                                                        </td>
+                                                        <td class="py-2 px-3 text-right font-black tabular-nums">
+                                                            ${c.count}
+                                                        </td>
+                                                        <td class="py-2 px-3 text-right font-black tabular-nums">
+                                                            ${c.bytes > 1048576 ? `${c.mb} MB` : `${c.kb} KB`}
+                                                        </td>
+                                                        <td class="py-2 px-3 text-right font-bold text-slate-500 dark:text-slate-400 tabular-nums">
+                                                            ${pctNo}%
+                                                        </td>
+                                                        <td class="py-2 px-3 text-center">
+                                                            <button onclick="app.ui.inspecionarNoFirebaseDev('${c.id}')" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-950/50 dark:text-slate-300 dark:hover:text-indigo-300 font-bold text-[10px] transition" title="Ver dados em JSON">
+                                                                <i class="fa-solid fa-code mr-1"></i> Inspecionar
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Rodapé com Informações de Cota e Teste de Conexão -->
+                            <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <div class="text-[11px] text-slate-400">
+                                    <i class="fa-solid fa-info-circle mr-1 text-slate-400"></i>
+                                    Projeto: <strong>painel-de-bonificacao</strong> • Cota: <strong>1 GB Disco / 10 GB Banda Mensal</strong>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="app.ui.testarPingFirebaseDev()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 text-xs font-bold transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-network-wired text-xs"></i> Testar Latência
+                                    </button>
+                                    <button onclick="document.getElementById('dev-firebase-modal').remove()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md transition">
+                                        Concluído
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                inspecionarNoFirebaseDev(id) {
+                    const mapaColecoes = {
+                        'monitorias': app.allMonitorias,
+                        'users': app.users,
+                        'config': app.config,
+                        'actions': app.actionsList,
+                        'atas': app.atasList,
+                        'anatel': app.allAnatel,
+                        'estoque': app.estoqueItems,
+                        'estoqueLogs': app.estoqueLogs,
+                        'impressoes': app.impressoesList,
+                        'impressoesStats': app.impressoesStats,
+                        'harmonyDeploy': app.harmonyDeployList,
+                        'csatNpsProvas': app.csatNpsProvas,
+                        'laudos': app.laudosList,
+                        'apresentacoes': app.apresentacoesList,
+                        'visaoGeralData': app.visaoGeralData
+                    };
+
+                    const raw = mapaColecoes[id] || {};
+                    const jsonStr = JSON.stringify(raw, null, 2);
+                    const modalExist = document.getElementById('dev-inspect-json-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const modal = document.createElement('div');
+                    modal.id = 'dev-inspect-json-modal';
+                    modal.className = 'fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-6 shadow-2xl relative my-8">
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center gap-2.5">
+                                    <i class="fa-solid fa-code text-indigo-600 dark:text-indigo-400"></i>
+                                    <h4 class="font-bold text-sm text-slate-800 dark:text-white">Inspecionar Nó: <span class="text-indigo-600 dark:text-indigo-400">${id}</span></h4>
+                                </div>
+                                <button onclick="document.getElementById('dev-inspect-json-modal').remove()" class="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="mt-4">
+                                <textarea readonly class="w-full h-80 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] leading-relaxed outline-none custom-scrollbar select-all">${app.utils.escapeHtml(jsonStr.substring(0, 100000))}</textarea>
+                            </div>
+                            <div class="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                <span>Tamanho aproximado: ${(new Blob([jsonStr]).size / 1024).toFixed(1)} KB</span>
+                                <button onclick="navigator.clipboard.writeText(JSON.stringify(${id === 'config' ? 'app.config' : 'app.' + id})); app.ui.showAlert('Copiado', 'JSON copiado para a área de transferência.', 'success')" class="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-bold transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-copy"></i> Copiar JSON
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                testarPingFirebaseDev() {
+                    if (!window.firebase) return app.ui.showAlert("Firebase Off", "SDK do Firebase não detectado.", "error");
+                    const start = performance.now();
+                    firebase.database().ref('.info/connected').once('value').then(snap => {
+                        const latency = Math.round(performance.now() - start);
+                        const isConnected = snap.val() === true;
+                        app.ui.showAlert(
+                            "Diagnóstico de Rede Firebase",
+                            `Status: <strong>${isConnected ? 'Conectado' : 'Desconectado'}</strong><br>` +
+                            `Latência de Resposta: <strong class="tabular-nums">${latency} ms</strong><br>` +
+                            `Banco: <code>painel-de-bonificacao-default-rtdb</code>`,
+                            isConnected ? "success" : "warning"
+                        );
+                    }).catch(err => {
+                        app.ui.showAlert("Erro no Ping", err.message || "Falha ao comunicar com Firebase.", "error");
+                    });
+                },
+
+
                 renderView_AnaliticoVisaoGeral(container) {
                     if(!app.hasAdminAccess('analitico_visao_geral')) return;
                     app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.visaoGeralData || {});
@@ -6715,29 +6932,51 @@
                     }
 
                     let html = `
-                        <div class="mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                        <div class="mb-6 flex flex-col 2xl:flex-row justify-between items-start 2xl:items-center gap-4">
                             <div>
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Geral Setorial (RH vs Qualidade)</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Cenário macro de produtividade de avaliações e saúde operacional.</p>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest border border-indigo-200/60 dark:border-indigo-800/60">
+                                        <i class="fa-solid fa-building-columns mr-1"></i> Inteligência Setorial
+                                    </span>
+                                </div>
+                                <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Geral Setorial (RH vs Qualidade)</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-0.5">Triangulação macro de produtividade de monitorias, dimensionamento de metas e cobertura operacional.</p>
                             </div>
-                            <div class="flex flex-wrap items-center gap-3">
+
+                            <!-- Barra de Ferramentas Corporativa Unificada -->
+                            <div class="flex flex-wrap items-center gap-2.5 w-full 2xl:w-auto">
+                                <!-- Metas Base Padrão -->
                                 ${metaTopHtml}
-                                <button onclick="app.ui.abrirModalDebugMetasVG('todos')" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Diagnóstico de Metas & Causas Raiz de 0%">
-                                    <i class="fa-solid fa-bug"></i> Diagnóstico Metas
-                                </button>
-                                <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="relative bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdPendentesOp > 0 ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-black' : 'border-slate-200 dark:border-slate-700 font-bold'} py-3 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Validar Aplicadores com Cargo 'OPERADOR'">
-                                    <i class="fa-solid fa-user-check ${qtdPendentesOp > 0 ? 'text-amber-500' : 'text-slate-400'}"></i> Validar Operadores
-                                    ${qtdPendentesOp > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdPendentesOp}</span>` : ''}
-                                </button>
-                                <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border ${qtdOrfaosQual > 0 ? 'border-amber-400 dark:border-amber-500' : 'border-slate-200 dark:border-slate-700'} font-bold w-11 h-11 rounded-xl shadow-sm transition-all flex items-center justify-center text-sm" title="Vincular Operações DE/PARA">
-                                    <i class="fa-solid fa-link"></i>
-                                    ${qtdOrfaosQual > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse tabular-nums">${qtdOrfaosQual}</span>` : ''}
-                                </button>
-                                <button onclick="app.ui.abrirModalOcultosVisaoGeral()" class="bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold py-3 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs whitespace-nowrap" title="Gerenciar operações excluídas permanentemente">
-                                    <i class="fa-solid fa-eye-slash text-slate-400"></i> Ocultos (${ignorados.length})
-                                </button>
-                                <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg cursor-pointer transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm whitespace-nowrap">
-                                    <i class="fa-solid fa-cloud-arrow-up text-lg"></i> Importar CSV de Qualidade
+
+                                <!-- Grupo de Ações de Auditoria e Governança -->
+                                <div class="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm backdrop-blur-sm">
+                                    <button onclick="app.ui.abrirModalDebugMetasVG('todos')" class="h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-2 shadow-xs" title="Auditar e Diagnosticar Operações com Progresso em 0%">
+                                        <i class="fa-solid fa-bug text-xs"></i>
+                                        <span class="hidden sm:inline">Diagnóstico Metas</span>
+                                    </button>
+
+                                    <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="relative h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdPendentesOp > 0 ? 'border-amber-400 text-amber-700 dark:text-amber-300 font-black' : 'border-slate-200/80 dark:border-slate-700 font-bold'} text-xs transition flex items-center gap-2 shadow-xs" title="Classificar aplicadores com cargo 'OPERADOR'">
+                                        <i class="fa-solid fa-user-check ${qtdPendentesOp > 0 ? 'text-amber-500' : 'text-slate-400'} text-xs"></i>
+                                        <span class="hidden sm:inline">Validar Operadores</span>
+                                        ${qtdPendentesOp > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdPendentesOp}</span>` : ''}
+                                    </button>
+
+                                    <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdOrfaosQual > 0 ? 'border-amber-400 text-amber-700 font-black' : 'border-slate-200/80 dark:border-slate-700 font-bold'} text-xs transition flex items-center gap-2 shadow-xs" title="Vincular Nomes de Operações via Tabela DE/PARA">
+                                        <i class="fa-solid fa-link text-slate-400 text-xs"></i>
+                                        <span class="hidden md:inline">DE/PARA</span>
+                                        ${qtdOrfaosQual > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdOrfaosQual}</span>` : ''}
+                                    </button>
+
+                                    <button onclick="app.ui.abrirModalOcultosVisaoGeral()" class="h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs" title="Gerenciar operações ocultadas permanentemente">
+                                        <i class="fa-solid fa-eye-slash text-slate-400 text-xs"></i>
+                                        <span class="hidden md:inline">Ocultos</span> <span class="text-[10px] text-slate-400 tabular-nums">(${ignorados.length})</span>
+                                    </button>
+                                </div>
+
+                                <!-- Botão Primário: Importar CSV -->
+                                <label class="h-11 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold cursor-pointer transition-all shadow-md shadow-indigo-600/25 flex items-center gap-2.5 text-xs tracking-wide shrink-0">
+                                    <i class="fa-solid fa-cloud-arrow-up text-sm"></i>
+                                    <span>Importar CSV de Qualidade</span>
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVVisaoGeral(this)" onclick="this.value = null">
                                 </label>
                             </div>
@@ -6750,7 +6989,7 @@
                                     </div>
                                     <div>
                                         <div class="text-xs font-black text-amber-800 dark:text-amber-200">Atenção: ${qtdPendentesOp} Aplicador(es) com Cargo "OPERADOR"</div>
-                                        <div class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5">Defina se atuam como Monitor ou Supervisor para que as metas sejam distribuÃ­das corretamente. Fica gravado no banco.</div>
+                                        <div class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5">Defina se atuam como Monitor ou Supervisor para que as metas sejam distribuídas corretamente. Fica gravado no banco.</div>
                                     </div>
                                 </div>
                                 <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-md shadow-amber-500/20 transition flex items-center gap-2 shrink-0">
@@ -7447,6 +7686,8 @@
 
                 renderView_ControleEstoque(container) {
                     const itens = Object.values(app.estoqueItems || {});
+                    const mesAtivo = app.currentMonth || new Date().toISOString().substring(0, 7);
+                    const filtroModo = this._estoqueFiltroModo || 'mes_atual'; // 'mes_atual' ou 'todos'
 
                     // Consolida logs do estoque + extrai consumo histórico de ações presenciais já aplicadas
                     const rawLogs = Object.values(app.estoqueLogs || {});
@@ -7456,6 +7697,8 @@
                     Object.values(app.actionsList || {}).forEach(act => {
                         if (!act || loggedActionIds.has(act.id)) return;
                         const dataFmt = act.data ? (act.data.includes('-') ? act.data.split('-').reverse().join('/') : act.data) : '-';
+                        const actionMonth = act.month || (act.data && act.data.includes('-') ? act.data.substring(0, 7) : mesAtivo);
+
                         if (Array.isArray(act.brindesItems) && act.brindesItems.length > 0) {
                             act.brindesItems.forEach((b, idx) => {
                                 const q = parseInt(b.qtd) || 0;
@@ -7469,13 +7712,13 @@
                                         matricula: act.matricula || '',
                                         op: act.op || 'Geral',
                                         data: dataFmt,
+                                        month: actionMonth,
                                         hora: act.hora || '12:00'
                                     });
                                 }
                             });
                         } else if (act.brindes && String(act.brindes).trim() !== '' && String(act.brindes).trim() !== 'Nenhum') {
                             const txt = String(act.brindes).trim();
-                            // Faz parse de formatos como "10x Paçoca, 5x Pirulito" ou número simples
                             const partes = txt.split(',');
                             partes.forEach((p, idx) => {
                                 const str = p.trim();
@@ -7490,6 +7733,7 @@
                                         matricula: act.matricula || '',
                                         op: act.op || 'Geral',
                                         data: dataFmt,
+                                        month: actionMonth,
                                         hora: act.hora || '12:00'
                                     });
                                 } else {
@@ -7505,12 +7749,28 @@
                                         matricula: act.matricula || '',
                                         op: act.op || 'Geral',
                                         data: dataFmt,
+                                        month: actionMonth,
                                         hora: act.hora || '12:00'
                                     });
                                 }
                             });
                         }
                     });
+
+                    // Identifica o mês de cada log
+                    const getLogMonth = (l) => {
+                        if (l.month) return l.month;
+                        if (l.data) {
+                            if (l.data.includes('/')) {
+                                const p = l.data.split('/');
+                                if (p.length === 3) return `${p[2]}-${p[1].padStart(2, '0')}`;
+                            } else if (l.data.includes('-')) {
+                                const p = l.data.split('-');
+                                if (p.length >= 2) return `${p[0]}-${p[1].padStart(2, '0')}`;
+                            }
+                        }
+                        return mesAtivo;
+                    };
 
                     const parseLogDate = (l) => {
                         if (!l || !l.data) return 0;
@@ -7519,11 +7779,20 @@
                         const ts = new Date(`${d}T${h}`).getTime();
                         return isNaN(ts) ? 0 : ts;
                     };
-                    const logs = combinedLogs.sort((a, b) => parseLogDate(b) - parseLogDate(a));
 
-                    // Ranking de Consumo por Usuário (do maior para o menor)
+                    const allSortedLogs = combinedLogs.sort((a, b) => parseLogDate(b) - parseLogDate(a));
+                    
+                    // Filtragem ativa por mês selecionado lá em cima
+                    const logsExibidos = filtroModo === 'mes_atual'
+                        ? allSortedLogs.filter(l => getLogMonth(l) === mesAtivo)
+                        : allSortedLogs;
+
+                    const totalConsumidoGeral = allSortedLogs.reduce((acc, l) => acc + (parseInt(l.qtd) || 0), 0);
+                    const totalConsumidoMes = logsExibidos.reduce((acc, l) => acc + (parseInt(l.qtd) || 0), 0);
+
+                    // Ranking de Consumo por Usuário no período filtrado
                     const consumoPorUsuarioMap = {};
-                    logs.forEach(l => {
+                    logsExibidos.forEach(l => {
                         const nomeAutor = (l.autor || 'Não Identificado').trim();
                         const key = nomeAutor.toUpperCase();
                         if (!consumoPorUsuarioMap[key]) {
@@ -7545,7 +7814,6 @@
                         return q > 0 && q <= LIMITE_ACABANDO;
                     });
                     const totalCriticos = itensZerados.length + itensAcabando.length;
-                    const totalConsumido = logs.reduce((acc, l) => acc + (parseInt(l.qtd) || 0), 0);
 
                     let alertaEstoqueHtml = '';
                     if (totalCriticos > 0) {
@@ -7572,10 +7840,26 @@
                         `;
                     }
 
+                    const mesFmt = app.ui.formatMonthLabel ? app.ui.formatMonthLabel(mesAtivo) : mesAtivo;
+
                     let html = `
-                        <div class="mb-6">
-                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Almoxarifado & Insumos</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de doces, brindes, alertas de reposição e ranking de consumo por colaborador conforme aplicação das ações.</p>
+                        <div class="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div>
+                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Almoxarifado & Insumos</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de doces, brindes, alertas de reposição e ranking de consumo por colaborador.</p>
+                            </div>
+
+                            <!-- Seletor de Período Vinculado ao Mês Superior -->
+                            <div class="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <button type="button" onclick="app.ui._estoqueFiltroModo = 'mes_atual'; app.ui.renderTab('controle_estoque', true)" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${filtroModo === 'mes_atual' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'}">
+                                    <i class="fa-regular fa-calendar-days"></i>
+                                    <span>Mês Selecionado (${mesFmt})</span>
+                                </button>
+                                <button type="button" onclick="app.ui._estoqueFiltroModo = 'todos'; app.ui.renderTab('controle_estoque', true)" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${filtroModo === 'todos' ? 'bg-slate-900 text-white dark:bg-slate-700 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}">
+                                    <i class="fa-solid fa-layer-group"></i>
+                                    <span>Todo o Histórico</span>
+                                </button>
+                            </div>
                         </div>
 
                         ${alertaEstoqueHtml}
@@ -7583,19 +7867,23 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
                             <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-blue-500 shadow-sm">
                                 <div class="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-boxes-stacked"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Volume em Estoque</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalUnidades} <span class="text-xs font-medium text-slate-400">unids.</span></div></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Volume em Estoque</div><div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalUnidades} <span class="text-xs font-medium text-slate-400">unids.</span></div></div>
                             </div>
                             <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 ${itensAcabando.length > 0 ? 'border-l-amber-500' : 'border-l-emerald-500'} shadow-sm">
                                 <div class="w-12 h-12 rounded-2xl ${itensAcabando.length > 0 ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'} flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-battery-quarter"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Acabando (≤ ${LIMITE_ACABANDO})</div><div class="text-2xl font-black ${itensAcabando.length > 0 ? 'text-amber-500' : 'text-emerald-500'}">${itensAcabando.length}</div></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Acabando (≤ ${LIMITE_ACABANDO})</div><div class="text-2xl font-black tabular-nums ${itensAcabando.length > 0 ? 'text-amber-500' : 'text-emerald-500'}">${itensAcabando.length}</div></div>
                             </div>
                             <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 ${itensZerados.length > 0 ? 'border-l-red-500' : 'border-l-emerald-500'} shadow-sm">
                                 <div class="w-12 h-12 rounded-2xl ${itensZerados.length > 0 ? 'bg-red-50 text-red-600 dark:bg-red-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'} flex items-center justify-center text-xl shrink-0"><i class="fa-solid ${itensZerados.length > 0 ? 'fa-triangle-exclamation' : 'fa-check'}"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Itens Esgotados</div><div class="text-2xl font-black ${itensZerados.length > 0 ? 'text-red-500' : 'text-emerald-500'}">${itensZerados.length}</div></div>
+                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Itens Esgotados</div><div class="text-2xl font-black tabular-nums ${itensZerados.length > 0 ? 'text-red-500' : 'text-emerald-500'}">${itensZerados.length}</div></div>
                             </div>
                             <div class="glass-card p-5 rounded-3xl flex items-center gap-4 border-l-4 border-l-orange-500 shadow-sm">
                                 <div class="w-12 h-12 rounded-2xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-cookie-bite"></i></div>
-                                <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Consumo Total Aplicado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalConsumido} <span class="text-xs font-medium text-slate-400">unids.</span></div></div>
+                                <div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">${filtroModo === 'mes_atual' ? `Consumo de ${mesFmt}` : 'Consumo Acumulado'}</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalConsumidoMes} <span class="text-xs font-medium text-slate-400">unids.</span></div>
+                                    ${filtroModo === 'mes_atual' ? `<div class="text-[10px] text-slate-400 tabular-nums">(${totalConsumidoGeral} no total histórico)</div>` : ''}
+                                </div>
                             </div>
                         </div>
 
@@ -7604,7 +7892,7 @@
                             <div class="lg:col-span-5 glass-card p-6 rounded-[2rem]">
                                 <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-6 border-b border-slate-100 dark:border-slate-700 pb-3 flex items-center justify-between">
                                     <span class="flex items-center gap-2"><i class="fa-solid fa-candy-cane text-blue-500"></i> Prateleira Principal</span>
-                                    <span class="text-[10px] uppercase font-black text-slate-400">${itens.length} itens</span>
+                                    <span class="text-[10px] uppercase font-black text-slate-400 tabular-nums">${itens.length} itens</span>
                                 </h3>
                                 <div class="flex gap-2 mb-6 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
                                     <input type="text" id="est-novo-nome" placeholder="Nome do Insumo (Ex: Paçoca)" class="flex-1 p-3 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-sm dark:bg-slate-900 dark:text-white">
@@ -7646,7 +7934,7 @@
                                             <span class="font-bold text-slate-800 dark:text-white text-base truncate">${i.nome}</span>
                                             ${statusBadge}
                                         </div>
-                                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mt-0.5">Em Estoque: <span class="${colorQtd} text-sm font-black">${q} unids.</span></div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mt-0.5">Em Estoque: <span class="${colorQtd} text-sm font-black tabular-nums">${q} unids.</span></div>
                                     </div>
                                     <div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
                                         <input type="number" id="est-upd-${i.id}" value="1" min="1" class="w-12 p-1.5 text-center text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none">
@@ -7664,7 +7952,7 @@
                                 </div>
                             </div>
 
-                            <!-- Coluna Direita: Ranking por Usuário (Maior p/ Menor) + Histórico de Consumo -->
+                            <!-- Coluna Direita: Ranking por Usuário (no período) + Histórico de Consumo (no período) -->
                             <div class="lg:col-span-7 flex flex-col gap-6">
                                 <!-- Ranking de Consumo por Usuário -->
                                 <div class="glass-card p-6 rounded-[2rem] border border-slate-200/80 dark:border-slate-800">
@@ -7672,13 +7960,13 @@
                                         <h3 class="font-bold text-lg text-slate-800 dark:text-white flex items-center gap-2">
                                             <i class="fa-solid fa-users text-slate-400"></i> Consumo por Usuário
                                         </h3>
-                                        <span class="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">${rankingUsuariosConsumo.length} colaboradores</span>
+                                        <span class="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${rankingUsuariosConsumo.length} colaboradores (${filtroModo === 'mes_atual' ? mesFmt : 'Geral'})</span>
                                     </div>
                                     <div class="max-h-[260px] overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800">
                     `;
 
                     if (rankingUsuariosConsumo.length === 0) {
-                        html += `<div class="text-center text-slate-400 italic p-6 text-sm">Nenhum consumo registrado por colaborador ainda.</div>`;
+                        html += `<div class="text-center text-slate-400 italic p-6 text-sm">Nenhum consumo registrado neste período (${mesFmt}).</div>`;
                     } else {
                         const maxQtdUser = rankingUsuariosConsumo[0].qtdTotal || 1;
                         rankingUsuariosConsumo.forEach((usr, idx) => {
@@ -7711,22 +7999,22 @@
                                     </div>
                                 </div>
 
-                                <!-- Histórico Cronológico de Saídas -->
+                                <!-- Histórico Cronológico de Saídas do Período -->
                                 <div class="glass-card p-6 rounded-[2rem] bg-slate-50/50 dark:bg-slate-900">
                                     <h3 class="font-bold text-lg text-slate-800 dark:text-white mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex items-center justify-between">
-                                        <span class="flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> Histórico Detalhado de Consumo</span>
-                                        <span class="text-[10px] font-black uppercase text-slate-400">${logs.length} registros</span>
+                                        <span class="flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> Histórico Detalhado (${filtroModo === 'mes_atual' ? mesFmt : 'Geral'})</span>
+                                        <span class="text-[10px] font-black uppercase text-slate-400 tabular-nums">${logsExibidos.length} registros</span>
                                     </h3>
                                     <div class="space-y-3 max-h-[320px] overflow-y-auto custom-scrollbar pr-2">
                     `;
                     
-                    if (logs.length === 0) {
-                        html += `<div class="text-center text-slate-400 italic p-6">Nenhum registro de saída encontrado. As baixas ocorrem automaticamente conforme os colaboradores aplicam Ações Presenciais com insumos.</div>`;
+                    if (logsExibidos.length === 0) {
+                        html += `<div class="text-center text-slate-400 italic p-6">Nenhum registro de saída encontrado no mês selecionado (${mesFmt}). Conforme os colaboradores aplicarem ações presenciais com insumos, elas aparecerão aqui.</div>`;
                     } else {
-                        logs.forEach(log => {
+                        logsExibidos.forEach(log => {
                             html += `
                                 <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
-                                    <div class="w-11 h-11 rounded-2xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black text-sm shrink-0 border border-orange-200 dark:border-orange-800">-${log.qtd}</div>
+                                    <div class="w-11 h-11 rounded-2xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black text-sm shrink-0 border border-orange-200 dark:border-orange-800 tabular-nums">-${log.qtd}</div>
                                     <div class="flex-1 min-w-0">
                                         <div class="flex justify-between items-start mb-0.5">
                                             <strong class="text-sm text-slate-800 dark:text-white truncate pr-2">${log.nomeItem}</strong>
@@ -7749,8 +8037,9 @@
                     `;
                     container.innerHTML = html;
                 },
+                
+                
 
-                // --- INÍCIO: NOVAS LÓGICAS DE IMPRESSÃO ---
                 impressoes: {
                     dataURLtoBlob(dataurl) {
                         try {
@@ -7844,7 +8133,7 @@
                             };
                             app.storage.saveImpressoes().then(() => {
                                 app.ui.showAlert("Enviado", "Sua solicitação de impressão foi encaminhada ao administrativo.", "success");
-                                app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                                const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
                                 app.notifications.notify('ADM', 'Nova Impressão', `${app.currentUser.nome} solicitou ${copias} cópia(s) do arquivo "${file.name}".`, 'info');
                             }).catch(() => {
                                 btn.disabled = false;
@@ -7880,7 +8169,7 @@
                         
                         app.storage.saveImpressoes();
                         app.storage.saveImpressoesStats().then(() => {
-                            app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                            const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
                             app.notifications.notify(doc.matricula, 'Impressão Concluída', `O arquivo "${doc.fileName}" (${doc.copias}x) já foi impresso e está disponível.`, 'success');
                         });
                     },
@@ -7908,7 +8197,7 @@
                                 if (idx === pendentes.length - 1) {
                                     app.storage.saveImpressoes();
                                     app.storage.saveImpressoesStats().then(() => {
-                                        app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                                        const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
                                         app.ui.showAlert("Concluído", "Arquivos transferidos e estatísticas registradas.", "success");
                                     });
                                 }
@@ -7961,14 +8250,14 @@
                             } else {
                                 app.notifications.notify('ADM', 'Impressão Cancelada pelo Usuário', `${app.currentUser.nome} excluiu o pedido "${doc.fileName}". Motivo: ${motivo}`, 'warning');
                             }
-                            app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true);
+                            const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
                             app.ui.showAlert("Solicitação Excluída", "O registro foi cancelado e o motivo ficou salvo no histórico.", "success");
                         });
                     },
 
                     delete(id) {
                         delete app.impressoesList[id];
-                        app.storage.saveImpressoes().then(() => app.ui.renderTab(app.isAdmin ? 'gestao_impressoes' : 'impressoes', true));
+                        app.storage.saveImpressoes().then(() => { const targetTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetTab, true); });
                     }
                 },
                 // --- FIM: NOVAS LÓGICAS DE IMPRESSÃO ---
@@ -8663,7 +8952,7 @@
                                     </div>
                                     <div class="flex items-center gap-3 shrink-0 flex-wrap justify-center">
                                         <button onclick="app.csatNpsExam.abrirModalResultado()" class="px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs md:text-sm transition flex items-center gap-2">
-                                            <i class="fa-solid fa-book-open"></i> Ver Gabarito
+                                            <i class="fa-solid fa-chart-simple"></i> Ver Resultado
                                         </button>
                                         <button onclick="app.csatNpsExam.abrirCertificado()" class="px-5 py-2.5 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-black text-xs md:text-sm shadow-lg transition flex items-center gap-2">
                                             <i class="fa-solid fa-print"></i> Certificado Oficial
@@ -9903,7 +10192,10 @@
                     const linhaMonitor = (s) => {
                         const st = statusSpan(s.total);
                         const pct = Math.round((s.total / maxSpan) * 100);
-                        const nomesOps = (s.sp.detalhes || []).map(d => app.utils.fixEncoding(d.nome));
+                        const nomesOps = (s.sp.detalhes || []).map(d => {
+                            const nome = app.utils.fixEncoding(d.nome);
+                            return d.compartilhado ? `${nome} (div. ${d.qtdMonitores}x: ${d.hc} op.)` : `${nome} (${d.hc} op.)`;
+                        });
                         const foto = s.u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.nome)}&background=e2e8f0&color=475569&size=128`;
                         return `
                             <div class="span-row p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer" onclick="app.ui.abrirModalOperacoesMonitor('${s.u.matricula}')" title="Editar operações e span">
@@ -9932,7 +10224,7 @@
                         const dupla = o.resp.length > 1;
                         const badge = sem
                             ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300"><i class="fa-solid fa-triangle-exclamation"></i>Sem monitor</span>'
-                            : (dupla ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"><i class="fa-solid fa-people-arrows"></i>Compartilhada</span>'
+                            : (dupla ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"><i class="fa-solid fa-people-arrows"></i>Compartilhada (${o.resp.length}x · ${Math.round(o.hc / o.resp.length)} op./cada)</span>`
                                 : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>Coberta</span>');
                         return `
                             <tr class="span-op-row border-t border-slate-100 dark:border-slate-800 ${sem ? 'bg-red-50/40 dark:bg-red-900/10' : ''}" data-status="${sem ? 'sem' : (dupla ? 'dupla' : 'ok')}">
