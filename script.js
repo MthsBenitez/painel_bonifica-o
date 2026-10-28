@@ -793,7 +793,19 @@ storage: {
                 saveApresentacoes() { return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
                 saveEstoque() { return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
                 saveEstoqueLogs() { return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
-                saveImpressoes() { return firebase.database().ref('sistema_bonificacao/impressoes').set(app.impressoesList || {}); },
+                saveImpressoes(singleId = null) {
+                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
+                    if (singleId) {
+                        const item = (app.impressoesList || {})[singleId];
+                        if (!item) {
+                            return firebase.database().ref('sistema_bonificacao/impressoes/' + singleId).remove();
+                        }
+                        const sanitized = this.sanitizeFirebaseObject(item);
+                        return firebase.database().ref('sistema_bonificacao/impressoes/' + singleId).set(sanitized);
+                    }
+                    const sanitizedObj = this.sanitizeFirebaseObject(app.impressoesList || {});
+                    return firebase.database().ref('sistema_bonificacao/impressoes').set(sanitizedObj);
+                },
                 saveImpressoesStats() { return firebase.database().ref('sistema_bonificacao/impressoesStats').set(app.impressoesStats || { arquivos: 0, folhas: 0 }); },
                 saveMonitorias() {
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
@@ -8305,10 +8317,12 @@ storage: {
 
                     solicitar() {
                         const fileInput = document.getElementById('print-file');
-                        const copias = Math.max(1, parseInt(document.getElementById('print-copias').value) || 1);
-                        const desc = document.getElementById('print-desc').value.trim();
+                        const copiasInput = document.getElementById('print-copias');
+                        const descInput = document.getElementById('print-desc');
+                        const copias = Math.max(1, parseInt(copiasInput ? copiasInput.value : 1) || 1);
+                        const desc = (descInput ? descInput.value : '').trim();
 
-                        if(!fileInput.files || fileInput.files.length === 0) {
+                        if(!fileInput || !fileInput.files || fileInput.files.length === 0) {
                             return app.ui.showAlert("Aviso", "Anexe um arquivo para impressão.", "error");
                         }
                         const file = fileInput.files[0];
@@ -8320,14 +8334,33 @@ storage: {
                         }
 
                         const btn = document.getElementById('btn-solicitar-print');
-                        btn.disabled = true;
-                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+                        const resetBtn = () => {
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="fa-solid fa-paper-plane mr-2"></i> Enviar para Impressão';
+                            }
+                        };
+
+                        if (btn) {
+                            btn.disabled = true;
+                            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
+                        }
 
                         const reader = new FileReader();
+                        reader.onerror = () => {
+                            resetBtn();
+                            app.ui.showAlert("Erro no Arquivo", "Não foi possível carregar o arquivo no navegador. Tente novamente.", "error");
+                        };
+                        reader.onabort = () => {
+                            resetBtn();
+                            app.ui.showAlert("Envio Cancelado", "A leitura do arquivo foi cancelada.", "warning");
+                        };
+
                         reader.onload = (e) => {
                             const base64 = e.target.result;
                             const now = Date.now();
                             const id = 'prt_' + now;
+                            if (!app.impressoesList) app.impressoesList = {};
                             app.impressoesList[id] = {
                                 id: id,
                                 timestamp: now,
@@ -8340,21 +8373,33 @@ storage: {
                                 status: 'pendente',
                                 data: new Date().toLocaleString('pt-BR')
                             };
-                            app.storage.saveImpressoes().then(() => {
-                                app.ui.showAlert("Enviado", "Sua solicitação de impressão foi encaminhada ao administrativo.", "success");
-                                const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
+
+                            // Timeout de segurança de 20 segundos para prevenir carregamento infinito sob qualquer condição de rede
+                            const savePromise = app.storage.saveImpressoes(id);
+                            const timeoutPromise = new Promise((_, reject) => {
+                                setTimeout(() => reject(new Error("Tempo limite de envio excedido")), 20000);
+                            });
+
+                            Promise.race([savePromise, timeoutPromise]).then(() => {
+                                if (fileInput) fileInput.value = '';
+                                if (descInput) descInput.value = '';
+                                if (copiasInput) copiasInput.value = '1';
+                                resetBtn();
+                                app.ui.showAlert("Enviado com Sucesso", "Sua solicitação de impressão foi encaminhada para a fila administrativa.", "success");
+                                const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes');
+                                app.ui.renderTab(targetImpressoesTab, true);
                                 app.notifications.notify('ADM', 'Nova Impressão', `${app.currentUser.nome} solicitou ${copias} cópia(s) do arquivo "${file.name}".`, 'info');
-                            }).catch(() => {
-                                btn.disabled = false;
-                                btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar para Impressão';
-                                app.ui.showAlert("Erro de Rede", "Falha ao enviar arquivo. Pode ser muito pesado.", "error");
+                            }).catch((err) => {
+                                console.error("Falha ao salvar solicitação de impressão:", err);
+                                resetBtn();
+                                app.ui.showAlert("Erro de Envio", "Falha de comunicação ou tempo limite ao enviar arquivo. Verifique sua conexão e tente novamente.", "error");
                             });
                         };
                         reader.readAsDataURL(file);
                     },
 
                     baixarUnico(id) {
-                        const doc = app.impressoesList[id];
+                        const doc = (app.impressoesList || {})[id];
                         if(!doc || !doc.fileBase64) return app.ui.showAlert("Aviso", "O arquivo original não está mais armazenado.", "warning");
                         const blob = this.dataURLtoBlob(doc.fileBase64);
                         const url = blob ? URL.createObjectURL(blob) : doc.fileBase64;
@@ -8368,17 +8413,19 @@ storage: {
                     },
 
                     marcarImpresso(id) {
-                        const doc = app.impressoesList[id];
+                        const doc = (app.impressoesList || {})[id];
                         if(!doc || doc.status === 'impresso') return;
                         doc.status = 'impresso';
                         doc.dataConclusao = new Date().toLocaleString('pt-BR');
+                        delete doc.fileBase64; // Libera espaço crítico no banco mantendo o histórico de auditoria
                         if (!app.impressoesStats) app.impressoesStats = { arquivos: 0, folhas: 0 };
                         app.impressoesStats.arquivos = (parseInt(app.impressoesStats.arquivos) || 0) + 1;
                         app.impressoesStats.folhas = (parseInt(app.impressoesStats.folhas) || 0) + (parseInt(doc.copias) || 1);
                         
-                        app.storage.saveImpressoes();
+                        app.storage.saveImpressoes(id);
                         app.storage.saveImpressoesStats().then(() => {
-                            const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
+                            const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes');
+                            app.ui.renderTab(targetImpressoesTab, true);
                             app.notifications.notify(doc.matricula, 'Impressão Concluída', `O arquivo "${doc.fileName}" (${doc.copias}x) já foi impresso e está disponível.`, 'success');
                         });
                     },
@@ -8400,13 +8447,15 @@ storage: {
                                 this.baixarUnico(p.id);
                                 p.status = 'impresso';
                                 p.dataConclusao = new Date().toLocaleString('pt-BR');
+                                delete p.fileBase64; // Libera espaço no banco
                                 app.impressoesStats.arquivos = (parseInt(app.impressoesStats.arquivos) || 0) + 1;
                                 app.impressoesStats.folhas = (parseInt(app.impressoesStats.folhas) || 0) + (parseInt(p.copias) || 1);
                                 
+                                app.storage.saveImpressoes(p.id);
                                 if (idx === pendentes.length - 1) {
-                                    app.storage.saveImpressoes();
                                     app.storage.saveImpressoesStats().then(() => {
-                                        const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
+                                        const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes');
+                                        app.ui.renderTab(targetImpressoesTab, true);
                                         app.ui.showAlert("Concluído", "Arquivos transferidos e estatísticas registradas.", "success");
                                     });
                                 }
@@ -8417,7 +8466,7 @@ storage: {
                     abrirModalExcluir(id) {
                         const doc = (app.impressoesList || {})[id];
                         if (!doc) return;
-                        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-ban text-red-500"></i> Excluir / Cancelar Solicitação`;
+                        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-ban text-red-500 mr-2"></i> Excluir / Cancelar Solicitação`;
                         document.getElementById('modal-content').innerHTML = `
                             <div class="space-y-3 text-left">
                                 <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
@@ -8453,20 +8502,24 @@ storage: {
                         delete doc.fileBase64; // Libera espaço no banco mantendo o histórico e o motivo
 
                         document.getElementById('global-modal').classList.add('hidden');
-                        app.storage.saveImpressoes().then(() => {
+                        app.storage.saveImpressoes(id).then(() => {
                             if (app.isAdmin) {
                                 app.notifications.notify(doc.matricula, 'Impressão Cancelada / Excluída', `Sua solicitação "${doc.fileName}" foi excluída pelo ADM. Motivo: ${motivo}`, 'error');
                             } else {
                                 app.notifications.notify('ADM', 'Impressão Cancelada pelo Usuário', `${app.currentUser.nome} excluiu o pedido "${doc.fileName}". Motivo: ${motivo}`, 'warning');
                             }
-                            const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetImpressoesTab, true);
+                            const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes');
+                            app.ui.renderTab(targetImpressoesTab, true);
                             app.ui.showAlert("Solicitação Excluída", "O registro foi cancelado e o motivo ficou salvo no histórico.", "success");
                         });
                     },
 
                     delete(id) {
                         delete app.impressoesList[id];
-                        app.storage.saveImpressoes().then(() => { const targetTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes'); app.ui.renderTab(targetTab, true); });
+                        app.storage.saveImpressoes(id).then(() => {
+                            const targetTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes');
+                            app.ui.renderTab(targetTab, true);
+                        });
                     }
                 },
                 // --- FIM: NOVAS LÓGICAS DE IMPRESSÃO ---
