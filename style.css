@@ -268,3 +268,79 @@
         .animated-submit-btn.is-flying .state--sent span { opacity: 0; animation: slideDownBtn 0.8s ease forwards calc(var(--i) * 0.2s); }
         .animated-submit-btn.is-flying .state--sent .icon { opacity: 0; animation: appearBtn 1.2s ease forwards 0.8s; }
         @keyframes appearBtn { 0% { opacity: 0; transform: scale(4) rotate(-40deg); color: #fff; filter: blur(4px); } 30% { opacity: 1; transform: scale(0.6); filter: blur(1px); } 50% { opacity: 1; transform: scale(1.2); filter: blur(0); } 100% { opacity: 1; transform: scale(1); } }
+
+
+/* ========================================================
+   CERTIFICADO OFICIAL EM FORMATO A4 HORIZONTAL (1 PÁGINA)
+   ======================================================== */
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 0;
+    }
+    html, body {
+        width: 297mm !important;
+        height: 210mm !important;
+        max-width: 297mm !important;
+        max-height: 210mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        overflow: hidden !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    body > *:not(#diploma-modal) {
+        display: none !important;
+    }
+    #diploma-modal {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 297mm !important;
+        height: 210mm !important;
+        max-width: 297mm !important;
+        max-height: 210mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        overflow: hidden !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    #diploma-modal .print\\:hidden, 
+    #diploma-modal button,
+    #diploma-modal .modal-header-controls {
+        display: none !important;
+    }
+    #diploma-modal > div {
+        width: 297mm !important;
+        height: 210mm !important;
+        max-width: 297mm !important;
+        max-height: 210mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    #certificado-imprimivel {
+        width: 297mm !important;
+        height: 210mm !important;
+        max-width: 297mm !important;
+        max-height: 210mm !important;
+        margin: 0 !important;
+        padding: 8mm 12mm !important;
+        box-sizing: border-box !important;
+        border: 8px double rgba(217, 119, 6, 0.8) !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+        overflow: hidden !important;
+        background: #fcfbf9 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}

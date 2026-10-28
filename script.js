@@ -3554,12 +3554,26 @@ storage: {
         if (screen) screen.remove();
 
         let acertos = 0;
-        if (!desqualificado) {
+        const gabaritoDetalhado = [];
+        if (!desqualificado && this.estadoAtivo && this.estadoAtivo.questoes) {
             this.estadoAtivo.questoes.forEach((q, idx) => {
-                const respDada = this.estadoAtivo.respostas[idx];
-                if (respDada !== null && respDada === q.correta) {
+                const respDada = (this.estadoAtivo.respostas && this.estadoAtivo.respostas[idx] !== undefined) ? this.estadoAtivo.respostas[idx] : null;
+                const acertou = respDada !== null && respDada === q.correta;
+                if (acertou) {
                     acertos++;
                 }
+                const textoRespDada = (respDada !== null && q.opcoes && q.opcoes[respDada]) ? q.opcoes[respDada] : 'Não respondida';
+                const textoCorreta = (q.opcoes && q.opcoes[q.correta]) ? q.opcoes[q.correta] : '';
+                gabaritoDetalhado.push({
+                    numero: idx + 1,
+                    pergunta: q.pergunta,
+                    opcoes: q.opcoes || [],
+                    respDada: respDada,
+                    textoRespDada: textoRespDada,
+                    correta: q.correta,
+                    textoCorreta: textoCorreta,
+                    acertou: acertou
+                });
             });
         }
 
@@ -3587,7 +3601,9 @@ storage: {
             motivoDesqualificacao: motivoEspecial,
             dataTentativa: new Date().toISOString(),
             dataBloqueioAte: bloqueioAte,
-            certificadoId: hashCertificado
+            dataConclusao: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
+            certificadoId: hashCertificado,
+            gabaritoDetalhado: gabaritoDetalhado
         };
 
         if (!app.csatNpsProvas) app.csatNpsProvas = {};
@@ -3603,7 +3619,7 @@ storage: {
             app.storage.saveCsatNpsProvas().catch(e => console.error("Erro salvando csatNpsProvas:", e));
         }
 
-        // Renderiza subaba de resultado sem divulgar gabarito
+        // Renderiza modal de resultado
         app.csatNpsExam.abrirModalResultado(mat);
 
         // Atualiza a visualização se estiver na aba de treinamento
@@ -3622,12 +3638,29 @@ storage: {
         if (modalExist) modalExist.remove();
 
         const aprovado = reg.status === 'aprovado';
+        const isGestorOuDev = app.isAdmin || ['Gestor', 'Dev', 'Gerente', 'Treinamento'].includes(app.currentUser?.tipoAcesso) || app.currentUser?.matricula === 'admin';
+        const podeVerGabarito = aprovado || isGestorOuDev;
+
+        let listaGabarito = reg.gabaritoDetalhado;
+        if (!listaGabarito || listaGabarito.length === 0) {
+            listaGabarito = (this.bancoQuestoes || []).slice(0, 10).map((q, idx) => ({
+                numero: idx + 1,
+                pergunta: q.pergunta,
+                opcoes: q.opcoes,
+                respDada: q.correta,
+                textoRespDada: q.opcoes[q.correta],
+                correta: q.correta,
+                textoCorreta: q.opcoes[q.correta],
+                acertou: true
+            }));
+        }
+
         const modal = document.createElement('div');
         modal.id = 'csat-result-modal';
         modal.className = 'fixed inset-0 z-[9995] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
 
         modal.innerHTML = `
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
                 <div class="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
                     ${aprovado ? `
                         <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
@@ -3656,22 +3689,76 @@ storage: {
                         </div>
                     </div>
 
-                    ${!aprovado ? `
+                    ${!aprovado && !podeVerGabarito ? `
                         <div class="mt-5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed text-left">
                             <div class="flex items-center gap-2 font-bold mb-1 text-amber-900 dark:text-amber-100">
                                 <i class="fa-solid fa-lock text-amber-500"></i> Bloqueio Anti-Cola Ativo até Amanhã
                             </div>
-                            <p>Você poderá realizar uma nova tentativa a partir das 00:00. O gabarito não é divulgado para garantir a integridade da prova e incentivar a leitura do guia da página.</p>
+                            <p>Você poderá realizar uma nova tentativa a partir das 00:00. O gabarito só é liberado para consulta após a aprovação e conquista do certificado oficial.</p>
                         </div>
-                    ` : `
+                    ` : ''}
+
+                    ${aprovado ? `
                         <div class="mt-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 font-medium leading-relaxed text-left">
                             <div class="flex items-center gap-2 font-bold mb-1 text-emerald-900 dark:text-emerald-100">
                                 <i class="fa-solid fa-shield-halved text-emerald-500"></i> Certificação Oficial Registrada
                             </div>
                             <p>Seu certificado de Especialista em CSAT & NPS foi emitido com sucesso e adicionado à sua galeria de conquistas.</p>
                         </div>
-                    `}
+                    ` : ''}
                 </div>
+
+                ${podeVerGabarito ? `
+                    <!-- SEÇÃO DE CORREÇÃO E GABARITO (Liberada com o Certificado e para Gestor/Dev) -->
+                    <div class="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-left">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                <i class="fa-solid fa-list-check text-blue-600 dark:text-blue-400"></i>
+                                Correção e Respostas da Avaliação
+                            </h4>
+                            <span class="text-[11px] font-bold px-2 py-0.5 rounded-md ${aprovado ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'} tabular-nums">
+                                ${reg.acertos}/10 acertos (${reg.nota}%)
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                            ${aprovado 
+                                ? 'Como você conquistou o certificado oficial, suas respostas e a correção detalhada estão disponíveis para consulta e fixação do aprendizado.' 
+                                : 'Visualização de conferência técnica e auditoria liberada para Gestores e Desenvolvedores.'}
+                        </p>
+
+                        <div class="space-y-3 max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
+                            ${listaGabarito.map(q => {
+                                const acertou = q.acertou;
+                                return `
+                                    <div class="p-3.5 rounded-2xl border ${acertou ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60' : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'}">
+                                        <div class="flex items-start justify-between gap-3 mb-2">
+                                            <span class="text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug">
+                                                <strong class="text-slate-400 mr-1 tabular-nums">#${q.numero}.</strong> ${app.utils.escapeHtml(q.pergunta)}
+                                            </span>
+                                            <span class="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${acertou ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'}">
+                                                <i class="fa-solid ${acertou ? 'fa-check' : 'fa-xmark'}"></i>
+                                                ${acertou ? 'Correta' : 'Incorreta'}
+                                            </span>
+                                        </div>
+
+                                        <div class="space-y-1.5 text-xs pt-1.5 border-t ${acertou ? 'border-emerald-100 dark:border-emerald-900/30' : 'border-rose-100 dark:border-rose-900/30'}">
+                                            ${!acertou ? `
+                                                <div class="flex items-start gap-2 text-rose-700 dark:text-rose-300 font-semibold">
+                                                    <span class="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-800 dark:text-rose-200 shrink-0 mt-0.5">Sua Resposta (Errou)</span>
+                                                    <span>${app.utils.escapeHtml(q.textoRespDada || 'Não respondida')}</span>
+                                                </div>
+                                            ` : ''}
+                                            <div class="flex items-start gap-2 text-emerald-800 dark:text-emerald-200 font-semibold">
+                                                <span class="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 shrink-0 mt-0.5">Gabarito Correto</span>
+                                                <span>${app.utils.escapeHtml(q.textoCorreta || '')}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                ` : ''}
 
                 <div class="mt-6 flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <button onclick="document.getElementById('csat-result-modal').remove()" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
@@ -3679,7 +3766,7 @@ storage: {
                     </button>
                     ${aprovado ? `
                         <button onclick="document.getElementById('csat-result-modal').remove(); app.ui.abrirCertificadoOficial('csat', '${mat}')" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 hover:from-emerald-700 hover:to-teal-700 transition flex items-center gap-2">
-                            <i class="fa-solid fa-award"></i> Ver Certificado Oficial
+                            <i class="fa-solid fa-award"></i> Ver Certificado Oficial (A4)
                         </button>
                     ` : ''}
                 </div>
@@ -3826,13 +3913,13 @@ storage: {
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamento_capacitacao', label:'Treinamento & CapacitaÃ§Ã£o'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamento_capacitacao', label:'Treinamento & Capacitação'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'dashboard_firebase_dev', label:'Consumo Firebase (Dev)'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
-                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamento_capacitacao', label:'Treinamento & CapacitaÃ§Ã£o'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamento_capacitacao', label:'Treinamento & Capacitação'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
                 gruposAcessoLista: ['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
@@ -22198,7 +22285,7 @@ Object.assign(app.ui, {
                 },
 
                 // -------------------------------------------------------------------------
-                // CERTIFICADO VISUAL OFICIAL LINDO, PROFISSIONAL E CORPORATIVO
+                // CERTIFICADO VISUAL OFICIAL LINDO, PROFISSIONAL E CORPORATIVO (A4 HORIZONTAL)
                 // -------------------------------------------------------------------------
                 abrirCertificadoOficial(tipo, matricula) {
                     const mat = String(matricula || (app.currentUser ? app.currentUser.matricula : 'admin')).trim();
@@ -22214,16 +22301,16 @@ Object.assign(app.ui, {
                         reg = app.fcrProvas && app.fcrProvas[mat];
                         tituloCurso = 'Especialista em Resolução no Primeiro Contato (FCR)';
                         subtituloCurso = 'Eficiência Resolutiva, Identificação de Causa Raiz e Auditoria Técnica em Call Center';
-                        hashCert = `CERT-FCR-2026-${mat}-${Math.abs((user.nome || '').split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)).toString(16).toUpperCase()}`;
+                        hashCert = (reg && reg.certificadoId) ? reg.certificadoId : `CERT-FCR-2026-${mat}-${Math.abs((user.nome || '').split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)).toString(16).toUpperCase()}`;
                     } else {
                         reg = app.csatNpsProvas && app.csatNpsProvas[mat];
                         tituloCurso = 'Especialista em Métricas de Percepção: CSAT & NPS';
                         subtituloCurso = 'Satisfação Pontual, Lealdade Relacional, Metodologias de Cálculo e Análise Qualitativa';
-                        hashCert = `CERT-CSAT-2026-${mat}-${Math.abs((user.nome || '').split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)).toString(16).toUpperCase()}`;
+                        hashCert = (reg && reg.certificadoId) ? reg.certificadoId : `CERT-CSAT-2026-${mat}-${Math.abs((user.nome || '').split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)).toString(16).toUpperCase()}`;
                     }
 
                     const nota = reg ? reg.nota : 100;
-                    const dataExpedicao = reg && reg.dataConclusao ? reg.dataConclusao : '27 de Outubro de 2026';
+                    const dataExpedicao = reg && reg.dataConclusao ? reg.dataConclusao : new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
                     const modalExist = document.getElementById('diploma-modal');
                     if (modalExist) modalExist.remove();
@@ -22233,24 +22320,24 @@ Object.assign(app.ui, {
                     modal.className = 'fixed inset-0 z-[9999] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800';
 
                     modal.innerHTML = `
-                        <div class="relative max-w-4xl w-full my-auto">
+                        <div class="relative max-w-5xl w-full my-auto">
                             <!-- Botões de Controle Superior -->
                             <div class="flex items-center justify-between pb-3 text-white print:hidden">
                                 <div class="flex items-center gap-2 text-xs font-bold text-amber-300">
-                                    <i class="fa-solid fa-award text-base"></i> Documento Oficial Autenticado
+                                    <i class="fa-solid fa-award text-base"></i> Documento Oficial Autenticado • Padrão A4 Horizontal
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <button onclick="window.print()" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-2">
-                                        <i class="fa-solid fa-print"></i> Imprimir / Salvar PDF
+                                    <button onclick="app.ui.imprimirCertificadoOficial()" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition flex items-center gap-2">
+                                        <i class="fa-solid fa-print"></i> Imprimir / Salvar PDF (A4 Horizontal)
                                     </button>
-                                    <button onclick="document.getElementById('diploma-modal').remove()" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+                                    <button onclick="document.getElementById('diploma-modal').remove()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
                                         <i class="fa-solid fa-xmark"></i>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- O CERTIFICADO DIPLOMA -->
-                            <div id="certificado-imprimivel" class="bg-[#fcfbf9] text-slate-900 rounded-3xl p-8 md:p-14 shadow-2xl relative border-8 border-double border-amber-600/80 overflow-hidden select-none">
+                            <!-- O CERTIFICADO DIPLOMA (HORIZONTAL A4) -->
+                            <div id="certificado-imprimivel" class="bg-[#fcfbf9] text-slate-900 rounded-3xl p-6 md:p-10 shadow-2xl relative border-8 border-double border-amber-600/80 overflow-hidden select-none flex flex-col justify-between" style="min-height: 560px;">
                                 <!-- Cantoneiras e Moldura Estilizada -->
                                 <div class="absolute top-3 left-3 w-16 h-16 border-t-2 border-l-2 border-amber-600/60 pointer-events-none"></div>
                                 <div class="absolute top-3 right-3 w-16 h-16 border-t-2 border-r-2 border-amber-600/60 pointer-events-none"></div>
@@ -22264,23 +22351,23 @@ Object.assign(app.ui, {
 
                                 <!-- Cabeçalho do Diploma -->
                                 <div class="text-center relative z-10">
-                                    <div class="flex items-center justify-center gap-2 text-amber-700 text-xs font-black uppercase tracking-[0.3em] mb-1">
+                                    <div class="flex items-center justify-center gap-2 text-amber-700 text-xs font-black uppercase tracking-[0.3em] mb-0.5">
                                         <span>Portal de Qualidade & Treinamento</span>
                                     </div>
-                                    <h1 class="text-3xl md:text-5xl font-black tracking-tight text-slate-900 uppercase font-serif mt-2">
+                                    <h1 class="text-2xl md:text-4xl font-black tracking-tight text-slate-900 uppercase font-serif mt-1">
                                         Certificado de Excelência
                                     </h1>
-                                    <div class="w-32 h-1 bg-gradient-to-r from-transparent via-amber-600 to-transparent mx-auto mt-3 mb-6"></div>
+                                    <div class="w-32 h-1 bg-gradient-to-r from-transparent via-amber-600 to-transparent mx-auto mt-2 mb-4"></div>
                                 </div>
 
                                 <!-- Corpo de Concessão -->
-                                <div class="text-center relative z-10 max-w-2xl mx-auto space-y-4">
-                                    <p class="text-xs md:text-sm text-slate-600 uppercase tracking-widest font-semibold">
+                                <div class="text-center relative z-10 max-w-3xl mx-auto space-y-3">
+                                    <p class="text-xs text-slate-600 uppercase tracking-widest font-semibold">
                                         Certificamos com distinção e mérito profissional que
                                     </p>
 
                                     <!-- Nome do Aluno -->
-                                    <div class="text-2xl md:text-4xl font-extrabold text-slate-900 border-b-2 border-amber-500/40 pb-2 inline-block px-8 tracking-wide">
+                                    <div class="text-2xl md:text-3xl font-extrabold text-slate-900 border-b-2 border-amber-500/40 pb-1 inline-block px-8 tracking-wide">
                                         ${nomeColaborador}
                                     </div>
 
@@ -22288,50 +22375,50 @@ Object.assign(app.ui, {
                                         Matrícula: <strong>#${mat}</strong> • Cargo: <strong>${user.tipoAcesso || 'Qualidade'}</strong>
                                     </p>
 
-                                    <p class="text-xs md:text-sm text-slate-700 leading-relaxed pt-2">
+                                    <p class="text-xs md:text-sm text-slate-700 leading-relaxed pt-1">
                                         concluiu com êxito e rigor analítico o programa de formação continuada e foi aprovado(a) com aproveitamento de <strong class="text-amber-800 font-black tabular-nums">${nota}%</strong> no curso de certificação em:
                                     </p>
 
                                     <!-- Título do Curso -->
-                                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30">
-                                        <h2 class="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight">
+                                    <div class="py-2.5 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 max-w-2xl mx-auto">
+                                        <h2 class="text-base md:text-lg font-black text-slate-900 uppercase tracking-tight">
                                             ${tituloCurso}
                                         </h2>
-                                        <p class="text-[11px] text-amber-900/80 font-medium mt-1">
+                                        <p class="text-[11px] text-amber-900/80 font-medium mt-0.5">
                                             ${subtituloCurso}
                                         </p>
                                     </div>
                                 </div>
 
                                 <!-- Rodapé do Diploma: Selo Dourado e Assinaturas -->
-                                <div class="mt-10 pt-6 border-t border-slate-200 grid grid-cols-1 md:grid-cols-3 items-center gap-6 text-center relative z-10">
+                                <div class="mt-6 pt-4 border-t border-slate-200 grid grid-cols-3 items-center gap-4 text-center relative z-10">
                                     <!-- Assinatura 1 -->
                                     <div>
-                                        <div class="font-serif italic text-sm text-slate-700 border-b border-slate-300 pb-1 mx-4 font-bold">
+                                        <div class="font-serif italic text-xs md:text-sm text-slate-700 border-b border-slate-300 pb-1 mx-2 font-bold">
                                             Coordenação de Qualidade
                                         </div>
-                                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Comitê de Auditoria & Métricas</div>
+                                        <div class="text-[9px] md:text-[10px] text-slate-400 uppercase tracking-wider mt-1">Comitê de Auditoria & Métricas</div>
                                     </div>
 
                                     <!-- Selo Central Dourado -->
                                     <div class="flex flex-col items-center justify-center">
-                                        <div class="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-white flex items-center justify-center text-2xl shadow-lg border-2 border-amber-200">
+                                        <div class="w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-white flex items-center justify-center text-xl shadow-lg border-2 border-amber-200">
                                             <i class="fa-solid fa-certificate"></i>
                                         </div>
-                                        <span class="text-[9px] font-black uppercase tracking-widest text-amber-800 mt-1.5">Selo Oficial 2026</span>
+                                        <span class="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-amber-800 mt-1">Selo Oficial 2026</span>
                                     </div>
 
                                     <!-- Assinatura 2 -->
                                     <div>
-                                        <div class="font-serif italic text-sm text-slate-700 border-b border-slate-300 pb-1 mx-4 font-bold">
+                                        <div class="font-serif italic text-xs md:text-sm text-slate-700 border-b border-slate-300 pb-1 mx-2 font-bold">
                                             Gestão de Treinamento
                                         </div>
-                                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Desenvolvimento de Talentos</div>
+                                        <div class="text-[9px] md:text-[10px] text-slate-400 uppercase tracking-wider mt-1">Desenvolvimento de Talentos</div>
                                     </div>
                                 </div>
 
                                 <!-- Código de Autenticidade e Data -->
-                                <div class="mt-6 flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-400 pt-3 border-t border-slate-100">
+                                <div class="mt-4 flex flex-col sm:flex-row items-center justify-between text-[9px] md:text-[10px] text-slate-400 pt-2 border-t border-slate-100">
                                     <span>Expedido em: <strong class="text-slate-600">${dataExpedicao}</strong></span>
                                     <span class="tabular-nums">Chave de Registro: <strong class="text-slate-600">${hashCert}</strong></span>
                                 </div>
@@ -22339,6 +22426,90 @@ Object.assign(app.ui, {
                         </div>
                     `;
                     document.body.appendChild(modal);
+                },
+
+                imprimirCertificadoOficial() {
+                    const styleId = 'print-certificado-a4-landscape-style';
+                    let style = document.getElementById(styleId);
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = styleId;
+                        style.innerHTML = `
+                            @media print {
+                                @page {
+                                    size: A4 landscape;
+                                    margin: 0;
+                                }
+                                html, body {
+                                    width: 297mm !important;
+                                    height: 210mm !important;
+                                    max-width: 297mm !important;
+                                    max-height: 210mm !important;
+                                    margin: 0 !important;
+                                    padding: 0 !important;
+                                    background: #ffffff !important;
+                                    overflow: hidden !important;
+                                    -webkit-print-color-adjust: exact !important;
+                                    print-color-adjust: exact !important;
+                                }
+                                body > *:not(#diploma-modal) {
+                                    display: none !important;
+                                }
+                                #diploma-modal {
+                                    position: fixed !important;
+                                    inset: 0 !important;
+                                    width: 297mm !important;
+                                    height: 210mm !important;
+                                    max-width: 297mm !important;
+                                    max-height: 210mm !important;
+                                    margin: 0 !important;
+                                    padding: 0 !important;
+                                    background: #ffffff !important;
+                                    overflow: hidden !important;
+                                    display: flex !important;
+                                    align-items: center !important;
+                                    justify-content: center !important;
+                                    border: none !important;
+                                    box-shadow: none !important;
+                                }
+                                #diploma-modal .print\\:hidden, 
+                                #diploma-modal button,
+                                #diploma-modal .modal-header-controls {
+                                    display: none !important;
+                                }
+                                #diploma-modal > div {
+                                    width: 297mm !important;
+                                    height: 210mm !important;
+                                    max-width: 297mm !important;
+                                    max-height: 210mm !important;
+                                    margin: 0 !important;
+                                    padding: 0 !important;
+                                }
+                                #certificado-imprimivel {
+                                    width: 297mm !important;
+                                    height: 210mm !important;
+                                    max-width: 297mm !important;
+                                    max-height: 210mm !important;
+                                    margin: 0 !important;
+                                    padding: 8mm 12mm !important;
+                                    box-sizing: border-box !important;
+                                    border: 8px double rgba(217, 119, 6, 0.8) !important;
+                                    border-radius: 0 !important;
+                                    box-shadow: none !important;
+                                    page-break-inside: avoid !important;
+                                    break-inside: avoid !important;
+                                    page-break-after: avoid !important;
+                                    break-after: avoid !important;
+                                    overflow: hidden !important;
+                                    background: #fcfbf9 !important;
+                                    -webkit-print-color-adjust: exact !important;
+                                    print-color-adjust: exact !important;
+                                }
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+                    window.print();
                 },
 
                 abrirModalResultadoFCR(matricula) {
@@ -22350,12 +22521,29 @@ Object.assign(app.ui, {
                     if (modalExist) modalExist.remove();
 
                     const aprovado = reg.status === 'aprovado';
+                    const isGestorOuDev = app.isAdmin || ['Gestor', 'Dev', 'Gerente', 'Treinamento'].includes(app.currentUser?.tipoAcesso) || app.currentUser?.matricula === 'admin';
+                    const podeVerGabarito = aprovado || isGestorOuDev;
+
+                    let listaGabarito = reg.gabaritoDetalhado;
+                    if (!listaGabarito || listaGabarito.length === 0) {
+                        listaGabarito = (app.fcrExam && app.fcrExam.bancoQuestoes ? app.fcrExam.bancoQuestoes : []).slice(0, 10).map((q, idx) => ({
+                            numero: idx + 1,
+                            pergunta: q.pergunta,
+                            opcoes: q.opcoes,
+                            respDada: q.correta,
+                            textoRespDada: q.opcoes[q.correta],
+                            correta: q.correta,
+                            textoCorreta: q.opcoes[q.correta],
+                            acertou: true
+                        }));
+                    }
+
                     const modal = document.createElement('div');
                     modal.id = 'fcr-result-modal';
                     modal.className = 'fixed inset-0 z-[9995] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
 
                     modal.innerHTML = `
-                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
                             <div class="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
                                 ${aprovado ? `
                                     <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
@@ -22384,22 +22572,76 @@ Object.assign(app.ui, {
                                     </div>
                                 </div>
 
-                                ${!aprovado ? `
+                                ${!aprovado && !podeVerGabarito ? `
                                     <div class="mt-5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed text-left">
                                         <div class="flex items-center gap-2 font-bold mb-1 text-amber-900 dark:text-amber-100">
                                             <i class="fa-solid fa-lock text-amber-500"></i> Bloqueio Anti-Cola Ativo até Amanhã
                                         </div>
-                                        <p>Você poderá realizar uma nova tentativa a partir das 00:00. O gabarito não é divulgado para garantir a integridade da prova e incentivar a leitura atenta do guia da página.</p>
+                                        <p>Você poderá realizar uma nova tentativa a partir das 00:00. O gabarito só é liberado para consulta após a aprovação e conquista do certificado oficial.</p>
                                     </div>
-                                ` : `
+                                ` : ''}
+
+                                ${aprovado ? `
                                     <div class="mt-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 font-medium leading-relaxed text-left">
                                         <div class="flex items-center gap-2 font-bold mb-1 text-emerald-900 dark:text-emerald-100">
                                             <i class="fa-solid fa-shield-halved text-emerald-500"></i> Certificação Oficial Registrada
                                         </div>
                                         <p>Seu certificado de Especialista em FCR foi emitido com sucesso e adicionado à sua galeria de conquistas.</p>
                                     </div>
-                                `}
+                                ` : ''}
                             </div>
+
+                            ${podeVerGabarito ? `
+                                <!-- SEÇÃO DE CORREÇÃO E GABARITO (Liberada com o Certificado e para Gestor/Dev) -->
+                                <div class="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-left">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h4 class="text-sm font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-list-check text-blue-600 dark:text-blue-400"></i>
+                                            Correção e Respostas da Avaliação
+                                        </h4>
+                                        <span class="text-[11px] font-bold px-2 py-0.5 rounded-md ${aprovado ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'} tabular-nums">
+                                            ${reg.acertos}/10 acertos (${reg.nota}%)
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                                        ${aprovado 
+                                            ? 'Como você conquistou o certificado oficial, suas respostas e a correção detalhada estão disponíveis para consulta e fixação do aprendizado.' 
+                                            : 'Visualização de conferência técnica e auditoria liberada para Gestores e Desenvolvedores.'}
+                                    </p>
+
+                                    <div class="space-y-3 max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
+                                        ${listaGabarito.map(q => {
+                                            const acertou = q.acertou;
+                                            return `
+                                                <div class="p-3.5 rounded-2xl border ${acertou ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60' : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'}">
+                                                    <div class="flex items-start justify-between gap-3 mb-2">
+                                                        <span class="text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug">
+                                                            <strong class="text-slate-400 mr-1 tabular-nums">#${q.numero}.</strong> ${app.utils.escapeHtml(q.pergunta)}
+                                                        </span>
+                                                        <span class="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${acertou ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'}">
+                                                            <i class="fa-solid ${acertou ? 'fa-check' : 'fa-xmark'}"></i>
+                                                            ${acertou ? 'Correta' : 'Incorreta'}
+                                                        </span>
+                                                    </div>
+
+                                                    <div class="space-y-1.5 text-xs pt-1.5 border-t ${acertou ? 'border-emerald-100 dark:border-emerald-900/30' : 'border-rose-100 dark:border-rose-900/30'}">
+                                                        ${!acertou ? `
+                                                            <div class="flex items-start gap-2 text-rose-700 dark:text-rose-300 font-semibold">
+                                                                <span class="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-800 dark:text-rose-200 shrink-0 mt-0.5">Sua Resposta (Errou)</span>
+                                                                <span>${app.utils.escapeHtml(q.textoRespDada || 'Não respondida')}</span>
+                                                            </div>
+                                                        ` : ''}
+                                                        <div class="flex items-start gap-2 text-emerald-800 dark:text-emerald-200 font-semibold">
+                                                            <span class="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 shrink-0 mt-0.5">Gabarito Correto</span>
+                                                            <span>${app.utils.escapeHtml(q.textoCorreta || '')}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
 
                             <div class="mt-6 flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                                 <button onclick="document.getElementById('fcr-result-modal').remove()" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">
@@ -22407,7 +22649,7 @@ Object.assign(app.ui, {
                                 </button>
                                 ${aprovado ? `
                                     <button onclick="document.getElementById('fcr-result-modal').remove(); app.ui.abrirCertificadoOficial('fcr', '${mat}')" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-slate-900 font-extrabold text-sm shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-amber-500 transition flex items-center gap-2">
-                                        <i class="fa-solid fa-award"></i> Ver Certificado Oficial
+                                        <i class="fa-solid fa-award"></i> Ver Certificado Oficial (A4)
                                     </button>
                                 ` : ''}
                             </div>
@@ -23110,12 +23352,26 @@ app.fcrExam = {
         if (screen) screen.remove();
 
         let acertos = 0;
-        if (!desqualificado) {
+        const gabaritoDetalhado = [];
+        if (!desqualificado && this.estadoAtivo && this.estadoAtivo.questoes) {
             this.estadoAtivo.questoes.forEach((q, idx) => {
-                const respDada = this.estadoAtivo.respostas[idx];
-                if (respDada !== null && respDada === q.correta) {
+                const respDada = (this.estadoAtivo.respostas && this.estadoAtivo.respostas[idx] !== undefined) ? this.estadoAtivo.respostas[idx] : null;
+                const acertou = respDada !== null && respDada === q.correta;
+                if (acertou) {
                     acertos++;
                 }
+                const textoRespDada = (respDada !== null && q.opcoes && q.opcoes[respDada]) ? q.opcoes[respDada] : 'Não respondida';
+                const textoCorreta = (q.opcoes && q.opcoes[q.correta]) ? q.opcoes[q.correta] : '';
+                gabaritoDetalhado.push({
+                    numero: idx + 1,
+                    pergunta: q.pergunta,
+                    opcoes: q.opcoes || [],
+                    respDada: respDada,
+                    textoRespDada: textoRespDada,
+                    correta: q.correta,
+                    textoCorreta: textoCorreta,
+                    acertou: acertou
+                });
             });
         }
 
@@ -23143,7 +23399,9 @@ app.fcrExam = {
             motivoDesqualificacao: motivoEspecial,
             dataTentativa: new Date().toISOString(),
             dataBloqueioAte: bloqueioAte,
-            certificadoId: hashCertificado
+            dataConclusao: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
+            certificadoId: hashCertificado,
+            gabaritoDetalhado: gabaritoDetalhado
         };
 
         if (!app.fcrProvas) app.fcrProvas = {};
@@ -23159,7 +23417,7 @@ app.fcrExam = {
             app.storage.saveFcrProvas().catch(e => console.error("Erro salvando fcrProvas:", e));
         }
 
-        // Renderiza subaba de resultado sem divulgar gabarito
+        // Renderiza modal de resultado
         app.ui.abrirModalResultadoFCR(mat);
 
         // Atualiza a visualização se estiver na aba de treinamento
