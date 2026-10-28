@@ -5923,8 +5923,21 @@ storage: {
                     // Coletando métricas globais e filtrando Agenda (exclusivamente perfil Qualidade)
                     const pendentes = [];
 
+                    // Métrica específica de Feedbacks Operacionais (Meta e Realizado de Monitorias)
+                    let totalMetaMonitorias = 0;
+                    let totalRealizadoMonitorias = 0;
+                    let monitoresAbaixoMeta = 0;
+
                     qualidadeUsers.forEach(u => {
                         const resultsForMonth = (u.results && u.results[app.currentMonth]);
+                        
+                        // Cálculo de monitorias/feedbacks para a meta operacional
+                        const metaMon = (resultsForMonth?.g1?.meta !== undefined && resultsForMonth?.g1?.meta !== '-') ? parseFloat(resultsForMonth.g1.meta) : 400;
+                        const realMon = (resultsForMonth?.g1 && parseFloat(resultsForMonth.g1.real)) || 0;
+                        totalMetaMonitorias += metaMon;
+                        totalRealizadoMonitorias += realMon;
+                        if (realMon < metaMon) monitoresAbaixoMeta++;
+
                         if(resultsForMonth && Object.keys(resultsForMonth).length > 0) {
                             usersComResultado++;
                             const t = app.calc.getTotal(resultsForMonth);
@@ -5937,29 +5950,40 @@ storage: {
                                 goalStats[g.id].somaVal += res.received;
                                 goalStats[g.id].count++;
                                 
-                                // Nova lógica de coleta das entregas reais
+                                // Coleta das entregas reais e validação de meta atingida
                                 const rawData = resultsForMonth[g.id] || {};
                                 let rawVal = 0;
                                 let displayVal = '-';
+                                let atingiuMeta = false;
                                 
                                 if (g.type === 'percent') {
                                     rawVal = parseFloat(rawData.real) || 0;
                                     displayVal = rawVal.toString();
-                                } else if (g.type === 'calibracao' || g.type === 'actions') {
+                                    const metaTarget = (g.id === 'g1') ? 400 : (parseFloat(rawData.meta) || 0);
+                                    atingiuMeta = metaTarget > 0 ? (rawVal >= metaTarget) : (rawVal > 0);
+                                } else if (g.type === 'calibracao') {
                                     rawVal = parseInt(rawData.val) || 0;
                                     displayVal = rawVal.toString();
+                                    atingiuMeta = rawVal >= 2;
+                                } else if (g.type === 'actions') {
+                                    rawVal = parseInt(rawData.val) || 0;
+                                    displayVal = rawVal.toString();
+                                    atingiuMeta = rawVal >= 5;
                                 } else if (g.type === 'gestor') {
                                     rawVal = parseInt(rawData.val) || 0;
                                     displayVal = rawVal.toString() + '%';
+                                    atingiuMeta = rawVal >= 100;
                                 } else {
                                     rawVal = rawData.val === 'Sim' ? 1 : 0;
                                     displayVal = rawData.val || 'Não';
+                                    atingiuMeta = rawVal === 1;
                                 }
 
                                 goalStats[g.id].deliveries.push({
                                     nome: u.nome,
                                     raw: rawVal,
-                                    display: displayVal
+                                    display: displayVal,
+                                    atingiuMeta: atingiuMeta
                                 });
                             });
                             
@@ -5979,25 +6003,30 @@ storage: {
                     });
                     
                     const mediaGeral = usersComResultado > 0 ? ((somaPct / usersComResultado) * 100).toFixed(1) : 0;
+                    const totalFeedbacksPendentes = Math.max(0, totalMetaMonitorias - totalRealizadoMonitorias);
+                    const qtdMonitores = Math.max(1, qualidadeUsers.length);
+                    const feedbacksPorMonitor = Math.ceil(totalFeedbacksPendentes / qtdMonitores);
+                    const isMediaGeralAbaixo = parseFloat(mediaGeral) < 100;
 
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Indicadores coletivos de bonificação (perfil <strong>Qualidade</strong>) referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Executiva • Dashboard Corporativo</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhamento macro de indicadores de qualidade, bonificação e metas de feedback referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                             </div>
                             <button onclick="app.admin.exportBonusReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
                                 <i class="fa-solid fa-file-excel"></i> Relatório do Mês
                             </button>
                         </div>
 
-                        <!-- Linha 1: KPIs -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <!-- Linha 1: KPIs com Destaque para Feedbacks Necessários e Alertas em Vermelho -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
                                 <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-sack-dollar"></i></div>
                                 <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total Qualidade (Mês)</div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total Qualidade</div>
                                     <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">Folha de bonificação apurada</div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500">
@@ -6005,13 +6034,31 @@ storage: {
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe Qualidade</div>
                                     <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${qualidadeUsers.length}</span></div>
+                                    <div class="text-[11px] text-slate-400 mt-1">${usersComResultado === qualidadeUsers.length ? '100% dos monitores lançados' : `${qualidadeUsers.length - usersComResultado} pendentes de lançamento`}</div>
                                 </div>
                             </div>
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-purple-500">
-                                <div class="w-14 h-14 rounded-2xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-chart-simple"></i></div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${isMediaGeralAbaixo ? 'border-l-rose-500' : 'border-l-purple-500'}">
+                                <div class="w-14 h-14 rounded-2xl ${isMediaGeralAbaixo ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400' : 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'} flex items-center justify-center text-2xl shrink-0">
+                                    <i class="fa-solid ${isMediaGeralAbaixo ? 'fa-triangle-exclamation' : 'fa-chart-simple'}"></i>
+                                </div>
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Média de Qualidade</div>
-                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${mediaGeral}%</div>
+                                    <div class="text-2xl lg:text-3xl font-black ${isMediaGeralAbaixo ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-white'} tabular-nums">${mediaGeral}%</div>
+                                    <div class="text-[11px] ${isMediaGeralAbaixo ? 'text-rose-500 font-bold' : 'text-slate-400'} mt-1 flex items-center gap-1">
+                                        ${isMediaGeralAbaixo ? '<i class=\"fa-solid fa-circle-exclamation\"></i> Abaixo da Meta • Aplicar Feedback' : '<i class=\"fa-solid fa-circle-check text-emerald-500\"></i> Meta Global Atingida'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${totalFeedbacksPendentes > 0 ? 'border-l-rose-500' : 'border-l-emerald-500'}">
+                                <div class="w-14 h-14 rounded-2xl ${totalFeedbacksPendentes > 0 ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'} flex items-center justify-center text-2xl shrink-0">
+                                    <i class="fa-solid fa-comments"></i>
+                                </div>
+                                <div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Feedbacks Necessários (Meta)</div>
+                                    <div class="text-2xl lg:text-3xl font-black ${totalFeedbacksPendentes > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600'} tabular-nums">${totalFeedbacksPendentes}</div>
+                                    <div class="text-[11px] ${totalFeedbacksPendentes > 0 ? 'text-rose-500 font-bold' : 'text-slate-400'} mt-1">
+                                        ${totalFeedbacksPendentes > 0 ? `~<span class="font-black text-rose-600 dark:text-rose-400">${feedbacksPorMonitor}</span> por monitor (${monitoresAbaixoMeta} com meta pendente)` : 'Metas 100% atingidas!'}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -6021,7 +6068,12 @@ storage: {
                             
                             <!-- Coluna 1: Agenda Automática -->
                             <div class="lg:col-span-1 glass-card p-6 rounded-3xl h-full flex flex-col">
-                                <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><i class="fa-solid fa-calendar-day text-blue-500"></i> Próximos Feedbacks</h3>
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                        <i class="fa-solid fa-calendar-day text-blue-500"></i> Próximos Feedbacks
+                                    </h3>
+                                    ${pendentes.length > 0 ? `<span class="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-900"><i class="fa-solid fa-clock mr-1"></i>${pendentes.length} Agendados</span>` : ''}
+                                </div>
                     `;
                     
                     if(pendentes.length === 0) {
@@ -6054,7 +6106,7 @@ storage: {
                             <!-- Coluna 2 e 3: Gráficos -->
                             <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
                                 <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
-                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Aproveitamento (%)</h3>
+                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Aproveitamento (%) • Metas</h3>
                                     <div class="relative flex-1 min-h-[220px] w-full"><canvas id="chart-pct"></canvas></div>
                                 </div>
                                 <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
@@ -6064,16 +6116,20 @@ storage: {
                             </div>
                         </div>
 
-                        <!-- Linha 3: Entregas por Indicador -->
+                        <!-- Linha 3: Entregas por Indicador (Com Destaque em Vermelho nos não atingidos) -->
                         <div class="glass-card p-8 rounded-3xl mb-8">
-                            <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6">Detalhamento de Entregas da Equipe</h3>
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-6">
+                                <div>
+                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Detalhamento de Entregas da Equipe</h3>
+                                    <p class="text-xs text-slate-400 mt-0.5">Indicadores com meta não atingida (< 100%) destacados em vermelho para aplicação de feedback imediato.</p>
+                                </div>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     `;
 
                     const labels = []; const dataPct = []; const dataVal = [];
 
                     Object.values(goalStats).forEach(gs => {
-                        // Lógica mantida para o Gráfico
                         const avgPct = gs.count > 0 ? (gs.somaMult / gs.count) * 100 : 0;
                         labels.push(gs.name); dataPct.push(avgPct.toFixed(1)); dataVal.push(gs.somaVal.toFixed(2));
                         
@@ -6090,11 +6146,18 @@ storage: {
                             displayTotal = totalRaw + ' Atingiram';
                         }
                         
+                        const isAbaixoMeta = avgPct < 100;
+                        const cardBorder = isAbaixoMeta ? 'border-t-4 border-t-rose-500 border-rose-200 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/10' : 'border-t-4 border-t-emerald-500 border-slate-100 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/30';
+                        const badgeColor = isAbaixoMeta ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800';
+
                         html += `
-                            <div class="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50 flex flex-col h-full shadow-sm hover:shadow-md transition-shadow">
-                                <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-3">
-                                    <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase truncate pr-2" title="${gs.name}">${gs.name}</div>
-                                    <div class="text-xs font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 rounded-lg border border-blue-100 dark:border-blue-800/50">Total: ${displayTotal}</div>
+                            <div class="${cardBorder} p-5 rounded-2xl flex flex-col h-full shadow-sm hover:shadow-md transition-all">
+                                <div class="flex justify-between items-center border-b ${isAbaixoMeta ? 'border-rose-100 dark:border-rose-900/40' : 'border-slate-200 dark:border-slate-700'} pb-3 mb-3">
+                                    <div class="text-xs font-bold ${isAbaixoMeta ? 'text-rose-700 dark:text-rose-300' : 'text-slate-700 dark:text-slate-300'} uppercase truncate pr-2" title="${gs.name}">${gs.name}</div>
+                                    <div class="text-xs font-black ${badgeColor} px-2.5 py-1 rounded-lg border flex items-center gap-1.5 shrink-0">
+                                        ${isAbaixoMeta ? '<i class=\"fa-solid fa-triangle-exclamation text-[10px] animate-pulse\"></i>' : '<i class=\"fa-solid fa-circle-check text-[10px]\"></i>'}
+                                        Total: ${displayTotal} (${avgPct.toFixed(0)}%)
+                                    </div>
                                 </div>
                                 <div class="flex-1 overflow-y-auto max-h-48 space-y-1.5 pr-2 custom-scrollbar">
                         `;
@@ -6104,9 +6167,15 @@ storage: {
                         } else {
                             gs.deliveries.forEach(d => {
                                 html += `
-                                    <div class="flex justify-between items-center text-sm py-1 border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-100 dark:hover:bg-slate-800/50 px-1 -mx-1 rounded transition-colors">
-                                        <span class="text-slate-700 dark:text-slate-300 truncate pr-2">${d.nome}</span>
-                                        <span class="font-bold text-green-600 dark:text-green-400 shrink-0">${d.display}</span>
+                                    <div class="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 dark:border-slate-700/50 last:border-0 ${!d.atingiuMeta ? 'bg-rose-50/70 dark:bg-rose-950/30 px-2 -mx-1 rounded-lg' : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 px-2 -mx-1 rounded'} transition-colors">
+                                        <span class="text-slate-800 dark:text-slate-200 ${!d.atingiuMeta ? 'font-bold' : ''} truncate pr-2 flex items-center gap-1.5">
+                                            ${!d.atingiuMeta ? '<i class=\"fa-solid fa-circle-exclamation text-[10px] text-rose-500 shrink-0\"></i>' : ''}
+                                            ${d.nome}
+                                        </span>
+                                        <span class="font-black ${!d.atingiuMeta ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'} shrink-0 tabular-nums flex items-center gap-1">
+                                            ${d.display}
+                                            ${!d.atingiuMeta ? '<span class=\"text-[9px] font-black uppercase text-rose-500 bg-rose-100 dark:bg-rose-900/40 px-1.5 py-0.5 rounded\">Feedback</span>' : ''}
+                                        </span>
                                     </div>
                                 `;
                             });
@@ -6114,41 +6183,55 @@ storage: {
                         
                         html += `
                                 </div>
+                                ${isAbaixoMeta ? `
+                                    <div class="mt-auto pt-3 border-t border-rose-200 dark:border-rose-900/50 flex items-center justify-between text-[11px] font-black text-rose-600 dark:text-rose-400">
+                                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-circle-exclamation text-rose-500"></i> Abaixo da Meta</span>
+                                        <span class="text-[10px] uppercase tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded font-black">Aplicar Feedback</span>
+                                    </div>
+                                ` : `
+                                    <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                        <span class="flex items-center gap-1"><i class="fa-solid fa-circle-check"></i> Meta Atingida</span>
+                                        <span class="text-[10px] uppercase tracking-wider text-slate-400">100% Concluído</span>
+                                    </div>
+                                `}
                             </div>
                         `;
                     });
 
-                            html += `</div></div>`;
-                            container.innerHTML = html;
+                    html += `</div></div>`;
+                    container.innerHTML = html;
 
-                            setTimeout(() => {
-                                const isDark = document.documentElement.classList.contains('dark');
-                                const textColor = isDark ? '#94a3b8' : '#64748b';
-                                const gridColor = isDark ? '#334155' : '#e2e8f0';
+                    setTimeout(() => {
+                        const isDark = document.documentElement.classList.contains('dark');
+                        const textColor = isDark ? '#94a3b8' : '#64748b';
+                        const gridColor = isDark ? '#334155' : '#e2e8f0';
 
-                                // GRÁFICOS DO DASHBOARD EXECUTIVO
-                                if(window.dashChartPct) window.dashChartPct.destroy();
-                                if(window.dashChartFin) window.dashChartFin.destroy();
-                                
-                                const ctxPct = document.getElementById('chart-pct');
-                                const ctxFin = document.getElementById('chart-finance');
+                        // Cores dinâmicas para o gráfico: Vermelho para abaixo de 100%, Verde para atingido
+                        const barColorsPct = dataPct.map(p => parseFloat(p) >= 100 ? '#10b981' : '#f43f5e');
 
-                                if(ctxPct) {
-                                    window.dashChartPct = new Chart(ctxPct, {
-                                        type: 'bar',
-                                        data: { labels: labels, datasets: [{ label: 'Aproveitamento (%)', data: dataPct, backgroundColor: '#3b82f6', borderRadius: 6 }] },
-                                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } } }
-                                    });
-                                }
-                                if(ctxFin) {
-                                    window.dashChartFin = new Chart(ctxFin, {
-                                        type: 'bar',
-                                        data: { labels: labels, datasets: [{ label: 'Valor (R$)', data: dataVal, backgroundColor: '#10b981', borderRadius: 6 }] },
-                                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } } }
-                                    });
-                                }
-                            }, 150);
-                        },
+                        // GRÁFICOS DO DASHBOARD EXECUTIVO
+                        if(window.dashChartPct) window.dashChartPct.destroy();
+                        if(window.dashChartFin) window.dashChartFin.destroy();
+                        
+                        const ctxPct = document.getElementById('chart-pct');
+                        const ctxFin = document.getElementById('chart-finance');
+
+                        if(ctxPct) {
+                            window.dashChartPct = new Chart(ctxPct, {
+                                type: 'bar',
+                                data: { labels: labels, datasets: [{ label: 'Aproveitamento (%)', data: dataPct, backgroundColor: barColorsPct, borderRadius: 6 }] },
+                                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } } }
+                            });
+                        }
+                        if(ctxFin) {
+                            window.dashChartFin = new Chart(ctxFin, {
+                                type: 'bar',
+                                data: { labels: labels, datasets: [{ label: 'Valor (R$)', data: dataVal, backgroundColor: '#10b981', borderRadius: 6 }] },
+                                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } } }
+                            });
+                        }
+                    }, 150);
+                },
 
                 visaoGeralSort: 'realizadas_desc',
                 visaoGeralFilterStatus: 'todos',
@@ -7574,7 +7657,7 @@ storage: {
 
                         // Resumo Executivo no Topo
                         html += `
-                            <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Operações Ativas</div>
                                     <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalSetores}</div>
