@@ -858,11 +858,14 @@ storage: {
             },
 
             hasAdminAccess(tabId) {
+                if (tabId === 'teste_duolingo') {
+                    return this.isAdmin || (this.currentUser && this.currentUser.tipoAcesso === 'Dev');
+                }
                 if (this.isAdmin) return true;
                 if (!this.currentUser) return false;
                 const tipo = this.currentUser.tipoAcesso;
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
-                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps')) return true;
+                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
                 const userAbas = (this.ui && typeof this.ui.getEffectiveUserTabs === 'function')
                     ? this.ui.getEffectiveUserTabs(this.currentUser)
@@ -3913,13 +3916,13 @@ storage: {
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamento_capacitacao', label:'Treinamento & Capacitação'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'dashboard_firebase_dev', label:'Consumo Firebase (Dev)'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}] },
-                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamento_capacitacao', label:'Treinamento & Capacitação'}, {id:'csat_nps', label:'CSAT & NPS'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Teste Duolingo (Dev)'}] },
+                    { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
                 gruposAcessoLista: ['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
@@ -3931,10 +3934,10 @@ storage: {
 
                     const defaults = {
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'csat_nps', 'legal'])],
+                        'Treinamento': [...new Set(['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
-                        'Gerente': allIds
+                        'Gerente': allIds.filter(id => id !== 'teste_duolingo')
                     };
 
                     if (!app.config.presetsGruposAcesso || typeof app.config.presetsGruposAcesso !== 'object') {
@@ -3945,11 +3948,18 @@ storage: {
                     this.gruposAcessoLista.forEach(g => {
                         let base = Array.isArray(app.config.presetsGruposAcesso[g]) ? app.config.presetsGruposAcesso[g] : defaults[g];
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
-                        base = base.filter(id => id !== 'operacoes');
+                        base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
                         if (['Gestor', 'Gerente', 'Dev'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
                         if (base.includes('hierarquia') && !base.includes('span_operacoes')) base.push('span_operacoes');
                         if (base.includes('hierarquia') && !base.includes('implantacao_ia')) base.push('implantacao_ia');
+                        if (base.includes('treinamento_capacitacao') || base.includes('csat_nps')) {
+                            base = base.filter(id => id !== 'treinamento_capacitacao' && id !== 'csat_nps');
+                            if (!base.includes('treinamentos')) base.push('treinamentos');
+                        }
+                        if (g !== 'Dev') {
+                            base = base.filter(id => id !== 'teste_duolingo');
+                        }
                         result[g] = [...new Set(base)];
                     });
                     return result;
@@ -3960,7 +3970,15 @@ storage: {
                     const presets = this.getPresetsGruposAcesso();
                     const tipo = user.tipoAcesso || 'Qualidade';
                     const presetTabs = presets[tipo] || presets['Qualidade'] || [];
-                    const savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes');
+                    if (tipo !== 'Dev' && !app.isAdmin) {
+                        savedTabs = savedTabs.filter(id => id !== 'teste_duolingo');
+                    }
+                    const savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
+                    if (savedTabs.includes('treinamento_capacitacao') || savedTabs.includes('csat_nps')) {
+                        const i1 = savedTabs.indexOf('treinamento_capacitacao'); if (i1 !== -1) savedTabs.splice(i1, 1);
+                        const i2 = savedTabs.indexOf('csat_nps'); if (i2 !== -1) savedTabs.splice(i2, 1);
+                        if (!savedTabs.includes('treinamentos')) savedTabs.push('treinamentos');
+                    }
                     if (savedTabs.includes('gestao_equipe') && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('gestao_equipe')) savedTabs.push('gestao_equipe');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
@@ -4627,7 +4645,10 @@ storage: {
                             // Barra Personalizada de ADM: Usa a arquitetura oficial de grupos do ADM + Rotina Pessoal (sem "Ferramentas Extras")
                             const adminGroups = JSON.parse(JSON.stringify(this.menusAdmin));
                             adminGroups.forEach(g => {
-                                g.items = g.items.filter(item => userAbas.includes(item.id));
+                                g.items = g.items.filter(item => {
+                                    if (item.id === 'teste_duolingo' && !app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') return false;
+                                    return userAbas.includes(item.id);
+                                });
                             });
 
                             const idsInAdminGroups = new Set();
@@ -4694,7 +4715,7 @@ storage: {
                     let activeGroup = null;
                     
                     menus.forEach((m) => {
-                        const normTab = (id) => (id === 'gestao_equipe' || id === 'operacoes') ? 'hierarquia' : id;
+                        const normTab = (id) => (id === 'gestao_equipe' || id === 'operacoes') ? 'hierarquia' : ((id === 'treinamento_capacitacao' || id === 'csat_nps') ? 'treinamentos' : id);
                         const currentNorm = normTab(app.currentTab);
                         const isActiveGroup = m.items.some(i => normTab(i.id) === currentNorm);
                         if (isActiveGroup) activeGroup = m;
@@ -4796,6 +4817,7 @@ storage: {
                     }
 
                     if (tabId === 'gestao_equipe' || tabId === 'operacoes') { tabId = 'hierarquia'; }
+                    if (tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') { tabId = 'treinamentos'; }
                     // Limpar cronômetro e renderizações pendentes ao mudar de tela ou trocar de mês
                     if(this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
                     if(this.renderTimeoutId) { clearTimeout(this.renderTimeoutId); this.renderTimeoutId = null; }
@@ -4844,7 +4866,8 @@ storage: {
                             else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
                             else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
                             else if(tabId === 'regras') this.renderView_Regras(viewDiv);
-                            else if(tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') this.renderView_TreinamentoCapacitacao(viewDiv);
+                            else if(tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') this.renderView_Treinamentos(viewDiv);
+                            else if(tabId === 'teste_duolingo') this.renderView_TesteDuolingo(viewDiv);
                             else if(tabId === 'gestao_reportes') { this.abrirModalGestaoReportesDev(); return; }
                             else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
                             else if(tabId === 'legal') this.renderView_Legal(viewDiv);
@@ -9975,9 +9998,7 @@ storage: {
                                         <button onclick="app.ui.toggleTheme()" class="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm shadow-sm hover:shadow-md transition">
                                             <span>Alternar Modo Escuro</span> <i class="fa-solid fa-moon"></i>
                                         </button>
-                                        <button onclick="app.ui.toggleCursor()" class="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm shadow-sm hover:shadow-md transition mt-3">
-                                            <span>Alternar Cursor (Mouse)</span> <i class="fa-solid fa-arrow-pointer text-indigo-500"></i>
-                                        </button>
+                                        
                                     </div>
                                 </div>
                             </div>
@@ -21836,10 +21857,15 @@ Object.assign(app.ui, {
                 // =========================================================================
                 setTreinamentoSubaba(subaba) {
                     this._treinamentoSubaba = subaba;
-                    this.renderTab('treinamento_capacitacao', true);
+                    const activeTab = (app.currentTab === 'treinamentos' || app.currentTab === 'treinamento_capacitacao') ? app.currentTab : 'treinamentos';
+                    this.renderTab(activeTab, true);
                 },
 
                 renderView_TreinamentoCapacitacao(container) {
+                    return this.renderView_Treinamentos(container);
+                },
+
+                renderView_Treinamentos(container) {
                     const subabaAtiva = this._treinamentoSubaba || 'csat'; // 'csat' | 'fcr' | 'certificacoes'
                     const currentUser = app.currentUser || { matricula: 'admin', nome: 'Administrador', tipoAcesso: 'Dev' };
                     const mat = String(currentUser.matricula || 'admin').trim();
@@ -21870,7 +21896,7 @@ Object.assign(app.ui, {
                                             <i class="fa-solid fa-medal mr-1"></i> ${totalConquistados}/2 Certificações
                                         </span>
                                     </div>
-                                    <h2 class="text-2xl md:text-3xl font-black tracking-tight">Treinamento & Capacitação Técnica</h2>
+                                    <h2 class="text-2xl md:text-3xl font-black tracking-tight">Treinamentos</h2>
                                     <p class="text-slate-300 text-xs md:text-sm mt-1 max-w-2xl leading-relaxed">
                                         Qualificação continuada para transformar nossa equipe em referência de autonomia, auditoria analítica e excelência no atendimento.
                                     </p>
@@ -21890,7 +21916,7 @@ Object.assign(app.ui, {
                                     </button>
                                     <button onclick="app.ui.setTreinamentoSubaba('certificacoes')" class="px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${subabaAtiva === 'certificacoes' ? 'bg-white text-slate-900 shadow-md' : 'text-white/80 hover:text-white hover:bg-white/10'}">
                                         <i class="fa-solid fa-award text-amber-400 text-sm"></i>
-                                        <span>Minhas Conquistas</span>
+                                        <span>Minhas Certificações</span>
                                         <span class="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40 tabular-nums">${totalConquistados}</span>
                                     </button>
                                 </div>
@@ -22292,6 +22318,32 @@ Object.assign(app.ui, {
                     const user = (app.users || []).find(u => String(u.matricula).trim() === mat) || app.currentUser || { nome: 'Colaborador de Qualidade', matricula: mat };
                     const nomeColaborador = app.utils.fixEncoding(user.nome || 'Colaborador');
 
+                    // 1. Busca automática do Gestor Direto do colaborador
+                    let gestorDireto = null;
+                    if (user.gestorMatricula) {
+                        gestorDireto = (app.users || []).find(u => String(u.matricula).trim() === String(user.gestorMatricula).trim());
+                    }
+                    if (!gestorDireto && user.gestor) {
+                        gestorDireto = (app.users || []).find(u => String(u.matricula).trim() === String(user.gestor).trim() || u.nome === user.gestor);
+                    }
+                    if (!gestorDireto && user.supervisor) {
+                        gestorDireto = (app.users || []).find(u => String(u.matricula).trim() === String(user.supervisor).trim() || u.nome === user.supervisor);
+                    }
+                    if (!gestorDireto && (user.tipoAcesso === 'Gestor')) {
+                        gestorDireto = user;
+                    }
+                    if (!gestorDireto) {
+                        gestorDireto = (app.users || []).find(u => (u.tipoAcesso || '').toLowerCase() === 'gestor');
+                    }
+
+                    const nomeGestor = gestorDireto ? app.utils.fixEncoding(gestorDireto.nome || 'Gestor Responsável') : 'Gestor de Qualidade';
+                    const cargoGestor = gestorDireto ? (gestorDireto.cargo || 'Gestor Direto de Qualidade') : 'Gestão Direta';
+
+                    // 2. Busca automática da Gerente no sistema
+                    let gerenteObj = (app.users || []).find(u => (u.tipoAcesso || '').toLowerCase() === 'gerente' || (u.cargo || '').toLowerCase().includes('gerente'));
+                    const nomeGerente = gerenteObj ? app.utils.fixEncoding(gerenteObj.nome || 'Gerente de Qualidade & Treinamento') : 'Gerente de Qualidade & Operações';
+                    const cargoGerente = gerenteObj ? (gerenteObj.cargo || 'Gerente de Qualidade & Treinamento') : 'Gerência de Qualidade & Treinamento';
+
                     let reg = null;
                     let tituloCurso = '';
                     let subtituloCurso = '';
@@ -22390,14 +22442,16 @@ Object.assign(app.ui, {
                                     </div>
                                 </div>
 
-                                <!-- Rodapé do Diploma: Selo Dourado e Assinaturas -->
+                                <!-- Rodapé do Diploma: Selo Dourado e Assinaturas Automáticas -->
                                 <div class="mt-6 pt-4 border-t border-slate-200 grid grid-cols-3 items-center gap-4 text-center relative z-10">
-                                    <!-- Assinatura 1 -->
+                                    <!-- Assinatura 1: Gestor Direto -->
                                     <div>
-                                        <div class="font-serif italic text-xs md:text-sm text-slate-700 border-b border-slate-300 pb-1 mx-2 font-bold">
-                                            Coordenação de Qualidade
+                                        <div class="font-serif italic text-xs md:text-sm text-slate-800 border-b border-slate-300 pb-1 mx-2 font-bold tracking-wide">
+                                            ${nomeGestor}
                                         </div>
-                                        <div class="text-[9px] md:text-[10px] text-slate-400 uppercase tracking-wider mt-1">Comitê de Auditoria & Métricas</div>
+                                        <div class="text-[9px] md:text-[10px] text-slate-500 uppercase tracking-wider mt-1 font-semibold">
+                                            ${cargoGestor} • Gestor(a) Imediato(a)
+                                        </div>
                                     </div>
 
                                     <!-- Selo Central Dourado -->
@@ -22408,12 +22462,14 @@ Object.assign(app.ui, {
                                         <span class="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-amber-800 mt-1">Selo Oficial 2026</span>
                                     </div>
 
-                                    <!-- Assinatura 2 -->
+                                    <!-- Assinatura 2: Gerente -->
                                     <div>
-                                        <div class="font-serif italic text-xs md:text-sm text-slate-700 border-b border-slate-300 pb-1 mx-2 font-bold">
-                                            Gestão de Treinamento
+                                        <div class="font-serif italic text-xs md:text-sm text-slate-800 border-b border-slate-300 pb-1 mx-2 font-bold tracking-wide">
+                                            ${nomeGerente}
                                         </div>
-                                        <div class="text-[9px] md:text-[10px] text-slate-400 uppercase tracking-wider mt-1">Desenvolvimento de Talentos</div>
+                                        <div class="text-[9px] md:text-[10px] text-slate-500 uppercase tracking-wider mt-1 font-semibold">
+                                            ${cargoGerente} • Gerência Executiva
+                                        </div>
                                     </div>
                                 </div>
 
@@ -22658,6 +22714,14 @@ Object.assign(app.ui, {
                     document.body.appendChild(modal);
                 },
 
+                    renderView_TesteDuolingo(container) {
+                        if (!app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') {
+                            return app.ui.showAlert("Acesso Restrito", "Apenas o perfil Desenvolvedor tem acesso Ã  aba de Teste Duolingo.", "error");
+                        }
+                        if (app.duolingo) {
+                            app.duolingo.render(container);
+                        }
+                    },
 });
 
 // =========================================================================
@@ -23549,6 +23613,1156 @@ app.fcrExam = {
                 });
             }
         }
+    }
+};
+
+
+        // =========================================================================
+// MÓDULO TESTE DUOLINGO (EXCLUSIVO DEV)
+// Trilha Gamificada: NPS & CSAT (Da Teoria do Indicador à Prática da Monitoria)
+// =========================================================================
+app.duolingo = {
+    meta: {
+        tema: "Formação Essencial em NPS e CSAT: Da Teoria do Indicador à Prática da Monitoria",
+        indicadores: [
+            "CSAT (Satisfação Imediata)",
+            "NPS (Lealdade e Recomendação)",
+            "FCR (Resolução no Primeiro Contato)",
+            "Aderência à Monitoria de Qualidade",
+            "Retenção de Clientes"
+        ],
+        totalModulos: 2,
+        totalLicoes: 4,
+        xpTotal: 40
+    },
+
+    modules: [
+        {
+            id: 'mod_1',
+            numero: 1,
+            titulo: 'MÓDULO 1: O Que São, Significados e Como Calcular NPS e CSAT',
+            icone: 'fa-chart-column',
+            descricao: 'Compreenda o conceito de cada indicador, o motivo pelo qual as centrais os utilizam e a fórmula matemática para calculá-los.',
+            licoes: [
+                {
+                    id: 'l1_1',
+                    moduloId: 'mod_1',
+                    numero: '1.1',
+                    titulo: 'Conceito e Diferenças entre NPS e CSAT',
+                    xp: 10,
+                    vidas: 3,
+                    desafios: [
+                        {
+                            id: 'd1_1_1',
+                            tipo: 'VERDADEIRO_OU_FALSO',
+                            cenario: 'Alinhamento inicial sobre a finalidade das pesquisas pós-atendimento.',
+                            enunciado: 'O CSAT avalia a satisfação com uma interação específica recente (transacional), enquanto o NPS avalia o relacionamento e a probabilidade de o cliente recomendar a marca no longo prazo (relacional).',
+                            opcoes: ['Verdadeiro', 'Falso'],
+                            gabarito: 'Verdadeiro',
+                            feedbackAcerto: 'Correto! CSAT (Customer Satisfaction Score) mede a experiência pontual da chamada, e o NPS (Net Promoter Score) mede a fidelidade geral com a empresa.',
+                            feedbackErro: 'Conceito equivocado. Confundir os dois impede o diagnóstico operacional: o cliente pode adorar o atendimento do operador (CSAT alto) e, ao mesmo tempo, odiar as regras da empresa (NPS baixo).'
+                        },
+                        {
+                            id: 'd1_1_2',
+                            tipo: 'ESCOLHA_DE_FALA',
+                            cenario: 'Reunião de alinhamento com a equipe para explicar por que a central monitora ambos os indicadores.',
+                            enunciado: 'Por que uma operação de atendimento não deve acompanhar apenas o CSAT ou apenas o NPS, mas sim os dois em conjunto?',
+                            opcoes: [
+                                'Opção A: "Porque se o CSAT estiver alto, o NPS não importa para a diretoria."',
+                                'Opção B: "Porque o CSAT aponta gargalos pontuais no atendimento imediato, enquanto o NPS revela a saúde do relacionamento da marca e o risco de cancelamento futuro."',
+                                'Opção C: "Apenas para cumprir uma exigência de auditoria externa sem impacto real na operação."'
+                            ],
+                            gabarito: 'Opção B: "Porque o CSAT aponta gargalos pontuais no atendimento imediato, enquanto o NPS revela a saúde do relacionamento da marca e o risco de cancelamento futuro."',
+                            feedbackAcerto: 'Exato! Cruzar CSAT e NPS permite saber se a insatisfação vem de falhas humanas/processuais no contato ou de problemas crônicos no produto.',
+                            feedbackErro: 'Visão incompleta. Analisar apenas um dos índices esconde se a perda de clientes ocorre no atendimento ou na experiência global de produto.'
+                        },
+                        {
+                            id: 'd1_1_3',
+                            tipo: 'PREENCHER_LACUNA',
+                            cenario: 'Formulação da pergunta definitiva da metodologia Net Promoter Score.',
+                            enunciado: 'Selecione os termos corretos para completar a pergunta oficial do NPS:',
+                            texto: 'Em uma escala de 0 a 10, o quanto você ________ a nossa empresa para um ________ ou colega?',
+                            opcoes: [
+                                'recomendaria | amigo',
+                                'contrataria | parente',
+                                'defenderia | sócio'
+                            ],
+                            gabarito: 'recomendaria | amigo',
+                            feedbackAcerto: 'Muito bem! O conceito central do NPS baseia-se na recomendação pessoal, pois ninguém indica uma empresa ruim para amigos e conhecidos.',
+                            feedbackErro: 'Formulação incorreta. O pilar do NPS apoia-se estritamente na probabilidade de recomendação voluntária.'
+                        },
+                        {
+                            id: 'd1_1_4',
+                            tipo: 'CACA_ERRO',
+                            cenario: 'Descrição de um relatório semanal com a definição dos indicadores.',
+                            enunciado: 'Identifique a linha que contém uma afirmação tecnicamente incorreta:',
+                            linhas: [
+                                'Linha 1: CSAT mede a satisfação com perguntas do tipo: "Como você avalia o atendimento recebido hoje?".',
+                                'Linha 2: O NPS serve para medir se o operador falou rápido demais durante uma chamada de suporte.',
+                                'Linha 3: Escalas de CSAT costumam variar de 1 a 5 estrelas ou notas de 1 a 10.'
+                            ],
+                            opcoes: ['Linha 1', 'Linha 2', 'Linha 3'],
+                            gabarito: 'Linha 2',
+                            feedbackAcerto: 'Identificação precisa! Ritmo de fala e conduta em linha são avaliados pelo CSAT e pela monitoria de qualidade, nunca isoladamente pelo NPS.',
+                            feedbackErro: 'Falha conceitual. O NPS foca na percepção de valor e na fidelidade do cliente à marca, não em aspectos operacionais micros de uma ligação.'
+                        },
+                        {
+                            id: 'd1_1_5',
+                            tipo: 'ESCOLHA_DE_FALA',
+                            cenario: 'Cliente avalia com nota 10 no CSAT para o atendente, mas deixa nota 2 no NPS da empresa com o comentário: "O atendente foi nota mil, mas o sistema de vocês cai toda semana".',
+                            enunciado: 'Como a liderança e a qualidade devem interpretar esse resultado?',
+                            opcoes: [
+                                'Opção A: "O operador precisa receber advertência porque o cliente deu nota 2 no NPS."',
+                                'Opção B: "O atendimento prestado foi excelente (CSAT 10), mas a empresa gerou um detrator no NPS por falha de infraestrutura de TI."',
+                                'Opção C: "A avaliação é nula e deve ser descartada do painel de qualidade."'
+                            ],
+                            gabarito: 'Opção B: "O atendimento prestado foi excelente (CSAT 10), mas a empresa gerou um detrator no NPS por falha de infraestrutura de TI."',
+                            feedbackAcerto: 'Diagnóstico perfeito! Separar o desempenho humano do desempenho estrutural evita punições injustas e direciona o problema ao time responsável.',
+                            feedbackErro: 'Erro de gestão de qualidade. Punir o operador por problemas sistêmicos destrói o engajamento da equipe e mascara o problema real da empresa.'
+                        }
+                    ]
+                },
+                {
+                    id: 'l1_2',
+                    moduloId: 'mod_1',
+                    numero: '1.2',
+                    titulo: 'A Matemática dos Indicadores (Como Calcular)',
+                    xp: 10,
+                    vidas: 3,
+                    desafios: [
+                        {
+                            id: 'd1_2_1',
+                            tipo: 'PREENCHER_LACUNA',
+                            cenario: 'Segmentação oficial dos respondentes na metodologia NPS (escala de 0 a 10).',
+                            enunciado: 'Preencha os grupos de clientes de acordo com as notas atribuídas:',
+                            texto: 'Notas de 0 a 6 são classificadas como ________, notas 7 e 8 são ________ e notas 9 e 10 são ________.',
+                            opcoes: [
+                                'Detratores | Neutros (Passivos) | Promotores',
+                                'Neutros | Detratores | Promotores',
+                                'Insatisfeitos | Satisfeitos | Fãs'
+                            ],
+                            gabarito: 'Detratores | Neutros (Passivos) | Promotores',
+                            feedbackAcerto: 'Divisão exata! Fixar essa régua é indispensável para interpretar os dados que chegam nos relatórios da operação.',
+                            feedbackErro: 'Faixa incorreta. Tratar notas 6 como neutras mascara clientes com alto potencial de cancelamento e reclamação em órgãos externos.'
+                        },
+                        {
+                            id: 'd1_2_2',
+                            tipo: 'ORDENAR_FLUXO',
+                            cenario: 'Passo a passo do cálculo matemático do Net Promoter Score (NPS).',
+                            enunciado: 'Organize a ordem correta para calcular o NPS final de um período:',
+                            itens: [
+                                'Calcular a porcentagem de clientes Promotores sobre o total de respondentes',
+                                'Contabilizar todos os respondentes e agrupá-los em Promotores, Neutros e Detratores',
+                                'Subtrair a porcentagem de Detratores da porcentagem de Promotores (% Promotores - % Detratores)',
+                                'Calcular a porcentagem de clientes Detratores sobre o total de respondentes'
+                            ],
+                            gabarito: [
+                                'Contabilizar todos os respondentes e agrupá-los em Promotores, Neutros e Detratores',
+                                'Calcular a porcentagem de clientes Promotores sobre o total de respondentes',
+                                'Calcular a porcentagem de clientes Detratores sobre o total de respondentes',
+                                'Subtrair a porcentagem de Detratores da porcentagem de Promotores (% Promotores - % Detratores)'
+                            ],
+                            feedbackAcerto: 'Perfeito! A pontuação varia de -100 (quando 100% são detratores) até +100 (quando 100% são promotores).',
+                            feedbackErro: 'Sequência de cálculo incorreta. Inverter os fatores ou esquecer de calcular os percentuais antes da subtração distorce o resultado operacional.'
+                        },
+                        {
+                            id: 'd1_2_3',
+                            tipo: 'VERDADEIRO_OU_FALSO',
+                            cenario: 'Avaliação do impacto dos clientes Neutros (notas 7 e 8) no resultado do NPS.',
+                            enunciado: 'Como os clientes neutros não aparecem diretamente na subtração (% Promotores - % Detratores), eles não causam nenhum impacto no resultado final do NPS.',
+                            opcoes: ['Verdadeiro', 'Falso'],
+                            gabarito: 'Falso',
+                            feedbackAcerto: 'Muito bem! Os neutros aumentam o número total de respondentes (denominador), diluindo a porcentagem de promotores e derrubando o NPS total.',
+                            feedbackErro: 'Ilusão matemática comum. Se houver 10 promotores e 10 neutros, o NPS é 50% (não 100%). Cada cliente neutro não convertido em promotor puxa a nota para baixo.'
+                        },
+                        {
+                            id: 'd1_2_4',
+                            tipo: 'ESCOLHA_DE_FALA',
+                            cenario: 'Exemplo prático de cálculo de CSAT com escala de 1 a 5 estrelas.',
+                            enunciado: 'Em uma operação que recebeu 100 respostas de CSAT, sendo 80 respostas com notas 4 ou 5 (Satisfeito e Muito Satisfeito), qual é o índice de CSAT percentual?',
+                            opcoes: [
+                                'Opção A: "CSAT de 20%."',
+                                'Opção B: "CSAT de 80%."',
+                                'Opção C: "CSAT de 40 pontos."'
+                            ],
+                            gabarito: 'Opção B: "CSAT de 80%."',
+                            feedbackAcerto: 'Cálculo correto! O CSAT percentual considera as avaliações positivas divididas pelo total de respostas multiplicadas por 100 (80 / 100 = 80%).',
+                            feedbackErro: 'Erro de fórmula. Desconsiderar as notas positivas ou confundir a métrica com a escala do NPS gera leitura equivocada do painel de satisfação.'
+                        },
+                        {
+                            id: 'd1_2_5',
+                            tipo: 'CACA_ERRO',
+                            cenario: 'Verificação da fórmula matemática aplicada na planilha de acompanhamento diário.',
+                            enunciado: 'Onde está a falha na lógica do analista ao calcular o NPS?',
+                            linhas: [
+                                'Passo 1: Total de respostas: 200.',
+                                'Passo 2: 120 Promotores (60%), 40 Neutros (20%), 40 Detratores (20%).',
+                                'Passo 3: Cálculo do Analista: NPS = 60% + 20% - 20% = 60 pontos.'
+                            ],
+                            opcoes: [
+                                'No Passo 1: A amostra mínima deveria ser de 500 respostas.',
+                                'No Passo 2: O percentual de neutros foi calculado errado.',
+                                'No Passo 3: O analista somou a porcentagem de neutros à conta.'
+                            ],
+                            gabarito: 'No Passo 3: O analista somou a porcentagem de neutros à conta.',
+                            feedbackAcerto: 'Exato! A fórmula padrão é estritamente `% Promotores - % Detratores`. Os neutros entram na base, mas nunca são somados ao percentual positivo.',
+                            feedbackErro: 'Distorção de métrica. Somar neutros infla artificialmente o resultado do NPS e impede a tomada de ações corretivas pela gestão.'
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            id: 'mod_2',
+            numero: 2,
+            titulo: 'MÓDULO 2: NPS e CSAT na Prática da Chamada e o Papel da Qualidade',
+            icone: 'fa-headphones',
+            descricao: 'Descubra como usar as métricas a favor do seu atendimento em linha e entenda a atuação do monitor de qualidade frente a esses dados.',
+            licoes: [
+                {
+                    id: 'l2_1',
+                    moduloId: 'mod_2',
+                    numero: '2.1',
+                    titulo: 'Como Usar NPS e CSAT a Seu Favor nas Ligações',
+                    xp: 10,
+                    vidas: 3,
+                    desafios: [
+                        {
+                            id: 'd2_1_1',
+                            tipo: 'ESCOLHA_DE_FALA',
+                            cenario: 'Cliente entra em contato reclamando que foi cobrado duas vezes pelo mesmo serviço no cartão.',
+                            enunciado: 'Qual postura em linha protege o CSAT imediato e previne a criação de um detrator no NPS?',
+                            opcoes: [
+                                'Opção A: "O sistema financeiro costuma demorar para processar estornos, o senhor precisa aguardar o fechamento da fatura."',
+                                'Opção B: "Compreendo a urgência e o transtorno dessa duplicidade. Já estou abrindo o comprovante em tela e solicitei o estorno prioritário com protocolo imediato."',
+                                'Opção C: "O erro foi do seu banco emissor, ligue para a central do seu cartão para contestar."'
+                            ],
+                            gabarito: 'Opção B: "Compreendo a urgência e o transtorno dessa duplicidade. Já estou abrindo o comprovante em tela e solicitei o estorno prioritário com protocolo imediato."',
+                            feedbackAcerto: 'Conduta nota 10! Acolhimento empático com ação resolutiva rápida desarma a insatisfação e transforma um atrito em chance de retenção.',
+                            feedbackErro: 'Falha grave de resolutividade. Jogar a responsabilidade para outros setores ou para o cliente é a principal causa de notas 1 no CSAT e rechamada em menos de 24h.'
+                        },
+                        {
+                            id: 'd2_1_2',
+                            tipo: 'ORDENAR_FLUXO',
+                            cenario: 'Sequência do método de atendimento focado em Resolução no Primeiro Contato (FCR) para blindar a nota de satisfação.',
+                            enunciado: 'Ordene as etapas corretas para garantir o fechamento de uma chamada com alto potencial de recomendação:',
+                            itens: [
+                                'Confirmar o entendimento e aplicar a solução correta no sistema',
+                                'Escutar ativamente a demanda sem interromper o cliente',
+                                'Encaminhar para a pesquisa deixando a escolha livre e neutra',
+                                'Validar com o cliente se a dúvida foi sanada e checar pendências'
+                            ],
+                            gabarito: [
+                                'Escutar ativamente a demanda sem interromper o cliente',
+                                'Confirmar o entendimento e aplicar a solução correta no sistema',
+                                'Validar com o cliente se a dúvida foi sanada e checar pendências',
+                                'Encaminhar para a pesquisa deixando a escolha livre e neutra'
+                            ],
+                            feedbackAcerto: 'Sequência perfeita! Testar a solução e perguntar se restou alguma dúvida impede que o cliente desligue insatisfeito e responda à pesquisa com frustração.',
+                            feedbackErro: 'Quebra do fluxo de resolução. Enviar à pesquisa sem confirmar se a dúvida foi sanada gera notas baixas recorrentes na monitoria.'
+                        },
+                        {
+                            id: 'd2_1_3',
+                            tipo: 'CACA_ERRO',
+                            cenario: 'Trecho final de atendimento gravado na central de cobrança.',
+                            enunciado: 'Aponte onde o atendente comete um erro que impacta negativamente o NPS da empresa:',
+                            linhas: [
+                                'Trecho A: "Pronto, seu boleto com desconto foi gerado e enviado para o e-mail."',
+                                'Trecho B: "A empresa é horrível mesmo para liberar desconto, tive que brigar com meu supervisor para conseguir isso."',
+                                'Trecho C: "Posso te ajudar em mais algum detalhe para finalizarmos?"'
+                            ],
+                            opcoes: ['Trecho A', 'Trecho B', 'Trecho C'],
+                            gabarito: 'Trecho B',
+                            feedbackAcerto: 'Falha grave detectada! O atendente tentou se valorizar destruindo a reputação da própria empresa, gerando insegurança e garantindo detração no NPS.',
+                            feedbackErro: 'Desalinhamento institucional. Denegrir a empresa ou os processos internos perante o cliente quebra os padrões de postura da monitoria e zera o quesito de imagem corporativa.'
+                        },
+                        {
+                            id: 'd2_1_4',
+                            tipo: 'VERDADEIRO_OU_FALSO',
+                            cenario: 'Relação entre tempo de atendimento (TMO) e notas de CSAT.',
+                            enunciado: 'Um atendimento rápido e apressado garante nota máxima no CSAT, mesmo que o cliente fique com dúvidas secundárias.',
+                            opcoes: ['Verdadeiro', 'Falso'],
+                            gabarito: 'Falso',
+                            feedbackAcerto: 'Exato! O cliente prefere um atendimento um pouco mais longo, mas que resolva tudo (FCR), do que ser despachado rapidamente sem solução completa.',
+                            feedbackErro: 'Equívoco clássico de operação. Forçar a redução do tempo médio de atendimento à custa da resolução derruba o CSAT e multiplica as rechamadas.'
+                        },
+                        {
+                            id: 'd2_1_5',
+                            tipo: 'PREENCHER_LACUNA',
+                            cenario: 'Script de fechamento para encorajar a participação espontânea na pesquisa.',
+                            enunciado: 'Selecione a frase recomendada para convidar o cliente à pesquisa de forma ética:',
+                            texto: 'Sua opinião é fundamental para avaliarmos a sua experiência. Ao encerrar, peço que participe da nossa ________ de satisfação com respostas ________.',
+                            opcoes: [
+                                'pesquisa | espontâneas',
+                                'votação | máximas',
+                                'auditoria | positivas'
+                            ],
+                            gabarito: 'pesquisa | espontâneas',
+                            feedbackAcerto: 'Perfeito! O convite valoriza a percepção do usuário e respeita a autonomia dele sem indução indevida.',
+                            feedbackErro: 'Quebra de conformidade. Utilizar termos que pressionem o cliente a dar nota alta é considerado manipulação de dados na auditoria de qualidade.'
+                        }
+                    ]
+                },
+                {
+                    id: 'l2_2',
+                    moduloId: 'mod_2',
+                    numero: '2.2',
+                    titulo: 'O Que o Monitor de Qualidade Faz em Relação ao NPS e CSAT',
+                    xp: 10,
+                    vidas: 3,
+                    desafios: [
+                        {
+                            id: 'd2_2_1',
+                            tipo: 'VERDADEIRO_OU_FALSO',
+                            cenario: 'Escopo da auditoria realizada pelo time de Monitoria de Qualidade.',
+                            enunciado: 'O papel do monitor de qualidade diante de notas baixas no CSAT/NPS é punir o operador, independentemente de o erro ter sido gerado por falhas técnicas de produto ou lentidão nos sistemas da empresa.',
+                            opcoes: ['Verdadeiro', 'Falso'],
+                            gabarito: 'Falso',
+                            feedbackAcerto: 'Excelente! O monitor atua como analista de causa raiz: ele investiga se a insatisfação veio de postura e técnica do atendente ou de falhas de processos e produtos.',
+                            feedbackErro: 'Visão punitiva equivocada. A monitoria de qualidade existe para mapear desvios operacionais e retroalimentar as áreas de processo, garantindo justiça nas avaliações dos operadores.'
+                        },
+                        {
+                            id: 'd2_2_2',
+                            tipo: 'CACA_ERRO',
+                            cenario: 'Análise de monitoria para identificar desvios de compliance e conduta ética.',
+                            enunciado: 'Aponte a conduta do operador que gera reprovação imediata (Nota Zero) na auditoria de monitoria:',
+                            linhas: [
+                                'Ação 1: Explicar a política de cobrança com clareza e paciência.',
+                                'Ação 2: Desconectar propositalmente a ligação de um cliente agressivo para não receber nota 0 na pesquisa.',
+                                'Ação 3: Oferecer a abertura de um chamado técnico quando a linha apresenta ruído.'
+                            ],
+                            opcoes: ['Ação 1', 'Ação 2', 'Ação 3'],
+                            gabarito: 'Ação 2',
+                            feedbackAcerto: 'Gravíssimo! Derrubar ligação para burlar a pesquisa pós-atendimento é fraude operacional com rescisão ou advertência gravíssima pela monitoria.',
+                            feedbackErro: 'Não conformidade crítica. Fugir da pesquisa mascara indicadores reais e impede o resgate do cliente por equipes de retenção.'
+                        },
+                        {
+                            id: 'd2_2_3',
+                            tipo: 'ESCOLHA_DE_FALA',
+                            cenario: 'Feedback do monitor para um operador que obteve CSAT baixo em uma chamada onde resolveu o problema técnico, mas utilizou tom sarcástico e impaciente.',
+                            enunciado: 'Qual é a devolutiva construtiva e correta que o monitor deve aplicar?',
+                            opcoes: [
+                                'Opção A: "O cliente foi injusto com você porque você resolveu o problema técnico, então não precisa mudar nada."',
+                                'Opção B: "A resolução técnica foi perfeita, mas o tom impaciente fez o cliente se sentir mal recebido, derrubando o CSAT. Vamos praticar escuta ativa para unir agilidade técnica à cordialidade."',
+                                'Opção C: "Você errou tudo na chamada e não tem perfil para atendimento."'
+                            ],
+                            gabarito: 'Opção B: "A resolução técnica foi perfeita, mas o tom impaciente fez o cliente se sentir mal recebido, derrubando o CSAT. Vamos praticar escuta ativa para unir agilidade técnica à cordialidade."',
+                            feedbackAcerto: 'Feedback exemplar! Valoriza o acerto procedimental, aponta com precisão o comportamento causador da nota baixa e oferece um caminho de desenvolvimento.',
+                            feedbackErro: 'Feedback inadequado. Ignorar a comunicação verbal ou atacar o operador sem apontar o comportamento impede a evolução da equipe.'
+                        },
+                        {
+                            id: 'd2_2_4',
+                            tipo: 'ORDENAR_FLUXO',
+                            cenario: 'Fluxo de investigação do monitor de qualidade ao notar uma queda súbita no NPS de uma operação.',
+                            enunciado: 'Organize a sequência de trabalho do monitor para identificar e conter o aumento de detratores:',
+                            itens: [
+                                'Ouvir as ligações com notas baixas e tabular as principais palavras-chave e reclamações',
+                                'Coletar a amostra dos clientes que atribuíram notas de 0 a 6',
+                                'Desenhar plano de ação em conjunto com supervisores e áreas de negócio',
+                                'Cruzar os motivos encontrados com falhas operacionais, produtos ou instabilidades'
+                            ],
+                            gabarito: [
+                                'Coletar a amostra dos clientes que atribuíram notas de 0 a 6',
+                                'Ouvir as ligações com notas baixas e tabular as principais palavras-chave e reclamações',
+                                'Cruzar os motivos encontrados com falhas operacionais, produtos ou instabilidades',
+                                'Desenhar plano de ação em conjunto com supervisores e áreas de negócio'
+                            ],
+                            feedbackAcerto: 'Método analítico estruturado! Esse ciclo fecha o elo entre a voz do cliente (pesquisa) e a melhoria contínua da empresa.',
+                            feedbackErro: 'Investigação desordenada. Criar planos de ação antes de ouvir as ligações e validar as queixas gera retrabalho e não resolve a causa raiz.'
+                        },
+                        {
+                            id: 'd2_2_5',
+                            tipo: 'ESCOLHA_DE_FALA',
+                            cenario: 'Calibração interna entre o monitor de qualidade e o supervisor sobre uma ligação que recebeu nota 1 no CSAT devido a um atraso de entrega de terceiros.',
+                            enunciado: 'Qual deve ser o veredito da monitoria em relação à pontuação do operador?',
+                            opcoes: [
+                                'Opção A: "Zerar a nota da monitoria do operador para acompanhar o CSAT do cliente."',
+                                'Opção B: "Manter a nota de monitoria alta se o operador cumpriu todos os procedimentos e teve empatia, sinalizando a insatisfação do cliente como problema de logística."',
+                                'Opção C: "Excluir o cliente do cadastro para evitar novas avaliações baixas."'
+                            ],
+                            gabarito: 'Opção B: "Manter a nota de monitoria alta se o operador cumpriu todos os procedimentos e teve empatia, sinalizando a insatisfação do cliente como problema de logística."',
+                            feedbackAcerto: 'Critério técnico impecável! A monitoria de qualidade avalia o cumprimento de regras, técnica e comportamento do operador, diferenciando falhas humanas de problemas de entrega externa.',
+                            feedbackErro: 'Injustiça avaliativa. Contaminar a nota individual do operador com falhas logísticas gera desmotivação e perda de credibilidade do programa de monitoria.'
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+
+    activeSession: null,
+
+    getState() {
+        try {
+            const raw = localStorage.getItem('portal_duolingo_nps_csat');
+            if (raw) return JSON.parse(raw);
+        } catch(e) {}
+        return {
+            xp: 0,
+            streak: 3,
+            completedLessons: [],
+            lastPlayed: new Date().toISOString()
+        };
+    },
+
+    saveState(state) {
+        try {
+            localStorage.setItem('portal_duolingo_nps_csat', JSON.stringify(state));
+        } catch(e) {
+            console.warn("Erro ao salvar progresso Duolingo:", e);
+        }
+    },
+
+    resetProgresso() {
+        if (!confirm("Deseja realmente resetar todo o progresso da trilha Duolingo para testes? Todo o XP e lições concluídas serão zerados.")) return;
+        this.saveState({
+            xp: 0,
+            streak: 3,
+            completedLessons: [],
+            lastPlayed: new Date().toISOString()
+        });
+        this.activeSession = null;
+        const drawer = document.getElementById('duo-feedback-drawer');
+        if (drawer) drawer.remove();
+        this.render();
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert("Progresso Zerado", "A trilha gamificada foi reiniciada com 0 XP para novos testes.", "success");
+        }
+    },
+
+    getLessonById(lessonId) {
+        for (const m of this.modules) {
+            for (const l of m.licoes) {
+                if (l.id === lessonId) return l;
+            }
+        }
+        return null;
+    },
+
+    render(container) {
+        const viewDiv = container || document.getElementById('view-container-teste_duolingo');
+        if (!viewDiv) return;
+
+        if (this.activeSession) {
+            this.renderRunner(viewDiv);
+        } else {
+            this.renderTrilha(viewDiv);
+        }
+    },
+
+    renderTrilha(container) {
+        const viewDiv = container || document.getElementById('view-container-teste_duolingo');
+        if (!viewDiv) return;
+
+        const state = this.getState();
+        const xpAtual = state.xp || 0;
+        const completed = state.completedLessons || [];
+
+        let html = `
+            <div class="max-w-4xl mx-auto px-4 py-6 animate-fade-in pb-20">
+                <!-- Cabeçalho Executivo com Estatísticas -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm mb-8">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
+                        <div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="px-3 py-1 bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 font-bold rounded-full text-xs uppercase tracking-wider">
+                                    <i class="fa-solid fa-code mr-1"></i> Painel Exclusivo Dev
+                                </span>
+                                <span class="px-3 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold rounded-full text-xs uppercase tracking-wider">
+                                    <i class="fa-solid fa-gamepad mr-1"></i> Trilha Gamificada
+                                </span>
+                            </div>
+                            <h2 class="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight">${this.meta.tema}</h2>
+                            <p class="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                Indicadores: ${this.meta.indicadores.join(' • ')}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="app.duolingo.resetProgresso()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:text-rose-600 transition flex items-center gap-1.5" title="Zerar progresso para novos testes">
+                                <i class="fa-solid fa-rotate-left"></i> Resetar Progresso
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cards de Estatísticas estilo Duolingo -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                        <div class="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-2xl p-4 flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center text-xl shadow-sm">
+                                <i class="fa-solid fa-trophy"></i>
+                            </div>
+                            <div>
+                                <span class="text-2xl font-black tabular-nums text-amber-700 dark:text-amber-400 leading-none">${xpAtual} / ${this.meta.xpTotal}</span>
+                                <span class="block text-[11px] font-bold uppercase tracking-wider text-amber-600/70 mt-1">XP Conquistado</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/40 rounded-2xl p-4 flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-orange-500 text-white flex items-center justify-center text-xl shadow-sm">
+                                <i class="fa-solid fa-fire"></i>
+                            </div>
+                            <div>
+                                <span class="text-2xl font-black tabular-nums text-orange-700 dark:text-orange-400 leading-none">${state.streak}</span>
+                                <span class="block text-[11px] font-bold uppercase tracking-wider text-orange-600/70 mt-1">Dias Seguidos</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 rounded-2xl p-4 flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-[#58CC02] text-white flex items-center justify-center text-xl shadow-sm">
+                                <i class="fa-solid fa-circle-check"></i>
+                            </div>
+                            <div>
+                                <span class="text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-400 leading-none">${completed.length} / ${this.meta.totalLicoes}</span>
+                                <span class="block text-[11px] font-bold uppercase tracking-wider text-emerald-600/70 mt-1">Lições Concluídas</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/40 rounded-2xl p-4 flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-xl bg-rose-500 text-white flex items-center justify-center text-xl shadow-sm">
+                                <i class="fa-solid fa-heart"></i>
+                            </div>
+                            <div>
+                                <span class="text-2xl font-black tabular-nums text-rose-700 dark:text-rose-400 leading-none">3 Vidas</span>
+                                <span class="block text-[11px] font-bold uppercase tracking-wider text-rose-600/70 mt-1">Por Sessão</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Árvore de Lições / Módulos -->
+                <div class="space-y-12">
+        `;
+
+        this.modules.forEach((mod, modIdx) => {
+            html += `
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm relative overflow-hidden">
+                    <!-- Banner do Módulo -->
+                    <div class="flex items-center gap-4 pb-6 mb-8 border-b border-slate-100 dark:border-slate-800">
+                        <div class="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl border border-indigo-100 dark:border-indigo-900 shrink-0">
+                            <i class="fa-solid ${mod.icone}"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Seção ${mod.numero} da Árvore</span>
+                            <h3 class="text-xl font-black text-slate-800 dark:text-white tracking-tight">${mod.titulo}</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${mod.descricao}</p>
+                        </div>
+                    </div>
+
+                    <!-- Nós de Lição da Trilha em Zigue-Zague -->
+                    <div class="flex flex-col items-center space-y-8 relative">
+            `;
+
+            mod.licoes.forEach((licao, licIdx) => {
+                const isConcluida = completed.includes(licao.id);
+                // No modo dev, permitimos iniciar qualquer lição para teste ágil
+                const zigueZagueOffsets = ['translate-x-0', 'md:translate-x-12', '-md:translate-x-12'];
+                const offsetClass = zigueZagueOffsets[licIdx % zigueZagueOffsets.length];
+
+                html += `
+                    <div class="flex flex-col items-center text-center ${offsetClass} transition-transform">
+                        <!-- Nó Botão Redondo 3D Duolingo -->
+                        <div class="relative group">
+                            <button onclick="app.duolingo.iniciarLicao('${licao.id}')" class="duo-node-btn ${isConcluida ? 'duo-node-completed' : 'duo-node-active'}" title="Clique para iniciar ${licao.titulo}">
+                                <i class="fa-solid ${isConcluida ? 'fa-check' : 'fa-star'}"></i>
+                                ${isConcluida ? `<div class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-amber-400 text-slate-900 flex items-center justify-center text-xs font-black shadow-md border-2 border-white dark:border-slate-900"><i class="fa-solid fa-crown"></i></div>` : ''}
+                            </button>
+                        </div>
+
+                        <!-- Info do Nó -->
+                        <div class="mt-3">
+                            <span class="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider ${isConcluida ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400'}">
+                                ${isConcluida ? '<i class=\"fa-solid fa-award mr-1\"></i> 10 XP Conquistado' : '<i class=\"fa-solid fa-bolt mr-1\"></i> Lição ' + licao.numero + ' • +10 XP'}
+                            </span>
+                            <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 mt-1 max-w-xs">${licao.titulo}</h4>
+                            <p class="text-xs text-slate-400 mt-0.5">${licao.desafios.length} Desafios • 3 Vidas</p>
+                            
+                            <button onclick="app.duolingo.iniciarLicao('${licao.id}')" class="mt-2 text-xs font-extrabold ${isConcluida ? 'text-emerald-600 hover:text-emerald-700' : 'text-sky-600 hover:text-sky-700'} underline transition">
+                                ${isConcluida ? 'Praticar Novamente' : 'COMEÇAR LIÇÃO'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+            </div>
+        `;
+
+        viewDiv.innerHTML = html;
+    },
+
+    iniciarLicao(lessonId) {
+        const licao = this.getLessonById(lessonId);
+        if (!licao) return;
+
+        // Limpa qualquer drawer aberto
+        const oldDrawer = document.getElementById('duo-feedback-drawer');
+        if (oldDrawer) oldDrawer.remove();
+
+        const firstChallenge = licao.desafios[0];
+        let orderedItems = [];
+        if (firstChallenge.tipo === 'ORDENAR_FLUXO') {
+            orderedItems = [...firstChallenge.itens].sort(() => Math.random() - 0.5);
+            if (orderedItems.join('|||') === firstChallenge.gabarito.join('|||')) {
+                orderedItems.reverse();
+            }
+        }
+
+        this.activeSession = {
+            lessonId: lessonId,
+            licao: licao,
+            challengeIndex: 0,
+            vidas: licao.vidas || 3,
+            selectedOption: null,
+            orderedItems: orderedItems,
+            feedbackStatus: null
+        };
+
+        this.render();
+    },
+
+    fecharRunnerComConfirmacao() {
+        if (confirm("Deseja realmente sair da lição? O progresso desta sessão não salvo será descartado.")) {
+            this.activeSession = null;
+            const drawer = document.getElementById('duo-feedback-drawer');
+            if (drawer) drawer.remove();
+            this.render();
+        }
+    },
+
+    renderRunner(container) {
+        const viewDiv = container || document.getElementById('view-container-teste_duolingo');
+        if (!viewDiv || !this.activeSession) return;
+
+        const session = this.activeSession;
+        const state = this.getState();
+        const licao = session.licao;
+        const totalDesafios = licao.desafios.length;
+        const currentIndex = session.challengeIndex;
+        const challenge = licao.desafios[currentIndex];
+
+        // Barra de progresso: começa em 0% e recebe incremento uniforme a cada desafio concluído
+        // width: calc(100% * currentIndex / totalDesafios)
+        const pctProgresso = Math.min(100, Math.round((currentIndex / totalDesafios) * 100));
+
+        let html = `
+            <div id="duo-runner-card" class="max-w-3xl mx-auto px-4 py-4 animate-fade-in pb-32">
+                <!-- Header Duolingo: Botão Fechar, Barra de Progresso Suave, Vidas e Ofensiva -->
+                <div class="flex items-center justify-between gap-3 mb-8">
+                    <!-- Botão Fechar (✕) -->
+                    <button onclick="app.duolingo.fecharRunnerComConfirmacao()" class="w-10 h-10 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white flex items-center justify-center text-2xl transition font-bold" title="Sair da lição">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+
+                    <!-- Barra de Progresso Centralizada (16px altura, bordas 999px) -->
+                    <div class="duo-progress-container flex-1 max-w-md mx-2">
+                        <div class="duo-progress-bar" style="width: ${pctProgresso}%;"></div>
+                    </div>
+
+                    <!-- Contador de Vidas (❤️ com tremor em erro) -->
+                    <div class="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 rounded-full border border-rose-200 dark:border-rose-900 shrink-0">
+                        <i class="fa-solid fa-heart text-rose-500 text-lg"></i>
+                        <span id="duo-vidas-counter" class="tabular-nums font-black text-rose-600 dark:text-rose-400 text-base">${session.vidas}</span>
+                    </div>
+
+                    <!-- Contador de Ofensiva (🔥) -->
+                    <div class="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 rounded-full border border-amber-200 dark:border-amber-900 shrink-0">
+                        <i class="fa-solid fa-fire text-amber-500 text-lg"></i>
+                        <span class="tabular-nums font-black text-amber-600 dark:text-amber-400 text-base">${state.streak}</span>
+                    </div>
+                </div>
+
+                <!-- Card Central de Desafio -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm">
+                    <!-- Sub-badge com contador do desafio -->
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-xs font-black uppercase tracking-wider text-slate-400">
+                            Desafio <span class="tabular-nums font-black">${currentIndex + 1}</span> de <span class="tabular-nums font-black">${totalDesafios}</span>
+                        </span>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            Tipo: ${challenge.tipo.replace(/_/g, ' ')}
+                        </span>
+                    </div>
+
+                    <!-- Balão de Diálogo de Cenário Operacional -->
+                    <div class="flex items-start gap-4 mb-6">
+                        <div class="w-12 h-12 rounded-2xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-300 flex items-center justify-center text-xl shrink-0 shadow-sm border border-sky-200 dark:border-sky-800">
+                            <i class="fa-solid fa-user-tie"></i>
+                        </div>
+                        <div class="duo-speech-bubble p-4 flex-1 shadow-sm">
+                            <span class="text-[10px] font-black uppercase tracking-wider text-sky-600 dark:text-sky-400 block mb-1">
+                                Cenário Operacional
+                            </span>
+                            <p class="text-xs md:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
+                                ${challenge.cenario}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Enunciado da Pergunta -->
+                    <h3 class="text-base md:text-lg font-black text-slate-800 dark:text-white mb-6 leading-snug">
+                        ${challenge.enunciado}
+                    </h3>
+
+                    <!-- Renderizador Interativo Dinâmico de acordo com challenge.tipo -->
+                    <div class="mb-8">
+                        ${this.renderTipoDesafio(challenge)}
+                    </div>
+
+                    <!-- Botão de Verificação na Base -->
+                    <div class="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <button id="duo-btn-verificar" onclick="app.duolingo.verificarResposta()" ${session.selectedOption || challenge.tipo === 'ORDENAR_FLUXO' ? '' : 'disabled'} class="${session.selectedOption || challenge.tipo === 'ORDENAR_FLUXO' ? 'duo-btn-green font-black uppercase tracking-wider py-4 px-10 rounded-2xl text-base shadow-md w-full md:w-auto transition-transform active:translate-y-1' : 'duo-btn-disabled font-black uppercase tracking-wider py-4 px-10 rounded-2xl text-base shadow-sm w-full md:w-auto'}">
+                            VERIFICAR
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        viewDiv.innerHTML = html;
+
+        // Se já houver drawer para este desafio, reinsere
+        if (session.feedbackStatus) {
+            this.renderRunnerFeedbackDrawer();
+        }
+    },
+
+    renderTipoDesafio(challenge) {
+        const session = this.activeSession;
+
+        if (challenge.tipo === 'VERDADEIRO_OU_FALSO') {
+            return `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    ${challenge.opcoes.map(opcao => {
+                        const isSelected = session.selectedOption === opcao;
+                        const isVerdadeiro = opcao === 'Verdadeiro';
+                        return `
+                            <div onclick="app.duolingo.selecionarOpcao('${opcao}')" data-option-val="${opcao}" class="duo-card-option ${isSelected ? 'duo-card-selected' : ''} p-5 flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl ${isVerdadeiro ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'} flex items-center justify-center text-lg">
+                                        <i class="fa-solid ${isVerdadeiro ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
+                                    </div>
+                                    <span class="text-base font-black text-slate-800 dark:text-white">${opcao}</span>
+                                </div>
+                                <div class="w-6 h-6 rounded-full border-2 ${isSelected ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 dark:border-slate-600'} flex items-center justify-center text-xs">
+                                    ${isSelected ? '<i class=\"fa-solid fa-check\"></i>' : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        if (challenge.tipo === 'ESCOLHA_DE_FALA') {
+            return `
+                <div class="space-y-3">
+                    ${challenge.opcoes.map(opcao => {
+                        const isSelected = session.selectedOption === opcao;
+                        return `
+                            <div onclick="app.duolingo.selecionarOpcao('${encodeURIComponent(opcao)}')" data-option-val="${opcao}" class="duo-card-option ${isSelected ? 'duo-card-selected' : ''} p-4 md:p-5 flex items-start justify-between gap-3">
+                                <div class="flex items-start gap-3">
+                                    <div class="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 flex items-center justify-center text-sm shrink-0 mt-0.5 font-black">
+                                        <i class="fa-solid fa-quote-left"></i>
+                                    </div>
+                                    <p class="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug">
+                                        ${opcao}
+                                    </p>
+                                </div>
+                                <div class="w-5 h-5 rounded-full border-2 ${isSelected ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 dark:border-slate-600'} flex items-center justify-center text-[10px] shrink-0 mt-0.5">
+                                    ${isSelected ? '<i class=\"fa-solid fa-check\"></i>' : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        if (challenge.tipo === 'PREENCHER_LACUNA') {
+            // Divide o texto do template nos marcadores ________
+            const rawParts = challenge.texto.split('________');
+            const selectedVal = session.selectedOption || '';
+            const slotWords = selectedVal ? selectedVal.split('|').map(s => s.trim()) : [];
+
+            let renderedSentence = '';
+            rawParts.forEach((part, idx) => {
+                renderedSentence += part;
+                if (idx < rawParts.length - 1) {
+                    const word = slotWords[idx] || '________';
+                    renderedSentence += `<span id="duo-lacuna-slot-${idx}" class="inline-block px-2.5 py-0.5 mx-1 font-black text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 border-b-2 border-dashed border-sky-500 rounded tracking-wide transition-all">${word}</span>`;
+                }
+            });
+
+            return `
+                <div>
+                    <!-- Frase com Lacunas Dinâmicas Destacadas -->
+                    <div class="p-4 md:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mb-6 text-sm md:text-base font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
+                        ${renderedSentence}
+                    </div>
+
+                    <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Selecione os termos que completam a lacuna:</p>
+
+                    <!-- Opções Clicáveis 3D -->
+                    <div class="space-y-3">
+                        ${challenge.opcoes.map(opcao => {
+                            const isSelected = session.selectedOption === opcao;
+                            return `
+                                <div onclick="app.duolingo.selecionarOpcao('${encodeURIComponent(opcao)}')" data-option-val="${opcao}" class="duo-card-option ${isSelected ? 'duo-card-selected' : ''} p-4 flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fa-solid fa-puzzle-piece text-sky-500 mr-1"></i>
+                                        <span class="text-sm font-bold text-slate-700 dark:text-slate-200">${opcao}</span>
+                                    </div>
+                                    <div class="w-5 h-5 rounded-full border-2 ${isSelected ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 dark:border-slate-600'} flex items-center justify-center text-[10px]">
+                                        ${isSelected ? '<i class=\"fa-solid fa-check\"></i>' : ''}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        if (challenge.tipo === 'CACA_ERRO') {
+            return `
+                <div>
+                    ${challenge.linhas ? `
+                        <!-- Exibição das Linhas/Trechos -->
+                        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mb-6 space-y-2">
+                            ${challenge.linhas.map(linha => `
+                                <div class="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                    ${linha}
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+
+                    <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Aponte a opção incorreta:</p>
+
+                    <div class="space-y-3">
+                        ${challenge.opcoes.map(opcao => {
+                            const isSelected = session.selectedOption === opcao;
+                            return `
+                                <div onclick="app.duolingo.selecionarOpcao('${encodeURIComponent(opcao)}')" data-option-val="${opcao}" class="duo-card-option ${isSelected ? 'duo-card-selected' : ''} p-4 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-7 h-7 rounded-lg bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center text-xs font-black">
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        </div>
+                                        <span class="text-xs md:text-sm font-bold text-slate-700 dark:text-slate-200">${opcao}</span>
+                                    </div>
+                                    <div class="w-5 h-5 rounded-full border-2 ${isSelected ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 dark:border-slate-600'} flex items-center justify-center text-[10px]">
+                                        ${isSelected ? '<i class=\"fa-solid fa-check\"></i>' : ''}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        if (challenge.tipo === 'ORDENAR_FLUXO') {
+            const items = session.orderedItems || [];
+            return `
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                        Utilize os botões <i class="fa-solid fa-arrow-up mx-0.5"></i> e <i class="fa-solid fa-arrow-down mx-0.5"></i> para organizar a sequência correta:
+                    </p>
+
+                    <div class="space-y-3">
+                        ${items.map((item, idx) => `
+                            <div class="p-3.5 md:p-4 rounded-2xl bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-black tabular-nums shrink-0">
+                                        ${idx + 1}º
+                                    </div>
+                                    <p class="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug">
+                                        ${item}
+                                    </p>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button onclick="app.duolingo.moverOrdem(${idx}, ${idx - 1})" ${idx === 0 ? 'disabled' : ''} class="w-8 h-8 rounded-lg ${idx === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold'} flex items-center justify-center transition">
+                                        <i class="fa-solid fa-arrow-up"></i>
+                                    </button>
+                                    <button onclick="app.duolingo.moverOrdem(${idx}, ${idx + 1})" ${idx === items.length - 1 ? 'disabled' : ''} class="w-8 h-8 rounded-lg ${idx === items.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold'} flex items-center justify-center transition">
+                                        <i class="fa-solid fa-arrow-down"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        return '';
+    },
+
+    selecionarOpcao(valEncoded) {
+        if (!this.activeSession || this.activeSession.feedbackStatus) return;
+        const val = decodeURIComponent(valEncoded);
+        this.activeSession.selectedOption = val;
+
+        const currentChallenge = this.activeSession.licao.desafios[this.activeSession.challengeIndex];
+
+        // Atualização em tempo real das lacunas dinâmicas
+        if (currentChallenge.tipo === 'PREENCHER_LACUNA') {
+            const parts = String(val).split('|').map(s => s.trim());
+            parts.forEach((p, idx) => {
+                const el = document.getElementById(`duo-lacuna-slot-${idx}`);
+                if (el) el.textContent = p;
+            });
+        }
+
+        // Habilita o botão VERIFICAR
+        const btn = document.getElementById('duo-btn-verificar');
+        if (btn) {
+            btn.disabled = false;
+            btn.className = 'duo-btn-green font-black uppercase tracking-wider py-4 px-10 rounded-2xl text-base shadow-md w-full md:w-auto transition-transform active:translate-y-1';
+        }
+
+        // Atualiza marcação visual dos cards
+        document.querySelectorAll('.duo-card-option').forEach(el => {
+            if (el.dataset.optionVal === val) {
+                el.classList.add('duo-card-selected');
+                const checkIcon = el.querySelector('.w-5, .w-6');
+                if (checkIcon) {
+                    checkIcon.className = 'w-5 h-5 rounded-full border-2 border-sky-500 bg-sky-500 text-white flex items-center justify-center text-[10px]';
+                    checkIcon.innerHTML = '<i class=\"fa-solid fa-check\"></i>';
+                }
+            } else {
+                el.classList.remove('duo-card-selected');
+                const checkIcon = el.querySelector('.w-5, .w-6');
+                if (checkIcon) {
+                    checkIcon.className = 'w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center text-[10px]';
+                    checkIcon.innerHTML = '';
+                }
+            }
+        });
+    },
+
+    moverOrdem(fromIdx, toIdx) {
+        if (!this.activeSession || this.activeSession.feedbackStatus) return;
+        const arr = this.activeSession.orderedItems;
+        if (toIdx < 0 || toIdx >= arr.length) return;
+        const temp = arr[fromIdx];
+        arr[fromIdx] = arr[toIdx];
+        arr[toIdx] = temp;
+        this.renderRunner();
+    },
+
+    verificarResposta() {
+        if (!this.activeSession) return;
+        const session = this.activeSession;
+        const challenge = session.licao.desafios[session.challengeIndex];
+
+        let acertou = false;
+        if (challenge.tipo === 'ORDENAR_FLUXO') {
+            acertou = session.orderedItems.length === challenge.gabarito.length &&
+                      session.orderedItems.every((it, idx) => it.trim() === challenge.gabarito[idx].trim());
+        } else if (challenge.tipo === 'VERDADEIRO_OU_FALSO') {
+            acertou = String(session.selectedOption).trim().toLowerCase() === String(challenge.gabarito).trim().toLowerCase();
+        } else if (challenge.tipo === 'ESCOLHA_DE_FALA') {
+            const sel = String(session.selectedOption).trim();
+            const gab = String(challenge.gabarito).trim();
+            acertou = (sel === gab) || sel.startsWith(gab.slice(0, 8)) || gab.startsWith(sel.slice(0, 8));
+        } else if (challenge.tipo === 'PREENCHER_LACUNA') {
+            acertou = String(session.selectedOption).trim() === String(challenge.gabarito).trim();
+        } else if (challenge.tipo === 'CACA_ERRO') {
+            acertou = String(session.selectedOption).trim() === String(challenge.gabarito).trim();
+        }
+
+        if (acertou) {
+            session.feedbackStatus = 'acerto';
+        } else {
+            session.feedbackStatus = 'erro';
+            session.vidas = Math.max(0, session.vidas - 1);
+
+            // Dispara tremor de tela no card principal
+            const runnerContainer = document.getElementById('duo-runner-card');
+            if (runnerContainer) {
+                runnerContainer.classList.remove('duo-shake');
+                void runnerContainer.offsetWidth; // força repaint
+                runnerContainer.classList.add('duo-shake');
+            }
+
+            // Atualiza contador de vidas visualmente
+            const vidasCounter = document.getElementById('duo-vidas-counter');
+            if (vidasCounter) {
+                vidasCounter.textContent = session.vidas;
+            }
+        }
+
+        this.renderRunnerFeedbackDrawer();
+    },
+
+    renderRunnerFeedbackDrawer() {
+        const exist = document.getElementById('duo-feedback-drawer');
+        if (exist) exist.remove();
+
+        const session = this.activeSession;
+        const challenge = session.licao.desafios[session.challengeIndex];
+        const isAcerto = session.feedbackStatus === 'acerto';
+
+        const drawer = document.createElement('div');
+        drawer.id = 'duo-feedback-drawer';
+        drawer.className = 'duo-drawer fixed bottom-0 left-0 w-full z-[9999] shadow-2xl transition-all';
+
+        if (isAcerto) {
+            drawer.innerHTML = `
+                <div class="bg-[#D7FFB8] dark:bg-[#142918] border-t-4 border-[#58CC02] p-5 md:p-6 text-slate-800 dark:text-slate-100">
+                    <div class="max-w-3xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div class="flex items-start md:items-center gap-4">
+                            <div class="w-14 h-14 rounded-full bg-[#58CC02] text-white flex items-center justify-center text-3xl shadow-sm shrink-0">
+                                <i class="fa-solid fa-check"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xl font-black text-[#58A700] dark:text-[#58CC02] tracking-tight">Excelente!</h4>
+                                <p class="text-xs md:text-sm font-semibold text-emerald-950 dark:text-emerald-100 mt-1 leading-snug">${challenge.feedbackAcerto}</p>
+                            </div>
+                        </div>
+                        <button onclick="app.duolingo.avancarDesafio()" class="duo-btn-green font-black uppercase tracking-wider py-4 px-10 rounded-2xl text-base shadow-md w-full md:w-auto shrink-0 whitespace-nowrap">
+                            CONTINUAR
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            drawer.innerHTML = `
+                <div class="bg-[#FFDFE0] dark:bg-[#2d1315] border-t-4 border-[#FF4B4B] p-5 md:p-6 text-slate-800 dark:text-slate-100">
+                    <div class="max-w-3xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div class="flex items-start md:items-center gap-4">
+                            <div class="w-14 h-14 rounded-full bg-[#FF4B4B] text-white flex items-center justify-center text-3xl shadow-sm shrink-0">
+                                <i class="fa-solid fa-xmark"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xl font-black text-[#EA2B2B] dark:text-[#FF4B4B] tracking-tight">Solução Correta / Regra de Monitoria</h4>
+                                <p class="text-xs md:text-sm font-semibold text-rose-950 dark:text-rose-100 mt-1 leading-snug">${challenge.feedbackErro}</p>
+                            </div>
+                        </div>
+                        <button onclick="app.duolingo.avancarDesafio()" class="duo-btn-red font-black uppercase tracking-wider py-4 px-10 rounded-2xl text-base shadow-md w-full md:w-auto shrink-0 whitespace-nowrap">
+                            CONTINUAR
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        document.body.appendChild(drawer);
+    },
+
+    avancarDesafio() {
+        if (!this.activeSession) return;
+        const session = this.activeSession;
+        const drawer = document.getElementById('duo-feedback-drawer');
+        if (drawer) drawer.remove();
+
+        if (session.feedbackStatus === 'erro') {
+            if (session.vidas <= 0) {
+                this.renderGameOver();
+                return;
+            }
+            // Permanece no mesmo ponto conforme diretriz
+            session.feedbackStatus = null;
+            session.selectedOption = null;
+            this.renderRunner();
+            return;
+        }
+
+        // Acerto! Incrementa o índice do desafio
+        session.challengeIndex++;
+        session.feedbackStatus = null;
+        session.selectedOption = null;
+
+        if (session.challengeIndex >= session.licao.desafios.length) {
+            this.concluirLicao();
+        } else {
+            const nextChallenge = session.licao.desafios[session.challengeIndex];
+            if (nextChallenge.tipo === 'ORDENAR_FLUXO') {
+                session.orderedItems = [...nextChallenge.itens].sort(() => Math.random() - 0.5);
+                if (session.orderedItems.join('|||') === nextChallenge.gabarito.join('|||')) {
+                    session.orderedItems.reverse();
+                }
+            } else {
+                session.orderedItems = [];
+            }
+            this.renderRunner();
+        }
+    },
+
+    renderGameOver() {
+        const modal = document.createElement('div');
+        modal.id = 'duo-gameover-modal';
+        modal.className = 'fixed inset-0 z-[10000] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 md:p-8 shadow-2xl text-center">
+                <div class="w-20 h-20 rounded-full bg-rose-100 dark:bg-rose-950/40 text-rose-500 mx-auto flex items-center justify-center text-4xl mb-4">
+                    <i class="fa-solid fa-heart-crack animate-bounce"></i>
+                </div>
+                <h3 class="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Fim das Vidas!</h3>
+                <p class="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                    Você utilizou todas as 3 vidas nesta sessão. Revise os conceitos operacionais e tente novamente para conquistar os 10 XP da lição.
+                </p>
+                <div class="mt-6 space-y-3">
+                    <button onclick="document.getElementById('duo-gameover-modal').remove(); app.duolingo.iniciarLicao('${this.activeSession.lessonId}')" class="duo-btn-green font-black uppercase tracking-wider py-3.5 px-6 rounded-2xl w-full text-sm shadow-md">
+                        TENTAR NOVAMENTE
+                    </button>
+                    <button onclick="document.getElementById('duo-gameover-modal').remove(); app.duolingo.activeSession = null; app.duolingo.render()" class="w-full py-3 px-6 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition">
+                        Voltar para a Trilha
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
+
+    concluirLicao() {
+        const session = this.activeSession;
+        const state = this.getState();
+
+        if (!state.completedLessons.includes(session.lessonId)) {
+            state.completedLessons.push(session.lessonId);
+            state.xp = Math.min(40, state.completedLessons.length * 10);
+            this.saveState(state);
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'duo-success-modal';
+        modal.className = 'fixed inset-0 z-[10000] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 md:p-8 shadow-2xl text-center">
+                <div class="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-500 mx-auto flex items-center justify-center text-4xl mb-4">
+                    <i class="fa-solid fa-trophy animate-bounce"></i>
+                </div>
+                <span class="px-3 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-full text-xs font-black uppercase tracking-wider">
+                    Lição Concluída
+                </span>
+                <h3 class="text-2xl font-black text-slate-800 dark:text-white tracking-tight mt-2">${session.licao.titulo}</h3>
+                
+                <div class="grid grid-cols-2 gap-3 my-6">
+                    <div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-3">
+                        <span class="text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums">+10 XP</span>
+                        <span class="block text-[10px] font-bold uppercase text-amber-600/70 mt-0.5">Pontos Ganhos</span>
+                    </div>
+                    <div class="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-2xl p-3">
+                        <span class="text-2xl font-black text-rose-600 dark:text-rose-400 tabular-nums">${session.vidas} / 3</span>
+                        <span class="block text-[10px] font-bold uppercase text-rose-600/70 mt-0.5">Vidas Restantes</span>
+                    </div>
+                </div>
+
+                <button onclick="document.getElementById('duo-success-modal').remove(); app.duolingo.activeSession = null; app.duolingo.render()" class="duo-btn-green font-black uppercase tracking-wider py-4 px-8 rounded-2xl w-full text-sm shadow-md">
+                    CONTINUAR PARA A TRILHA
+                </button>
+            </div>
+        `;
+        document.body.appendChild(modal);
     }
 };
 
