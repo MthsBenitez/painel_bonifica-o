@@ -1,5 +1,166 @@
 
-        const app = {
+        // =========================================================================
+// MOTOR DE SEGURANÇA MÁXIMA ANTI-COLA & EMBARALHAMENTO CRIPTOGRÁFICO
+// Multi-Navegador, Multi-Aba, Detecção de Foco & Randomização Total de Alternativas
+// =========================================================================
+
+window.AntiColaSecurityEngine = {
+    // 1. EMBARALHAMENTO BALANCEADO DE QUESTÕES E ALTERNATIVAS
+    // Garante que as respostas corretas fiquem distribuídas de forma imprevisível entre A, B, C e D
+    embaralharQuestoes(bancoQuestoes, qtd = 10) {
+        let selecionadas = [];
+        let letrasDistribuicao = [];
+        let tentativas = 0;
+
+        // Loop de garantia de distribuição balanceada (evita concentração de qualquer letra)
+        while (tentativas < 50) {
+            tentativas++;
+
+            // Clona e embaralha a lista de questões (Fisher-Yates)
+            const pool = bancoQuestoes.map(q => ({ ...q }));
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            const questoesEscolhidas = pool.slice(0, Math.min(qtd, pool.length));
+
+            // Embaralha as 4 alternativas de CADA questão e recalcula o índice da correta
+            selecionadas = questoesEscolhidas.map(q => {
+                const textoCorreto = q.opcoes[q.correta];
+                const opcoesObj = q.opcoes.map((texto, origIdx) => ({
+                    texto,
+                    isCorreta: origIdx === q.correta
+                }));
+
+                // Fisher-Yates nas 4 opções
+                for (let i = opcoesObj.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [opcoesObj[i], opcoesObj[j]] = [opcoesObj[j], opcoesObj[i]];
+                }
+
+                const novaCorretaIdx = opcoesObj.findIndex(o => o.isCorreta);
+                const novasOpcoesTexto = opcoesObj.map(o => o.texto);
+
+                return {
+                    id: q.id,
+                    pergunta: q.pergunta,
+                    opcoes: novasOpcoesTexto,
+                    correta: novaCorretaIdx,
+                    explicacao: q.explicacao
+                };
+            });
+
+            // Contagem da distribuição das letras corretas
+            const contagem = { 0: 0, 1: 0, 2: 0, 3: 0 };
+            selecionadas.forEach(q => { contagem[q.correta]++; });
+
+            // Critério de aprovação da distribuição:
+            // Cada alternativa (A, B, C, D) deve ter pelo menos 1 acerto e no máximo 4 acertos no teste de 10 questões
+            const todasLetrasPresentes = Object.values(contagem).every(c => c >= 1 && c <= 4);
+            if (todasLetrasPresentes) {
+                break;
+            }
+        }
+
+        return selecionadas;
+    },
+
+    // 2. CHECAGEM E REGISTRO DE SESSÃO MULTI-NAVEGADOR (Firebase)
+    async verificarETravarSessaoCrossBrowser(mat, nome, tipoProva) {
+        const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+
+        // A. Checagem em tempo real no Firebase Realtime Database
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            try {
+                const snap = await firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat).once('value');
+                const sessaoExistente = snap.val();
+                if (sessaoExistente && sessaoExistente.lastHeartbeat) {
+                    const diffMs = Date.now() - sessaoExistente.lastHeartbeat;
+                    // Se houve pulso nos últimos 12 segundos, há outro navegador/aba ativo
+                    if (diffMs < 12000) {
+                        return {
+                            permitido: false,
+                            motivo: 'Já existe uma avaliação em andamento para esta matrícula em outro navegador ou dispositivo. Abertura simultânea é estritamente proibida pelo protocolo anti-cola.'
+                        };
+                    }
+                }
+
+                // Registra esta nova sessão como a oficial no Firebase
+                await firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat).set({
+                    sessionId: sessionId,
+                    matricula: mat,
+                    nome: nome,
+                    tipo: tipoProva,
+                    inicioTs: Date.now(),
+                    lastHeartbeat: Date.now()
+                });
+            } catch (err) {
+                console.warn('Aviso checagem firebase sessoes_prova_ativas:', err);
+            }
+        }
+
+        // B. Checagem de múltiplas abas no mesmo navegador (LocalStorage)
+        try {
+            const lockRaw = localStorage.getItem('portal_prova_ativa_lock');
+            if (lockRaw) {
+                const lock = JSON.parse(lockRaw);
+                if (lock && lock.matricula === mat && (Date.now() - lock.lastHeartbeat < 6000)) {
+                    return {
+                        permitido: false,
+                        motivo: 'Você já possui uma aba com prova em andamento neste navegador. É proibido abrir múltiplas abas ou janelas durante a avaliação.'
+                    };
+                }
+            }
+
+            // Registra trava local
+            localStorage.setItem('portal_prova_ativa_lock', JSON.stringify({
+                sessionId: sessionId,
+                matricula: mat,
+                tipo: tipoProva,
+                lastHeartbeat: Date.now()
+            }));
+        } catch (err) {}
+
+        return { permitido: true, sessionId };
+    },
+
+    // 3. ENVIO PERIÓDICO DE HEARTBEAT
+    enviarHeartbeat(mat, sessionId, tipoProva) {
+        const agora = Date.now();
+        try {
+            localStorage.setItem('portal_prova_ativa_lock', JSON.stringify({
+                sessionId: sessionId,
+                matricula: mat,
+                tipo: tipoProva,
+                lastHeartbeat: agora
+            }));
+        } catch (e) {}
+
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat + '/lastHeartbeat').set(agora).catch(() => {});
+        }
+    },
+
+    // 4. LIMPEZA TOTAL DA SESSÃO AO FINALIZAR OU ANULAR
+    limparSessaoSegura(mat) {
+        try {
+            localStorage.removeItem('portal_prova_ativa_lock');
+        } catch (e) {}
+
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat).remove().catch(() => {});
+        }
+
+        try {
+            if (document.fullscreenElement && document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            }
+        } catch (e) {}
+    }
+};
+
+
+const app = {
             dataLoaded: false, // <--- ADICIONADO: Trava de segurança do Firebase
             config: { baseValue: 400, goals: [] }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
 
@@ -2702,78 +2863,80 @@ storage: {
     _intervalId: null,
     _listeners: null,
     _ultimoAvisoTs: 0,
+    _firebaseSessaoRef: null,
+    _broadcastChannel: null,
 
     bancoQuestoes: [
         {
             id: 1,
             pergunta: "De acordo com o guia explicativo da página, qual é a principal diferença conceitual entre CSAT e NPS no que diz respeito ao que cada métrica avalia e ao seu horizonte de tempo?",
             opcoes: [
-                "O CSAT mede a satisfação pontual com uma experiência específica no curto prazo pós-atendimento; o NPS mede a lealdade e a disposição de recomendar a empresa no relacionamento de longo prazo.",
                 "O CSAT avalia a lealdade de longo prazo nos últimos 12 meses, enquanto o NPS verifica apenas a nota imediata da ligação telefônica.",
+                "O CSAT mede a satisfação pontual com uma experiência específica no curto prazo pós-atendimento; o NPS mede a lealdade e a disposição de recomendar a empresa no relacionamento de longo prazo.",
                 "Ambas as métricas medem rigorosamente a mesma coisa, mudando unicamente se o aplicador da pesquisa foi um supervisor ou um monitor.",
                 "O CSAT avalia o custo financeiro do atendimento por minuto, enquanto o NPS calcula o percentual de faltas da equipe."
             ],
-            correta: 0,
+            correta: 1,
             explicacao: "Conforme ensinado na página: o CSAT mede a satisfação com uma experiência específica logo depois que ela acontece (curto prazo pós-atendimento). Já o NPS mede a lealdade e a disposição de recomendar a empresa no relacionamento de longo prazo."
         },
         {
             id: 2,
             pergunta: "Na 'analogia do restaurante' apresentada na página para facilitar a fixação do conteúdo, como o CSAT e o NPS são representados?",
             opcoes: [
-                "O CSAT é como o garçom perguntando na mesa 'O prato estava bom?' (fotografa aquele momento exato da refeição); o NPS é a pergunta no fim de semana 'Você levaria seus amigos lá?' (avalia toda a experiência acumulada).",
                 "O CSAT é o valor total da conta paga pelo cliente e o NPS é a gorjeta deixada voluntariamente para o garçom.",
                 "O CSAT é o pedido feito por aplicativo de entrega e o NPS é a visita presencial ao restaurante.",
+                "O CSAT é como o garçom perguntando na mesa 'O prato estava bom?' (fotografa aquele momento exato da refeição); o NPS é a pergunta no fim de semana 'Você levaria seus amigos lá?' (avalia toda a experiência acumulada).",
                 "O CSAT representa a quantidade de mesas ocupadas no salão e o NPS é o cardápio de sobremesas."
             ],
-            correta: 0,
+            correta: 2,
             explicacao: "Conforme a página ensina: na mesa, o garçom pergunta se o prato estava bom (CSAT pontual naquele momento). No fim da semana, perguntam se você levaria seus amigos lá (NPS avaliando o histórico completo)."
         },
         {
             id: 3,
             pergunta: "Qual é a escala de notas padrão utilizada no CSAT e quais notas são contabilizadas como clientes satisfeitos no numerador da fórmula?",
             opcoes: [
-                "A escala é de 1 a 5, e somente as notas 4 e 5 entram no numerador como satisfeitos; a nota 3 é neutra e não conta como satisfeita.",
                 "A escala é de 0 a 10, e todas as notas de 3 a 10 são somadas como clientes satisfeitos.",
+                "A escala é de 1 a 5, e somente as notas 4 e 5 entram no numerador como satisfeitos; a nota 3 é neutra e não conta como satisfeita.",
                 "A escala é de 1 a 5, e as notas 3, 4 e 5 entram no numerador da fórmula.",
                 "A escala é de 1 a 10, e apenas a nota 10 conta como cliente satisfeito."
             ],
-            correta: 0,
+            correta: 1,
             explicacao: "Conforme a página destaca: na escala de 1 a 5 do CSAT, somente as notas 4 e 5 contam como clientes satisfeitos. A nota 3 é neutra e NÃO entra no numerador da conta."
         },
         {
             id: 4,
             pergunta: "Segundo o exemplo resolvido no guia da página, se 200 clientes responderam à pesquisa de CSAT e 150 deles atribuíram nota 4 ou 5, qual é o CSAT apurado?",
             opcoes: [
-                "75% (Cálculo: 150 respostas positivas ÷ 200 total de respostas × 100 = 75%).",
                 "50% (Cálculo: 150 − 50 = 50%).",
                 "+75 pontos de índice (sem unidade percentual).",
-                "85% (porque os 50 clientes neutros devem ser somados com peso de 50%)."
+                "85% (porque os 50 clientes neutros devem ser somados com peso de 50%).",
+                "75% (Cálculo: 150 respostas positivas ÷ 200 total de respostas × 100 = 75%)."
             ],
-            correta: 0,
+            correta: 3,
             explicacao: "Conforme o exemplo resolvido da página: CSAT (%) = respostas positivas (notas 4 e 5) ÷ total de respostas × 100. Logo, 150 ÷ 200 × 100 = 75%."
         },
         {
             id: 5,
             pergunta: "Quais são as faixas de referência de mercado do CSAT explicadas na página?",
             opcoes: [
-                "Abaixo de 60% é Crítico; de 60% a 74% é Atenção; de 75% a 84% é Bom; 85% ou mais é Excelente.",
                 "Abaixo de 20% é Ruim; de 20% a 50% é Regular; de 50% a 80% é Bom; acima de 80% é Excelente.",
+                "Abaixo de 60% é Crítico; de 60% a 74% é Atenção; de 75% a 84% é Bom; 85% ou mais é Excelente.",
                 "Menor que 0 é Crítico; de 0 a 50 é Médio; de 50 a 100 é Excelente.",
                 "Qualquer resultado abaixo de 90% é classificado automaticamente como Crítico."
             ],
-            correta: 0,
+            correta: 1,
             explicacao: "Conforme a tabela de faixas de mercado da página: Abaixo de 60% (Crítico), 60% a 74% (Atenção), 75% a 84% (Bom) e 85% ou mais (Excelente)."
         },
         {
             id: 6,
             pergunta: "Na pesquisa de NPS, a escala vai de 0 a 10. Como os respondentes são classificados de acordo com a nota concedida?",
             opcoes: [
-                "Promotores: notas 9 e 10; Neutros: notas 7 e 8; Detratores: notas de 0 a 6.",
                 "Promotores: notas 8, 9 e 10; Neutros: notas 6 e 7; Detratores: notas de 0 a 5.",
                 "Promotores: apenas nota 10; Neutros: notas de 5 a 9; Detratores: notas de 0 a 4.",
+                "Promotores: notas 9 e 10; Neutros: notas 7 e 8; Detratores: notas de 0 a 6.",
                 "Promotores: notas de 7 a 10; Neutros: nota 6; Detratores: notas de 0 a 5."
             ],
-            correta: 0,
+            correta: 2,
             explicacao: "Conforme ensinado na página: Promotores são notas 9 e 10; Neutros são notas 7 e 8; Detratores são notas de 0 a 6."
         },
         {
@@ -2792,78 +2955,72 @@ storage: {
             id: 8,
             pergunta: "Qual é a fórmula matemática do NPS e como o resultado final é expresso?",
             opcoes: [
-                "Fórmula: % Promotores − % Detratores. O resultado varia de −100 a +100 e é expresso como um número/índice (não é porcentagem).",
                 "Fórmula: (Promotores + Neutros) ÷ Total × 100. O resultado é sempre expresso como uma porcentagem de 0% a 100%.",
                 "Fórmula: Média aritmética das notas multiplicada por 10. O resultado varia de 0 a 100%.",
+                "Fórmula: % Promotores − % Detratores. O resultado varia de −100 a +100 e é expresso como um número/índice (não é porcentagem).",
                 "Fórmula: Detratores ÷ Promotores. O resultado é um percentual relativo."
             ],
-            correta: 0,
+            correta: 2,
             explicacao: "Conforme ensinado na página: NPS = % Promotores − % Detratores. O resultado varia entre −100 e +100 e não é uma porcentagem, é um índice numérico."
         },
         {
             id: 9,
             pergunta: "Quais são as quatro Zonas de Classificação do resultado de NPS ensinadas na página?",
             opcoes: [
-                "−100 a 0: Zona Crítica; 1 a 49: Zona de Aperfeiçoamento; 50 a 74: Zona de Qualidade; 75 a 100: Zona de Excelência.",
-                "−100 a −50: Zona Vermelha; −49 a 0: Zona Amarela; 1 a 50: Zona Azul; 51 a 100: Zona Ouro.",
-                "0 a 25: Baixa; 26 a 50: Média; 51 a 75: Boa; 76 a 100: Ótima.",
-                "Qualquer valor acima de zero é Zona de Excelência e qualquer valor negativo é Zona Crítica."
+                "De 0 a 25 (Ruim), 26 a 50 (Regular), 51 a 75 (Bom) e 76 a 100 (Excelente).",
+                "De −100 a −1 (Zona Crítica), 0 a 49 (Zona de Aperfeiçoamento), 50 a 74 (Zona de Qualidade) e 75 a 100 (Zona de Excelência).",
+                "Menor que −50 (Péssimo), −49 a 0 (Médio) e acima de 0 (Positivo).",
+                "De −100 a 0 (Zona Negativa), 1 a 70 (Zona Neutra) e 71 a 100 (Zona Positiva)."
             ],
-            correta: 0,
-            explicacao: "Conforme os cards de Zonas do NPS na página: −100 a 0 (Zona Crítica), 1 a 49 (Zona de Aperfeiçoamento), 50 a 74 (Zona de Qualidade) e 75 a 100 (Zona de Excelência)."
+            correta: 1,
+            explicacao: "Conforme a tabela de zonas do NPS na página: −100 a −1 (Zona Crítica), 0 a 49 (Zona de Aperfeiçoamento), 50 a 74 (Zona de Qualidade) e 75 a 100 (Zona de Excelência)."
         },
         {
             id: 10,
-            pergunta: "Conforme ensinado nas seções 'Na Prática', 'Erros Comuns' e 'Dica de Ouro' da página, como a Qualidade deve utilizar o CSAT e qual é a principal fonte de valor da pesquisa?",
+            pergunta: "Conforme ensinado na página, qual é a principal vantagem de analisar o CSAT em conjunto com o NPS na gestão de qualidade de uma operação?",
             opcoes: [
-                "Deve cruzar o CSAT com as notas de monitoria técnica para identificar discrepâncias e ler os comentários qualitativos dos clientes (especialmente notas 1, 2 e detratores) para agir na causa raiz.",
-                "Deve considerar a nota 3 como satisfeita para atingir as metas operacionais com maior facilidade.",
-                "Deve incluir as notas de neutros (7 e 8) na subtração do NPS para nivelar os índices de excelência.",
-                "Deve analisar unicamente a média numérica e descartar os comentários descritivos dos clientes insatisfeitos."
+                "Permite demitir automaticamente operadores que receberem qualquer nota neutra na pesquisa.",
+                "Elimina a necessidade de monitorar tempo de atendimento (TMT) e absenteísmo.",
+                "Substitui completamente as pesquisas oficiais regulamentadas pela Anatel/Kantar.",
+                "O CSAT identifica gargalos imediatos na operação (atendimento pontual), enquanto o NPS avalia o impacto duradouro dessas experiências na retenção e fidelidade do cliente."
             ],
-            correta: 0,
-            explicacao: "Conforme o guia ensina: a Qualidade deve cruzar o CSAT com a monitoria (para checar empatia e percepção) e a dica de ouro é ler os comentários qualitativos dos clientes insatisfeitos para descobrir a causa e agir."
+            correta: 3,
+            explicacao: "Conforme o guia ensina: analisar as duas métricas juntas dá uma visão 360º — o CSAT mostra os problemas imediatos da chamada e o NPS mostra se essas falhas estão destruindo o relacionamento com a marca."
         }
     ],
 
     verificarStatus(matricula = null) {
         const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
-        const base = (typeof app !== 'undefined' && app.csatNpsProvas) ? app.csatNpsProvas : {};
-        const reg = base[mat];
+        const reg = app.csatNpsProvas && app.csatNpsProvas[mat];
+
         if (!reg) return { podeFazer: true, status: 'pendente', matricula: mat, registro: null };
         if (reg.status === 'aprovado') {
-            return { podeFazer: false, status: 'aprovado', registro: reg, matricula: mat };
+            return { podeFazer: false, status: 'aprovado', motivo: 'Você já foi certificado nesta avaliação.', matricula: mat, registro: reg };
         }
         if (reg.dataBloqueioAte) {
-            const bloqueio = new Date(reg.dataBloqueioAte);
             const agora = new Date();
-            if (agora < bloqueio) {
-                const diffMs = bloqueio.getTime() - agora.getTime();
-                const diffHoras = Math.floor(diffMs / (1000 * 60 * 60));
-                const diffMin = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            const bloqueioAte = new Date(reg.dataBloqueioAte);
+            if (agora < bloqueioAte) {
+                const diffMs = bloqueioAte - agora;
+                const horas = Math.floor(diffMs / (1000 * 60 * 60));
+                const minutos = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
                 return {
                     podeFazer: false,
                     status: 'bloqueado',
-                    registro: reg,
+                    motivo: `Bloqueio anti-cola ativo. Você poderá tentar novamente em ${horas}h ${minutos}min.`,
                     matricula: mat,
-                    bloqueioAte: bloqueio,
-                    dataLiberacaoFmt: bloqueio.toLocaleDateString('pt-BR'),
-                    tempoRestanteTexto: `${diffHoras}h ${diffMin}min`
+                    registro: reg,
+                    desbloqueioEm: bloqueioAte
                 };
             }
         }
-        return { podeFazer: true, status: 'reprovado_liberado', registro: reg, matricula: mat };
+        return { podeFazer: true, status: 'liberado', matricula: mat, registro: reg };
     },
 
     abrirBriefingModal() {
         const st = this.verificarStatus();
         if (!st.podeFazer) {
-            if (st.status === 'aprovado') {
-                return app.ui.showAlert("Aprovado!", "Você já concluiu com êxito esta certificação.", "success");
-            }
-            if (st.status === 'bloqueado') {
-                return app.ui.showAlert("Tentativa Bloqueada", `Você já realizou a avaliação hoje. Nova tentativa liberada em ${st.dataLiberacaoFmt} (faltam ${st.tempoRestanteTexto}).`, "warning");
-            }
+            return app.ui.showAlert("Acesso Bloqueado", st.motivo, "warning");
         }
 
         const modalExist = document.getElementById('csat-briefing-modal');
@@ -2871,45 +3028,42 @@ storage: {
 
         const modal = document.createElement('div');
         modal.id = 'csat-briefing-modal';
-        modal.className = 'fixed inset-0 z-[9990] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in';
+        modal.className = 'fixed inset-0 z-[9998] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
         modal.innerHTML = `
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100">
-                <div class="flex items-center gap-3 mb-5 border-b border-slate-100 dark:border-slate-800 pb-4">
-                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl shrink-0">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                <div class="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl shrink-0">
                         <i class="fa-solid fa-graduation-cap"></i>
                     </div>
                     <div>
-                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Instruções Oficiais</div>
-                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Avaliação Técnica de CSAT & NPS</h3>
+                        <span class="px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-black uppercase tracking-wider">Avaliação Técnica Oficial</span>
+                        <h3 class="text-xl font-black text-slate-800 dark:text-white mt-0.5">Certificação CSAT & NPS</h3>
                     </div>
                 </div>
 
-                <div class="space-y-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                    <p>Esta é uma prova de certificação rigorosa que avalia conceitos aprofundados de governança, fórmulas matemáticas, amostragem e vieses de satisfação do cliente.</p>
+                <div class="space-y-4 my-6 text-xs md:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p>Esta avaliação mede o domínio das métricas oficiais de experiência do cliente, cálculos, zonas de referência e governança ensinados nesta página.</p>
 
-                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2.5">
-                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
-                            <i class="fa-solid fa-list-check text-indigo-500 mt-0.5"></i>
-                            <span><strong>10 Questões Situacionais:</strong> Sorteadas aleatoriamente com alternativas embaralhadas a cada tentativa.</span>
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2">
+                        <div class="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <i class="fa-solid fa-shield-halved text-indigo-600 dark:text-indigo-400"></i> Protocolos de Segurança Anti-Cola:
                         </div>
-                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
-                            <i class="fa-solid fa-stopwatch text-indigo-500 mt-0.5"></i>
-                            <span><strong>Tempo Limite:</strong> 12 minutos ininterruptos. Encerramento automático ao esgotar.</span>
-                        </div>
-                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
-                            <i class="fa-solid fa-shield-halved text-amber-500 mt-0.5"></i>
-                            <span><strong>Protocolo Anti-Cola Rigoroso:</strong> É proibido trocar de aba, minimizar a janela, copiar texto ou inspecionar código. Na 1ª saída você recebe aviso; na 2ª infração, a prova é <strong>anulada imediatamente</strong> com nota zero.</span>
-                        </div>
-                        <div class="flex items-start gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">
-                            <i class="fa-solid fa-calendar-xmark text-red-500 mt-0.5"></i>
-                            <span><strong>Nota de Corte & Bloqueio:</strong> Mínimo de 70% de acertos (7 de 10). Se reprovar ou for desclassificado, o sistema <strong>bloqueia novas tentativas até amanhã às 00:00</strong>.</span>
-                        </div>
+                        <ul class="list-disc list-inside space-y-1 text-xs text-slate-600 dark:text-slate-300 pl-1">
+                            <li><strong>Alternativas e Questões 100% Embaralhadas:</strong> Cada avaliação possui ordenação única e randômica.</li>
+                            <li><strong>Trava Multi-Navegador e Multi-Aba:</strong> É proibido abrir a prova em dois navegadores ou em abas duplicadas.</li>
+                            <li><strong>Detecção de Saída de Tela:</strong> Sair da aba, minimizar ou clicar fora registrará aviso e cancelamento imediato.</li>
+                            <li><strong>Modo Tela Cheia Obrigatório:</strong> A prova é realizada em tela cheia monitorada.</li>
+                            <li><strong>Mínimo de 70% para Aprovação:</strong> Exige 7 ou mais acertos. Bloqueio de 24h em caso de reprovação.</li>
+                            <li><strong>Gabarito Oculto:</strong> O gabarito não é divulgado para garantir a lisura da prova.</li>
+                        </ul>
                     </div>
                 </div>
 
-                <div class="mt-6 flex flex-col sm:flex-row items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <button onclick="document.getElementById('csat-briefing-modal').remove()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition">Cancelar</button>
-                    <button onclick="app.csatNpsExam.iniciarProva()" class="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-extrabold text-sm shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-violet-700 transition flex items-center justify-center gap-2">
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="document.getElementById('csat-briefing-modal').remove()" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                        Cancelar
+                    </button>
+                    <button onclick="app.csatNpsExam.iniciarProva()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-slate-900 text-white font-extrabold text-xs shadow-lg shadow-indigo-600/30 hover:opacity-95 transition flex items-center gap-2">
                         <i class="fa-solid fa-play"></i> Iniciar Avaliação Agora
                     </button>
                 </div>
@@ -2918,79 +3072,54 @@ storage: {
         document.body.appendChild(modal);
     },
 
-    iniciarProva(matricula = null) {
+    async iniciarProva(matricula = null) {
         const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
         const nome = (typeof app !== 'undefined' && app.currentUser ? app.currentUser.nome : 'Administrador');
 
         const st = this.verificarStatus(mat);
         if (!st.podeFazer) {
-            if (st.status === 'aprovado') {
-                return app.ui.showAlert("Aprovado!", "Você já concluiu esta certificação.", "success");
-            }
-            if (st.status === 'bloqueado') {
-                return app.ui.showAlert("Tentativa Bloqueada", `Você já realizou a avaliação hoje. Nova tentativa liberada em ${st.dataLiberacaoFmt} (${st.tempoRestanteTexto}).`, "warning");
-            }
+            return app.ui.showAlert("Acesso Bloqueado", st.motivo, "warning");
         }
+
+        // 1. CHECAGEM E TRAVA MULTI-NAVEGADOR / MULTI-DISPOSITIVO (Firebase + LocalStorage)
+        const checkSessao = await window.AntiColaSecurityEngine.verificarETravarSessaoCrossBrowser(mat, nome, 'csat');
+        if (!checkSessao.permitido) {
+            return app.ui.showAlert("Duplicidade Bloqueada", checkSessao.motivo, "error");
+        }
+        const sessionId = checkSessao.sessionId;
 
         const briefing = document.getElementById('csat-briefing-modal');
         if (briefing) briefing.remove();
 
-        // 1. Sorteia 10 questoes do banco de 15 sem repeticao
-        const poolCopia = [...this.bancoQuestoes];
-        for (let i = poolCopia.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [poolCopia[i], poolCopia[j]] = [poolCopia[j], poolCopia[i]];
-        }
-        const questoesSelecionadas = poolCopia.slice(0, 10);
+        // 2. EMBARALHAMENTO DAS QUESTÕES E DAS 4 ALTERNATIVAS DE CADA UMA (Fisher-Yates)
+        const questoesProcessadas = window.AntiColaSecurityEngine.embaralharQuestoes(this.bancoQuestoes, 10);
 
-        // 2. Embaralha as 4 alternativas de cada questao e mapeia a nova correta
-        const questoesProcessadas = questoesSelecionadas.map(q => {
-            const corretaTexto = q.opcoes[q.correta];
-            const opcoesShuffled = [...q.opcoes];
-            for (let i = opcoesShuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [opcoesShuffled[i], opcoesShuffled[j]] = [opcoesShuffled[j], opcoesShuffled[i]];
-            }
-            const novaCorreta = opcoesShuffled.indexOf(corretaTexto);
-            return {
-                id: q.id,
-                pergunta: q.pergunta,
-                opcoes: opcoesShuffled,
-                correta: novaCorreta,
-                explicacao: q.explicacao
-            };
-        });
-
-        // 3. Monta o estado ativo
         this.estadoAtivo = {
             matricula: mat,
             nome: nome,
+            sessionId: sessionId,
             questoes: questoesProcessadas,
             indiceAtual: 0,
-            respostas: {}, // { [indice]: opcaoIdx }
-            tempoRestanteSegundos: 12 * 60,
+            respostas: Array(10).fill(null),
+            tempoRestanteSegundos: 15 * 60, // 15 minutos
             advertencias: 0,
-            desqualificado: false,
-            finalizado: false,
-            inicioIso: new Date().toISOString()
+            inicioTs: Date.now(),
+            finalizado: false
         };
-        this._ultimoAvisoTs = 0;
 
-        // 4. Injeta overlay tela cheia
         const telaAntiga = document.getElementById('csat-nps-exam-screen');
         if (telaAntiga) telaAntiga.remove();
 
-        const screen = document.createElement('div');
-        screen.id = 'csat-nps-exam-screen';
-        screen.className = 'fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-md flex flex-col select-none overflow-y-auto custom-scrollbar text-slate-100';
-        document.body.appendChild(screen);
+        const fullscreenEl = document.createElement('div');
+        fullscreenEl.id = 'csat-nps-exam-screen';
+        fullscreenEl.className = 'fixed inset-0 z-[9999] bg-slate-950 text-slate-100 flex flex-col select-none overflow-hidden';
+        document.body.appendChild(fullscreenEl);
 
+        // 3. ATIVA SEGURANÇA MÁXIMA ANTI-COLA E CANAIS DE VIGILÂNCIA
+        this.ativarSegurancaAntiCola();
         this.renderExamScreen();
 
-        // 5. Ativa escutas anti-cola
-        this.ativarSegurancaAntiCola();
-
-        // 6. Inicia cronometro
+        // 4. CRONÔMETRO E HEARTBEAT CONTÍNUO
         if (this._intervalId) clearInterval(this._intervalId);
         this._intervalId = setInterval(() => {
             if (!this.estadoAtivo || this.estadoAtivo.finalizado) {
@@ -2999,71 +3128,135 @@ storage: {
             }
             this.estadoAtivo.tempoRestanteSegundos--;
             this.atualizarTimerUI();
+
+            // Heartbeat de segurança anti-duplicidade
+            window.AntiColaSecurityEngine.enviarHeartbeat(mat, sessionId, 'csat');
+
             if (this.estadoAtivo.tempoRestanteSegundos <= 0) {
                 clearInterval(this._intervalId);
-                this.finalizarProva(true, "Tempo limite de 12 minutos esgotado!");
+                this.finalizarProva(true, "Tempo Limite Esgotado!");
             }
         }, 1000);
+
+        // 5. VIGILÂNCIA REALTIME NO FIREBASE: Detecta se outro navegador/sessão foi aberto
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            const sessRef = firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat);
+            this._firebaseSessaoRef = sessRef;
+            sessRef.on('value', (snap) => {
+                if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+                const val = snap.val();
+                if (val && val.sessionId && val.sessionId !== this.estadoAtivo.sessionId) {
+                    this.finalizarProva(false, "Desclassificado: Tentativa de abertura simultânea em outro navegador ou dispositivo detectada.");
+                }
+            });
+        }
+
+        // 6. BROADCAST CHANNEL: Detecta abertura de novas abas no mesmo navegador
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                this._broadcastChannel = new BroadcastChannel('portal_anti_cola_csat_' + mat);
+                this._broadcastChannel.onmessage = (ev) => {
+                    if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+                    if (ev.data && ev.data.type === 'DUPLICATE_TAB_DETECTED') {
+                        this.finalizarProva(false, "Desclassificado por tentativa de abertura de nova aba durante a prova.");
+                    }
+                };
+                this._broadcastChannel.postMessage({ type: 'EXAM_STARTED', sessionId });
+            }
+        } catch (e) {}
     },
 
     ativarSegurancaAntiCola() {
-        const prevent = (e) => { e.preventDefault(); return false; };
+        this.desativarSegurancaAntiCola();
+        const self = this;
+
+        // Solicita modo tela cheia obrigatório
+        try {
+            if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
+        } catch (e) {}
+
+        const onVisibilityChange = () => {
+            if (document.hidden && self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                self.registrarAdvertencia("Você saiu da aba da avaliação ou minimizou o navegador!");
+            }
+        };
+
+        const onBlur = () => {
+            if (self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                self.registrarAdvertencia("Você perdeu o foco da janela da prova (clicou fora ou abriu outro aplicativo)!");
+            }
+        };
+
+        const onFullscreenChange = () => {
+            if (!document.fullscreenElement && self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                self.registrarAdvertencia("O modo tela cheia obrigatório foi encerrado!");
+            }
+        };
+
+        const onContextMenu = (e) => { e.preventDefault(); return false; };
+        const onCopyCutPaste = (e) => { e.preventDefault(); return false; };
 
         const onKeyDown = (e) => {
-            if (e.key === 'F12' ||
-                (e.ctrlKey && e.shiftKey && ['I', 'J', 'C'].includes(e.key.toUpperCase())) ||
-                (e.ctrlKey && ['U', 'C', 'V', 'A', 'S', 'P'].includes(e.key.toUpperCase()))
+            if (
+                e.key === 'F12' ||
+                e.key === 'F11' ||
+                e.key === 'Escape' ||
+                (e.altKey && (e.key === 'Tab' || e.key === 'F4')) ||
+                (e.ctrlKey && ['c', 'u', 'i', 'j', 't', 'n', 'w', 'v', 'a', 's', 'p'].includes(e.key.toLowerCase())) ||
+                (e.ctrlKey && e.shiftKey)
             ) {
                 e.preventDefault();
                 e.stopPropagation();
+                self.registrarAdvertencia("Uso de atalhos proibidos durante a avaliação!");
                 return false;
             }
         };
 
-        const onVisibilityChange = () => {
-            if (document.hidden && this.estadoAtivo && !this.estadoAtivo.finalizado) {
-                this.registrarAdvertencia("Detecção de saída da tela da prova (troca de aba ou janela minimizada).");
+        const onStorage = (e) => {
+            if (e.key === 'portal_prova_ativa_lock' && self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                try {
+                    const lock = JSON.parse(e.newValue);
+                    if (lock && lock.matricula === self.estadoAtivo.matricula && lock.sessionId !== self.estadoAtivo.sessionId) {
+                        self.finalizarProva(false, "Desclassificado por abertura de nova aba ou janela neste navegador!");
+                    }
+                } catch (err) {}
             }
         };
 
-        let blurTimeout = null;
-        const onWindowBlur = () => {
-            if (blurTimeout) clearTimeout(blurTimeout);
-            blurTimeout = setTimeout(() => {
-                if (this.estadoAtivo && !this.estadoAtivo.finalizado) {
-                    this.registrarAdvertencia("Detecção de perda de foco da janela de avaliação.");
-                }
-            }, 300);
-        };
-
-        document.addEventListener('contextmenu', prevent);
-        document.addEventListener('copy', prevent);
-        document.addEventListener('cut', prevent);
-        document.addEventListener('paste', prevent);
-        document.addEventListener('selectstart', prevent);
-        document.addEventListener('keydown', onKeyDown);
         document.addEventListener('visibilitychange', onVisibilityChange);
-        window.addEventListener('blur', onWindowBlur);
+        window.addEventListener('blur', onBlur);
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('contextmenu', onContextMenu);
+        document.addEventListener('copy', onCopyCutPaste);
+        document.addEventListener('cut', onCopyCutPaste);
+        document.addEventListener('paste', onCopyCutPaste);
+        document.addEventListener('keydown', onKeyDown);
+        window.addEventListener('storage', onStorage);
 
         this._listeners = {
-            prevent,
-            onKeyDown,
             onVisibilityChange,
-            onWindowBlur
+            onBlur,
+            onFullscreenChange,
+            onContextMenu,
+            onCopyCutPaste,
+            onKeyDown,
+            onStorage
         };
     },
 
     desativarSegurancaAntiCola() {
         if (!this._listeners) return;
-        const { prevent, onKeyDown, onVisibilityChange, onWindowBlur } = this._listeners;
-        document.removeEventListener('contextmenu', prevent);
-        document.removeEventListener('copy', prevent);
-        document.removeEventListener('cut', prevent);
-        document.removeEventListener('paste', prevent);
-        document.removeEventListener('selectstart', prevent);
-        document.removeEventListener('keydown', onKeyDown);
-        document.removeEventListener('visibilitychange', onVisibilityChange);
-        window.removeEventListener('blur', onWindowBlur);
+        document.removeEventListener('visibilitychange', this._listeners.onVisibilityChange);
+        window.removeEventListener('blur', this._listeners.onBlur);
+        document.removeEventListener('fullscreenchange', this._listeners.onFullscreenChange);
+        document.removeEventListener('contextmenu', this._listeners.onContextMenu);
+        document.removeEventListener('copy', this._listeners.onCopyCutPaste);
+        document.removeEventListener('cut', this._listeners.onCopyCutPaste);
+        document.removeEventListener('paste', this._listeners.onCopyCutPaste);
+        document.removeEventListener('keydown', this._listeners.onKeyDown);
+        window.removeEventListener('storage', this._listeners.onStorage);
         this._listeners = null;
     },
 
@@ -3071,7 +3264,7 @@ storage: {
         if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
 
         const agora = Date.now();
-        if (agora - this._ultimoAvisoTs < 2500) return; // Cooldown anti-duplicidade
+        if (agora - this._ultimoAvisoTs < 2000) return;
         this._ultimoAvisoTs = agora;
 
         this.estadoAtivo.advertencias++;
@@ -3080,14 +3273,17 @@ storage: {
         const advBadge = document.getElementById('csat-exam-adv-badge');
         if (advBadge) {
             advBadge.textContent = `${adv}/1 advertência`;
-            advBadge.className = 'text-xs font-black px-2.5 py-1 rounded-lg bg-red-900/60 text-red-300 border border-red-700 animate-pulse';
+            advBadge.classList.add('animate-bounce');
+            setTimeout(() => advBadge && advBadge.classList.remove('animate-bounce'), 1000);
         }
 
         if (adv === 1) {
+            if (app.utils && typeof app.utils.playCuteSound === 'function') {
+                app.utils.playCuteSound();
+            }
             this.mostrarModalAdvertencia(motivo);
         } else if (adv >= 2) {
-            this.estadoAtivo.desqualificado = true;
-            this.finalizarProva(false, "Desclassificado por violação reincidente do protocolo anti-cola (troca de aba/janela).");
+            this.finalizarProva(false, "Desclassificado por violação reincidente do protocolo anti-cola (" + motivo + ")!");
         }
     },
 
@@ -3097,20 +3293,19 @@ storage: {
 
         const modal = document.createElement('div');
         modal.id = 'csat-exam-adv-modal';
-        modal.className = 'fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4';
+        modal.className = 'fixed inset-0 z-[10000] bg-red-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-white text-center';
         modal.innerHTML = `
-            <div class="bg-slate-900 border-2 border-red-500 rounded-3xl max-w-md w-full p-6 text-center text-white shadow-2xl animate-bounce-once">
-                <div class="w-16 h-16 rounded-full bg-red-950 text-red-500 border border-red-500/50 flex items-center justify-center text-2xl mx-auto mb-4 animate-pulse">
+            <div class="bg-slate-900 border-2 border-red-500 rounded-3xl max-w-md w-full p-6 shadow-2xl">
+                <div class="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center text-3xl mx-auto mb-4 border border-red-500/40">
                     <i class="fa-solid fa-triangle-exclamation"></i>
                 </div>
-                <div class="text-[11px] font-black uppercase tracking-widest text-red-400">Alerta de Segurança Anti-Cola</div>
-                <h4 class="text-xl font-black mt-1 text-white">1ª e Última Advertência</h4>
-                <p class="text-xs text-slate-300 mt-3 leading-relaxed">
-                    ${motivo}<br><br>
-                    <strong class="text-red-400">Atenção máxima:</strong> Se você sair da tela novamente ou perder o foco da página, sua avaliação será <strong>imediatamente anulada com nota ZERO</strong> e você ficará bloqueado até amanhã.
+                <h3 class="text-xl font-black text-red-400 uppercase tracking-wide">Primeira e Última Advertência!</h3>
+                <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+                    <strong>Motivo:</strong> ${motivo}<br><br>
+                    <span class="text-amber-300 font-bold">ATENÇÃO MÁXIMA:</span> Se você sair da aba, trocar de janela, perder o foco da tela ou tentar duplicar o navegador novamente, a avaliação será <strong>anulada imediatamente com nota zero</strong> e você será bloqueado por 24 horas.
                 </p>
-                <button onclick="document.getElementById('csat-exam-adv-modal').remove()" class="mt-6 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm transition">
-                    Entendido, retornar à prova
+                <button onclick="document.getElementById('csat-exam-adv-modal').remove(); try { if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); } catch(e){}" class="mt-6 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs uppercase tracking-wider transition">
+                    Entendido, Voltar à Prova Agora
                 </button>
             </div>
         `;
@@ -3121,132 +3316,152 @@ storage: {
         const screen = document.getElementById('csat-nps-exam-screen');
         if (!screen || !this.estadoAtivo) return;
 
-        const { matricula, nome, questoes, indiceAtual, respostas, tempoRestanteSegundos, advertencias } = this.estadoAtivo;
-        const qAtual = questoes[indiceAtual];
-        const respondidasQtd = Object.keys(respostas).length;
-
-        const formatTimer = (s) => {
-            const m = Math.floor(s / 60);
-            const sec = s % 60;
-            return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-        };
-
-        const letras = ['A', 'B', 'C', 'D'];
+        const qIdx = this.estadoAtivo.indiceAtual;
+        const q = this.estadoAtivo.questoes[qIdx];
+        const respDada = this.estadoAtivo.respostas[qIdx];
 
         screen.innerHTML = `
-            <!-- Topbar de Monitoramento -->
-            <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-20 px-4 md:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3">
+            <!-- Topbar Anti-Cola -->
+            <header class="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-indigo-600/30 text-indigo-400 border border-indigo-500/40 flex items-center justify-center text-lg">
-                        <i class="fa-solid fa-shield-halved"></i>
+                    <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg border border-indigo-500/30">
+                        <i class="fa-solid fa-graduation-cap"></i>
                     </div>
                     <div>
-                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-400 flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Prova Monitorada Anti-Cola
-                        </div>
-                        <div class="text-sm font-extrabold text-white truncate max-w-[200px] md:max-w-xs">${app.utils.escapeHtml(nome)} <span class="text-xs text-slate-400 font-normal">(${matricula})</span></div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-400">Avaliação Técnica CSAT & NPS</div>
+                        <div class="text-xs font-bold text-white">${app.utils.escapeHtml(this.estadoAtivo.nome)} (${this.estadoAtivo.matricula})</div>
                     </div>
                 </div>
 
-                <!-- Chips de Navegação de Questões 1 a 10 -->
-                <div class="flex items-center gap-1.5 flex-wrap justify-center">
-                    ${questoes.map((q, idx) => {
-                        const isAtiva = idx === indiceAtual;
-                        const respondida = respostas[idx] !== undefined;
-                        let chipCls = 'w-7 h-7 md:w-8 md:h-8 rounded-lg text-xs font-black flex items-center justify-center transition tabular-nums ';
-                        if (isAtiva) {
-                            chipCls += 'ring-2 ring-indigo-400 bg-indigo-600 text-white shadow-md';
-                        } else if (respondida) {
-                            chipCls += 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-800/80';
-                        } else {
-                            chipCls += 'bg-slate-800/80 text-slate-400 border border-slate-700/60 hover:bg-slate-700';
-                        }
-                        return `<button onclick="app.csatNpsExam.irParaQuestao(${idx})" class="${chipCls}">${idx + 1}</button>`;
-                    }).join('')}
-                </div>
+                <div class="flex items-center gap-4">
+                    <!-- Advertências -->
+                    <div class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>Advertências: <strong id="csat-exam-adv-badge" class="tabular-nums">${this.estadoAtivo.advertencias}/1</strong></span>
+                    </div>
 
-                <!-- Timer e Advertências -->
-                <div class="flex items-center gap-3">
-                    <div id="csat-exam-adv-badge" class="text-xs font-bold px-2.5 py-1 rounded-lg ${advertencias > 0 ? 'bg-red-900/60 text-red-300 border border-red-700' : 'bg-slate-800 text-slate-400'}">
-                        ${advertencias}/1 advertência
+                    <!-- Cronômetro -->
+                    <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200">
+                        <i class="fa-solid fa-clock text-indigo-400"></i>
+                        <span id="csat-exam-timer" class="font-bold text-sm tabular-nums">--:--</span>
                     </div>
-                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
-                        <i class="fa-solid fa-clock text-indigo-400 text-xs"></i>
-                        <span id="csat-exam-timer" class="tabular-nums font-black text-sm md:text-base ${tempoRestanteSegundos < 120 ? 'text-red-400 animate-pulse' : 'text-white'}">
-                            ${formatTimer(tempoRestanteSegundos)}
-                        </span>
-                    </div>
+
+                    <button onclick="app.csatNpsExam.confirmarEntrega()" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition shadow-md flex items-center gap-1.5">
+                        <i class="fa-solid fa-check"></i> Entregar Prova
+                    </button>
                 </div>
             </header>
 
-            <!-- Área Central da Questão -->
-            <main class="flex-1 max-w-4xl w-full mx-auto p-4 md:p-8 flex flex-col justify-center">
-                <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative">
-                    <div class="flex items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-800">
-                        <span class="px-3 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/60 text-[11px] font-black uppercase tracking-widest tabular-nums">
-                            Questão ${indiceAtual + 1} de 10
-                        </span>
-                        <span class="text-xs text-slate-400 font-bold tabular-nums">
-                            Respondidas: ${respondidasQtd} de 10
-                        </span>
+            <!-- Corpo Principal -->
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Barra Lateral de Navegação de Questões -->
+                <aside class="w-64 border-r border-slate-800 bg-slate-900/40 p-5 flex flex-col justify-between shrink-0 hidden md:flex">
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Questões da Prova</div>
+                        <div class="grid grid-cols-5 gap-2">
+                            ${this.estadoAtivo.questoes.map((_, i) => {
+                                const respondida = this.estadoAtivo.respostas[i] !== null;
+                                const ativa = i === qIdx;
+                                let cls = 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500';
+                                if (respondida) cls = 'border-indigo-500/60 bg-indigo-950/60 text-indigo-300 font-bold';
+                                if (ativa) cls = 'border-indigo-400 bg-indigo-600 text-white font-black shadow-lg shadow-indigo-600/40 ring-2 ring-indigo-400/40';
+
+                                return `
+                                    <button onclick="app.csatNpsExam.irParaQuestao(${i})" class="h-10 rounded-xl border text-xs flex items-center justify-center transition-all ${cls}">
+                                        ${i + 1}
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
                     </div>
 
-                    <h3 class="text-base md:text-lg font-bold text-slate-100 leading-relaxed mb-6">
-                        ${app.utils.escapeHtml(qAtual.pergunta)}
-                    </h3>
-
-                    <!-- Lista de Alternativas -->
-                    <div class="space-y-3">
-                        ${qAtual.opcoes.map((opcaoTexto, altIdx) => {
-                            const isSelected = respostas[indiceAtual] === altIdx;
-                            let altCls = 'w-full text-left p-4 rounded-2xl border transition flex items-start gap-3.5 cursor-pointer ';
-                            if (isSelected) {
-                                altCls += 'bg-indigo-950/70 border-indigo-500 shadow-md ring-1 ring-indigo-500';
-                            } else {
-                                altCls += 'bg-slate-800/50 border-slate-700/60 hover:bg-slate-800 hover:border-slate-600';
-                            }
-                            const chipCls = isSelected 
-                                ? 'w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-black shrink-0' 
-                                : 'w-7 h-7 rounded-lg bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-black shrink-0';
-
-                            return `
-                                <div onclick="app.csatNpsExam.selecionarOpcao(${altIdx})" class="${altCls}">
-                                    <div class="${chipCls}">${letras[altIdx]}</div>
-                                    <div class="text-xs md:text-sm text-slate-200 leading-relaxed flex-1">${app.utils.escapeHtml(opcaoTexto)}</div>
-                                </div>
-                            `;
-                        }).join('')}
+                    <div class="p-3.5 rounded-2xl bg-slate-800/40 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                        <div class="flex items-center gap-1.5 font-bold text-slate-300">
+                            <i class="fa-solid fa-info-circle text-indigo-400"></i> Dica de Prova:
+                        </div>
+                        <p>Alternativas balanceadas e aleatórias. Leia com atenção antes de responder.</p>
                     </div>
-                </div>
-            </main>
+                </aside>
 
-            <!-- Rodapé de Ações -->
-            <footer class="border-t border-slate-800 bg-slate-900/90 px-4 md:px-8 py-4 sticky bottom-0 z-20 flex items-center justify-between gap-3">
-                <button onclick="app.csatNpsExam.anteriorQuestao()" ${indiceAtual === 0 ? 'disabled' : ''} class="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs md:text-sm hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none flex items-center gap-2">
-                    <i class="fa-solid fa-arrow-left"></i> Anterior
-                </button>
+                <!-- Área Central da Questão -->
+                <main class="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col justify-between max-w-4xl mx-auto custom-scrollbar">
+                    <div class="space-y-6">
+                        <div class="flex items-center justify-between">
+                            <span class="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-black uppercase tracking-wider">
+                                Questão ${qIdx + 1} de 10
+                            </span>
+                            <span class="text-xs text-slate-400 font-medium">
+                                ${this.estadoAtivo.respostas.filter(r => r !== null).length} de 10 respondidas
+                            </span>
+                        </div>
 
-                <button onclick="app.csatNpsExam.confirmarEntrega()" class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs md:text-sm shadow-lg shadow-emerald-900/40 transition flex items-center gap-2">
-                    <i class="fa-solid fa-check-double"></i> Entregar Avaliação
-                </button>
+                        <div class="p-6 md:p-8 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl">
+                            <h2 class="text-base md:text-lg font-bold text-slate-100 leading-relaxed">
+                                ${q.pergunta}
+                            </h2>
 
-                <button onclick="app.csatNpsExam.proximaQuestao()" ${indiceAtual === 9 ? 'disabled' : ''} class="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs md:text-sm hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none flex items-center gap-2">
-                    Próxima <i class="fa-solid fa-arrow-right"></i>
-                </button>
-            </footer>
+                            <div class="mt-6 space-y-3">
+                                ${q.opcoes.map((opcao, optIdx) => {
+                                    const selecionada = respDada === optIdx;
+                                    const letra = String.fromCharCode(65 + optIdx);
+                                    let optClass = 'border-slate-800 bg-slate-800/40 text-slate-300 hover:border-slate-700 hover:bg-slate-800/80';
+                                    if (selecionada) {
+                                        optClass = 'border-indigo-500 bg-indigo-950/50 text-white shadow-md ring-2 ring-indigo-500/30';
+                                    }
+
+                                    return `
+                                        <button onclick="app.csatNpsExam.selecionarOpcao(${optIdx})" class="w-full text-left p-4 rounded-2xl border transition flex items-start gap-3.5 group ${optClass}">
+                                            <div class="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black shrink-0 transition ${selecionada ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 group-hover:bg-slate-600'}">
+                                                ${letra}
+                                            </div>
+                                            <div class="text-xs md:text-sm leading-relaxed flex-1 pt-0.5">
+                                                ${opcao}
+                                            </div>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer com Navegação -->
+                    <div class="flex items-center justify-between pt-6 border-t border-slate-800 mt-6">
+                        <button onclick="app.csatNpsExam.anteriorQuestao()" class="px-5 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-bold text-xs hover:bg-slate-800 transition flex items-center gap-2 ${qIdx === 0 ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}">
+                            <i class="fa-solid fa-arrow-left"></i> Anterior
+                        </button>
+
+                        <div class="flex items-center gap-2">
+                            ${qIdx < 9 ? `
+                                <button onclick="app.csatNpsExam.proximaQuestao()" class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs transition flex items-center gap-2">
+                                    Próxima <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            ` : `
+                                <button onclick="app.csatNpsExam.confirmarEntrega()" class="px-7 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition flex items-center gap-2">
+                                    <i class="fa-solid fa-check-double"></i> Concluir Avaliação
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                </main>
+            </div>
         `;
+
+        this.atualizarTimerUI();
     },
 
     atualizarTimerUI() {
         if (!this.estadoAtivo) return;
         const timerEl = document.getElementById('csat-exam-timer');
         if (!timerEl) return;
+
         const s = this.estadoAtivo.tempoRestanteSegundos;
-        const m = Math.floor(s / 60);
+        const min = Math.floor(s / 60);
         const sec = s % 60;
-        timerEl.textContent = `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        timerEl.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+
         if (s < 120) {
-            timerEl.className = 'tabular-nums font-black text-sm md:text-base text-red-400 animate-pulse';
+            timerEl.parentElement.classList.remove('bg-slate-800');
+            timerEl.parentElement.classList.add('bg-red-500/20', 'border-red-500', 'text-red-400');
         }
     },
 
@@ -3267,29 +3482,32 @@ storage: {
     proximaQuestao() {
         if (!this.estadoAtivo) return;
         if (this.estadoAtivo.indiceAtual < 9) {
-            this.irParaQuestao(this.estadoAtivo.indiceAtual + 1);
+            this.estadoAtivo.indiceAtual++;
+            this.renderExamScreen();
         }
     },
 
     anteriorQuestao() {
         if (!this.estadoAtivo) return;
         if (this.estadoAtivo.indiceAtual > 0) {
-            this.irParaQuestao(this.estadoAtivo.indiceAtual - 1);
+            this.estadoAtivo.indiceAtual--;
+            this.renderExamScreen();
         }
     },
 
     confirmarEntrega() {
         if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
-        const respondidas = Object.keys(this.estadoAtivo.respostas).length;
+        const respondidas = this.estadoAtivo.respostas.filter(r => r !== null).length;
         if (respondidas < 10) {
-            const faltam = 10 - respondidas;
-            const ok = confirm(`Você respondeu ${respondidas} de 10 questões (faltam ${faltam}). Questões em branco serão computadas como erro.\n\nTem certeza que deseja entregar a avaliação agora?`);
-            if (!ok) return;
+            if (!confirm(`Você respondeu apenas ${respondidas} das 10 questões. Deseja realmente finalizar e entregar agora?`)) {
+                return;
+            }
         } else {
-            const ok = confirm("Deseja confirmar a entrega definitiva da sua avaliação?");
-            if (!ok) return;
+            if (!confirm("Deseja confirmar a entrega definitiva da sua prova?")) {
+                return;
+            }
         }
-        this.finalizarProva(false);
+        this.finalizarProva();
     },
 
     finalizarProva(tempoEsgotado = false, motivoEspecial = null) {
@@ -3300,75 +3518,87 @@ storage: {
             clearInterval(this._intervalId);
             this._intervalId = null;
         }
-
         this.desativarSegurancaAntiCola();
+
+        const mat = this.estadoAtivo.matricula;
+        const nome = this.estadoAtivo.nome;
+        const desqualificado = motivoEspecial !== null;
+
+        // Limpa vigilância realtime e sessoes
+        if (this._firebaseSessaoRef) {
+            this._firebaseSessaoRef.off();
+            this._firebaseSessaoRef = null;
+        }
+        window.AntiColaSecurityEngine.limparSessaoSegura(mat);
+
+        try {
+            if (this._broadcastChannel) {
+                this._broadcastChannel.close();
+                this._broadcastChannel = null;
+            }
+        } catch (e) {}
 
         const screen = document.getElementById('csat-nps-exam-screen');
         if (screen) screen.remove();
 
-        const { matricula, nome, questoes, respostas, desqualificado } = this.estadoAtivo;
-
         let acertos = 0;
         if (!desqualificado) {
-            questoes.forEach((q, idx) => {
-                if (respostas[idx] === q.correta) {
+            this.estadoAtivo.questoes.forEach((q, idx) => {
+                const respDada = this.estadoAtivo.respostas[idx];
+                if (respDada !== null && respDada === q.correta) {
                     acertos++;
                 }
             });
         }
 
-        const nota = Math.round((acertos / 10) * 100);
-        const aprovado = nota >= 70 && !desqualificado;
+        const notaPercent = Math.round((acertos / 10) * 100);
+        const aprovado = !desqualificado && acertos >= 7;
 
-        let dataBloqueioAte = null;
+        // Se reprovado ou desqualificado, bloqueia até meia-noite do dia seguinte (mínimo 24 horas)
+        let bloqueioAte = null;
         if (!aprovado) {
-            const amanha = new Date();
-            amanha.setDate(amanha.getDate() + 1);
-            amanha.setHours(0, 0, 0, 0);
-            dataBloqueioAte = amanha.toISOString();
+            const dataBloq = new Date();
+            dataBloq.setHours(dataBloq.getHours() + 24);
+            bloqueioAte = dataBloq.toISOString();
         }
 
-        const certId = aprovado ? `CERT-CX-${matricula}-${Date.now().toString(36).toUpperCase()}` : null;
+        const hashCertificado = aprovado ? ('CERT-CX-' + mat + '-' + Math.random().toString(36).substring(2, 8).toUpperCase()) : null;
 
-        const resumoRespostas = questoes.map((q, idx) => ({
-            id: q.id,
-            pergunta: q.pergunta,
-            opcaoMarcada: respostas[idx] !== undefined ? q.opcoes[respostas[idx]] : "Não respondeu",
-            opcaoCorreta: q.opcoes[q.correta],
-            acertou: respostas[idx] === q.correta,
-            explicacao: q.explicacao
-        }));
-
-        if (!app.csatNpsProvas) app.csatNpsProvas = {};
-        app.csatNpsProvas[matricula] = {
-            matricula: matricula,
+        const registroProva = {
+            matricula: mat,
             nome: nome,
             status: aprovado ? 'aprovado' : 'reprovado',
-            desqualificado: !!desqualificado,
-            motivoDesqualificacao: motivoEspecial || (tempoEsgotado ? 'Tempo limite esgotado' : null),
-            nota: nota,
+            nota: notaPercent,
             acertos: acertos,
             totalQuestoes: 10,
+            desqualificado: desqualificado,
+            motivoDesqualificacao: motivoEspecial,
             dataTentativa: new Date().toISOString(),
-            dataBloqueioAte: dataBloqueioAte,
-            certificadoId: certId,
-            resumoRespostas: resumoRespostas
+            dataBloqueioAte: bloqueioAte,
+            certificadoId: hashCertificado
         };
 
+        if (!app.csatNpsProvas) app.csatNpsProvas = {};
+        app.csatNpsProvas[mat] = registroProva;
+
+        try {
+            localStorage.setItem('soft_csat_nps_provas', JSON.stringify(app.csatNpsProvas));
+        } catch (e) {
+            console.warn(e);
+        }
+
         if (app.storage && typeof app.storage.saveCsatNpsProvas === 'function') {
-            app.storage.saveCsatNpsProvas();
+            app.storage.saveCsatNpsProvas().catch(e => console.error("Erro salvando csatNpsProvas:", e));
         }
 
-        this.estadoAtivo = null;
+        // Renderiza subaba de resultado sem divulgar gabarito
+        app.csatNpsExam.abrirModalResultado(mat);
 
-        // Atualiza a visualização caso esteja na aba csat_nps
-        const container = document.getElementById('view-container') || document.querySelector('.main-content');
-        if (container && app.ui && app.ui.currentTab === 'csat_nps') {
-            app.ui.renderView_CsatNps(container);
+        // Atualiza a visualização se estiver na aba de treinamento
+        const container = document.getElementById('view-container-treinamento_capacitacao') || document.getElementById('view-container-csat_nps');
+        if (container && app.ui) {
+            app.ui.renderView_TreinamentoCapacitacao(container);
         }
-
-        // Abre o modal de resultado imediato com feedback detalhado
-        this.abrirModalResultado(matricula);
     },
 
     abrirModalResultado(matricula) {
@@ -3384,46 +3614,29 @@ storage: {
         modal.id = 'csat-result-modal';
         modal.className = 'fixed inset-0 z-[9995] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
 
-        let badgeHeader = '';
-        if (aprovado) {
-            badgeHeader = `
-                <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
-                    <i class="fa-solid fa-award"></i>
-                </div>
-                <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Certificação Oficial Concluída</div>
-                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Parabéns! Você foi Aprovado</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Você demonstrou domínio nas métricas e metodologias de CSAT & NPS ensinadas na página.</p>
-            `;
-        } else if (reg.desqualificado) {
-            badgeHeader = `
-                <div class="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/60 text-red-500 border border-red-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
-                    <i class="fa-solid fa-ban"></i>
-                </div>
-                <div class="text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Desclassificação Anti-Cola</div>
-                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Tentativa Anulada</h3>
-                <p class="text-xs text-red-500 dark:text-red-400 font-bold mt-2">${reg.motivoDesqualificacao || "Violação das regras de foco e segurança detectada."}</p>
-            `;
-        } else {
-            badgeHeader = `
-                <div class="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/60 text-red-500 border border-red-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
-                    <i class="fa-solid fa-circle-xmark"></i>
-                </div>
-                <div class="text-[11px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Avaliação Não Concluída</div>
-                <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Aproveitamento Insuficiente</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">A nota mínima para certificação é de 70% (7 acertos).</p>
-            `;
-        }
-
         modal.innerHTML = `
             <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative text-slate-800 dark:text-slate-100 my-8">
                 <div class="text-center pb-6 border-b border-slate-100 dark:border-slate-800">
-                    ${badgeHeader}
+                    ${aprovado ? `
+                        <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 border border-emerald-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                            <i class="fa-solid fa-award"></i>
+                        </div>
+                        <div class="text-[11px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Certificação Oficial Concluída</div>
+                        <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Parabéns! Você foi Aprovado</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Você demonstrou domínio completo nas métricas de CSAT & NPS e governança de qualidade.</p>
+                    ` : `
+                        <div class="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-500 border border-rose-500/40 flex items-center justify-center text-3xl mx-auto mb-4">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </div>
+                        <div class="text-[11px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">Avaliação Não Concluída</div>
+                        <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1">Aproveitamento Insuficiente</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">A nota mínima para certificação é de 70% (7 acertos).</p>
+                    `}
 
-                    <!-- Placar de Resultados -->
                     <div class="grid grid-cols-2 gap-4 max-w-xs mx-auto mt-6">
                         <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aproveitamento</div>
-                            <div class="text-3xl font-black tabular-nums mt-1 ${aprovado ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">${reg.nota}%</div>
+                            <div class="text-3xl font-black tabular-nums mt-1 ${aprovado ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${reg.nota}%</div>
                         </div>
                         <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total de Acertos</div>
@@ -3441,9 +3654,9 @@ storage: {
                     ` : `
                         <div class="mt-5 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 font-medium leading-relaxed text-left">
                             <div class="flex items-center gap-2 font-bold mb-1 text-emerald-900 dark:text-emerald-100">
-                                <i class="fa-solid fa-shield-halved text-emerald-500"></i> Certificação Válida Registrada
+                                <i class="fa-solid fa-shield-halved text-emerald-500"></i> Certificação Oficial Registrada
                             </div>
-                            <p>Seu resultado foi gravado com sucesso no banco de dados. Você pode visualizar e imprimir seu Certificado Oficial a qualquer momento.</p>
+                            <p>Seu certificado de Especialista em CSAT & NPS foi emitido com sucesso e adicionado à sua galeria de conquistas.</p>
                         </div>
                     `}
                 </div>
@@ -3453,7 +3666,7 @@ storage: {
                         Fechar
                     </button>
                     ${aprovado ? `
-                        <button onclick="document.getElementById('csat-result-modal').remove(); app.csatNpsExam.abrirCertificado('${mat}')" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 hover:from-emerald-700 hover:to-teal-700 transition flex items-center gap-2">
+                        <button onclick="document.getElementById('csat-result-modal').remove(); app.ui.abrirCertificadoOficial('csat', '${mat}')" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 hover:from-emerald-700 hover:to-teal-700 transition flex items-center gap-2">
                             <i class="fa-solid fa-award"></i> Ver Certificado Oficial
                         </button>
                     ` : ''}
@@ -3464,84 +3677,12 @@ storage: {
     },
 
     abrirCertificado(matricula) {
-        const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
-        const reg = app.csatNpsProvas && app.csatNpsProvas[mat];
-        if (!reg || reg.status !== 'aprovado') {
-            return app.ui.showAlert("Sem Certificado", "Apenas colaboradores aprovados na avaliação possuem certificado oficial.", "warning");
-        }
-
-        const modalExist = document.getElementById('csat-cert-modal');
-        if (modalExist) modalExist.remove();
-
-        const dataFmt = new Date(reg.dataTentativa).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-
-        const modal = document.createElement('div');
-        modal.id = 'csat-cert-modal';
-        modal.className = 'fixed inset-0 z-[9996] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in';
-        modal.innerHTML = `
-            <div class="max-w-3xl w-full my-6 flex flex-col items-center">
-                <!-- Certificado Imprimível -->
-                <div id="csat-printable-certificate" class="w-full bg-white text-slate-900 rounded-3xl p-8 md:p-12 border-8 border-double border-indigo-900 shadow-2xl relative overflow-hidden">
-                    <!-- Fundo decorativo -->
-                    <div class="absolute -right-20 -bottom-20 w-72 h-72 rounded-full bg-indigo-50/60 pointer-events-none"></div>
-                    <div class="absolute -left-20 -top-20 w-72 h-72 rounded-full bg-indigo-50/60 pointer-events-none"></div>
-
-                    <div class="text-center relative z-10">
-                        <div class="w-16 h-16 rounded-2xl bg-indigo-900 text-amber-400 flex items-center justify-center text-3xl mx-auto mb-4 shadow-md">
-                            <i class="fa-solid fa-award"></i>
-                        </div>
-                        <div class="text-[11px] font-black uppercase tracking-[0.3em] text-indigo-900">Portal Qualidade & Treinamento</div>
-                        <h2 class="text-2xl md:text-3xl font-black text-slate-900 mt-2 uppercase tracking-wide">Certificado de Proficiência Técnica</h2>
-                        <div class="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Métricas Avançadas de Experiência do Cliente: CSAT & NPS</div>
-
-                        <div class="w-32 h-1 bg-gradient-to-r from-indigo-500 via-amber-400 to-indigo-500 mx-auto my-6 rounded-full"></div>
-
-                        <p class="text-sm md:text-base text-slate-700 leading-relaxed max-w-xl mx-auto">
-                            Certificamos que <strong class="text-slate-900 text-lg underline decoration-indigo-500 decoration-2">${app.utils.escapeHtml(reg.nome)}</strong>, 
-                            matrícula <strong class="text-slate-900">${reg.matricula}</strong>, concluiu com êxito a avaliação técnica de capacitação sobre 
-                            <strong>CSAT & NPS</strong>, demonstrando domínio das fórmulas oficiais, amostragem, escalas psicométricas e governança de qualidade com aproveitamento de:
-                        </p>
-
-                        <div class="my-6 inline-flex items-center gap-3 px-6 py-2 rounded-2xl bg-indigo-50 border border-indigo-200">
-                            <span class="text-xs font-bold uppercase tracking-wider text-indigo-900">Aproveitamento Oficial:</span>
-                            <span class="text-2xl font-black text-indigo-900 tabular-nums">${reg.nota}%</span>
-                            <span class="text-xs text-indigo-700 font-bold tabular-nums">(${reg.acertos}/10 acertos)</span>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 mt-4 border-t border-slate-200 text-left text-xs text-slate-600">
-                            <div>
-                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Data de Emissão</div>
-                                <div class="font-extrabold text-slate-800 tabular-nums">${dataFmt}</div>
-                            </div>
-                            <div class="text-center md:text-center">
-                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Chave de Autenticidade</div>
-                                <div class="font-extrabold text-indigo-900 tracking-wider tabular-nums">${reg.certificadoId || 'CERT-CX-OK'}</div>
-                            </div>
-                            <div class="text-right md:text-right">
-                                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validação</div>
-                                <div class="font-extrabold text-emerald-700"><i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i> Certificado Válido</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Botoes de Ação fora da impressão -->
-                <div class="mt-4 flex items-center justify-center gap-3 w-full">
-                    <button onclick="document.getElementById('csat-cert-modal').remove()" class="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-sm hover:bg-slate-700 transition">
-                        Fechar
-                    </button>
-                    <button onclick="window.print()" class="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-extrabold text-sm shadow-lg hover:bg-indigo-500 transition flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> Imprimir Certificado
-                    </button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
+        return app.ui.abrirCertificadoOficial('csat', matricula);
     },
 
     abrirPainelAdmin() {
-        if (!app.isAdmin && !app.hasAdminAccess('csat_nps')) {
-            return app.ui.showAlert("Acesso Restrito", "Apenas perfis de gestão têm acesso a este painel.", "error");
+        if (!app.isAdmin && !app.hasAdminAccess('treinamento_capacitacao')) {
+            return app.ui.showAlert("Acesso Restrito", "Apenas gestores têm acesso a este painel.", "error");
         }
 
         const modalExist = document.getElementById('csat-admin-modal');
@@ -3562,7 +3703,7 @@ storage: {
                         </div>
                         <div>
                             <h3 class="text-lg font-black text-slate-800 dark:text-white">Gestão das Avaliações de CSAT & NPS</h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Histórico de provas, notas e liberação de novas tentativas.</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Histórico de provas, certificações e liberação de novas tentativas.</p>
                         </div>
                     </div>
                     <button onclick="document.getElementById('csat-admin-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
@@ -3614,11 +3755,11 @@ storage: {
                                         </td>
                                         <td class="py-3 px-3 text-slate-500 tabular-nums">${dataFmt}</td>
                                         <td class="py-3 px-3 text-right space-x-1">
-                                            <button onclick="app.csatNpsExam.abrirModalResultado('${item.matricula}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition font-bold" title="Ver Gabarito">
+                                            <button onclick="app.csatNpsExam.abrirModalResultado('${item.matricula}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition font-bold" title="Ver Resultado">
                                                 <i class="fa-solid fa-eye"></i>
                                             </button>
                                             ${aprovado ? `
-                                                <button onclick="app.csatNpsExam.abrirCertificado('${item.matricula}')" class="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition font-bold" title="Ver Certificado">
+                                                <button onclick="app.ui.abrirCertificadoOficial('csat', '${item.matricula}')" class="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition font-bold" title="Ver Certificado">
                                                     <i class="fa-solid fa-award"></i>
                                                 </button>
                                             ` : ''}
@@ -3654,15 +3795,16 @@ storage: {
                         adminModal.remove();
                         app.csatNpsExam.abrirPainelAdmin();
                     }
-                    const container = document.getElementById('view-container') || document.querySelector('.main-content');
-                    if (container && app.ui && app.ui.currentTab === 'csat_nps') {
-                        app.ui.renderView_CsatNps(container);
+                    const container = document.getElementById('view-container-treinamento_capacitacao') || document.getElementById('view-container-csat_nps');
+                    if (container && app.ui) {
+                        app.ui.renderView_TreinamentoCapacitacao(container);
                     }
                 });
             }
         }
     }
-},
+}
+,
 
             ui: {
                 currentActionFilter: 'pendente',
@@ -4530,7 +4672,30 @@ storage: {
                     return `${months[parseInt(m)-1]} de ${y}`;
                 },
 
-                renderTab(tabId, forceRefresh = false) {
+                                renderTab(tabId, forceRefresh = false) {
+                    // Proteção Anti-Cola: Bloqueia navegação no portal se houver uma avaliação oficial ativa em outra aba
+                    const activeExamLock = localStorage.getItem('portal_prova_ativa_lock');
+                    if (activeExamLock && !document.getElementById('fcr-exam-fullscreen') && !document.getElementById('csat-nps-exam-screen')) {
+                        try {
+                            const lock = JSON.parse(activeExamLock);
+                            if (lock && (Date.now() - lock.lastHeartbeat < 8000)) {
+                                if (typeof BroadcastChannel !== 'undefined') {
+                                    try {
+                                        const bc = new BroadcastChannel('portal_anti_cola_' + (lock.tipo || 'fcr') + '_' + lock.matricula);
+                                        bc.postMessage({ type: 'DUPLICATE_TAB_DETECTED', sessionId: 'ext_tab' });
+                                        bc.close();
+                                    } catch (e) {}
+                                }
+                                app.ui.showAlert(
+                                    "Avaliação em Andamento",
+                                    "Você possui uma avaliação oficial aberta em outra aba deste navegador. A navegação no portal está bloqueada para garantir a conformidade anti-cola.",
+                                    "warning"
+                                );
+                                return;
+                            }
+                        } catch (e) {}
+                    }
+
                     if (tabId === 'gestao_equipe' || tabId === 'operacoes') { tabId = 'hierarquia'; }
                     // Limpar cronômetro e renderizações pendentes ao mudar de tela ou trocar de mês
                     if(this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
@@ -22203,23 +22368,30 @@ Object.assign(app.ui, {
 // =========================================================================
 // MÓDULO EXAME FCR NO CALL CENTER (ANTI-COLA, 10 QUESTÕES DIFÍCEIS)
 // =========================================================================
+// =========================================================================
+// MÓDULO EXAME FCR NO CALL CENTER (ANTI-COLA HARDCORE, 10 QUESTÕES EMBARALHADAS)
+// Multi-Navegador, Multi-Aba, Detecção de Saída de Tela & Randomização Total
+// =========================================================================
 app.fcrExam = {
     estadoAtivo: null,
     _intervalId: null,
     _listeners: null,
     _ultimoAvisoTs: 0,
+    _firebaseSessaoRef: null,
+    _broadcastChannel: null,
 
+    // Banco de questões com posições diversificadas das respostas corretas
     bancoQuestoes: [
         {
             id: 1,
             pergunta: "No contexto técnico de auditoria de qualidade e governança operacional de Call Centers, o que define precisamente a métrica FCR (First Contact Resolution) e qual é o método padrão de apuração?",
             opcoes: [
-                "Percentual de chamadas em que a demanda raiz do cliente é resolvida de forma definitiva no primeiro contato, sem que haja recontato ou reiteração dentro da janela regulamentar de apuração (ex: 24h a 72h).",
                 "Tempo médio em segundos que o atendente leva para desligar a ligação no primeiro contato com o cliente, independentemente do encaminhamento posterior.",
-                "Percentual de chamadas atendidas em menos de 20 segundos pelo primeiro atendente humano que atendeu a fila receptiva.",
-                "Total de chamadas transferidas com sucesso para o Nível 2 na primeira tentativa de roteamento da URA."
+                "Total de chamadas transferidas com sucesso para o Nível 2 na primeira tentativa de roteamento da URA.",
+                "Percentual de chamadas em que a demanda raiz do cliente é resolvida de forma definitiva no primeiro contato, sem que haja recontato ou reiteração dentro da janela regulamentar de apuração (ex: 24h a 72h).",
+                "Percentual de chamadas atendidas em menos de 20 segundos pelo primeiro atendente humano que atendeu a fila receptiva."
             ],
-            correta: 0,
+            correta: 2,
             explicacao: "O FCR mede a resolutividade definitiva no primeiro contato sobre a demanda raiz, monitorada dentro da janela de recontato da operação."
         },
         {
@@ -22238,72 +22410,72 @@ app.fcrExam = {
             id: 3,
             pergunta: "O treinamento corporativo utiliza a 'Analogia da Oficina Mecânica' para orientar a postura dos monitores de qualidade. Qual comportamento nocivo de atendimento essa analogia busca erradicar?",
             opcoes: [
-                "Liberar o cliente rapidamente com soluções paliativas ou explicações vagas apenas para baixar artificialmente o TMT (Tempo Médio de Atendimento), gerando recontato inevitável, retrabalho e desconfiança.",
                 "Explicar detalhadamente o passo a passo da resolução sistêmica ao cliente, pois isso consome tempo produtivo da fila de atendimento.",
                 "Registrar detalhadamente no CRM o laudo técnico da chamada, pois o cliente prefere que não haja histórico registrado de suas queixas.",
-                "Transferir chamadas de clientes leigos para áreas de engenharia de telecomunicações sem autorização da diretoria."
+                "Transferir chamadas de clientes leigos para áreas de engenharia de telecomunicações sem autorização da diretoria.",
+                "Liberar o cliente rapidamente com soluções paliativas ou explicações vagas apenas para baixar artificialmente o TMT (Tempo Médio de Atendimento), gerando recontato inevitável, retrabalho e desconfiança."
             ],
-            correta: 0,
+            correta: 3,
             explicacao: "A analogia da oficina mecânica demonstra que 'remendar o freio às pressas para bater meta de tempo' custa o dobro e gera acidentes e quebra de lealdade."
         },
         {
             id: 4,
             pergunta: "Em uma operação multicanal, o operador N1 transfere uma ligação de suporte complexo para o N2 em formato de 'transferência cega' (sem diálogo prévio com o especialista de N2 e sem contextualização no CRM). Qual o impacto direto dessa prática no FCR e na governança de qualidade?",
             opcoes: [
-                "Compromete criticamente o FCR e eleva o CES (Customer Effort Score), pois força o cliente a repetir toda a narrativa com alto risco de queda de linha ou roteamento incorreto.",
                 "Melhora o FCR de N1 porque a ligação foi transferida em menos de 10 segundos, liberando a fila receptiva para o próximo cliente.",
+                "Compromete criticamente o FCR e eleva o CES (Customer Effort Score), pois força o cliente a repetir toda a narrativa com alto risco de queda de linha ou roteamento incorreto.",
                 "Não afeta o FCR, visto que a responsabilidade da resolução passa a ser 100% atribuída à equipe de supervisão de tráfego telefônico.",
                 "Aumenta a satisfação do cliente por eliminar conversas desnecessárias entre os colaboradores da empresa."
             ],
-            correta: 0,
+            correta: 1,
             explicacao: "A transferência cega quebra a continuidade da resolução e causa retrabalho extremo ao consumidor, sendo falta grave em qualidade."
         },
         {
             id: 5,
             pergunta: "Durante a auditoria analítica de uma chamada de suporte técnico a sistemas, qual ação do atendente comprova a aplicação proativa e rigorosa da diretriz de garantia de resolutividade (FCR)?",
             opcoes: [
-                "Solicitar ativamente que o cliente realize o teste de login, transação ou acesso em linha antes de finalizar o contato, confirmando em tempo real a superação do erro.",
                 "Orientar o cliente a desligar e aguardar até 72 horas para testar, pois procedimentos técnicos só surtem efeito após o reinício do sistema à meia-noite.",
                 "Informar que a solicitação foi encaminhada para a TI e sugerir que ele ligue amanhã para verificar se houve resposta.",
+                "Solicitar ativamente que o cliente realize o teste de login, transação ou acesso em linha antes de finalizar o contato, confirmando em tempo real a superação do erro.",
                 "Finalizar o contato sem confirmação para evitar que o cliente descubra novas dúvidas durante a chamada."
             ],
-            correta: 0,
+            correta: 2,
             explicacao: "A validação em linha com o cliente operando o sistema é o pilar prático da garantia de FCR auditável."
         },
         {
             id: 6,
             pergunta: "Ao auditar um recontato ocorrido dentro de 48 horas, o monitor verifica que o Operador 2 teve conduta impecável. Todavia, a auditoria do histórico no CRM revela que a reiteração só ocorreu porque o Operador 1 errou a digitação do e-mail ao enviar o boleto acordado. A quem a falha de FCR deve ser imputada?",
             opcoes: [
-                "Ao Operador 1, pois foi a desatenção na inserção de dados no primeiro contato que gerou a causa raiz da quebra de resolutividade e o recontato desnecessário.",
                 "Ao Operador 2, pois foi ele quem atendeu a ligação que registrou a métrica negativa de reiteração no sistema.",
+                "Ao Operador 1, pois foi a desatenção na inserção de dados no primeiro contato que gerou a causa raiz da quebra de resolutividade e o recontato desnecessário.",
                 "Ao cliente, por não ter solicitado a confirmação fonética do endereço eletrônico letra por letra antes do término do atendimento.",
                 "A nenhuma das partes, devendo o monitor excluir a chamada da amostragem para não distorcer os indicadores do setor."
             ],
-            correta: 0,
+            correta: 1,
             explicacao: "A apuração de causa raiz em qualidade atribui o ofensor de FCR à interação onde o erro original foi perpetrado."
         },
         {
             id: 7,
             pergunta: "O que é o conceito de 'Atendimento Preditivo' (Next Issue Avoidance - NIA) e por que ele é tratado como a fronteira avançada do FCR pelos monitores de qualidade?",
             opcoes: [
-                "É a antecipação proativa de dúvidas ou demandas secundárias previsíveis decorrentes da ação atual (ex: explicar a cobrança proporcional da próxima fatura após uma troca de plano), evitando futuros recontatos.",
                 "É a prática de adivinhar o nome do cliente antes de consultar a tela de identificação do CRM.",
                 "É a proibição de que o cliente realize mais de duas perguntas durante a mesma chamada para não estourar o TMT.",
-                "É o envio massivo de e-mails de marketing logo após a desconexão da chamada de reclamação."
+                "É o envio massivo de e-mails de marketing logo após a desconexão da chamada de reclamação.",
+                "É a antecipação proativa de dúvidas ou demandas secundárias previsíveis decorrentes da ação atual (ex: explicar a cobrança proporcional da próxima fatura após uma troca de plano), evitando futuros recontatos."
             ],
-            correta: 0,
+            correta: 3,
             explicacao: "Next Issue Avoidance (NIA) complementa o FCR evitando a próxima dúvida imediata decorrente da alteração solicitada."
         },
         {
             id: 8,
             pergunta: "Um supervisor reporta FCR de 99% alegando que todos os chamados de sua equipe são encerrados como 'Concluído' no sistema interno. No entanto, o CSAT do grupo está em 40% e a Ouvidoria bateu recorde de reclamações. Qual distorção crítica de qualidade está demonstrada?",
             opcoes: [
-                "Confusão entre 'fechamento burocrático de status pelo operador' e a 'real resolutividade percebida pelo cliente', mascarando a ineficácia com finalizações unilaterais sem solução de causa raiz.",
                 "O FCR está excelente e o problema é exclusivamente uma falha metodológica dos questionários de satisfação da Ouvidoria.",
+                "Confusão entre 'fechamento burocrático de status pelo operador' e a 'real resolutividade percebida pelo cliente', mascarando a ineficácia com finalizações unilaterais sem solução de causa raiz.",
                 "Os clientes estão insatisfeitos com a velocidade do atendimento, devendo a empresa exigir que os chamados demorem mais para passar credibilidade.",
                 "Houve invasão do banco de dados por sistemas concorrentes que alteraram os dados da pesquisa de CSAT."
             ],
-            correta: 0,
+            correta: 1,
             explicacao: "Fechar chamado no sistema não é resolver. A resolutividade autêntica exige que o problema do cliente tenha cessado na realidade."
         },
         {
@@ -22322,12 +22494,12 @@ app.fcrExam = {
             id: 10,
             pergunta: "Durante uma pane geral de infraestrutura (Down Time sistêmico massivo homologado pela Engenharia de TI), o operador atende com cordialidade, explica a contingência e passa o prazo oficial de reparo. Como o monitor de qualidade deve auditar o FCR desta chamada?",
             opcoes: [
-                "Deve registrar a não-resolução sob a categoria 'Causa Sistêmica/Externa Excludente', preservando a avaliação individual de desempenho do atendente sem penalização injusta de sua nota técnica.",
                 "Deve zerar a pontuação de qualidade do atendente, pois ele não foi capaz de reestabelecer os servidores de engenharia da empresa sozinho.",
                 "Deve fingir que a chamada não existiu e apagar o arquivo de gravação do banco de dados.",
+                "Deve registrar a não-resolução sob a categoria 'Causa Sistêmica/Externa Excludente', preservando a avaliação individual de desempenho do atendente sem penalização injusta de sua nota técnica.",
                 "Deve transferir a gravação para o cliente avaliar em suas redes sociais pessoais."
             ],
-            correta: 0,
+            correta: 2,
             explicacao: "Falhas de contingência sistêmica externa não devem penalizar a nota técnica individual do colaborador na monitoria."
         }
     ],
@@ -22392,12 +22564,12 @@ app.fcrExam = {
                             <i class="fa-solid fa-shield-halved text-indigo-600 dark:text-indigo-400"></i> Protocolos de Segurança Anti-Cola:
                         </div>
                         <ul class="list-disc list-inside space-y-1 text-xs text-slate-600 dark:text-slate-300 pl-1">
-                            <li><strong>10 Questões Desafiadoras:</strong> Focadas no conteúdo ensinado no guia de FCR.</li>
-                            <li><strong>Tempo Limite:</strong> 15 minutos para conclusão da prova inteira.</li>
-                            <li><strong>Mínimo de 70% para Aprovação:</strong> Exige 7 ou mais acertos.</li>
-                            <li><strong>Bloqueio de 24h em caso de reprovação:</strong> Nova tentativa apenas após 24 horas.</li>
-                            <li><strong>Gabarito Oculto:</strong> O gabarito não é exibido após a prova para preservar a integridade.</li>
-                            <li><strong>Anti-Abandono:</strong> Trocar de aba ou perder o foco da janela registrará advertências e cancelamento da prova.</li>
+                            <li><strong>Alternativas e Questões 100% Embaralhadas:</strong> Cada avaliação possui ordenação única e randômica.</li>
+                            <li><strong>Trava Multi-Navegador e Multi-Aba:</strong> É proibido abrir a prova em dois navegadores ou em abas duplicadas.</li>
+                            <li><strong>Detecção de Saída de Tela:</strong> Sair da aba, minimizar ou clicar fora registrará aviso e cancelamento imediato.</li>
+                            <li><strong>Modo Tela Cheia Obrigatório:</strong> A prova é realizada em tela cheia monitorada.</li>
+                            <li><strong>Mínimo de 70% para Aprovação:</strong> Exige 7 ou mais acertos. Bloqueio de 24h em caso de reprovação.</li>
+                            <li><strong>Gabarito Oculto:</strong> O gabarito não é divulgado para garantir a lisura da prova.</li>
                         </ul>
                     </div>
                 </div>
@@ -22415,7 +22587,7 @@ app.fcrExam = {
         document.body.appendChild(modal);
     },
 
-    iniciarProva(matricula = null) {
+    async iniciarProva(matricula = null) {
         const mat = String(matricula || (typeof app !== 'undefined' && app.currentUser ? app.currentUser.matricula : 'admin')).trim();
         const nome = (typeof app !== 'undefined' && app.currentUser ? app.currentUser.nome : 'Colaborador');
         const st = this.verificarStatus(mat);
@@ -22424,18 +22596,24 @@ app.fcrExam = {
             return app.ui.showAlert("Acesso Bloqueado", st.motivo, "warning");
         }
 
+        // 1. CHECAGEM E TRAVA MULTI-NAVEGADOR / MULTI-DISPOSITIVO (Firebase + LocalStorage)
+        const checkSessao = await window.AntiColaSecurityEngine.verificarETravarSessaoCrossBrowser(mat, nome, 'fcr');
+        if (!checkSessao.permitido) {
+            return app.ui.showAlert("Duplicidade Bloqueada", checkSessao.motivo, "error");
+        }
+        const sessionId = checkSessao.sessionId;
+
         const briefing = document.getElementById('fcr-briefing-modal');
         if (briefing) briefing.remove();
 
-        const questoes = this.bancoQuestoes.map((q, idx) => ({
-            ...q,
-            indiceOriginal: idx
-        }));
+        // 2. EMBARALHAMENTO DAS QUESTÕES E DAS 4 ALTERNATIVAS DE CADA UMA (Fisher-Yates)
+        const questoesProcessadas = window.AntiColaSecurityEngine.embaralharQuestoes(this.bancoQuestoes, 10);
 
         this.estadoAtivo = {
             matricula: mat,
             nome: nome,
-            questoes: questoes,
+            sessionId: sessionId,
+            questoes: questoesProcessadas,
             indiceAtual: 0,
             respostas: Array(10).fill(null),
             tempoRestanteSegundos: 15 * 60, // 15 minutos
@@ -22452,9 +22630,11 @@ app.fcrExam = {
         fullscreenEl.className = 'fixed inset-0 z-[9999] bg-slate-950 text-slate-100 flex flex-col select-none overflow-hidden';
         document.body.appendChild(fullscreenEl);
 
+        // 3. ATIVA SEGURANÇA MÁXIMA ANTI-COLA E CANAIS DE VIGILÂNCIA
         this.ativarSegurancaAntiCola();
         this.renderExamScreen();
 
+        // 4. CRONÔMETRO E HEARTBEAT CONTÍNUO
         if (this._intervalId) clearInterval(this._intervalId);
         this._intervalId = setInterval(() => {
             if (!this.estadoAtivo || this.estadoAtivo.finalizado) {
@@ -22464,52 +22644,134 @@ app.fcrExam = {
             this.estadoAtivo.tempoRestanteSegundos--;
             this.atualizarTimerUI();
 
+            // Heartbeat de segurança anti-duplicidade
+            window.AntiColaSecurityEngine.enviarHeartbeat(mat, sessionId, 'fcr');
+
             if (this.estadoAtivo.tempoRestanteSegundos <= 0) {
                 clearInterval(this._intervalId);
                 this.finalizarProva(true, "Tempo Limite Esgotado!");
             }
         }, 1000);
+
+        // 5. VIGILÂNCIA REALTIME NO FIREBASE: Detecta se outro navegador/sessão foi aberto
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            const sessRef = firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat);
+            this._firebaseSessaoRef = sessRef;
+            sessRef.on('value', (snap) => {
+                if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+                const val = snap.val();
+                if (val && val.sessionId && val.sessionId !== this.estadoAtivo.sessionId) {
+                    this.finalizarProva(false, "Desclassificado: Tentativa de abertura simultânea em outro navegador ou dispositivo detectada.");
+                }
+            });
+        }
+
+        // 6. BROADCAST CHANNEL: Detecta abertura de novas abas no mesmo navegador
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                this._broadcastChannel = new BroadcastChannel('portal_anti_cola_fcr_' + mat);
+                this._broadcastChannel.onmessage = (ev) => {
+                    if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
+                    if (ev.data && ev.data.type === 'DUPLICATE_TAB_DETECTED') {
+                        this.finalizarProva(false, "Desclassificado por tentativa de abertura de nova aba durante a prova.");
+                    }
+                };
+                this._broadcastChannel.postMessage({ type: 'EXAM_STARTED', sessionId });
+            }
+        } catch (e) {}
     },
 
     ativarSegurancaAntiCola() {
         this.desativarSegurancaAntiCola();
         const self = this;
 
+        // Solicita modo tela cheia obrigatório
+        try {
+            if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
+        } catch (e) {}
+
         const onVisibilityChange = () => {
             if (document.hidden && self.estadoAtivo && !self.estadoAtivo.finalizado) {
-                self.registrarAdvertencia("Você alterou ou minimizou a aba do navegador!");
+                self.registrarAdvertencia("Você saiu da aba da avaliação ou minimizou o navegador!");
             }
         };
 
         const onBlur = () => {
             if (self.estadoAtivo && !self.estadoAtivo.finalizado) {
-                self.registrarAdvertencia("Você saiu da janela da prova!");
+                self.registrarAdvertencia("Você perdeu o foco da janela da prova (clicou fora ou abriu outro aplicativo)!");
+            }
+        };
+
+        const onFullscreenChange = () => {
+            if (!document.fullscreenElement && self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                self.registrarAdvertencia("O modo tela cheia obrigatório foi encerrado!");
             }
         };
 
         const onContextMenu = (e) => { e.preventDefault(); return false; };
+        const onCopyCutPaste = (e) => { e.preventDefault(); return false; };
+
         const onKeyDown = (e) => {
-            if (e.key === 'F12' || (e.ctrlKey && (e.key === 'c' || e.key === 'u' || e.key === 'i' || e.key === 'j'))) {
+            if (
+                e.key === 'F12' ||
+                e.key === 'F11' ||
+                e.key === 'Escape' ||
+                (e.altKey && (e.key === 'Tab' || e.key === 'F4')) ||
+                (e.ctrlKey && ['c', 'u', 'i', 'j', 't', 'n', 'w', 'v', 'a', 's', 'p'].includes(e.key.toLowerCase())) ||
+                (e.ctrlKey && e.shiftKey)
+            ) {
                 e.preventDefault();
-                self.registrarAdvertencia("Atalhos proibidos durante a avaliação!");
+                e.stopPropagation();
+                self.registrarAdvertencia("Uso de atalhos proibidos durante a avaliação!");
                 return false;
+            }
+        };
+
+        const onStorage = (e) => {
+            if (e.key === 'portal_prova_ativa_lock' && self.estadoAtivo && !self.estadoAtivo.finalizado) {
+                try {
+                    const lock = JSON.parse(e.newValue);
+                    if (lock && lock.matricula === self.estadoAtivo.matricula && lock.sessionId !== self.estadoAtivo.sessionId) {
+                        self.finalizarProva(false, "Desclassificado por abertura de nova aba ou janela neste navegador!");
+                    }
+                } catch (err) {}
             }
         };
 
         document.addEventListener('visibilitychange', onVisibilityChange);
         window.addEventListener('blur', onBlur);
+        document.addEventListener('fullscreenchange', onFullscreenChange);
         document.addEventListener('contextmenu', onContextMenu);
+        document.addEventListener('copy', onCopyCutPaste);
+        document.addEventListener('cut', onCopyCutPaste);
+        document.addEventListener('paste', onCopyCutPaste);
         document.addEventListener('keydown', onKeyDown);
+        window.addEventListener('storage', onStorage);
 
-        this._listeners = { onVisibilityChange, onBlur, onContextMenu, onKeyDown };
+        this._listeners = {
+            onVisibilityChange,
+            onBlur,
+            onFullscreenChange,
+            onContextMenu,
+            onCopyCutPaste,
+            onKeyDown,
+            onStorage
+        };
     },
 
     desativarSegurancaAntiCola() {
         if (!this._listeners) return;
         document.removeEventListener('visibilitychange', this._listeners.onVisibilityChange);
         window.removeEventListener('blur', this._listeners.onBlur);
+        document.removeEventListener('fullscreenchange', this._listeners.onFullscreenChange);
         document.removeEventListener('contextmenu', this._listeners.onContextMenu);
+        document.removeEventListener('copy', this._listeners.onCopyCutPaste);
+        document.removeEventListener('cut', this._listeners.onCopyCutPaste);
+        document.removeEventListener('paste', this._listeners.onCopyCutPaste);
         document.removeEventListener('keydown', this._listeners.onKeyDown);
+        window.removeEventListener('storage', this._listeners.onStorage);
         this._listeners = null;
     },
 
@@ -22517,7 +22779,7 @@ app.fcrExam = {
         if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
 
         const agora = Date.now();
-        if (agora - this._ultimoAvisoTs < 2500) return;
+        if (agora - this._ultimoAvisoTs < 2000) return;
         this._ultimoAvisoTs = agora;
 
         this.estadoAtivo.advertencias++;
@@ -22525,15 +22787,18 @@ app.fcrExam = {
 
         const advBadge = document.getElementById('fcr-adv-badge');
         if (advBadge) {
-            advBadge.textContent = `${adv}/2`;
+            advBadge.textContent = `${adv}/1 advertência`;
             advBadge.classList.add('animate-bounce');
             setTimeout(() => advBadge && advBadge.classList.remove('animate-bounce'), 1000);
         }
 
         if (adv === 1) {
+            if (app.utils && typeof app.utils.playCuteSound === 'function') {
+                app.utils.playCuteSound();
+            }
             this.mostrarModalAdvertencia(motivo);
         } else if (adv >= 2) {
-            this.finalizarProva(false, "Desqualificado por Violação de Integridade Anti-Cola!");
+            this.finalizarProva(false, "Desclassificado por violação reincidente do protocolo anti-cola (" + motivo + ")!");
         }
     },
 
@@ -22543,19 +22808,19 @@ app.fcrExam = {
 
         const modal = document.createElement('div');
         modal.id = 'fcr-adv-modal';
-        modal.className = 'fixed inset-0 z-[10000] bg-red-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-white text-center';
+        modal.className = 'fixed inset-0 z-[10000] bg-red-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-white text-center';
         modal.innerHTML = `
             <div class="bg-slate-900 border-2 border-red-500 rounded-3xl max-w-md w-full p-6 shadow-2xl">
                 <div class="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center text-3xl mx-auto mb-4 border border-red-500/40">
                     <i class="fa-solid fa-triangle-exclamation"></i>
                 </div>
-                <h3 class="text-xl font-black text-red-400 uppercase tracking-wide">Primeira Advertência!</h3>
+                <h3 class="text-xl font-black text-red-400 uppercase tracking-wide">Primeira e Última Advertência!</h3>
                 <p class="text-xs text-slate-300 mt-2 leading-relaxed">
-                    ${motivo}<br>
-                    <strong>Atenção:</strong> Se você trocar de aba ou sair da tela mais 1 vez, a avaliação será <strong>anulada imediatamente</strong> e você será bloqueado até amanhã.
+                    <strong>Motivo:</strong> ${motivo}<br><br>
+                    <span class="text-amber-300 font-bold">ATENÇÃO MÁXIMA:</span> Se você sair da aba, trocar de janela, perder o foco da tela ou tentar duplicar o navegador novamente, a avaliação será <strong>anulada imediatamente com nota zero</strong> e você será bloqueado por 24 horas.
                 </p>
-                <button onclick="document.getElementById('fcr-adv-modal').remove()" class="mt-6 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs uppercase tracking-wider transition">
-                    Entendido, Voltar à Prova
+                <button onclick="document.getElementById('fcr-adv-modal').remove(); try { if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); } catch(e){}" class="mt-6 w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs uppercase tracking-wider transition">
+                    Entendido, Voltar à Prova Agora
                 </button>
             </div>
         `;
@@ -22587,7 +22852,7 @@ app.fcrExam = {
                     <!-- Advertências -->
                     <div class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold">
                         <i class="fa-solid fa-triangle-exclamation"></i>
-                        <span>Advertências: <strong id="fcr-adv-badge" class="tabular-nums">${this.estadoAtivo.advertencias}/2</strong></span>
+                        <span>Advertências: <strong id="fcr-adv-badge" class="tabular-nums">${this.estadoAtivo.advertencias}/1</strong></span>
                     </div>
 
                     <!-- Cronômetro -->
@@ -22629,7 +22894,7 @@ app.fcrExam = {
                         <div class="flex items-center gap-1.5 font-bold text-slate-300">
                             <i class="fa-solid fa-info-circle text-indigo-400"></i> Dica de Prova:
                         </div>
-                        <p>Responda com atenção. Não há penalização por tempo sobrando; garanta a precisão técnica.</p>
+                        <p>Alternativas balanceadas e aleatórias. Leia cada enunciado com rigor técnico.</p>
                     </div>
                 </aside>
 
@@ -22770,12 +23035,26 @@ app.fcrExam = {
         }
         this.desativarSegurancaAntiCola();
 
-        const screen = document.getElementById('fcr-exam-fullscreen');
-        if (screen) screen.remove();
-
         const mat = this.estadoAtivo.matricula;
         const nome = this.estadoAtivo.nome;
         const desqualificado = motivoEspecial !== null;
+
+        // Limpa ouvintes de vigilância e sessões ativas
+        if (this._firebaseSessaoRef) {
+            this._firebaseSessaoRef.off();
+            this._firebaseSessaoRef = null;
+        }
+        window.AntiColaSecurityEngine.limparSessaoSegura(mat);
+
+        try {
+            if (this._broadcastChannel) {
+                this._broadcastChannel.close();
+                this._broadcastChannel = null;
+            }
+        } catch (e) {}
+
+        const screen = document.getElementById('fcr-exam-fullscreen');
+        if (screen) screen.remove();
 
         let acertos = 0;
         if (!desqualificado) {
@@ -22790,7 +23069,7 @@ app.fcrExam = {
         const notaPercent = Math.round((acertos / 10) * 100);
         const aprovado = !desqualificado && acertos >= 7;
 
-        // Se reprovado, bloqueia até meia-noite do dia seguinte (mínimo 24 horas)
+        // Se reprovado ou desqualificado, bloqueia até meia-noite do dia seguinte (mínimo 24 horas)
         let bloqueioAte = null;
         if (!aprovado) {
             const dataBloq = new Date();
@@ -22963,10 +23242,6 @@ app.fcrExam = {
 };
 
 
-
-        // ==========================================
-        // BOOT DO APLICATIVO E UX PREMIUM
-        // ==========================================
         document.addEventListener('DOMContentLoaded', () => { 
 
             // Sistema Global de Proteção contra Erros (Ativa a tela visual)
