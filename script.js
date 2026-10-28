@@ -1050,7 +1050,8 @@ storage: {
                     });
 
                     // Lembretes de Calendário (1 dia antes e 1 hora antes)
-                    Object.values(app.eventsList).forEach(evt => {
+                    if (!app.notificationsList) app.notificationsList = {};
+                    Object.values(app.eventsList || {}).forEach(evt => {
                         if(evt.tipo === 'evento' && evt.status === 'Previsto') {
                             const targetId = evt.matricula === 'TODOS' ? 'ADM' : evt.matricula;
                             
@@ -3970,10 +3971,10 @@ storage: {
                     const presets = this.getPresetsGruposAcesso();
                     const tipo = user.tipoAcesso || 'Qualidade';
                     const presetTabs = presets[tipo] || presets['Qualidade'] || [];
+                    let savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                     if (tipo !== 'Dev' && !app.isAdmin) {
                         savedTabs = savedTabs.filter(id => id !== 'teste_duolingo');
                     }
-                    const savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                     if (savedTabs.includes('treinamento_capacitacao') || savedTabs.includes('csat_nps')) {
                         const i1 = savedTabs.indexOf('treinamento_capacitacao'); if (i1 !== -1) savedTabs.splice(i1, 1);
                         const i2 = savedTabs.indexOf('csat_nps'); if (i2 !== -1) savedTabs.splice(i2, 1);
@@ -4305,7 +4306,7 @@ storage: {
                     const mm = String(today.getMonth() + 1).padStart(2, '0');
                     const yyyy = today.getFullYear();
                     app.currentMonth = `${yyyy}-${mm}`;
-                    document.getElementById('global-month').value = app.currentMonth;
+                    const gmEl = document.getElementById('global-month'); if (gmEl) gmEl.value = app.currentMonth;
                     
                     // Resgata backups locais imediatamente (para nunca perder Visão Geral Setorial ao dar F5)
                     try {
@@ -21487,7 +21488,8 @@ storage: {
                 
             } // <--- CORRIGIDO: Adicionada a chave que fecha o bloco 'admin'
 
-        }; // Feche o objeto app aqui com ponto e vírgula
+        };
+window.app = app;
 
 // =========================================================================
 // MODULOS ACOPLADOS: CENTRAL DE REPORTES & TREINAMENTO / CERTIFICACOES
