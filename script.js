@@ -1,4 +1,4 @@
-﻿
+
         // =========================================================================
 // MOTOR DE SEGURANÇA MÁXIMA ANTI-COLA & EMBARALHAMENTO CRIPTOGRÁFICO
 // Multi-Navegador, Multi-Aba, Detecção de Foco & Randomização Total de Alternativas
@@ -397,7 +397,7 @@ storage: {
                 firebaseConfig: {
                     apiKey: "AIzaSyAgCs3t7AadsPv-k74kz5fU5G02ZT6Xm0I",
                     authDomain: "painel-de-bonificacao.firebaseapp.com",
-                    databaseURL: "https://painel-de-bonificacao-default-rtdb.firebaseio.com/",
+                    databaseURL: "https://qualidadetreinamento-default-rtdb.firebaseio.com/",
                     projectId: "painel-de-bonificacao",
                     storageBucket: "painel-de-bonificacao.firebasestorage.app",
                     messagingSenderId: "96589923224",
@@ -1167,11 +1167,18 @@ storage: {
 
                 fixEncoding(str) {
                     if (typeof str !== 'string') return str;
-                    let s = str.replace(/Ã©/g, 'é').replace(/Ã£/g, 'ã').replace(/Ã§/g, 'ç')
-                              .replace(/Ã¡/g, 'á').replace(/Ã³/g, 'ó').replace(/Ãº/g, 'ú')
-                              .replace(/Ãª/g, 'ê').replace(/Ãµ/g, 'õ').replace(/Ã¢/g, 'â')
-                              .replace(/Ã­/g, 'í').replace(/Ã‰/g, 'É').replace(/Ã‡/g, 'Ç')
-                              .replace(/Ãƒ/g, 'Ã').replace(/Ã /g, 'À');
+                    let s = str
+                        .replace(/\u00C3\u00A9/g, 'é').replace(/\u00C3\u00A3/g, 'ã').replace(/\u00C3\u00A7/g, 'ç')
+                        .replace(/\u00C3\u00A1/g, 'á').replace(/\u00C3\u00B3/g, 'ó').replace(/\u00C3\u00BA/g, 'ú')
+                        .replace(/\u00C3\u00AA/g, 'ê').replace(/\u00C3\u00B5/g, 'õ').replace(/\u00C3\u00A2/g, 'â')
+                        .replace(/\u00C3\u00B4/g, 'ô').replace(/\u00C3\u00AD/g, 'í').replace(/\u00C3\u00A0/g, 'à')
+                        .replace(/\u00C3\u2030/g, 'É').replace(/\u00C3\u2021/g, 'Ç').replace(/\u00C3\u0192/g, 'Ã')
+                        .replace(/\u00C3\u201A/g, 'Â').replace(/\u00C3\u0160/g, 'Ê').replace(/\u00C3\u201C/g, 'Ó')
+                        .replace(/\u00C3\u201D/g, 'Ô').replace(/\u00C3\u2022/g, 'Õ').replace(/\u00C3\u0161/g, 'Ú')
+                        .replace(/\u00C3\u0081/g, 'Á').replace(/\u00C3\u008D/g, 'Í').replace(/\u00C3\u20AC/g, 'À')
+                        .replace(/\u00C3 /g, 'Á').replace(/\u00E2\u20AC\u00A2/g, '•').replace(/\u00E2\u20AC\u201D/g, '—')
+                        .replace(/\u00E2\u20AC\u201C/g, '–').replace(/\u00C2\u00BA/g, 'º').replace(/\u00C2\u00AA/g, 'ª')
+                        .replace(/\u00C2\u00B0/g, '°');
                     // Remove lixo invisível do Excel e artefatos de cópia colada
                     return s.replace(/[\x00-\x1F\x7F-\x9F\u200B]/g, "").replace(/ert\{\}/gi, "").trim();
                 },
@@ -6123,11 +6130,11 @@ storage: {
                                     <i class="fa-solid fa-clock-rotate-left"></i>
                                 </div>
                                 <div>
-                                    <h4 class="font-bold text-sm">Cadastro em ValidaÃ§Ã£o de Equipe</h4>
-                                    <p class="text-xs text-amber-700 dark:text-amber-300">Seu primeiro acesso como <strong>Operador</strong> foi registrado com sucesso. O setor de <strong>Treinamento</strong> estÃ¡ vinculando sua matrÃ­cula ao seu Supervisor oficial.</p>
+                                    <h4 class="font-bold text-sm">Cadastro em Validação de Equipe</h4>
+                                    <p class="text-xs text-amber-700 dark:text-amber-300">Seu primeiro acesso como <strong>Operador</strong> foi registrado com sucesso. O setor de <strong>Treinamento</strong> está vinculando sua matrícula ao seu Supervisor oficial.</p>
                                 </div>
                             </div>
-                            <span class="px-3 py-1 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-black uppercase tracking-wider shrink-0">Aguardando VÃ­nculo</span>
+                            <span class="px-3 py-1 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-black uppercase tracking-wider shrink-0">Aguardando Vínculo</span>
                         </div>
                     ` : '';
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
@@ -6521,7 +6528,7 @@ storage: {
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Desempenho Individual</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados de bonificaÃ§Ã£o (exclusivo perfil <strong>Qualidade</strong>) referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados de bonificação (exclusivo perfil <strong>Qualidade</strong>) referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                             </div>
                             <div class="flex items-center gap-3">
                     `;
@@ -6534,11 +6541,11 @@ storage: {
                         if(window.selectedViewUser) targetUser = qualidadeUsers.find(u => u.matricula === window.selectedViewUser) || (app.isUserQualidade(app.currentUser) ? app.currentUser : null);
                         if(!app.isAdmin) {
                             html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
-                            <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> SeguranÃ§a</button>`;
+                            <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
                         }
                     } else {
                         html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
-                        <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> SeguranÃ§a</button>`;
+                        <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
                     }
                     html += `</div></div>`;
 
@@ -6546,16 +6553,16 @@ storage: {
                         container.innerHTML = html + `
                             <div class="p-12 text-center glass-card rounded-3xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/20 max-w-2xl mx-auto">
                                 <div class="w-16 h-16 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-3xl mx-auto mb-4"><i class="fa-solid fa-user-shield"></i></div>
-                                <h3 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2">Perfil ${targetUser.tipoAcesso} â€” Isento de BonificaÃ§Ã£o</h3>
-                                <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">Apenas colaboradores com perfil de acesso <strong>Qualidade</strong> possuem carteira de bonificaÃ§Ã£o e entram nos indicadores financeiros. Para consultar a bonificaÃ§Ã£o de um monitor de Qualidade, selecione o nome dele na lista acima.</p>
-                                <button onclick="app.ui.renderTab('dashboard_adm', true)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl text-xs shadow-md transition-all"><i class="fa-solid fa-chart-pie mr-1.5"></i> Ir para VisÃ£o Executiva</button>
+                                <h3 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2">Perfil ${targetUser.tipoAcesso} — Isento de Bonificação</h3>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">Apenas colaboradores com perfil de acesso <strong>Qualidade</strong> possuem carteira de bonificação e entram nos indicadores financeiros. Para consultar a bonificação de um monitor de Qualidade, selecione o nome dele na lista acima.</p>
+                                <button onclick="app.ui.renderTab('dashboard_adm', true)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl text-xs shadow-md transition-all"><i class="fa-solid fa-chart-pie mr-1.5"></i> Ir para Visão Executiva</button>
                             </div>
                         `;
                         return;
                     }
 
                     if(!targetUser && (app.isAdmin || app.hasAdminAccess())) {
-                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um monitor de <strong>Qualidade</strong> acima para visualizar seus indicadores deste mÃªs.</div>`;
+                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um monitor de <strong>Qualidade</strong> acima para visualizar seus indicadores deste mês.</div>`;
                         return;
                     }
 
@@ -6568,10 +6575,10 @@ storage: {
                     if (isEmpty) {
                         html += `<div class="p-8 mb-8 text-center glass-card rounded-2xl bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
                             <i class="fa-regular fa-folder-open text-4xl text-slate-300 dark:text-slate-600 mb-3"></i>
-                            <p class="text-slate-500 dark:text-slate-400 font-medium">NÃ£o hÃ¡ dados lanÃ§ados para ${targetUser.nome} no mÃªs de ${monthLabel}.</p>
+                            <p class="text-slate-500 dark:text-slate-400 font-medium">Não há dados lançados para ${targetUser.nome} no mês de ${monthLabel}.</p>
                         </div>`;
                     } else {
-                        // Painel de Status de ValidaÃ§Ã£o do Feedback com Alto Contraste no Dark Mode
+                        // Painel de Status de Validação do Feedback com Alto Contraste no Dark Mode
                         const fbStatus = resultsForMonth.status || 'pendente';
                         let bannerHtml = '';
                         
@@ -6580,8 +6587,8 @@ storage: {
                                 <div class="mb-6 p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center gap-4">
                                     <div class="text-3xl text-amber-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
                                     <div>
-                                        <h4 class="font-extrabold text-amber-800 dark:text-amber-300 text-sm">Pendente de ValidaÃ§Ã£o</h4>
-                                        <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">Sua bonificaÃ§Ã£o foi lanÃ§ada, porÃ©m requer assinatura conjunta. <strong>Fale com seu gestor</strong> para ele agendar o seu feedback.</p>
+                                        <h4 class="font-extrabold text-amber-800 dark:text-amber-300 text-sm">Pendente de Validação</h4>
+                                        <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">Sua bonificação foi lançada, porém requer assinatura conjunta. <strong>Fale com seu gestor</strong> para ele agendar o seu feedback.</p>
                                     </div>
                                 </div>
                             `;
@@ -6592,7 +6599,7 @@ storage: {
                                     <div class="text-3xl text-blue-500"><i class="fa-solid fa-calendar-check"></i></div>
                                     <div>
                                         <h4 class="font-extrabold text-blue-800 dark:text-blue-300 text-sm">Feedback Agendado</h4>
-                                        <p class="text-blue-700 dark:text-blue-400 text-xs mt-1">Seu alinhamento estÃ¡ marcado para <strong>${dtFormatada} Ã s ${resultsForMonth.fbTime || '--:--'}</strong>. Aguarde a validaÃ§Ã£o presencial com seu gestor.</p>
+                                        <p class="text-blue-700 dark:text-blue-400 text-xs mt-1">Seu alinhamento está marcado para <strong>${dtFormatada} às ${resultsForMonth.fbTime || '--:--'}</strong>. Aguarde a validação presencial com seu gestor.</p>
                                     </div>
                                 </div>
                             `;
@@ -6610,7 +6617,7 @@ storage: {
                         html += bannerHtml;
                     }
 
-                    // Aviso de NotificaÃ§Ã£o
+                    // Aviso de Notificação
                     if ("Notification" in window && Notification.permission !== "granted") {
                         html += `
                             <div class="mb-6 p-5 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-700 shadow-xl shadow-blue-500/20 text-white flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden group">
@@ -6618,8 +6625,8 @@ storage: {
                                 <div class="relative z-10 flex items-center gap-4 w-full md:w-auto">
                                     <div class="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl shrink-0 shadow-inner border border-white/20"><i class="fa-solid fa-bell-slash animate-pulse"></i></div>
                                     <div>
-                                        <h4 class="font-extrabold text-lg tracking-tight mb-1">Permita as NotificaÃ§Ãµes</h4>
-                                        <p class="text-blue-100 text-xs leading-relaxed max-w-xl">O seu navegador estÃ¡ bloqueando os alertas do sistema. Ative agora para nÃ£o perder os agendamentos de calibraÃ§Ã£o, feedbacks do gestor e compromissos do seu calendÃ¡rio.</p>
+                                        <h4 class="font-extrabold text-lg tracking-tight mb-1">Permita as Notificações</h4>
+                                        <p class="text-blue-100 text-xs leading-relaxed max-w-xl">O seu navegador está bloqueando os alertas do sistema. Ative agora para não perder os agendamentos de calibração, feedbacks do gestor e compromissos do seu calendário.</p>
                                     </div>
                                 </div>
                                 <button onclick="Notification.requestPermission().then(() => app.ui.renderTab(app.currentTab, true))" class="relative z-10 bg-white text-blue-700 hover:bg-blue-50 font-black py-3 px-8 rounded-xl shadow-md transition-all transform hover:-translate-y-1 hover:shadow-xl whitespace-nowrap text-sm w-full md:w-auto">
@@ -6636,7 +6643,7 @@ storage: {
                         const isPercentGoal = g.type === 'percent';
                         const wPct = (g.weight * 100).toFixed(0);
                         
-                        // GamificaÃ§Ã£o de teto
+                        // Gamificação de teto
                         const isMaxedOut = r.mult >= 1 && !isEmpty;
                         
                         // Cores de texto e fundo ajustadas para alto contraste no dark mode
@@ -6656,7 +6663,7 @@ storage: {
 
                         html += `
                         <div class="${cardClass}">
-                            ${isMaxedOut ? `<div class="absolute top-0 right-0 text-[9px] font-black px-3 py-1.5 rounded-bl-xl z-20 flex items-center gap-1 ${badgeColor}"><i class="fa-solid fa-bolt"></i> MÃXIMA</div>` : ''}
+                            ${isMaxedOut ? `<div class="absolute top-0 right-0 text-[9px] font-black px-3 py-1.5 rounded-bl-xl z-20 flex items-center gap-1 ${badgeColor}"><i class="fa-solid fa-bolt"></i> MÁXIMA</div>` : ''}
                             
                             <div class="flex justify-between items-start mb-5">
                                 <div class="flex items-center gap-3 flex-1 min-w-0 pr-2">
@@ -6735,14 +6742,14 @@ storage: {
                             <div class="absolute right-0 top-0 w-64 h-64 ${isTotalMaxed ? 'bg-cyan-500/20' : 'bg-green-500/10'} rounded-full blur-3xl"></div>
                             
                             <div class="z-10 relative">
-                                <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-2">Resumo Financeiro â€¢ ${monthLabel}</div>
+                                <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-2">Resumo Financeiro • ${monthLabel}</div>
                                 <div class="flex items-baseline gap-3">
                                     <span class="text-4xl md:text-5xl font-black text-white ${isTotalMaxed ? 'drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : ''}">${finalPct}%</span>
                                     <span class="${bannerHighlightColor} text-sm font-medium">Aproveitamento Total</span>
                                 </div>
                             </div>
                             <div class="mt-6 md:mt-0 text-right ${bannerBadgeBg} backdrop-blur-md px-8 py-5 rounded-2xl border z-10 relative w-full md:w-auto">
-                                <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-1">BonificaÃ§Ã£o Projetada</div>
+                                <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-1">Bonificação Projetada</div>
                                 <div class="text-4xl font-black ${bannerValueColor}">${this.valuesHidden ? 'R$ ----' : 'R$ ' + total.received.toFixed(2)}</div>
                             </div>
                         </div>
@@ -6764,10 +6771,10 @@ storage: {
                     const goalStats = {};
                     app.config.goals.forEach(g => { goalStats[g.id] = { name: g.title, type: g.type, somaMult: 0, somaVal: 0, count: 0, deliveries: [] }; });
 
-                    // Coletando mÃ©tricas globais e filtrando Agenda (exclusivamente perfil Qualidade)
+                    // Coletando métricas globais e filtrando Agenda (exclusivamente perfil Qualidade)
                     const pendentes = [];
 
-                    // MÃ©trica especÃ­fica de Feedbacks Operacionais (Meta e Realizado de Monitorias)
+                    // Métrica específica de Feedbacks Operacionais (Meta e Realizado de Monitorias)
                     let totalMetaMonitorias = 0;
                     let totalRealizadoMonitorias = 0;
                     let monitoresAbaixoMeta = 0;
@@ -6775,7 +6782,7 @@ storage: {
                     qualidadeUsers.forEach(u => {
                         const resultsForMonth = (u.results && u.results[app.currentMonth]);
                         
-                        // CÃ¡lculo de monitorias/feedbacks para a meta operacional
+                        // Cálculo de monitorias/feedbacks para a meta operacional
                         const metaMon = (resultsForMonth?.g1?.meta !== undefined && resultsForMonth?.g1?.meta !== '-') ? parseFloat(resultsForMonth.g1.meta) : 400;
                         const realMon = (resultsForMonth?.g1 && parseFloat(resultsForMonth.g1.real)) || 0;
                         totalMetaMonitorias += metaMon;
@@ -6794,7 +6801,7 @@ storage: {
                                 goalStats[g.id].somaVal += res.received;
                                 goalStats[g.id].count++;
                                 
-                                // Coleta das entregas reais e validaÃ§Ã£o de meta atingida
+                                // Coleta das entregas reais e validação de meta atingida
                                 const rawData = resultsForMonth[g.id] || {};
                                 let rawVal = 0;
                                 let displayVal = '-';
@@ -6818,7 +6825,7 @@ storage: {
                                     atingiuMeta = rawVal >= 2;
                                     if (!atingiuMeta) {
                                         const falta = Math.max(0, 2 - rawVal);
-                                        quantoFalta = falta === 1 ? 'Falta 1 sessÃ£o' : `Faltam ${falta} sessÃµes`;
+                                        quantoFalta = falta === 1 ? 'Falta 1 sessão' : `Faltam ${falta} sessões`;
                                     }
                                 } else if (g.type === 'actions') {
                                     rawVal = parseInt(rawData.val) || 0;
@@ -6826,7 +6833,7 @@ storage: {
                                     atingiuMeta = rawVal >= 5;
                                     if (!atingiuMeta) {
                                         const falta = Math.max(0, 5 - rawVal);
-                                        quantoFalta = falta === 1 ? 'Falta 1 aÃ§Ã£o' : `Faltam ${falta} aÃ§Ãµes`;
+                                        quantoFalta = falta === 1 ? 'Falta 1 ação' : `Faltam ${falta} ações`;
                                     }
                                 } else if (g.type === 'gestor') {
                                     rawVal = parseInt(rawData.val) || 0;
@@ -6838,7 +6845,7 @@ storage: {
                                     }
                                 } else {
                                     rawVal = rawData.val === 'Sim' ? 1 : 0;
-                                    displayVal = rawData.val || 'NÃ£o';
+                                    displayVal = rawData.val || 'Não';
                                     atingiuMeta = rawVal === 1;
                                     if (!atingiuMeta) {
                                         quantoFalta = 'Pendente';
@@ -6878,22 +6885,22 @@ storage: {
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">VisÃ£o Executiva â€¢ Dashboard Corporativo</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhamento macro de indicadores de qualidade, bonificaÃ§Ã£o e metas operacionais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Executiva • Dashboard Corporativo</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhamento macro de indicadores de qualidade, bonificação e metas operacionais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                             </div>
                             <button onclick="app.admin.exportBonusReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-file-excel"></i> RelatÃ³rio do MÃªs
+                                <i class="fa-solid fa-file-excel"></i> Relatório do Mês
                             </button>
                         </div>
 
-                        <!-- Linha 1: KPIs Principais com SinalizaÃ§Ã£o Discreta e Elegante -->
+                        <!-- Linha 1: KPIs Principais com Sinalização Discreta e Elegante -->
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
                                 <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-sack-dollar"></i></div>
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total Qualidade</div>
                                     <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1">Folha de bonificaÃ§Ã£o apurada</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">Folha de bonificação apurada</div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500">
@@ -6901,7 +6908,7 @@ storage: {
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe Qualidade</div>
                                     <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${qualidadeUsers.length}</span></div>
-                                    <div class="text-[11px] text-slate-400 mt-1">${usersComResultado === qualidadeUsers.length ? '100% dos monitores lanÃ§ados' : `${qualidadeUsers.length - usersComResultado} pendentes de lanÃ§amento`}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">${usersComResultado === qualidadeUsers.length ? '100% dos monitores lançados' : `${qualidadeUsers.length - usersComResultado} pendentes de lançamento`}</div>
                                 </div>
                             </div>
                             <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${isMediaGeralAbaixo ? 'border-l-amber-500' : 'border-l-purple-500'}">
@@ -6909,10 +6916,10 @@ storage: {
                                     <i class="fa-solid ${isMediaGeralAbaixo ? 'fa-triangle-exclamation' : 'fa-chart-simple'}"></i>
                                 </div>
                                 <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">MÃ©dia de Qualidade</div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Média de Qualidade</div>
                                     <div class="text-2xl lg:text-3xl font-black ${isMediaGeralAbaixo ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-white'} tabular-nums">${mediaGeral}%</div>
                                     <div class="text-[11px] ${isMediaGeralAbaixo ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'} mt-1 flex items-center gap-1">
-                                        ${isMediaGeralAbaixo ? '<i class=\"fa-solid fa-clock text-[10px]\"></i> Abaixo da Meta â€¢ Aplicar Feedback' : '<i class=\"fa-solid fa-circle-check text-emerald-500\"></i> Meta Global Atingida'}
+                                        ${isMediaGeralAbaixo ? '<i class=\"fa-solid fa-clock text-[10px]\"></i> Abaixo da Meta • Aplicar Feedback' : '<i class=\"fa-solid fa-circle-check text-emerald-500\"></i> Meta Global Atingida'}
                                     </div>
                                 </div>
                             </div>
@@ -6921,7 +6928,7 @@ storage: {
                                     <i class="fa-solid fa-comments"></i>
                                 </div>
                                 <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Feedbacks NecessÃ¡rios (Meta)</div>
+                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Feedbacks Necessários (Meta)</div>
                                     <div class="text-2xl lg:text-3xl font-black ${totalFeedbacksPendentes > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600'} tabular-nums">${totalFeedbacksPendentes}</div>
                                     <div class="text-[11px] ${totalFeedbacksPendentes > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'} mt-1">
                                         ${totalFeedbacksPendentes > 0 ? `~<span class="font-black">${feedbacksPorMonitor}</span> por monitor (${monitoresAbaixoMeta} com meta pendente)` : 'Metas 100% atingidas!'}
@@ -6930,21 +6937,21 @@ storage: {
                             </div>
                         </div>
                         
-                        <!-- Linha 2: Agenda e GrÃ¡ficos -->
+                        <!-- Linha 2: Agenda e Gráficos -->
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                             
-                            <!-- Coluna 1: Agenda AutomÃ¡tica -->
+                            <!-- Coluna 1: Agenda Automática -->
                             <div class="lg:col-span-1 glass-card p-6 rounded-3xl h-full flex flex-col">
                                 <div class="flex items-center justify-between mb-4">
                                     <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                        <i class="fa-solid fa-calendar-day text-blue-500"></i> PrÃ³ximos Feedbacks
+                                        <i class="fa-solid fa-calendar-day text-blue-500"></i> Próximos Feedbacks
                                     </h3>
                                     ${pendentes.length > 0 ? `<span class="bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/60"><i class="fa-solid fa-clock mr-1"></i>${pendentes.length} Agendados</span>` : ''}
                                 </div>
                     `;
                     
                     if(pendentes.length === 0) {
-                        html += `<div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-4 min-h-[250px]"><i class="fa-regular fa-calendar-check text-5xl mb-3 opacity-50"></i><p class="text-sm">Nenhum feedback pendente de validaÃ§Ã£o.</p></div>`;
+                        html += `<div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-4 min-h-[250px]"><i class="fa-regular fa-calendar-check text-5xl mb-3 opacity-50"></i><p class="text-sm">Nenhum feedback pendente de validação.</p></div>`;
                     } else {
                         html += `<div class="space-y-3 overflow-y-auto pr-2 max-h-[280px]">`;
                         pendentes.forEach(p => {
@@ -6955,7 +6962,7 @@ storage: {
                             const badge = isToday ? `<span class="bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-md text-[10px] font-bold">HOJE</span>` : `<span class="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md text-[10px] font-bold">${dataFmt}</span>`;
                             
                             html += `
-                                <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-colors shadow-sm" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ document.getElementById('adm-user-select').value='${p.matricula}'; app.admin.loadUserEditor(); }, 150);" title="Ir para lanÃ§amento do monitor">
+                                <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-colors shadow-sm" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ document.getElementById('adm-user-select').value='${p.matricula}'; app.admin.loadUserEditor(); }, 150);" title="Ir para lançamento do monitor">
                                     <div class="min-w-0 pr-2">
                                         <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${p.nome}</div>
                                         <div class="text-[10px] font-semibold text-slate-500 flex items-center gap-1.5 mt-1"><i class="fa-regular fa-clock"></i> ${hrFmt}</div>
@@ -6970,10 +6977,10 @@ storage: {
                     html += `
                             </div>
 
-                            <!-- Coluna 2 e 3: GrÃ¡ficos -->
+                            <!-- Coluna 2 e 3: Gráficos -->
                             <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
                                 <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
-                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Aproveitamento (%) â€¢ Metas</h3>
+                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Aproveitamento (%) • Metas</h3>
                                     <div class="relative flex-1 min-h-[220px] w-full"><canvas id="chart-pct"></canvas></div>
                                 </div>
                                 <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
@@ -6988,7 +6995,7 @@ storage: {
                             <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-6">
                                 <div>
                                     <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Detalhamento de Entregas da Equipe</h3>
-                                    <p class="text-xs text-slate-400 mt-0.5">Indicadores com metas pendentes sinalizados com discriÃ§Ã£o e o cÃ¡lculo exato de quanto falta para cada colaborador.</p>
+                                    <p class="text-xs text-slate-400 mt-0.5">Indicadores com metas pendentes sinalizados com discrição e o cálculo exato de quanto falta para cada colaborador.</p>
                                 </div>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -7000,7 +7007,7 @@ storage: {
                         const avgPct = gs.count > 0 ? (gs.somaMult / gs.count) * 100 : 0;
                         labels.push(gs.name); dataPct.push(avgPct.toFixed(1)); dataVal.push(gs.somaVal.toFixed(2));
                         
-                        // OrdenaÃ§Ã£o das entregas (maior para o menor)
+                        // Ordenação das entregas (maior para o menor)
                         gs.deliveries.sort((a, b) => b.raw - a.raw);
                         
                         // Calculo do total do card
@@ -7035,7 +7042,7 @@ storage: {
                         `;
                         
                         if (gs.deliveries.length === 0) {
-                            html += `<div class="text-xs text-slate-400 italic text-center mt-4">Nenhum dado lanÃ§ado neste mÃªs.</div>`;
+                            html += `<div class="text-xs text-slate-400 italic text-center mt-4">Nenhum dado lançado neste mês.</div>`;
                         } else {
                             gs.deliveries.forEach(d => {
                                 if (d.atingiuMeta) {
@@ -7054,7 +7061,7 @@ storage: {
                                     html += `
                                         <div class="flex justify-between items-center text-sm py-1.5 px-2 rounded-lg border-b border-slate-100 dark:border-slate-700/40 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                             <span class="text-slate-700 dark:text-slate-300 truncate pr-2 flex items-center gap-2">
-                                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0" title="Meta nÃ£o atingida"></span>
+                                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0" title="Meta não atingida"></span>
                                                 <span class="font-medium">${d.nome}</span>
                                             </span>
                                             <span class="font-bold text-slate-800 dark:text-slate-200 shrink-0 tabular-nums flex items-center gap-1.5">
@@ -7077,7 +7084,7 @@ storage: {
                                         ${isAbaixoMeta ? `${pendentesCount} com meta pendente` : '100% da equipe na meta'}
                                     </span>
                                     <span class="text-[10px] uppercase font-bold tracking-wider ${isAbaixoMeta ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}">
-                                        ${isAbaixoMeta ? 'Acompanhar' : 'ConcluÃ­do'}
+                                        ${isAbaixoMeta ? 'Acompanhar' : 'Concluído'}
                                     </span>
                                 </div>
                             </div>
@@ -7092,10 +7099,10 @@ storage: {
                         const textColor = isDark ? '#94a3b8' : '#64748b';
                         const gridColor = isDark ? '#334155' : '#e2e8f0';
 
-                        // Cores dinÃ¢micas para o grÃ¡fico: Ã‚mbar corporativo para abaixo de 100%, Verde para atingido
+                        // Cores dinâmicas para o gráfico: Âmbar corporativo para abaixo de 100%, Verde para atingido
                         const barColorsPct = dataPct.map(p => parseFloat(p) >= 100 ? '#10b981' : '#f59e0b');
 
-                        // GRÃFICOS DO DASHBOARD EXECUTIVO
+                        // GRÁFICOS DO DASHBOARD EXECUTIVO
                         if(window.dashChartPct) window.dashChartPct.destroy();
                         if(window.dashChartFin) window.dashChartFin.destroy();
                         
@@ -7975,23 +7982,23 @@ storage: {
                     const modalExist = document.getElementById('dev-firebase-modal');
                     if (modalExist) modalExist.remove();
 
-                    // Coleta de nÃ³s em memÃ³ria e calcula tamanho serializado
+                    // Coleta de nós em memória e calcula tamanho serializado
                     const colecoes = [
-                        { id: 'monitorias', path: 'sistema_bonificacao/monitorias', desc: 'Base histÃ³rica de monitorias e rankings por mÃªs', data: app.allMonitorias },
-                        { id: 'users', path: 'sistema_bonificacao/users', desc: 'Colaboradores, credenciais, perfis e permissÃµes de acesso', data: app.users },
-                        { id: 'config', path: 'sistema_bonificacao/config', desc: 'Metas, pesos, regras de negÃ³cio, DE/PARA e cargos de operadores', data: app.config },
-                        { id: 'actions', path: 'sistema_bonificacao/actions', desc: 'AÃ§Ãµes presenciais, brindes e registros de aplicaÃ§Ã£o', data: app.actionsList },
-                        { id: 'atas', path: 'sistema_bonificacao/atas', desc: 'Atas de reuniÃµes, presenÃ§as e alinhamentos operacionais', data: app.atasList },
-                        { id: 'anatel', path: 'sistema_bonificacao/anatel', desc: 'Pesquisas Kantar / Anatel por mÃªs', data: app.allAnatel },
-                        { id: 'estoque', path: 'sistema_bonificacao/estoque', desc: 'Itens de almoxarifado e insumos fÃ­sicos', data: app.estoqueItems },
-                        { id: 'estoqueLogs', path: 'sistema_bonificacao/estoqueLogs', desc: 'HistÃ³rico de saÃ­das e baixas de almoxarifado', data: app.estoqueLogs },
-                        { id: 'impressoes', path: 'sistema_bonificacao/impressoes', desc: 'Fila e histÃ³rico de solicitaÃ§Ãµes de impressÃ£o', data: app.impressoesList },
-                        { id: 'impressoesStats', path: 'sistema_bonificacao/impressoesStats', desc: 'EstatÃ­sticas de arquivos e folhas gastas em impressÃ£o', data: app.impressoesStats },
-                        { id: 'harmonyDeploy', path: 'sistema_bonificacao/harmonyDeploy', desc: 'ImplantaÃ§Ã£o de InteligÃªncia Artificial nas operaÃ§Ãµes', data: app.harmonyDeployList },
-                        { id: 'csatNpsProvas', path: 'sistema_bonificacao/csatNpsProvas', desc: 'Tentativas de prova, notas e certificaÃ§Ãµes oficiais CSAT & NPS', data: app.csatNpsProvas },
-                        { id: 'laudos', path: 'sistema_bonificacao/laudos', desc: 'Laudos tÃ©cnicos e estudos especializados de Qualidade', data: app.laudosList },
-                        { id: 'apresentacoes', path: 'sistema_bonificacao/apresentacoes', desc: 'ApresentaÃ§Ãµes executivas salvas na nuvem', data: app.apresentacoesList },
-                        { id: 'visaoGeralData', path: 'sistema_bonificacao/visaoGeralData', desc: 'Dados consolidados da VisÃ£o Geral Setorial (RH vs Qualidade)', data: app.visaoGeralData }
+                        { id: 'monitorias', path: 'sistema_bonificacao/monitorias', desc: 'Base histórica de monitorias e rankings por mês', data: app.allMonitorias },
+                        { id: 'users', path: 'sistema_bonificacao/users', desc: 'Colaboradores, credenciais, perfis e permissões de acesso', data: app.users },
+                        { id: 'config', path: 'sistema_bonificacao/config', desc: 'Metas, pesos, regras de negócio, DE/PARA e cargos de operadores', data: app.config },
+                        { id: 'actions', path: 'sistema_bonificacao/actions', desc: 'Ações presenciais, brindes e registros de aplicação', data: app.actionsList },
+                        { id: 'atas', path: 'sistema_bonificacao/atas', desc: 'Atas de reuniões, presenças e alinhamentos operacionais', data: app.atasList },
+                        { id: 'anatel', path: 'sistema_bonificacao/anatel', desc: 'Pesquisas Kantar / Anatel por mês', data: app.allAnatel },
+                        { id: 'estoque', path: 'sistema_bonificacao/estoque', desc: 'Itens de almoxarifado e insumos físicos', data: app.estoqueItems },
+                        { id: 'estoqueLogs', path: 'sistema_bonificacao/estoqueLogs', desc: 'Histórico de saídas e baixas de almoxarifado', data: app.estoqueLogs },
+                        { id: 'impressoes', path: 'sistema_bonificacao/impressoes', desc: 'Fila e histórico de solicitações de impressão', data: app.impressoesList },
+                        { id: 'impressoesStats', path: 'sistema_bonificacao/impressoesStats', desc: 'Estatísticas de arquivos e folhas gastas em impressão', data: app.impressoesStats },
+                        { id: 'harmonyDeploy', path: 'sistema_bonificacao/harmonyDeploy', desc: 'Implantação de Inteligência Artificial nas operações', data: app.harmonyDeployList },
+                        { id: 'csatNpsProvas', path: 'sistema_bonificacao/csatNpsProvas', desc: 'Tentativas de prova, notas e certificações oficiais CSAT & NPS', data: app.csatNpsProvas },
+                        { id: 'laudos', path: 'sistema_bonificacao/laudos', desc: 'Laudos técnicos e estudos especializados de Qualidade', data: app.laudosList },
+                        { id: 'apresentacoes', path: 'sistema_bonificacao/apresentacoes', desc: 'Apresentações executivas salvas na nuvem', data: app.apresentacoesList },
+                        { id: 'visaoGeralData', path: 'sistema_bonificacao/visaoGeralData', desc: 'Dados consolidados da Visão Geral Setorial (RH vs Qualidade)', data: app.visaoGeralData }
                     ];
 
                     let totalBytesMemoria = 0;
@@ -8016,7 +8023,7 @@ storage: {
                     const totalKB = (totalBytesMemoria / 1024).toFixed(1);
                     const totalMB = (totalBytesMemoria / (1024 * 1024)).toFixed(2);
                     const limiteSparkMB = 1024; // 1 GB no plano Spark
-                    const limiteBandaGB = 10;   // 10 GB/mÃªs no plano Spark
+                    const limiteBandaGB = 10;   // 10 GB/mês no plano Spark
                     const pctSpark = Math.min(100, ((totalBytesMemoria / (1024 * 1024 * 1024)) * 100)).toFixed(2);
 
                     // Conexões simultâneas consultadas sob demanda (gerenciadas via onDisconnect)
@@ -8036,7 +8043,7 @@ storage: {
 
                     modal.innerHTML = `
                         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-5xl w-full p-6 md:p-8 shadow-2xl relative my-8">
-                            <!-- CabeÃ§alho -->
+                            <!-- Cabeçalho -->
                             <div class="flex items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-800">
                                 <div class="flex items-center gap-3">
                                     <div class="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-500 flex items-center justify-center text-2xl shrink-0">
@@ -8049,7 +8056,7 @@ storage: {
                                                 <i class="fa-solid fa-circle text-[6px] mr-1 text-emerald-500 animate-pulse"></i> Online
                                             </span>
                                         </div>
-                                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Firebase Realtime DB â€¢ Consumo, ColeÃ§Ãµes & Limites</h3>
+                                        <h3 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Firebase Realtime DB • Consumo, Coleções & Limites</h3>
                                     </div>
                                 </div>
                                 <button onclick="document.getElementById('dev-firebase-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
@@ -8062,7 +8069,7 @@ storage: {
                                 <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                                     <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Armazenamento Total</div>
                                     <div class="text-2xl font-black text-slate-800 dark:text-white mt-1 tabular-nums">${totalMB} <span class="text-xs font-normal text-slate-400">MB</span></div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5 tabular-nums">${totalKB} KB em memÃ³ria</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5 tabular-nums">${totalKB} KB em memória</div>
                                 </div>
                                 <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                                     <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cota Spark Utilizada</div>
@@ -8070,26 +8077,26 @@ storage: {
                                     <div class="text-[10px] text-slate-400 mt-0.5">de 1.024 MB (1 GB)</div>
                                 </div>
                                 <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
-                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">ColeÃ§Ãµes Monitoradas</div>
+                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Coleções Monitoradas</div>
                                     <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1 tabular-nums">${stats.length}</div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5">nÃ³s no banco</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">nós no banco</div>
                                 </div>
                                 <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                                     <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pessoas Online Agora</div>
-                                    <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">${onlineCount} <span class="text-xs font-normal text-slate-400">/ ${limiteSparkConexoes} mÃ¡x</span></div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5">Limite: 100 conexÃµes (Spark)</div>
+                                    <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">${onlineCount} <span class="text-xs font-normal text-slate-400">/ ${limiteSparkConexoes} máx</span></div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">Limite: 100 conexões (Spark)</div>
                                 </div>
                             </div>
 
-                            <!-- Banner Explicativo de Capacidade SimultÃ¢nea (Resposta TÃ©cnica Direta) -->
+                            <!-- Banner Explicativo de Capacidade Simultânea (Resposta Técnica Direta) -->
                             <div class="mt-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-emerald-500/10 border border-amber-300 dark:border-amber-700/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center text-lg shrink-0">
                                         <i class="fa-solid fa-users"></i>
                                     </div>
                                     <div>
-                                        <span class="font-black text-slate-800 dark:text-white block">Capacidade SimultÃ¢nea Segura: AtÃ© 100 Pessoas Conectadas ao Mesmo Tempo</span>
-                                        <span class="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">No plano gratuito (Spark) do Google Firebase, o teto oficial Ã© de <strong>100 conexÃµes WebSocket simultÃ¢neas</strong>. Cada navegador/aba aberta consome exatamente 1 conexÃ£o. AtÃ© 100 colaboradores navegam ao mesmo tempo com latÃªncia zero e custo R$ 0.</span>
+                                        <span class="font-black text-slate-800 dark:text-white block">Capacidade Simultânea Segura: Até 100 Pessoas Conectadas ao Mesmo Tempo</span>
+                                        <span class="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">No plano gratuito (Spark) do Google Firebase, o teto oficial é de <strong>100 conexões WebSocket simultâneas</strong>. Cada navegador/aba aberta consome exatamente 1 conexão. Até 100 colaboradores navegam ao mesmo tempo com latência zero e custo R$ 0.</span>
                                     </div>
                                 </div>
                                 <div class="shrink-0 bg-white dark:bg-slate-800 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
@@ -8100,7 +8107,7 @@ storage: {
                             <!-- Colaboradores Conectados no Momento -->
                             <div class="mt-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                                 <div class="flex items-center justify-between mb-2">
-                                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">UsuÃ¡rios Ativos em Tempo Real</span>
+                                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Usuários Ativos em Tempo Real</span>
                                     <span class="text-[10px] font-bold text-emerald-500">${onlineCount} de 100 vagas Spark utilizadas</span>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
@@ -8108,7 +8115,7 @@ storage: {
                                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 shadow-sm">
                                             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                                             <span>${u.nome || u.matricula}</span>
-                                            <span class="text-[10px] text-slate-400">(${u.cargo || 'OperaÃ§Ã£o'})</span>
+                                            <span class="text-[10px] text-slate-400">(${u.cargo || 'Operação'})</span>
                                         </span>
                                     `).join('')}
                                 </div>
@@ -8118,7 +8125,7 @@ storage: {
                             <div class="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
                                 <div class="flex items-center justify-between text-xs font-bold mb-2">
                                     <span class="text-slate-600 dark:text-slate-300">Uso do Disco no Plano Gratuito (Spark):</span>
-                                    <span class="text-emerald-600 dark:text-emerald-400 tabular-nums">${totalMB} MB de 1.024 MB disponÃ­veis (${pctSpark}%)</span>
+                                    <span class="text-emerald-600 dark:text-emerald-400 tabular-nums">${totalMB} MB de 1.024 MB disponíveis (${pctSpark}%)</span>
                                 </div>
                                 <div class="h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                                     <div class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500" style="width: ${Math.max(1, parseFloat(pctSpark))}%"></div>
@@ -8132,11 +8139,11 @@ storage: {
                                 </div>
                             </div>
 
-                            <!-- Tabela Detalhada de ColeÃ§Ãµes / NÃ³s -->
+                            <!-- Tabela Detalhada de Coleções / Nós -->
                             <div class="mt-6">
                                 <div class="flex items-center justify-between mb-3">
                                     <h4 class="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                                        <i class="fa-solid fa-table-list"></i> Detalhamento por NÃ³ do Realtime DB
+                                        <i class="fa-solid fa-table-list"></i> Detalhamento por Nó do Realtime DB
                                     </h4>
                                     <span class="text-xs text-slate-400">Ordenado pelo maior consumo</span>
                                 </div>
@@ -8145,12 +8152,12 @@ storage: {
                                     <table class="w-full text-left text-xs whitespace-nowrap">
                                         <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] font-black uppercase text-slate-400 sticky top-0 border-b border-slate-200 dark:border-slate-700">
                                             <tr>
-                                                <th class="py-2.5 px-3">Caminho / ColeÃ§Ã£o</th>
-                                                <th class="py-2.5 px-3">Finalidade / DescriÃ§Ã£o</th>
+                                                <th class="py-2.5 px-3">Caminho / Coleção</th>
+                                                <th class="py-2.5 px-3">Finalidade / Descrição</th>
                                                 <th class="py-2.5 px-3 text-right">Registros</th>
                                                 <th class="py-2.5 px-3 text-right">Tamanho</th>
                                                 <th class="py-2.5 px-3 text-right">% do Total</th>
-                                                <th class="py-2.5 px-3 text-center">AÃ§Ãµes</th>
+                                                <th class="py-2.5 px-3 text-center">Ações</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -8186,17 +8193,17 @@ storage: {
                                 </div>
                             </div>
 
-                            <!-- RodapÃ© com BotÃµes de AÃ§Ã£o -->
+                            <!-- Rodapé com Botões de Ação -->
                             <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                                 <div class="text-[11px] text-slate-400">
-                                    <i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> ProteÃ§Ã£o de cotas do Google Firebase Spark ativa.
+                                    <i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i> Proteção de cotas do Google Firebase Spark ativa.
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <button onclick="app.ui.testarLatenciaFirebaseDev()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold transition flex items-center gap-1.5">
-                                        <i class="fa-solid fa-network-wired text-xs"></i> Testar LatÃªncia
+                                        <i class="fa-solid fa-network-wired text-xs"></i> Testar Latência
                                     </button>
                                     <button onclick="document.getElementById('dev-firebase-modal').remove()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md transition">
-                                        ConcluÃ­do
+                                        Concluído
                                     </button>
                                 </div>
                             </div>
@@ -19127,7 +19134,7 @@ storage: {
                                 .trim();
 
                             rows.forEach(row => {
-                                // Função blindada para lidar com problemas de codificação (ex: MATRÃCULA, OPERAÃ‡ÃƒO) e quebras de linha no título
+                                // Função blindada para lidar com problemas de codificação e quebras de linha no título
                                 const getVal = (keywords, exactMatch = false) => {
                                     const key = Object.keys(row).find(k => {
                                         const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
@@ -19147,7 +19154,7 @@ storage: {
                                 const dias = getVal(['DIASDEEMPRESA', 'DIAS', 'EMPRESA', 'TEMPO']);
                                 
                                 // Captura a coluna exata ou aproximações
-                                const setor = getVal(['OPERAÃ‡ÃƒO/SETOR', 'OPERAÇÃO/SETOR', 'OPERACAO', 'SETOR'], true) || getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
+                                const setor = getVal(['OPERA\u00C3\u2021\u00C3\u0192O/SETOR', 'OPERAÇÃO/SETOR', 'OPERACAO', 'SETOR'], true) || getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
 
                                 if (setor && typeof setor === 'string') {
                                     const setorLimpo = cleanFirebaseKey(setor);
@@ -23819,7 +23826,7 @@ Object.assign(app.ui, {
 
                     renderView_TesteDuolingo(container) {
                         if (!app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') {
-                            return app.ui.showAlert("Acesso Restrito", "Apenas o perfil Desenvolvedor tem acesso Ã  aba de Teste Duolingo.", "error");
+                            return app.ui.showAlert("Acesso Restrito", "Apenas o perfil Desenvolvedor tem acesso à aba de Teste Duolingo.", "error");
                         }
                         if (app.duolingo) {
                             app.duolingo.render(container);
