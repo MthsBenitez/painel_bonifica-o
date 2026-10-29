@@ -437,16 +437,10 @@ storage: {
                     // Carga paralela ultra-rápida apenas dos nós leves essenciais (SEM actions de 34MB e SEM shares de 13.6MB no boot!)
                     const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes'];
 
-                    // Proteção Anti-F5 Repetido: Se já baixou os nós essenciais há menos de 3 minutos neste navegador, usa o cache IndexedDB local (0 consumo de banda)
+                    // Carga única (.once) direta do Firebase no boot (sem cache local que desconecte usuários e sem loops .on)
                     const fetchCoreData = async () => {
                         if (typeof localforage !== 'undefined') {
-                            try {
-                                const cachedCore = await localforage.getItem('soft_core_cache_hd');
-                                if (cachedCore && cachedCore.ts && (Date.now() - cachedCore.ts < 180000) && cachedCore.data && cachedCore.data.users && Object.keys(cachedCore.data.users).length >= 5) {
-                                    console.log("Escudo de Banda Ativo: Dados essenciais carregados do cache local IndexedDB (0 bytes Firebase).");
-                                    return cachedCore.data;
-                                }
-                            } catch (e) {}
+                            localforage.removeItem('soft_core_cache_hd').catch(() => {});
                         }
                         const promises = coreKeys.map(k => {
                             return firebase.database().ref('sistema_bonificacao/' + k).once('value').then(snap => {
@@ -459,9 +453,6 @@ storage: {
                         const results = await Promise.all(promises);
                         const freshData = {};
                         results.forEach(r => { freshData[r.key] = r.val; });
-                        if (typeof localforage !== 'undefined' && freshData.users && Object.keys(freshData.users).length >= 5) {
-                            localforage.setItem('soft_core_cache_hd', { ts: Date.now(), data: freshData }).catch(() => {});
-                        }
                         return freshData;
                     };
 
@@ -503,9 +494,10 @@ storage: {
                                             if (Array.isArray(localCfg.ignoredSetoresRH)) app.config.ignoredSetoresRH = localCfg.ignoredSetoresRH;
                                             if (localCfg.aliases) app.config.aliases = { ...(app.config.aliases || {}), ...localCfg.aliases };
                                             if (localCfg.headcountRH && (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0)) app.config.headcountRH = localCfg.headcountRH;
-                                            if (localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = { ...(app.config.presetsGruposAcesso || {}), ...localCfg.presetsGruposAcesso };
+                                            if (!app.config.presetsGruposAcesso && localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = localCfg.presetsGruposAcesso;
                                         }
                                     }
+                                    localStorage.setItem('soft_config_backup', JSON.stringify(app.config));
                                 } catch (e) { console.warn("Aviso ao ler backup local de config:", e); }
 
                                 // Preserva as metas setoriais e gerais legadas do usuário para que nenhuma operação fique com meta 0
@@ -567,6 +559,9 @@ storage: {
                                         u.operacoes = Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes);
                                     } else {
                                         u.operacoes = [];
+                                    }
+                                    if (u.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
+                                        u.senha = app.utils.encryptPassword(u.senha);
                                     }
                                     return u;
                                 });
@@ -751,9 +746,10 @@ storage: {
                             const savedIsAdmin = localStorage.getItem('soft_session_admin') === 'true';
 
                             if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
-                                // Se já estiver dentro do sistema, apenas atualiza a tela suavemente com debounce para não travar em rajadas de salvamento
+                                // Se já estiver dentro do sistema, atualiza a barra de navegação e a tela suavemente
+                                app.ui.renderNav();
                                 app.notifications.updateBadge();
-                                const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias'];
+                                const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'impressoes', 'gestao_impressoes'];
                                 if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
                                     if (this._firebaseRefreshTimer) clearTimeout(this._firebaseRefreshTimer);
                                     this._firebaseRefreshTimer = setTimeout(() => {
@@ -815,7 +811,13 @@ storage: {
                             }
                         } catch(e) {}
                     }).catch((error) => {
-                        // Trata tambem a rejeicao/erro do Firebase, liberando a trava para exibir erro em tela se for o caso
+                        try {
+                            const localUsersRaw = localStorage.getItem("soft_users_backup");
+                            if (localUsersRaw && (!app.users || app.users.length === 0)) {
+                                const localUsers = JSON.parse(localUsersRaw);
+                                if (Array.isArray(localUsers) && localUsers.length >= 5) app.users = localUsers;
+                            }
+                        } catch (e) {}
                         app.dataLoaded = true;
                         const ws = document.getElementById("session-wait-screen");
                         if (ws) ws.classList.add("hidden");
@@ -890,12 +892,32 @@ storage: {
                         console.warn("Seguranca de Integridade: tentativa de salvar lista de usuarios incompleta abortada (" + (app.users ? app.users.length : 0) + " registros).");
                         return Promise.resolve();
                     }
+                    if (app.utils && typeof app.utils.encryptPassword === 'function') {
+                        app.users.forEach(u => {
+                            if (u && u.senha) u.senha = app.utils.encryptPassword(u.senha);
+                        });
+                    }
                     this.invalidateCoreCache();
                     try {
                         localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
                     } catch(e) {}
                     if (typeof firebase !== 'undefined' && firebase.database) {
                         return firebase.database().ref('sistema_bonificacao/users').set(app.users);
+                    }
+                    return Promise.resolve();
+                },
+                saveSingleUserField(userIdx, fieldsObj) {
+                    if (userIdx < 0 || !app.users || !app.users[userIdx]) return Promise.resolve();
+                    Object.assign(app.users[userIdx], fieldsObj);
+                    if (app.users[userIdx].senha && app.utils && typeof app.utils.encryptPassword === 'function') {
+                        app.users[userIdx].senha = app.utils.encryptPassword(app.users[userIdx].senha);
+                        if (fieldsObj.senha) fieldsObj.senha = app.users[userIdx].senha;
+                    }
+                    try {
+                        localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                    } catch(e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        return firebase.database().ref('sistema_bonificacao/users/' + userIdx).update(fieldsObj);
                     }
                     return Promise.resolve();
                 },
@@ -1092,19 +1114,21 @@ storage: {
             },
 
             hasAdminAccess(tabId) {
-                if (tabId === 'teste_duolingo') {
-                    return this.isAdmin || (this.currentUser && this.currentUser.tipoAcesso === 'Dev');
-                }
                 if (this.isAdmin) return true;
                 if (!this.currentUser) return false;
                 const tipo = this.currentUser.tipoAcesso;
-                if (tipo === 'Dev' || tipo === 'Gerente') return true;
-                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps')) return true;
-                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
                 const userAbas = (this.ui && typeof this.ui.getEffectiveUserTabs === 'function')
                     ? this.ui.getEffectiveUserTabs(this.currentUser)
                     : (Array.isArray(this.currentUser.abasLiberadas) ? this.currentUser.abasLiberadas : []);
-                if (tabId) return userAbas.includes(tabId) || (isPerfilGestao && userAbas.includes(tabId));
+                if (tabId === 'config') tabId = 'configuracoes';
+                if (tabId && userAbas.includes(tabId)) return true;
+                if (tabId === 'teste_duolingo') {
+                    return tipo === 'Dev';
+                }
+                if (tipo === 'Dev' || tipo === 'Gerente') return true;
+                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
+                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
+                if (tabId) return userAbas.includes(tabId);
                 return isPerfilGestao;
             },
 
@@ -1117,6 +1141,83 @@ storage: {
             csatNpsProvas: {},
             monitoriasData: { ranking: [] },
             utils: {
+                _sha256Sync(ascii) {
+                    function rightRotate(value, amount) { return (value >>> amount) | (value << (32 - amount)); }
+                    const mathPow = Math.pow, maxWord = mathPow(2, 32), lengthProperty = 'length';
+                    let i, j, result = '';
+                    const words = [], asciiBitLength = ascii[lengthProperty] * 8;
+                    let hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+                    const k = [
+                        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+                        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+                        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+                        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+                        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+                        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+                        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+                        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+                    ];
+                    ascii += '\x80';
+                    while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
+                    for (i = 0; i < ascii[lengthProperty]; i++) {
+                        j = ascii.charCodeAt(i);
+                        if (j >> 8) return '';
+                        words[i >> 2] |= j << ((3 - i) % 4) * 8;
+                    }
+                    words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
+                    words[words[lengthProperty]] = (asciiBitLength);
+                    for (j = 0; j < words[lengthProperty];) {
+                        const w = words.slice(j, j += 16);
+                        const oldHash = hash.slice(0);
+                        for (i = 0; i < 64; i++) {
+                            const w15 = w[i - 15], w2 = w[i - 2];
+                            const a = hash[0], e = hash[4];
+                            const temp1 = hash[7]
+                                + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
+                                + ((e & hash[5]) ^ ((~e) & hash[6]))
+                                + k[i]
+                                + (w[i] = (i < 16) ? w[i] : (
+                                    w[i - 16]
+                                    + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
+                                    + w[i - 7]
+                                    + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+                                ) | 0);
+                            const temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
+                                + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+                            hash = [(temp1 + temp2) | 0].concat(hash);
+                            hash[4] = (hash[4] + temp1) | 0;
+                            hash.pop();
+                        }
+                        for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
+                    }
+                    for (i = 0; i < 8; i++) {
+                        for (j = 3; j + 1; j--) {
+                            const b = (hash[i] >> (j * 8)) & 255;
+                            result += ((b < 16) ? 0 : '') + b.toString(16);
+                        }
+                    }
+                    return result;
+                },
+                encryptPassword(pwd) {
+                    const s = String(pwd ?? '').trim();
+                    if (!s) return '';
+                    if (s.startsWith('enc$v1$')) return s;
+                    const utf8Str = unescape(encodeURIComponent('soft_salt_v1_' + s));
+                    return 'enc$v1$' + this._sha256Sync(utf8Str);
+                },
+                verifyPassword(inputPwd, storedPwd) {
+                    const inp = String(inputPwd ?? '').trim();
+                    const sto = String(storedPwd ?? '').trim();
+                    if (!inp || !sto) return false;
+                    if (sto.startsWith('enc$v1$')) {
+                        return sto === this.encryptPassword(inp);
+                    }
+                    return sto === inp || this.encryptPassword(sto) === this.encryptPassword(inp);
+                },
+                isDefaultPassword(storedPwd) {
+                    const sto = String(storedPwd ?? '').trim();
+                    return sto === '12345' || sto === this.encryptPassword('12345');
+                },
                 playCuteSound() {
                     try {
                         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -2998,18 +3099,21 @@ storage: {
                         return;
                     }
 
-                    // 2. Se ja temos usuarios em memoria (do cache local ou da carga rapida de 536 bytes)
+                    // 2. Verifica credenciais com suporte a senha criptografada (SHA-256) e atualiza apenas o próprio usuário no banco
                     if (app.users && app.users.length > 0) {
-                        const userIdx = app.users.findIndex(u => String(u.matricula).trim() === mat && String(u.senha).trim() === pwd);
+                        const userIdx = app.users.findIndex(u => String(u.matricula).trim() === mat && app.utils.verifyPassword(pwd, u.senha));
                         if(userIdx > -1) {
                             app.isAdmin = false;
-                            app.users[userIdx].loginCount = (app.users[userIdx].loginCount || 0) + 1;
+                            const newLoginCount = (app.users[userIdx].loginCount || 0) + 1;
+                            const encryptedPwd = app.utils.encryptPassword(pwd);
+                            app.users[userIdx].loginCount = newLoginCount;
+                            app.users[userIdx].senha = encryptedPwd;
                             app.currentUser = app.users[userIdx];
                             app.currentTab = "meu_painel";
                             localStorage.setItem("soft_session_date", new Date().toLocaleDateString("pt-BR"));
                             localStorage.setItem("soft_session_mat", app.users[userIdx].matricula);
                             localStorage.setItem("soft_session_admin", "false");
-                            app.storage.saveUsers();
+                            app.storage.saveSingleUserField(userIdx, { loginCount: newLoginCount, senha: encryptedPwd });
 
                             const ws = document.getElementById("session-wait-screen");
                             if (ws) ws.classList.add("hidden");
@@ -3051,8 +3155,8 @@ storage: {
                     if(!app.currentUser) return;
                     const u = app.currentUser;
                     
-                    // ALERTA DE SENHA PADRAO 12345
-                    if(String(u.senha).trim() === "12345") {
+                    // ALERTA DE SENHA PADRAO 12345 (compatível com hash criptografado)
+                    if(app.utils.isDefaultPassword(u.senha)) {
                         app.ui.showAlert("Aviso de Seguran\u00e7a Cr\u00edtico", "Sua senha atual \u00e9 muito fraca (12345). Por favor, altere sua senha agora mesmo para proteger seus dados.", "error");
                         app.ui.openPwdModal();
                         return; // Trava o fluxo ate ele mudar a senha
@@ -3422,14 +3526,14 @@ storage: {
                         nome: app.auth._regState.nome.toUpperCase(),
                         matricula: mat,
                         email: app.auth._regState.email,
-                        senha: pwd,
+                        senha: app.utils.encryptPassword(pwd),
                         tipoAcesso: 'Operador',
                         cargo: 'Operador de Atendimento',
                         statusValidacao: 'Pendente',
                         gestorMatricula: null,
                         supervisor: 'Aguardando Treinamento',
                         operacoes: ['Geral'],
-                        abasLiberadas: ['meu_painel', 'ranking_monitorias', 'treinamentos', 'perfil', 'regras', 'legal'],
+                        abasLiberadas: ['meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
                         results: {},
                         loginCount: 1,
                         cadastradoVia: 'Primeiro Acesso',
@@ -3474,11 +3578,16 @@ storage: {
                     if(newPwd !== confPwd) return app.ui.showAlert("Erro", "As senhas não coincidem. Tente novamente.", "error");
                     
                     if(app.currentUser) {
-                        const idx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
+                        const idx = app.users.findIndex(u => String(u.matricula).trim() === String(app.currentUser.matricula).trim());
                         if(idx > -1) {
-                            app.users[idx].senha = newPwd; app.currentUser = app.users[idx];
-                            app.storage.saveUsers(); app.ui.closePwdModal();
-                            app.ui.showAlert("Sucesso", "Sua senha foi alterada com segurança.", "success");
+                            const encPwd = app.utils.encryptPassword(newPwd);
+                            app.users[idx].senha = encPwd;
+                            app.currentUser = app.users[idx];
+                            app.storage.saveSingleUserField(idx, { senha: encPwd }).then(() => {
+                                app.storage.saveUsers();
+                            });
+                            app.ui.closePwdModal();
+                            app.ui.showAlert("Sucesso", "Sua senha foi criptografada e salva com segurança no banco de dados.", "success");
                             this.processAcceptances(); // Retoma o login caso ele estivesse preso no 12345
                         }
                     }
@@ -4534,12 +4643,13 @@ storage: {
                     const defaultUserIds = todasAbas.filter(t => t.isDefault).map(t => t.id);
                     const allIds = todasAbas.map(t => t.id);
 
-                    const defaults = { 'Operador': ['meu_painel', 'ranking_monitorias', 'treinamentos', 'perfil', 'regras', 'legal'],
+                    const defaults = {
+                        'Operador': ['meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
                         'Qualidade': defaultUserIds,
                         'Treinamento': [...new Set(['validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
-                        'Gerente': allIds.filter(id => id !== 'teste_duolingo')
+                        'Gerente': allIds
                     };
 
                     if (!app.config.presetsGruposAcesso || typeof app.config.presetsGruposAcesso !== 'object') {
@@ -4548,7 +4658,9 @@ storage: {
 
                     const result = {};
                     this.gruposAcessoLista.forEach(g => {
-                        let base = Array.isArray(app.config.presetsGruposAcesso[g]) ? app.config.presetsGruposAcesso[g] : defaults[g];
+                        let base = Array.isArray(app.config.presetsGruposAcesso[g]) && app.config.presetsGruposAcesso[g].length > 0
+                            ? [...app.config.presetsGruposAcesso[g]]
+                            : [...(defaults[g] || defaultUserIds)];
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
@@ -4558,9 +4670,6 @@ storage: {
                         if (base.includes('treinamento_capacitacao') || base.includes('csat_nps')) {
                             base = base.filter(id => id !== 'treinamento_capacitacao' && id !== 'csat_nps');
                             if (!base.includes('treinamentos')) base.push('treinamentos');
-                        }
-                        if (g !== 'Dev') {
-                            base = base.filter(id => id !== 'teste_duolingo');
                         }
                         result[g] = [...new Set(base)];
                     });
@@ -4572,10 +4681,7 @@ storage: {
                     const presets = this.getPresetsGruposAcesso();
                     const tipo = user.tipoAcesso || 'Qualidade';
                     const presetTabs = presets[tipo] || presets['Qualidade'] || [];
-                    let savedTabs = (Array.isArray(user.abasLiberadas) ? user.abasLiberadas : []).filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
-                    if (tipo !== 'Dev' && !app.isAdmin) {
-                        savedTabs = savedTabs.filter(id => id !== 'teste_duolingo');
-                    }
+                    let savedTabs = (Array.isArray(user.abasLiberadas) ? [...user.abasLiberadas] : []).filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                     if (savedTabs.includes('treinamento_capacitacao') || savedTabs.includes('csat_nps')) {
                         const i1 = savedTabs.indexOf('treinamento_capacitacao'); if (i1 !== -1) savedTabs.splice(i1, 1);
                         const i2 = savedTabs.indexOf('csat_nps'); if (i2 !== -1) savedTabs.splice(i2, 1);
@@ -4586,14 +4692,13 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
-                        // Se foi colocado em perfil de gestão mas ainda só tinha abas antigas de monitor, aplica o preset ADM do grupo automaticamente
                         if (!hasAnyAdminSaved) return [...new Set([...savedTabs, ...presetTabs])];
                         if (['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
-                        return savedTabs;
+                        return [...new Set(savedTabs)];
                     }
-                    return savedTabs.length > 0 ? savedTabs : presetTabs;
+                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs)];
                 },
 
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
@@ -4686,8 +4791,15 @@ storage: {
                                 atualizados++;
                             }
                         });
-                        if (atualizados > 0) app.storage.saveUsers();
+                        if (atualizados > 0) {
+                            if (app.currentUser && (app.currentUser.tipoAcesso || 'Qualidade') === grupo) {
+                                app.currentUser.abasLiberadas = [...abas];
+                            }
+                            app.storage.saveUsers();
+                        }
                     }
+                    this.renderNav();
+                    document.getElementById('global-modal').classList.add('hidden');
 
                     this.showAlert("Padrão Salvo!", `As abas do grupo <b>${grupo}</b> foram salvas permanentemente${atualizados > 0 ? ` e aplicadas a <b>${atualizados} colaborador(es)</b> deste grupo` : ''}.`, "success");
                 },
@@ -4909,25 +5021,8 @@ storage: {
                     app.currentMonth = `${yyyy}-${mm}`;
                     const gmEl = document.getElementById('global-month'); if (gmEl) gmEl.value = app.currentMonth;
                     
-                    // Resgata backups locais imediatamente (para nunca perder Visão Geral Setorial ao dar F5)
+                    // Resgata backups locais apenas de Visão Geral Setorial (usuários e permissões vêm sempre do Firebase para manter todos sincronizados no mesmo ambiente)
                     try {
-                        const localUsersRaw = localStorage.getItem("soft_users_backup");
-                        if (localUsersRaw) {
-                            const localUsers = JSON.parse(localUsersRaw);
-                            if (Array.isArray(localUsers) && localUsers.length >= 5) {
-                                app.users = localUsers;
-                                console.log("Usuarios carregados do cache local:", app.users.length);
-                            } else {
-                                console.warn("Cache local de usuarios ignorado por conter menos de 5 registros.");
-                            }
-                        }
-                        const localCfgRaw = localStorage.getItem('soft_config_backup');
-                        if (localCfgRaw) {
-                            const localCfg = JSON.parse(localCfgRaw);
-                            if (localCfg && typeof localCfg === 'object') {
-                                app.config = { ...(app.config || {}), ...localCfg };
-                            }
-                        }
                         const localVG = localStorage.getItem('soft_visao_geral_backup');
                         if (localVG) {
                             app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(JSON.parse(localVG));
@@ -5198,9 +5293,10 @@ storage: {
                     // Filtra pelo termo digitado
                     let filtered = abas.filter(tab => tab.label.toLowerCase().includes(term));
                     
-                    // Respeita as permissões do usuário se não for admin
-                    if(!app.isAdmin && app.currentUser && app.currentUser.abasLiberadas) {
-                        filtered = filtered.filter(tab => app.currentUser.abasLiberadas.includes(tab.id) || tab.isDefault);
+                    // Respeita as permissões efetivas do usuário se não for admin
+                    if(!app.isAdmin && app.currentUser) {
+                        const effectiveAbas = this.getEffectiveUserTabs(app.currentUser);
+                        filtered = filtered.filter(tab => effectiveAbas.includes(tab.id));
                     }
 
                     if(filtered.length === 0) {
@@ -5267,17 +5363,14 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
-                            // Barra Personalizada de ADM: Usa a arquitetura oficial de grupos do ADM + Rotina Pessoal (sem "Ferramentas Extras")
+                            // Barra Personalizada de ADM: Usa a arquitetura oficial de grupos do ADM + Rotina Pessoal
                             const adminGroups = JSON.parse(JSON.stringify(this.menusAdmin));
                             adminGroups.forEach(g => {
-                                g.items = g.items.filter(item => {
-                                    if (item.id === 'teste_duolingo' && !app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') return false;
-                                    return userAbas.includes(item.id);
-                                });
+                                g.items = g.items.filter(item => userAbas.includes(item.id));
                             });
 
                             const idsInAdminGroups = new Set();
@@ -6882,92 +6975,181 @@ storage: {
                     const feedbacksPorMonitor = Math.ceil(totalFeedbacksPendentes / qtdMonitores);
                     const isMediaGeralAbaixo = parseFloat(mediaGeral) < 100;
 
+                    const pctAvaliados = qualidadeUsers.length > 0 ? Math.round((usersComResultado / qualidadeUsers.length) * 100) : 0;
+                    const pctMonitoriasRealizadas = totalMetaMonitorias > 0 ? Math.min(100, Math.round((totalRealizadoMonitorias / totalMetaMonitorias) * 100)) : 100;
+
                     let html = `
-                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Executiva • Dashboard Corporativo</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhamento macro de indicadores de qualidade, bonificação e metas operacionais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                        <!-- Cabeçalho Corporativo Executivo -->
+                        <div class="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-6 mb-6 shadow-sm">
+                            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                <div>
+                                    <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-black uppercase tracking-widest">
+                                            <i class="fa-solid fa-building-shield text-indigo-600 dark:text-indigo-400"></i> Governança Executiva
+                                        </span>
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60 text-[10px] font-extrabold uppercase tracking-wider">
+                                            <i class="fa-regular fa-calendar-check"></i> Competência: ${monthLabel}
+                                        </span>
+                                    </div>
+                                    <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Visão Geral Executiva • Qualidade & Bonificação</h2>
+                                    <p class="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-1">Painel consolidado de performance financeira, cumprimento de metas operacionais e cronograma de feedbacks.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-end">
+                                    <button onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all flex items-center gap-2">
+                                        <i class="fa-solid fa-layer-group text-indigo-500"></i> Visão Setorial (RH)
+                                    </button>
+                                    <button onclick="app.ui.renderTab('cadastros', true)" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all flex items-center gap-2">
+                                        <i class="fa-solid fa-pen-to-square text-blue-500"></i> Lançar Notas
+                                    </button>
+                                    <button onclick="app.admin.exportBonusReport()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-2.5 px-5 rounded-xl shadow-sm transition-all flex items-center gap-2 text-xs whitespace-nowrap">
+                                        <i class="fa-solid fa-file-excel"></i> Exportar Relatório (.XLSX)
+                                    </button>
+                                </div>
                             </div>
-                            <button onclick="app.admin.exportBonusReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-file-excel"></i> Relatório do Mês
-                            </button>
                         </div>
 
-                        <!-- Linha 1: KPIs Principais com Sinalização Discreta e Elegante -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-green-500">
-                                <div class="w-14 h-14 rounded-2xl bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-sack-dollar"></i></div>
-                                <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Custo Total Qualidade</div>
-                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">R$ ${totalCusto.toFixed(2)}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1">Folha de bonificação apurada</div>
+                        <!-- Seção 1: KPIs Executivos Padronizados -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                            <!-- KPI 1: Custo Total -->
+                            <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Orçamento Apurado</span>
+                                        <div class="text-2xl font-black text-slate-900 dark:text-white mt-1 tabular-nums">R$ ${totalCusto.toFixed(2)}</div>
+                                    </div>
+                                    <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shrink-0 border border-emerald-200/60 dark:border-emerald-800/50">
+                                        <i class="fa-solid fa-sack-dollar"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[11px]">
+                                    <span class="text-slate-500 dark:text-slate-400 font-medium">Teto Base Individual</span>
+                                    <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">R$ ${Number(app.config.baseValue || 0).toFixed(2)}</span>
                                 </div>
                             </div>
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 border-l-blue-500">
-                                <div class="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-users-viewfinder"></i></div>
-                                <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Avaliados / Equipe Qualidade</div>
-                                    <div class="text-2xl lg:text-3xl font-black text-slate-800 dark:text-white">${usersComResultado} <span class="text-slate-300 dark:text-slate-600 font-medium text-lg">/ ${qualidadeUsers.length}</span></div>
-                                    <div class="text-[11px] text-slate-400 mt-1">${usersComResultado === qualidadeUsers.length ? '100% dos monitores lançados' : `${qualidadeUsers.length - usersComResultado} pendentes de lançamento`}</div>
+
+                            <!-- KPI 2: Cobertura de Avaliação -->
+                            <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Monitores Avaliados</span>
+                                        <div class="text-2xl font-black text-slate-900 dark:text-white mt-1 tabular-nums">${usersComResultado} <span class="text-sm font-semibold text-slate-400">/ ${qualidadeUsers.length}</span></div>
+                                    </div>
+                                    <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-lg shrink-0 border border-blue-200/60 dark:border-blue-800/50">
+                                        <i class="fa-solid fa-users-viewfinder"></i>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${isMediaGeralAbaixo ? 'border-l-amber-500' : 'border-l-purple-500'}">
-                                <div class="w-14 h-14 rounded-2xl ${isMediaGeralAbaixo ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'} flex items-center justify-center text-2xl shrink-0">
-                                    <i class="fa-solid ${isMediaGeralAbaixo ? 'fa-triangle-exclamation' : 'fa-chart-simple'}"></i>
-                                </div>
-                                <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Média de Qualidade</div>
-                                    <div class="text-2xl lg:text-3xl font-black ${isMediaGeralAbaixo ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-white'} tabular-nums">${mediaGeral}%</div>
-                                    <div class="text-[11px] ${isMediaGeralAbaixo ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'} mt-1 flex items-center gap-1">
-                                        ${isMediaGeralAbaixo ? '<i class=\"fa-solid fa-clock text-[10px]\"></i> Abaixo da Meta • Aplicar Feedback' : '<i class=\"fa-solid fa-circle-check text-emerald-500\"></i> Meta Global Atingida'}
+                                <div class="mt-4">
+                                    <div class="flex justify-between text-[10px] font-bold mb-1">
+                                        <span class="text-slate-400">${usersComResultado === qualidadeUsers.length ? 'Equipe 100% lançada' : `${qualidadeUsers.length - usersComResultado} pendente(s)`}</span>
+                                        <span class="text-blue-600 dark:text-blue-400 tabular-nums">${pctAvaliados}%</span>
+                                    </div>
+                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div class="h-full bg-blue-600 rounded-full transition-all" style="width: ${pctAvaliados}%"></div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="glass-card p-6 rounded-3xl flex items-center gap-5 border-l-4 ${totalFeedbacksPendentes > 0 ? 'border-l-amber-500' : 'border-l-emerald-500'}">
-                                <div class="w-14 h-14 rounded-2xl ${totalFeedbacksPendentes > 0 ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'} flex items-center justify-center text-2xl shrink-0">
-                                    <i class="fa-solid fa-comments"></i>
-                                </div>
-                                <div>
-                                    <div class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Feedbacks Necessários (Meta)</div>
-                                    <div class="text-2xl lg:text-3xl font-black ${totalFeedbacksPendentes > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600'} tabular-nums">${totalFeedbacksPendentes}</div>
-                                    <div class="text-[11px] ${totalFeedbacksPendentes > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'} mt-1">
-                                        ${totalFeedbacksPendentes > 0 ? `~<span class="font-black">${feedbacksPorMonitor}</span> por monitor (${monitoresAbaixoMeta} com meta pendente)` : 'Metas 100% atingidas!'}
+
+                            <!-- KPI 3: Média Global de Qualidade -->
+                            <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Atingimento Médio</span>
+                                        <div class="text-2xl font-black ${isMediaGeralAbaixo ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'} mt-1 tabular-nums">${mediaGeral}%</div>
                                     </div>
+                                    <div class="w-10 h-10 rounded-xl ${isMediaGeralAbaixo ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200/60 dark:border-amber-800/50' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-800/50'} flex items-center justify-center text-lg shrink-0 border">
+                                        <i class="fa-solid ${isMediaGeralAbaixo ? 'fa-chart-line' : 'fa-award'}"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <div class="flex justify-between text-[10px] font-bold mb-1">
+                                        <span class="${isMediaGeralAbaixo ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}">${isMediaGeralAbaixo ? 'Abaixo da meta (100%)' : 'Meta corporativa atingida'}</span>
+                                        <span class="text-slate-400 tabular-nums">Meta: 100%</span>
+                                    </div>
+                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div class="h-full ${isMediaGeralAbaixo ? 'bg-amber-500' : 'bg-emerald-500'} rounded-full transition-all" style="width: ${Math.min(100, parseFloat(mediaGeral))}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- KPI 4: Saldo de Feedbacks / Monitorias -->
+                            <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Saldo p/ Meta Monitorias</span>
+                                        <div class="text-2xl font-black ${totalFeedbacksPendentes > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'} mt-1 tabular-nums">${totalFeedbacksPendentes} <span class="text-xs font-bold text-slate-400">pend.</span></div>
+                                    </div>
+                                    <div class="w-10 h-10 rounded-xl ${totalFeedbacksPendentes > 0 ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200/60 dark:border-amber-800/50' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-800/50'} flex items-center justify-center text-lg shrink-0 border">
+                                        <i class="fa-solid fa-comments"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[11px]">
+                                    <span class="text-slate-500 dark:text-slate-400 font-medium">${totalFeedbacksPendentes > 0 ? `~${feedbacksPorMonitor} por monitor (${monitoresAbaixoMeta} pend.)` : '100% das metas concluídas'}</span>
+                                    <span class="font-bold text-slate-700 dark:text-slate-300 tabular-nums">${pctMonitoriasRealizadas}%</span>
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- Linha 2: Agenda e Gráficos -->
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                            
-                            <!-- Coluna 1: Agenda Automática -->
-                            <div class="lg:col-span-1 glass-card p-6 rounded-3xl h-full flex flex-col">
-                                <div class="flex items-center justify-between mb-4">
-                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                        <i class="fa-solid fa-calendar-day text-blue-500"></i> Próximos Feedbacks
-                                    </h3>
-                                    ${pendentes.length > 0 ? `<span class="bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/60"><i class="fa-solid fa-clock mr-1"></i>${pendentes.length} Agendados</span>` : ''}
+
+                        <!-- Seção 2: Análise Gráfica Comparativa & Agenda de Feedbacks -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+                            <!-- Gráficos Executivos (8 colunas) -->
+                            <div class="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="bg-white dark:bg-slate-800/90 p-6 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col">
+                                    <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/70 pb-3 mb-4">
+                                        <div>
+                                            <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Aproveitamento por Pilar (%)</h3>
+                                            <p class="text-[11px] text-slate-400 mt-0.5">Média de atingimento da equipe por meta</p>
+                                        </div>
+                                        <span class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs"><i class="fa-solid fa-chart-column"></i></span>
+                                    </div>
+                                    <div class="relative flex-1 min-h-[230px] w-full"><canvas id="chart-pct"></canvas></div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800/90 p-6 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col">
+                                    <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/70 pb-3 mb-4">
+                                        <div>
+                                            <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">Distribuição Financeira (R$)</h3>
+                                            <p class="text-[11px] text-slate-400 mt-0.5">Montante acumulado pago por indicador</p>
+                                        </div>
+                                        <span class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs"><i class="fa-solid fa-coins"></i></span>
+                                    </div>
+                                    <div class="relative flex-1 min-h-[230px] w-full"><canvas id="chart-finance"></canvas></div>
+                                </div>
+                            </div>
+
+                            <!-- Cronograma de Feedbacks (4 colunas) -->
+                            <div class="lg:col-span-4 bg-white dark:bg-slate-800/90 p-6 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col">
+                                <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/70 pb-3 mb-4">
+                                    <div>
+                                        <h3 class="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                            <i class="fa-solid fa-calendar-day text-blue-600 dark:text-blue-400"></i> Cronograma de Feedbacks
+                                        </h3>
+                                        <p class="text-[11px] text-slate-400 mt-0.5">Próximas reuniões agendadas no mês</p>
+                                    </div>
+                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-black ${pendentes.length > 0 ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'}">
+                                        ${pendentes.length} Agendado(s)
+                                    </span>
                                 </div>
                     `;
                     
                     if(pendentes.length === 0) {
-                        html += `<div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-4 min-h-[250px]"><i class="fa-regular fa-calendar-check text-5xl mb-3 opacity-50"></i><p class="text-sm">Nenhum feedback pendente de validação.</p></div>`;
+                        html += `<div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-6 min-h-[210px]"><i class="fa-regular fa-calendar-check text-4xl mb-2.5 opacity-40"></i><p class="text-xs font-semibold">Nenhum feedback pendente de validação neste período.</p></div>`;
                     } else {
-                        html += `<div class="space-y-3 overflow-y-auto pr-2 max-h-[280px]">`;
+                        html += `<div class="space-y-2.5 overflow-y-auto pr-1 max-h-[235px] custom-scrollbar">`;
                         pendentes.forEach(p => {
                             const r = p.results[app.currentMonth];
                             const dataFmt = r.fbDate ? new Date(r.fbDate + 'T00:00:00').toLocaleDateString('pt-BR') : '--';
                             const hrFmt = r.fbTime || '--:--';
                             const isToday = r.fbDate === new Date().toISOString().split('T')[0];
-                            const badge = isToday ? `<span class="bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-md text-[10px] font-bold">HOJE</span>` : `<span class="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md text-[10px] font-bold">${dataFmt}</span>`;
+                            const badge = isToday
+                                ? `<span class="bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 px-2 py-0.5 rounded text-[10px] font-black uppercase">Hoje</span>`
+                                : `<span class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold tabular-nums">${dataFmt}</span>`;
                             
                             html += `
-                                <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-colors shadow-sm" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ document.getElementById('adm-user-select').value='${p.matricula}'; app.admin.loadUserEditor(); }, 150);" title="Ir para lançamento do monitor">
+                                <div class="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700/70 flex justify-between items-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ document.getElementById('adm-user-select').value='${p.matricula}'; app.admin.loadUserEditor(); }, 150);" title="Abrir lançamento do colaborador">
                                     <div class="min-w-0 pr-2">
                                         <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${p.nome}</div>
-                                        <div class="text-[10px] font-semibold text-slate-500 flex items-center gap-1.5 mt-1"><i class="fa-regular fa-clock"></i> ${hrFmt}</div>
+                                        <div class="text-[10px] font-medium text-slate-400 flex items-center gap-1.5 mt-0.5"><i class="fa-regular fa-clock"></i> Horário: ${hrFmt}</div>
                                     </div>
-                                    <div class="shrink-0 text-right">${badge}</div>
+                                    <div class="shrink-0 flex items-center gap-2">${badge}<i class="fa-solid fa-chevron-right text-[10px] text-slate-300"></i></div>
                                 </div>
                             `;
                         });
@@ -6976,29 +7158,23 @@ storage: {
                                 
                     html += `
                             </div>
-
-                            <!-- Coluna 2 e 3: Gráficos -->
-                            <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
-                                <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
-                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Aproveitamento (%) • Metas</h3>
-                                    <div class="relative flex-1 min-h-[220px] w-full"><canvas id="chart-pct"></canvas></div>
-                                </div>
-                                <div class="glass-card p-6 rounded-3xl h-full flex flex-col">
-                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-6 shrink-0">Financeiro (R$)</h3>
-                                    <div class="relative flex-1 min-h-[220px] w-full"><canvas id="chart-finance"></canvas></div>
-                                </div>
-                            </div>
                         </div>
 
-                        <!-- Linha 3: Entregas por Indicador (Design Discreto Corporativo + Quanto Falta) -->
-                        <div class="glass-card p-8 rounded-3xl mb-8">
-                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-6">
+                        <!-- Seção 3: Matriz Corporativa de Entregas por Indicador -->
+                        <div class="bg-white dark:bg-slate-800/90 p-6 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm mb-8">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-6 border-b border-slate-100 dark:border-slate-700/70">
                                 <div>
-                                    <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Detalhamento de Entregas da Equipe</h3>
-                                    <p class="text-xs text-slate-400 mt-0.5">Indicadores com metas pendentes sinalizados com discrição e o cálculo exato de quanto falta para cada colaborador.</p>
+                                    <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                        <i class="fa-solid fa-table-columns text-indigo-600 dark:text-indigo-400"></i> Matriz de Entregas por Indicador de Qualidade
+                                    </h3>
+                                    <p class="text-xs text-slate-400 mt-0.5">Visão individualizada de entregas realizadas e saldo restante para atingimento de 100% da meta.</p>
+                                </div>
+                                <div class="flex items-center gap-3 text-[11px] font-bold">
+                                    <span class="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Meta Atingida</span>
+                                    <span class="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Meta Pendente</span>
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                     `;
 
                     const labels = []; const dataPct = []; const dataVal = [];
@@ -7007,10 +7183,8 @@ storage: {
                         const avgPct = gs.count > 0 ? (gs.somaMult / gs.count) * 100 : 0;
                         labels.push(gs.name); dataPct.push(avgPct.toFixed(1)); dataVal.push(gs.somaVal.toFixed(2));
                         
-                        // Ordenação das entregas (maior para o menor)
                         gs.deliveries.sort((a, b) => b.raw - a.raw);
                         
-                        // Calculo do total do card
                         const totalRaw = gs.deliveries.reduce((acc, curr) => acc + curr.raw, 0);
                         let displayTotal = totalRaw;
                         if(gs.type === 'gestor') {
@@ -7022,53 +7196,55 @@ storage: {
                         
                         const isAbaixoMeta = avgPct < 100;
                         const pendentesCount = gs.deliveries.filter(d => !d.atingiuMeta).length;
-                        const cardBorder = isAbaixoMeta 
-                            ? 'border border-slate-200 dark:border-slate-700/80 border-t-2 border-t-amber-500/90 bg-white dark:bg-slate-800/40' 
-                            : 'border border-slate-200 dark:border-slate-700/80 border-t-2 border-t-emerald-500/90 bg-white dark:bg-slate-800/40';
-                        const badgeColor = isAbaixoMeta 
-                            ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60' 
-                            : 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60';
+                        const pctBar = Math.min(100, Math.max(0, Math.round(avgPct)));
 
                         html += `
-                            <div class="${cardBorder} p-5 rounded-2xl flex flex-col h-full shadow-sm hover:shadow-md transition-all">
-                                <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-3 mb-3">
-                                    <div class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase truncate pr-2" title="${gs.name}">${gs.name}</div>
-                                    <div class="text-xs font-black ${badgeColor} px-2.5 py-1 rounded-lg border flex items-center gap-1.5 shrink-0">
-                                        ${isAbaixoMeta ? '<i class=\"fa-solid fa-clock text-[10px] text-amber-500\"></i>' : '<i class=\"fa-solid fa-circle-check text-[10px] text-emerald-500\"></i>'}
-                                        Total: ${displayTotal} (${avgPct.toFixed(0)}%)
+                            <div class="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-900/30 flex flex-col h-full overflow-hidden shadow-xs hover:shadow-md transition-all">
+                                <!-- Topo do Card do Pilar -->
+                                <div class="p-4 bg-white dark:bg-slate-800 border-b border-slate-200/70 dark:border-slate-700/70">
+                                    <div class="flex justify-between items-start gap-2 mb-2.5">
+                                        <div class="text-xs font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wide truncate" title="${gs.name}">${gs.name}</div>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase shrink-0 border ${isAbaixoMeta ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'}">
+                                            ${avgPct.toFixed(0)}% Atingido
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-1.5">
+                                        <span>Consolidado: <strong class="text-slate-800 dark:text-slate-200">${displayTotal}</strong></span>
+                                        <span>${gs.deliveries.length - pendentesCount}/${gs.deliveries.length} na meta</span>
+                                    </div>
+                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div class="h-full ${isAbaixoMeta ? 'bg-amber-500' : 'bg-emerald-500'} rounded-full" style="width: ${pctBar}%"></div>
                                     </div>
                                 </div>
-                                <div class="flex-1 overflow-y-auto max-h-48 space-y-1.5 pr-2 custom-scrollbar">
+
+                                <!-- Lista de Colaboradores do Pilar -->
+                                <div class="flex-1 overflow-y-auto max-h-52 divide-y divide-slate-200/60 dark:divide-slate-700/50 px-3 py-1 custom-scrollbar">
                         `;
                         
                         if (gs.deliveries.length === 0) {
-                            html += `<div class="text-xs text-slate-400 italic text-center mt-4">Nenhum dado lançado neste mês.</div>`;
+                            html += `<div class="text-xs text-slate-400 italic text-center py-6">Nenhum lançamento registrado neste mês.</div>`;
                         } else {
                             gs.deliveries.forEach(d => {
                                 if (d.atingiuMeta) {
                                     html += `
-                                        <div class="flex justify-between items-center text-sm py-1.5 px-2 rounded-lg border-b border-slate-100 dark:border-slate-700/40 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                            <span class="text-slate-700 dark:text-slate-300 truncate pr-2 flex items-center gap-2">
-                                                <i class="fa-solid fa-check text-[10px] text-emerald-500 shrink-0"></i>
-                                                <span>${d.nome}</span>
+                                        <div class="flex justify-between items-center text-xs py-2 px-1.5 hover:bg-white/80 dark:hover:bg-slate-800/50 transition-colors">
+                                            <span class="text-slate-700 dark:text-slate-300 font-semibold truncate pr-2 flex items-center gap-2">
+                                                <i class="fa-solid fa-circle-check text-[11px] text-emerald-500 shrink-0"></i>
+                                                <span class="truncate">${d.nome}</span>
                                             </span>
-                                            <span class="font-bold text-emerald-600 dark:text-emerald-400 shrink-0 tabular-nums">
-                                                ${d.display}
-                                            </span>
+                                            <span class="font-extrabold text-emerald-600 dark:text-emerald-400 shrink-0 tabular-nums">${d.display}</span>
                                         </div>
                                     `;
                                 } else {
                                     html += `
-                                        <div class="flex justify-between items-center text-sm py-1.5 px-2 rounded-lg border-b border-slate-100 dark:border-slate-700/40 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                            <span class="text-slate-700 dark:text-slate-300 truncate pr-2 flex items-center gap-2">
-                                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0" title="Meta não atingida"></span>
-                                                <span class="font-medium">${d.nome}</span>
+                                        <div class="flex justify-between items-center text-xs py-2 px-1.5 hover:bg-white/80 dark:hover:bg-slate-800/50 transition-colors">
+                                            <span class="text-slate-700 dark:text-slate-300 font-semibold truncate pr-2 flex items-center gap-2">
+                                                <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Meta pendente"></span>
+                                                <span class="truncate">${d.nome}</span>
                                             </span>
-                                            <span class="font-bold text-slate-800 dark:text-slate-200 shrink-0 tabular-nums flex items-center gap-1.5">
-                                                <span>${d.display}</span>
-                                                <span class="text-[11px] font-semibold text-amber-600 dark:text-amber-400/90 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200/60 dark:border-amber-800/50">
-                                                    ${d.quantoFalta}
-                                                </span>
+                                            <span class="shrink-0 tabular-nums flex items-center gap-1.5">
+                                                <span class="font-extrabold text-slate-800 dark:text-slate-200">${d.display}</span>
+                                                <span class="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200/70 dark:border-amber-800/60">${d.quantoFalta}</span>
                                             </span>
                                         </div>
                                     `;
@@ -7078,13 +7254,14 @@ storage: {
                         
                         html += `
                                 </div>
-                                <div class="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
-                                    <span class="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-1.5">
-                                        <i class="fa-solid ${isAbaixoMeta ? 'fa-clock text-amber-500' : 'fa-circle-check text-emerald-500'} text-[10px]"></i>
-                                        ${isAbaixoMeta ? `${pendentesCount} com meta pendente` : '100% da equipe na meta'}
+                                <!-- Rodapé do Card -->
+                                <div class="px-4 py-2.5 bg-white dark:bg-slate-800 border-t border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between text-[11px]">
+                                    <span class="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+                                        <i class="fa-solid ${isAbaixoMeta ? 'fa-clock text-amber-500' : 'fa-check-double text-emerald-500'} text-[10px]"></i>
+                                        ${isAbaixoMeta ? `${pendentesCount} colaborador(es) pendente(s)` : '100% da equipe atingiu a meta'}
                                     </span>
-                                    <span class="text-[10px] uppercase font-bold tracking-wider ${isAbaixoMeta ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}">
-                                        ${isAbaixoMeta ? 'Acompanhar' : 'Concluído'}
+                                    <span class="text-[10px] uppercase font-black tracking-wider ${isAbaixoMeta ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}">
+                                        ${isAbaixoMeta ? 'Em Acompanhamento' : 'Concluído'}
                                     </span>
                                 </div>
                             </div>
@@ -8275,7 +8452,7 @@ storage: {
                             "Diagnóstico de Rede Firebase",
                             `Status: <strong>${isConnected ? 'Conectado' : 'Desconectado'}</strong><br>` +
                             `Latência de Resposta: <strong class="tabular-nums">${latency} ms</strong><br>` +
-                            `Banco: <code>painel-de-bonificacao-default-rtdb</code>`,
+                            `Banco: <code>qualidadetreinamento-default-rtdb</code>`,
                             isConnected ? "success" : "warning"
                         );
                     }).catch(err => {
@@ -8347,53 +8524,50 @@ storage: {
                     }
 
                     let html = `
-                        <div class="mb-6 flex flex-col 2xl:flex-row justify-between items-start 2xl:items-center gap-4">
-                            <div>
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest border border-indigo-200/60 dark:border-indigo-800/60">
-                                        <i class="fa-solid fa-building-columns mr-1"></i> Inteligência Setorial
-                                    </span>
-                                </div>
-                                <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Visão Geral Setorial (RH vs Qualidade)</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-0.5">Triangulação macro de produtividade de monitorias, dimensionamento de metas e cobertura operacional.</p>
-                            </div>
-
-                            <!-- Barra de Ferramentas Corporativa Unificada -->
-                            <div class="flex flex-wrap items-center gap-2.5 w-full 2xl:w-auto">
-                                <!-- Metas Base Padrão -->
-                                ${metaTopHtml}
-
-                                <!-- Grupo de Ações de Auditoria e Governança -->
-                                <div class="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm backdrop-blur-sm">
-                                    <button onclick="app.ui.abrirModalDebugMetasVG('todos')" class="h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-2 shadow-xs" title="Auditar e Diagnosticar Operações com Progresso em 0%">
-                                        <i class="fa-solid fa-bug text-xs"></i>
-                                        <span class="hidden sm:inline">Diagnóstico Metas</span>
-                                    </button>
-
-                                    <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="relative h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdPendentesOp > 0 ? 'border-amber-400 text-amber-700 dark:text-amber-300 font-black' : 'border-slate-200/80 dark:border-slate-700 font-bold'} text-xs transition flex items-center gap-2 shadow-xs" title="Classificar aplicadores com cargo 'OPERADOR'">
-                                        <i class="fa-solid fa-user-check ${qtdPendentesOp > 0 ? 'text-amber-500' : 'text-slate-400'} text-xs"></i>
-                                        <span class="hidden sm:inline">Validar Operadores</span>
-                                        ${qtdPendentesOp > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdPendentesOp}</span>` : ''}
-                                    </button>
-
-                                    <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdOrfaosQual > 0 ? 'border-amber-400 text-amber-700 font-black' : 'border-slate-200/80 dark:border-slate-700 font-bold'} text-xs transition flex items-center gap-2 shadow-xs" title="Vincular Nomes de Operações via Tabela DE/PARA">
-                                        <i class="fa-solid fa-link text-slate-400 text-xs"></i>
-                                        <span class="hidden md:inline">DE/PARA</span>
-                                        ${qtdOrfaosQual > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdOrfaosQual}</span>` : ''}
-                                    </button>
-
-                                    <button onclick="app.ui.abrirModalOcultosVisaoGeral()" class="h-9 px-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs" title="Gerenciar operações ocultadas permanentemente">
-                                        <i class="fa-solid fa-eye-slash text-slate-400 text-xs"></i>
-                                        <span class="hidden md:inline">Ocultos</span> <span class="text-[10px] text-slate-400 tabular-nums">(${ignorados.length})</span>
-                                    </button>
+                        <div class="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-6 mb-6 shadow-sm">
+                            <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                                <div>
+                                    <div class="flex items-center gap-2 mb-1.5">
+                                        <span class="px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest border border-indigo-200/60 dark:border-indigo-800/60">
+                                            <i class="fa-solid fa-building-columns mr-1"></i> Inteligência Setorial • Governança
+                                        </span>
+                                    </div>
+                                    <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Visão Geral Executiva Setorial (RH vs Qualidade)</h2>
+                                    <p class="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-0.5">Triangulação corporativa de produtividade de monitorias, dimensionamento de metas e cobertura por operação.</p>
                                 </div>
 
-                                <!-- Botão Primário: Importar CSV -->
-                                <label class="h-11 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold cursor-pointer transition-all shadow-md shadow-indigo-600/25 flex items-center gap-2.5 text-xs tracking-wide shrink-0">
-                                    <i class="fa-solid fa-cloud-arrow-up text-sm"></i>
-                                    <span>Importar CSV de Qualidade</span>
-                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVVisaoGeral(this)" onclick="this.value = null">
-                                </label>
+                                <!-- Barra de Ferramentas de Governança e Importação -->
+                                <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto justify-start xl:justify-end">
+                                    <div class="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/80 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                                        <button onclick="app.ui.abrirModalDebugMetasVG('todos')" class="h-9 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs" title="Auditar e Diagnosticar Operações com Progresso em 0%">
+                                            <i class="fa-solid fa-bug text-xs"></i>
+                                            <span>Diagnóstico</span>
+                                        </button>
+
+                                        <button onclick="app.ui.abrirModalValidarOperadoresVG()" class="relative h-9 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdPendentesOp > 0 ? 'border-amber-400 text-amber-700 dark:text-amber-300 font-black' : 'border-slate-200/80 dark:border-slate-700 font-bold'} text-xs transition flex items-center gap-1.5 shadow-xs" title="Classificar aplicadores com cargo 'OPERADOR'">
+                                            <i class="fa-solid fa-user-check ${qtdPendentesOp > 0 ? 'text-amber-500' : 'text-slate-400'} text-xs"></i>
+                                            <span>Validar Cargo</span>
+                                            ${qtdPendentesOp > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdPendentesOp}</span>` : ''}
+                                        </button>
+
+                                        <button onclick="app.ui.abrirModalDeParaVisaoGeral()" class="relative h-9 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border ${qtdOrfaosQual > 0 ? 'border-amber-400 text-amber-700 font-black' : 'border-slate-200/80 dark:border-slate-700 font-bold'} text-xs transition flex items-center gap-1.5 shadow-xs" title="Vincular Nomes de Operações via Tabela DE/PARA">
+                                            <i class="fa-solid fa-link text-slate-400 text-xs"></i>
+                                            <span>DE/PARA</span>
+                                            ${qtdOrfaosQual > 0 ? `<span class="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse tabular-nums">${qtdOrfaosQual}</span>` : ''}
+                                        </button>
+
+                                        <button onclick="app.ui.abrirModalOcultosVisaoGeral()" class="h-9 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs" title="Gerenciar operações ocultadas permanentemente">
+                                            <i class="fa-solid fa-eye-slash text-slate-400 text-xs"></i>
+                                            <span>Ocultos</span> <span class="text-[10px] text-slate-400 tabular-nums">(${ignorados.length})</span>
+                                        </button>
+                                    </div>
+
+                                    <label class="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold cursor-pointer transition-all shadow-sm flex items-center gap-2 text-xs tracking-wide shrink-0">
+                                        <i class="fa-solid fa-cloud-arrow-up text-sm"></i>
+                                        <span>Importar CSV Qualidade</span>
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVVisaoGeral(this)" onclick="this.value = null">
+                                    </label>
+                                </div>
                             </div>
                         </div>
                         ${qtdPendentesOp > 0 ? `
@@ -8607,63 +8781,90 @@ storage: {
                             return b.hCount - a.hCount;
                         });
 
-                        // Resumo Executivo no Topo
+                        // Resumo Executivo no Topo (KPIs Padronizados)
                         html += `
-                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Operações Ativas</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalSetores}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1 tabular-nums">${totalHC} colaboradores mapeados</div>
-                                </div>
-                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-clipboard-check text-blue-500 mr-1"></i> Avaliações vs Meta</div>
-                                    <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalRealizadas} <span class="text-sm font-semibold text-slate-400">/ ${totalMeta}</span></div>
-                                    <div class="text-[11px] text-slate-400 mt-1">${subtituloMetaKpi}</div>
-                                </div>
-                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-bullseye text-emerald-500 mr-1"></i> Cobertura Geral</div>
-                                    <div class="text-3xl font-black ${parseFloat(pctGeral) >= 100 ? 'text-emerald-500' : (parseFloat(pctGeral) >= 80 ? 'text-blue-500' : 'text-orange-500')} tabular-nums">${pctGeral}%</div>
-                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
-                                        <div class="h-full bg-indigo-500 rounded-full" style="width: ${Math.min(100, parseFloat(pctGeral))}%"></div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Operações Ativas</div>
+                                            <div class="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tabular-nums">${totalSetores}</div>
+                                        </div>
+                                        <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-base shrink-0 border border-indigo-200/60 dark:border-indigo-800/50"><i class="fa-solid fa-layer-group"></i></div>
+                                    </div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 flex justify-between items-center">
+                                        <span>Efetivo Mapeado (RH)</span>
+                                        <strong class="text-slate-800 dark:text-slate-200 tabular-nums">${totalHC} op.</strong>
                                     </div>
                                 </div>
-                                <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1"><i class="fa-solid fa-star text-amber-500 mr-1"></i> Média Geral Qualidade</div>
-                                    <div class="text-3xl font-black ${parseFloat(mediaGeral) >= 90 ? 'text-green-500' : (parseFloat(mediaGeral) >= 80 ? 'text-blue-500' : 'text-red-500')} tabular-nums">${mediaGeral}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1">Média ponderada do grupo selecionado</div>
+                                <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Avaliações vs Meta</div>
+                                            <div class="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tabular-nums">${totalRealizadas} <span class="text-sm font-semibold text-slate-400">/ ${totalMeta}</span></div>
+                                        </div>
+                                        <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-base shrink-0 border border-blue-200/60 dark:border-blue-800/50"><i class="fa-solid fa-clipboard-check"></i></div>
+                                    </div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60 truncate" title="${subtituloMetaKpi}">${subtituloMetaKpi}</div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Cobertura Global</div>
+                                            <div class="text-2xl md:text-3xl font-black ${parseFloat(pctGeral) >= 100 ? 'text-emerald-600 dark:text-emerald-400' : (parseFloat(pctGeral) >= 80 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400')} tabular-nums">${pctGeral}%</div>
+                                        </div>
+                                        <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-base shrink-0 border border-emerald-200/60 dark:border-emerald-800/50"><i class="fa-solid fa-bullseye"></i></div>
+                                    </div>
+                                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full mt-3 overflow-hidden">
+                                        <div class="h-full ${parseFloat(pctGeral) >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'} rounded-full" style="width: ${Math.min(100, parseFloat(pctGeral))}%"></div>
+                                    </div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm flex flex-col justify-between">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Nota Média Qualidade</div>
+                                            <div class="text-2xl md:text-3xl font-black ${parseFloat(mediaGeral) >= 90 ? 'text-emerald-600 dark:text-emerald-400' : (parseFloat(mediaGeral) >= 80 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500')} tabular-nums">${mediaGeral}</div>
+                                        </div>
+                                        <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-base shrink-0 border border-amber-200/60 dark:border-amber-800/50"><i class="fa-solid fa-star"></i></div>
+                                    </div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700/60">Média ponderada das operações</div>
                                 </div>
                             </div>
 
-                            <!-- Barra de Organização: Grupo Cargo (Pills), Busca, Filtros, Ordenação e Modo de Exibição -->
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col gap-4">
-                                <!-- Linha 1: Filtro de Cargo em destaque + Busca rápida -->
-                                <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 whitespace-nowrap"><i class="fa-solid fa-filter mr-1"></i>Visão Cargo:</span>
-                                        <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
-                                            <button onclick="app.ui.setVisaoGeralCargoFilter('monitor')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'monitor' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'}">
-                                                <i class="fa-solid fa-headset text-[11px]"></i> Monitor <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'monitor' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralMon}</span>
-                                            </button>
-                                            <button onclick="app.ui.setVisaoGeralCargoFilter('supervisor')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'supervisor' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'}">
-                                                <i class="fa-solid fa-user-tie text-[11px]"></i> Supervisor <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'supervisor' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralSup}</span>
-                                            </button>
-                                            <button onclick="app.ui.setVisaoGeralCargoFilter('junto')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'junto' ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-800'}">
-                                                <i class="fa-solid fa-users-viewfinder text-[11px]"></i> Junto <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'junto' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralAvaliacoes}</span>
-                                            </button>
+                            <!-- Painel de Controle e Filtragem Setorial -->
+                            <div class="bg-white dark:bg-slate-800/90 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-sm mb-6 flex flex-col gap-4">
+                                <!-- Linha 1: Visão por Cargo + Regra de Meta Padrão + Busca -->
+                                <div class="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 whitespace-nowrap"><i class="fa-solid fa-user-tag mr-1"></i>Visão por Cargo:</span>
+                                            <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
+                                                <button onclick="app.ui.setVisaoGeralCargoFilter('monitor')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'monitor' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'}">
+                                                    <i class="fa-solid fa-headset text-[11px]"></i> Monitor <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'monitor' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralMon}</span>
+                                                </button>
+                                                <button onclick="app.ui.setVisaoGeralCargoFilter('supervisor')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'supervisor' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'}">
+                                                    <i class="fa-solid fa-user-tie text-[11px]"></i> Supervisor <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'supervisor' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralSup}</span>
+                                                </button>
+                                                <button onclick="app.ui.setVisaoGeralCargoFilter('junto')" class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 ${cargoFilter === 'junto' ? 'bg-slate-800 text-white dark:bg-slate-700 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-800'}">
+                                                    <i class="fa-solid fa-users-viewfinder text-[11px]"></i> Consolidado <span class="px-1.5 py-0.5 rounded-full text-[10px] ${cargoFilter === 'junto' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} tabular-nums font-bold">${totalGeralAvaliacoes}</span>
+                                                </button>
+                                            </div>
                                         </div>
+                                        ${metaTopHtml}
                                     </div>
 
-                                    <div class="relative flex-1 max-w-sm">
+                                    <div class="relative flex-1 xl:max-w-sm">
                                         <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                        <input type="text" value="${this.visaoGeralSearch || ''}" oninput="app.ui.visaoGeralSearch = this.value; app.ui.renderTab('analitico_visao_geral', true); const el = document.getElementById('vg-search-input'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }" id="vg-search-input" placeholder="Buscar operação/setor..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:border-indigo-500 dark:text-white">
+                                        <input type="text" value="${this.visaoGeralSearch || ''}" oninput="app.ui.visaoGeralSearch = this.value; app.ui.renderTab('analitico_visao_geral', true); const el = document.getElementById('vg-search-input'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }" id="vg-search-input" placeholder="Filtrar operação ou setor..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:border-indigo-500 dark:text-white">
                                     </div>
                                 </div>
 
-                                <!-- Linha 2: Filtros de status, ordenação e alternador de visão -->
-                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                                <!-- Linha 2: Filtros Rápidos de Status + Ordenação + Alternador de Exibição -->
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
                                     <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="text-[10px] font-bold uppercase text-slate-400 mr-1"><i class="fa-solid fa-sliders mr-1"></i>Status:</span>
                                         ${[
-                                            { id: 'todos', label: 'Todos' },
+                                            { id: 'todos', label: 'Todos (' + relatorioFinal.length + ')' },
                                             { id: 'com_mon', label: 'Com Avaliação' },
                                             { id: 'sem_mon', label: 'Zerados (0)' },
                                             { id: 'batida', label: 'Meta >= 100%' },
@@ -8689,8 +8890,8 @@ storage: {
                                         </div>
 
                                         <div class="flex rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700">
-                                            <button onclick="app.ui.visaoGeralViewMode = 'cards'; try{localStorage.setItem('soft_vg_view','cards');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode !== 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Cards"><i class="fa-solid fa-grip"></i></button>
-                                            <button onclick="app.ui.visaoGeralViewMode = 'table'; try{localStorage.setItem('soft_vg_view','table');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode === 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Tabela"><i class="fa-solid fa-table-list"></i></button>
+                                            <button onclick="app.ui.visaoGeralViewMode = 'cards'; try{localStorage.setItem('soft_vg_view','cards');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode !== 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Cards"><i class="fa-solid fa-grip mr-1"></i>Cards</button>
+                                            <button onclick="app.ui.visaoGeralViewMode = 'table'; try{localStorage.setItem('soft_vg_view','table');}catch(e){} app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${this.visaoGeralViewMode === 'table' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}" title="Visualizar em Tabela"><i class="fa-solid fa-table-list mr-1"></i>Tabela</button>
                                         </div>
                                     </div>
                                 </div>
@@ -9583,6 +9784,11 @@ storage: {
                                 const targetImpressoesTab = app.currentTab || (app.hasAdminAccess('gestao_impressoes') ? 'gestao_impressoes' : 'impressoes');
                                 app.ui.renderTab(targetImpressoesTab, true);
                                 app.notifications.notify('ADM', 'Nova Impressão', `${app.currentUser.nome} solicitou ${copias} cópia(s) do arquivo "${file.name}".`, 'info');
+                                (app.users || []).forEach(u => {
+                                    if (u && u.matricula && u.matricula !== app.currentUser?.matricula && ['Dev', 'Gestor', 'Gerente', 'Treinamento'].includes(u.tipoAcesso)) {
+                                        app.notifications.notify(u.matricula, 'Nova Impressão na Fila', `${app.currentUser.nome} enviou "${file.name}" (${copias}x) para impressão.`, 'info');
+                                    }
+                                });
                             }).catch((err) => {
                                 console.error("Falha ao salvar solicitação de impressão:", err);
                                 resetBtn();
@@ -9708,6 +9914,23 @@ storage: {
                         });
                     },
 
+                    viewMode: 'fila',
+                    _lastSyncTs: 0,
+                    sincronizarFila(silencioso = false) {
+                        if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
+                        this._lastSyncTs = Date.now();
+                        return Promise.all([
+                            firebase.database().ref('sistema_bonificacao/impressoes').once('value'),
+                            firebase.database().ref('sistema_bonificacao/impressoesStats').once('value')
+                        ]).then(([snapImp, snapStats]) => {
+                            app.impressoesList = snapImp.val() || {};
+                            if (snapStats.val()) app.impressoesStats = snapStats.val();
+                            const activeTab = (app.currentTab === 'gestao_impressoes' || app.currentTab === 'impressoes') ? app.currentTab : 'impressoes';
+                            const viewDiv = document.getElementById('view-container-' + activeTab);
+                            if (viewDiv) app.ui.renderView_Impressoes(viewDiv, true);
+                            if (!silencioso) app.ui.showAlert('Fila Sincronizada', 'As solicitações de impressão foram atualizadas diretamente do banco de dados.', 'success');
+                        }).catch(() => {});
+                    },
                     delete(id) {
                         delete app.impressoesList[id];
                         app.storage.saveImpressoes(id).then(() => {
@@ -9718,12 +9941,17 @@ storage: {
                 },
                 // --- FIM: NOVAS LÓGICAS DE IMPRESSÃO ---
 
-                renderView_Impressoes(container) {
+                renderView_Impressoes(container, skipAutoSync = false) {
+                    if (!skipAutoSync && (Date.now() - (this.impressoes._lastSyncTs || 0) > 4000)) {
+                        this.impressoes.sincronizarFila(true);
+                    }
                     const parseIdTime = (item) => item.timestamp || (item.id && item.id.startsWith('prt_') ? parseInt(item.id.replace('prt_', '')) : 0) || 0;
                     const listaGeral = Object.values(app.impressoesList || {}).sort((a,b) => parseIdTime(b) - parseIdTime(a));
+                    const isPerfilGestaoImp = app.isAdmin || ['Dev', 'Gestor', 'Gerente', 'Treinamento'].includes(app.currentUser?.tipoAcesso) || app.hasAdminAccess('gestao_impressoes');
+                    const mostrarFilaGestao = isPerfilGestaoImp && (app.currentTab === 'gestao_impressoes' || app.isAdmin || this.impressoes.viewMode !== 'solicitar');
                     
-                    // Se for ADM, exibe SEMPRE a Gestão de Impressões (sem formulário de Solicitar Impressão)
-                    if (app.currentTab === 'gestao_impressoes' || app.isAdmin) {
+                    // Exibe a Gestão de Impressões para Admin, Dev, Gestor, Gerente e Treinamento
+                    if (mostrarFilaGestao) {
                         const pendentes = listaGeral.filter(i => i.status === 'pendente');
                         const concluidos = listaGeral.filter(i => i.status === 'impresso');
                         const excluidos = listaGeral.filter(i => i.status === 'excluido');
@@ -9765,9 +9993,29 @@ storage: {
                         const maxFolhasUser = rankingFolhas.length > 0 ? Math.max(1, rankingFolhas[0].folhasTotal) : 1;
 
                         let html = `
-                            <div class="mb-8">
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão e Dashboard de Impressões</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Controle de fila, auditoria de folhas (cópias) por colaborador e histórico de solicitações.</p>
+                            <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest border border-blue-200/60 dark:border-blue-800/60 mb-2">
+                                        <i class="fa-solid fa-print"></i> Central Corporativa de Impressões
+                                    </div>
+                                    <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Gestão e Fila Geral de Impressões</h2>
+                                    <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhamento de pedidos de todos os operadores, auditoria de cópias e histórico unificado.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2.5">
+                                    ${!app.isAdmin ? `
+                                        <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700">
+                                            <button onclick="app.ui.impressoes.viewMode = 'fila'; app.ui.renderView_Impressoes(document.getElementById('view-container-' + app.currentTab), true);" class="px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all bg-blue-600 text-white shadow-sm flex items-center gap-1.5">
+                                                <i class="fa-solid fa-list-check"></i> Fila Geral (${pendentes.length})
+                                            </button>
+                                            <button onclick="app.ui.impressoes.viewMode = 'solicitar'; app.ui.renderView_Impressoes(document.getElementById('view-container-' + app.currentTab), true);" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:text-blue-600 flex items-center gap-1.5">
+                                                <i class="fa-solid fa-paper-plane"></i> Solicitar / Meus Pedidos
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                    <button onclick="app.ui.impressoes.sincronizarFila(false)" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs shadow-sm transition-all flex items-center gap-2">
+                                        <i class="fa-solid fa-rotate text-blue-500"></i> Sincronizar Fila
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
@@ -9923,10 +10171,28 @@ storage: {
                         // Visão do Colaborador (Usuário)
                         const minhasImpressoes = listaGeral.filter(i => i.matricula === app.currentUser.matricula);
 
+                        const totalPendentesGeral = listaGeral.filter(i => i.status === 'pendente').length;
                         let html = `
-                            <div class="mb-8">
-                                <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Centro de Impressão</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Solicite impressões e acompanhe seus pedidos.</p>
+                            <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Centro de Impressão</h2>
+                                    <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Solicite impressões e acompanhe o status dos seus pedidos.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2.5">
+                                    ${isPerfilGestaoImp ? `
+                                        <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700">
+                                            <button onclick="app.ui.impressoes.viewMode = 'fila'; app.ui.renderView_Impressoes(document.getElementById('view-container-' + app.currentTab), true);" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:text-blue-600 flex items-center gap-1.5">
+                                                <i class="fa-solid fa-list-check"></i> Fila Geral (${totalPendentesGeral})
+                                            </button>
+                                            <button onclick="app.ui.impressoes.viewMode = 'solicitar'; app.ui.renderView_Impressoes(document.getElementById('view-container-' + app.currentTab), true);" class="px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all bg-blue-600 text-white shadow-sm flex items-center gap-1.5">
+                                                <i class="fa-solid fa-paper-plane"></i> Solicitar / Meus Pedidos
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                    <button onclick="app.ui.impressoes.sincronizarFila(false)" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs shadow-sm transition-all flex items-center gap-2">
+                                        <i class="fa-solid fa-rotate text-blue-500"></i> Atualizar Status
+                                    </button>
+                                </div>
                             </div>
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <div class="glass-card p-6 md:p-8 rounded-[2rem] h-fit border-t-4 border-t-blue-500 shadow-lg relative overflow-hidden">
@@ -10003,7 +10269,7 @@ storage: {
                 },
 
                 renderView_Config(container) {
-                    if(!app.hasAdminAccess('config')) return;
+                    if(!app.hasAdminAccess('configuracoes') && !app.hasAdminAccess('config')) return;
                     let html = `
                         <div class="mb-8">
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Arquitetura de Metas</h2>
@@ -20420,8 +20686,13 @@ storage: {
                     app.ui.showConfirm("Atenção", "Isso forçará a senha deste colaborador a voltar para '12345' (Padrão). Continuar?", `app.admin.execForcePwd('${mat}')`, true);
                 },
                 execForcePwd(mat) {
-                    const idx = app.users.findIndex(u => u.matricula === mat);
-                    if(idx > -1) { app.users[idx].senha = '12345'; app.storage.saveUsers(); app.ui.showAlert("Feito", "Senha resetada para 12345.", "success"); }
+                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(mat).trim());
+                    if(idx > -1) {
+                        const encDefault = app.utils.encryptPassword('12345');
+                        app.users[idx].senha = encDefault;
+                        app.storage.saveSingleUserField(idx, { senha: encDefault }).then(() => app.storage.saveUsers());
+                        app.ui.showAlert("Feito", "Senha resetada para 12345 (criptografada).", "success");
+                    }
                 },
 
                 registerUser() {
@@ -20437,14 +20708,15 @@ storage: {
                     const abasLiberadas = Array.from(abasCheckboxes).map(cb => cb.value);
 
                     if(!nome || !mat || !pwd) return app.ui.showAlert("Aviso", "Preencha Nome, Matrícula e Senha", "error");
-                    if(app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
+                    if(app.users.find(u => String(u.matricula).trim() === mat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
 
                     const saveFinal = (fotoBase64) => {
-                        app.users.push({ nome, matricula: mat, senha: pwd, tipoAcesso, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        const encPwd = app.utils.encryptPassword(pwd);
+                        app.users.push({ nome, matricula: mat, senha: encPwd, tipoAcesso, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
                         app.storage.saveUsers().then(() => {
                             app.ui.closeAddUserModal();
-                            app.ui.renderTab('gestao_equipe', true);
-                            app.ui.showAlert("Sucesso", "Colaborador cadastrado.", "success");
+                            app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
+                            app.ui.showAlert("Sucesso", "Colaborador cadastrado com senha criptografada.", "success");
                         });
                     };
 
@@ -20482,9 +20754,9 @@ storage: {
                 
                     const containerAbas = document.getElementById('edit-abas-container');
                     
-                    // CORREÇÃO: Usando o método getAllSystemTabs() ao invés da propriedade inexistente
+                    // Usa getEffectiveUserTabs para refletir fielmente as abas efetivas do colaborador
                     const todasAbas = app.ui.getAllSystemTabs();
-                    const userAbas = u.abasLiberadas || todasAbas.map(t => t.id);
+                    const userAbas = app.ui.getEffectiveUserTabs(u);
                     
                     containerAbas.innerHTML = todasAbas.map(tab => {
                         const checked = userAbas.includes(tab.id) ? 'checked' : '';
@@ -20530,13 +20802,19 @@ storage: {
                         app.users[idx].tipoAcesso = tipoAcesso;
                         app.users[idx].operacoes = operacoes;
                         app.users[idx].abasLiberadas = abasLiberadas;
-                        if(pwd) app.users[idx].senha = pwd;
+                        if(pwd) app.users[idx].senha = app.utils.encryptPassword(pwd);
                         if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
+
+                        if (app.currentUser && String(app.currentUser.matricula).trim() === String(originalMat).trim()) {
+                            app.currentUser = app.users[idx];
+                            localStorage.setItem("soft_session_mat", mat);
+                            app.ui.renderNav();
+                        }
 
                         app.storage.saveUsers().then(() => {
                             document.getElementById('edit-user-modal').classList.add('hidden');
-                            app.ui.renderTab('gestao_equipe', true);
-                            app.ui.showAlert("Sucesso", "Dados do colaborador atualizados.", "success");
+                            app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
+                            app.ui.showAlert("Sucesso", "Dados e permissões do colaborador salvos e sincronizados.", "success");
                         });
                     };
 
@@ -23825,8 +24103,8 @@ Object.assign(app.ui, {
                 },
 
                     renderView_TesteDuolingo(container) {
-                        if (!app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') {
-                            return app.ui.showAlert("Acesso Restrito", "Apenas o perfil Desenvolvedor tem acesso à aba de Teste Duolingo.", "error");
+                        if (!app.hasAdminAccess('teste_duolingo')) {
+                            return app.ui.showAlert("Acesso Restrito", "Você não possui autorização para acessar a aba Softlingo.", "error");
                         }
                         if (app.duolingo) {
                             app.duolingo.render(container);
