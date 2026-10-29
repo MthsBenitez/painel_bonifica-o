@@ -1,4 +1,4 @@
-
+﻿
         // =========================================================================
 // MOTOR DE SEGURANÇA MÁXIMA ANTI-COLA & EMBARALHAMENTO CRIPTOGRÁFICO
 // Multi-Navegador, Multi-Aba, Detecção de Foco & Randomização Total de Alternativas
@@ -69,15 +69,16 @@ window.AntiColaSecurityEngine = {
     async verificarETravarSessaoCrossBrowser(mat, nome, tipoProva) {
         const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
-        // A. Checagem em tempo real no Firebase Realtime Database
+        // A. Checagem pontual no Firebase Realtime Database (sem loop contínuo, isolado fora da árvore principal)
         if (typeof firebase !== 'undefined' && firebase.database) {
             try {
-                const snap = await firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat).once('value');
+                const refSessao = firebase.database().ref('sessoes_prova_ativas/' + mat);
+                const snap = await refSessao.once('value');
                 const sessaoExistente = snap.val();
-                if (sessaoExistente && sessaoExistente.lastHeartbeat) {
-                    const diffMs = Date.now() - sessaoExistente.lastHeartbeat;
-                    // Se houve pulso nos últimos 12 segundos, há outro navegador/aba ativo
-                    if (diffMs < 12000) {
+                if (sessaoExistente && sessaoExistente.inicioTs) {
+                    const diffMs = Date.now() - sessaoExistente.inicioTs;
+                    // Se há sessão ativa iniciada nos últimos 45 minutos, bloqueia abertura em outro navegador
+                    if (diffMs < 2700000 && sessaoExistente.sessionId) {
                         return {
                             permitido: false,
                             motivo: 'Já existe uma avaliação em andamento para esta matrícula em outro navegador ou dispositivo. Abertura simultânea é estritamente proibida pelo protocolo anti-cola.'
@@ -85,8 +86,9 @@ window.AntiColaSecurityEngine = {
                     }
                 }
 
-                // Registra esta nova sessão como a oficial no Firebase
-                await firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat).set({
+                // Registra sessão única com limpeza automática via onDisconnect (zero loop de escrita)
+                refSessao.onDisconnect().remove();
+                await refSessao.set({
                     sessionId: sessionId,
                     matricula: mat,
                     nome: nome,
@@ -124,7 +126,7 @@ window.AntiColaSecurityEngine = {
         return { permitido: true, sessionId };
     },
 
-    // 3. ENVIO PERIÓDICO DE HEARTBEAT
+    // 3. ENVIO PERIÓDICO DE HEARTBEAT (100% LOCAL - ZERO CONSUMO DE BANDA FIREBASE)
     enviarHeartbeat(mat, sessionId, tipoProva) {
         const agora = Date.now();
         try {
@@ -135,10 +137,6 @@ window.AntiColaSecurityEngine = {
                 lastHeartbeat: agora
             }));
         } catch (e) {}
-
-        if (typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat + '/lastHeartbeat').set(agora).catch(() => {});
-        }
     },
 
     // 4. LIMPEZA TOTAL DA SESSÃO AO FINALIZAR OU ANULAR
@@ -148,7 +146,7 @@ window.AntiColaSecurityEngine = {
         } catch (e) {}
 
         if (typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat).remove().catch(() => {});
+            firebase.database().ref('sessoes_prova_ativas/' + mat).remove().catch(() => {});
         }
 
         try {
@@ -408,21 +406,83 @@ storage: {
                 
                 init() {
                     if (!window.firebase) {
-                        console.error("Firebase não carregou corretamente.");
+                        console.error("Firebase nao carregou corretamente.");
+                        const ws = document.getElementById("session-wait-screen");
+                        if (ws) ws.classList.add("hidden");
+                        const vl = document.getElementById("view-login");
+                        if (vl) vl.classList.remove("hidden");
                         return;
                     }
                     if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
                     
                     console.log("Tentando conectar ao banco de dados...");
+                    // Monitor de status de conexao em tempo real
+                    try {
+                        firebase.database().ref(".info/connected").on("value", (snap) => {
+                            const isConn = snap.val() === true;
+                            app.firebaseConnected = isConn;
+                            console.log("Firebase (.info/connected):", isConn ? "CONECTADO" : "CONECTANDO...");
+                        });
+                    } catch(e) {}
 
-                    // Aqui passamos o callback de SUCESSO e o callback de ERRO
-                    firebase.database().ref('sistema_bonificacao').on('value', (snapshot) => {
-                        console.log("Dados recebidos com sucesso!");
+                    // Pré-carrega ações salvas no cache IndexedDB (localforage) com 0 bytes de consumo de rede
+                    if (typeof localforage !== 'undefined') {
+                        localforage.getItem('soft_actions_hd').then(cachedActs => {
+                            if (cachedActs && typeof cachedActs === 'object') {
+                                app.actionsList = { ...cachedActs, ...(app.actionsList || {}) };
+                            }
+                        }).catch(() => {});
+                    }
+
+                    // Carga paralela ultra-rápida apenas dos nós leves essenciais (SEM actions de 34MB e SEM shares de 13.6MB no boot!)
+                    const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes'];
+
+                    // Proteção Anti-F5 Repetido: Se já baixou os nós essenciais há menos de 3 minutos neste navegador, usa o cache IndexedDB local (0 consumo de banda)
+                    const fetchCoreData = async () => {
+                        if (typeof localforage !== 'undefined') {
+                            try {
+                                const cachedCore = await localforage.getItem('soft_core_cache_hd');
+                                if (cachedCore && cachedCore.ts && (Date.now() - cachedCore.ts < 180000) && cachedCore.data && cachedCore.data.users && Object.keys(cachedCore.data.users).length >= 5) {
+                                    console.log("Escudo de Banda Ativo: Dados essenciais carregados do cache local IndexedDB (0 bytes Firebase).");
+                                    return cachedCore.data;
+                                }
+                            } catch (e) {}
+                        }
+                        const promises = coreKeys.map(k => {
+                            return firebase.database().ref('sistema_bonificacao/' + k).once('value').then(snap => {
+                                return { key: k, val: snap.val() };
+                            }).catch(err => {
+                                console.warn("Aviso ao carregar nó " + k + ":", err);
+                                return { key: k, val: null };
+                            });
+                        });
+                        const results = await Promise.all(promises);
+                        const freshData = {};
+                        results.forEach(r => { freshData[r.key] = r.val; });
+                        if (typeof localforage !== 'undefined' && freshData.users && Object.keys(freshData.users).length >= 5) {
+                            localforage.setItem('soft_core_cache_hd', { ts: Date.now(), data: freshData }).catch(() => {});
+                        }
+                        return freshData;
+                    };
+
+                    fetchCoreData().then(async (data) => {
+                        console.log("Dados essenciais recebidos com sucesso!");
+
+                        // Se for link compartilhado (?share=ID), baixa SOMENTE a apresentação específica (economia de 13.6MB)
+                        const urlParamsCheck = new URLSearchParams(window.location.search);
+                        const shareIdCheck = urlParamsCheck.get('share');
+                        if (shareIdCheck) {
+                            try {
+                                const shareSnap = await firebase.database().ref('sistema_bonificacao/shares/' + shareIdCheck).once('value');
+                                if (shareSnap.val()) {
+                                    data.shares = { [shareIdCheck]: shareSnap.val() };
+                                }
+                            } catch (e) {}
+                        }
+
+                        // Libera login e salva dados
+                        app.dataLoaded = true;
                         
-                        // CORREÇÃO CRÍTICA AQUI: Libera a trava de segurança para o Login funcionar
-                        app.dataLoaded = true; 
-                        
-                        const data = snapshot.val();
                         if (data) {
                             if (data.config) {
                                 app.config = data.config;
@@ -514,6 +574,7 @@ storage: {
                                 app.users = [];
                             }
 
+                            try { if (app.users && app.users.length > 0) localStorage.setItem("soft_users_backup", JSON.stringify(app.users)); } catch(e) {}
                             if (data.actions) app.actionsList = data.actions; else app.actionsList = {};
                             // Mescla backup local de ações recém-enviadas para nunca sumirem
                             try {
@@ -709,30 +770,60 @@ storage: {
                                 if (savedIsAdmin) {
                                     app.isAdmin = true;
                                     app.currentUser = null;
-                                    app.currentTab = localStorage.getItem('soft_session_tab') || 'dashboard_adm';
-                                    document.getElementById('view-login').classList.add('hidden');
+                                    app.currentTab = localStorage.getItem("soft_session_tab") || "dashboard_adm";
+                                    const ws = document.getElementById("session-wait-screen");
+                                    if (ws) ws.classList.add("hidden");
+                                    document.getElementById("view-login").classList.add("hidden");
                                     app.ui.showApp();
                                 } else {
-                                    const userObj = app.users.find(u => u.matricula === savedMat);
+                                    const userObj = (app.users || []).find(u => String(u.matricula).trim() === String(savedMat).trim());
                                     if (userObj) {
                                         app.isAdmin = false;
                                         app.currentUser = userObj;
-                                        app.currentTab = localStorage.getItem('soft_session_tab') || 'meu_painel';
-                                        document.getElementById('view-login').classList.add('hidden');
+                                        app.currentTab = localStorage.getItem("soft_session_tab") || "meu_painel";
+                                        const ws = document.getElementById("session-wait-screen");
+                                        if (ws) ws.classList.add("hidden");
+                                        document.getElementById("view-login").classList.add("hidden");
                                         app.auth.processAcceptances();
+                                    } else {
+                                        localStorage.removeItem("soft_session_mat");
+                                        localStorage.removeItem("soft_session_date");
+                                        localStorage.removeItem("soft_session_admin");
+                                        const ws = document.getElementById("session-wait-screen");
+                                        if (ws) ws.classList.add("hidden");
+                                        const vl = document.getElementById("view-login");
+                                        if (vl) vl.classList.remove("hidden");
                                     }
                                 }
+                            } else {
+                                const ws = document.getElementById("session-wait-screen");
+                                if (ws) ws.classList.add("hidden");
+                                const vl = document.getElementById("view-login");
+                                if (vl) vl.classList.remove("hidden");
                             }
                         } else {
                             this.saveConfig();
-                            this.saveUsers();
+                            const ws = document.getElementById("session-wait-screen");
+                            if (ws) ws.classList.add("hidden");
+                            const vl = document.getElementById("view-login");
+                            if (vl) vl.classList.remove("hidden");
                         }
-                    }, (error) => {
-                        // Trata também a rejeição/erro do Firebase, liberando a trava para exibir erro em tela se for o caso
+                        // Atualiza badge de notificações carregadas via .once('value') (sem listener contínuo .on)
+                        try {
+                            if (app.notifications && typeof app.notifications.renderBadge === 'function') {
+                                app.notifications.renderBadge();
+                            }
+                        } catch(e) {}
+                    }).catch((error) => {
+                        // Trata tambem a rejeicao/erro do Firebase, liberando a trava para exibir erro em tela se for o caso
                         app.dataLoaded = true;
+                        const ws = document.getElementById("session-wait-screen");
+                        if (ws) ws.classList.add("hidden");
+                        const vl = document.getElementById("view-login");
+                        if (vl) vl.classList.remove("hidden");
                         console.error("Erro na leitura do Firebase:", error);
                         app.ui.showAlert(
-                            "Erro Crítico de Conexão", 
+                            "Erro Cr\u00edtico de Conex\u00e3o", 
                             `O Firebase negou a leitura dos dados. Isso geralmente acontece porque as "Rules" (Regras) do banco expiraram.<br><br><b>Erro:</b> ${error.message}`, 
                             "error"
                         );
@@ -789,29 +880,88 @@ storage: {
                     });
                     return norm;
                 },
-                saveUsers() { return firebase.database().ref('sistema_bonificacao/users').set(app.users); },
+                invalidateCoreCache() {
+                    if (typeof localforage !== 'undefined') {
+                        localforage.removeItem('soft_core_cache_hd').catch(() => {});
+                    }
+                },
+                saveUsers() { 
+                    if (!Array.isArray(app.users) || app.users.length < 5) {
+                        console.warn("Seguranca de Integridade: tentativa de salvar lista de usuarios incompleta abortada (" + (app.users ? app.users.length : 0) + " registros).");
+                        return Promise.resolve();
+                    }
+                    this.invalidateCoreCache();
+                    try {
+                        localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                    } catch(e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        return firebase.database().ref('sistema_bonificacao/users').set(app.users);
+                    }
+                    return Promise.resolve();
+                },
                 iniciarHeartbeatPresenca() {
                     try {
                         if (typeof firebase === "undefined" || !firebase.database) return;
                         const mat = (app.currentUser && app.currentUser.matricula) || (app.isAdmin ? "gestaosoft" : null);
-                        if (!mat) return;
-                        const nome = (app.currentUser && app.currentUser.nome) || (app.isAdmin ? "AdministraÃ§Ã£o Dev" : "Colaborador");
+                        if (!mat || window._presencaRegistradaSessao === mat) return;
+                        window._presencaRegistradaSessao = mat;
+                        const nome = (app.currentUser && app.currentUser.nome) || (app.isAdmin ? "Administração Dev" : "Colaborador");
                         const cargo = (app.currentUser && app.currentUser.tipoAcesso) || (app.isAdmin ? "Dev" : "Colaborador");
-                        const refPresenca = firebase.database().ref("sistema_bonificacao/presenca_online/" + mat);
-                        refPresenca.set({ matricula: mat, nome: nome, cargo: cargo, ts: Date.now() });
+                        const refPresenca = firebase.database().ref("presenca_online/" + mat);
+                        // Registro único no login + remoção automática ao fechar a aba (ZERO setInterval e ZERO .on('value'))
                         refPresenca.onDisconnect().remove();
-                        if (!window._heartbeatTimerGlobal) {
-                            window._heartbeatTimerGlobal = setInterval(() => {
-                                const cMat = (app.currentUser && app.currentUser.matricula) || (app.isAdmin ? "gestaosoft" : null);
-                                if (cMat && typeof firebase !== "undefined" && firebase.database) {
-                                    firebase.database().ref("sistema_bonificacao/presenca_online/" + cMat).update({ ts: Date.now() });
-                                }
-                            }, 40000);
-                            firebase.database().ref("sistema_bonificacao/presenca_online").on("value", snap => {
-                                app.presencaOnline = snap.val() || {};
-                            });
-                        }
+                        refPresenca.set({ matricula: mat, nome: nome, cargo: cargo, ts: Date.now() }).catch(() => {});
                     } catch (e) {}
+                },
+                ensureActionsLoaded(callback) {
+                    if (app._actionsLoadedFromCloud) {
+                        if (typeof callback === 'function') callback();
+                        return Promise.resolve(app.actionsList);
+                    }
+                    if (app._actionsLoadingPromise) {
+                        return app._actionsLoadingPromise.then(() => {
+                            if (typeof callback === 'function') callback();
+                            return app.actionsList;
+                        });
+                    }
+                    app._actionsLoadingPromise = (async () => {
+                        try {
+                            if (typeof localforage !== 'undefined') {
+                                const cached = await localforage.getItem('soft_actions_hd');
+                                const cachedTs = await localforage.getItem('soft_actions_hd_ts');
+                                if (cached && typeof cached === 'object' && Object.keys(cached).length > 0) {
+                                    app.actionsList = { ...cached, ...(app.actionsList || {}) };
+                                    // Se o cache local de fotos tem menos de 15 minutos, evita baixar os 34MB novamente
+                                    if (cachedTs && (Date.now() - cachedTs < 900000)) {
+                                        app._actionsLoadedFromCloud = true;
+                                        return app.actionsList;
+                                    }
+                                }
+                            }
+                            if (typeof firebase !== 'undefined' && firebase.database) {
+                                console.log("Carregando galeria de ações sob demanda (.once)...");
+                                const snap = await firebase.database().ref('sistema_bonificacao/actions').once('value');
+                                const actVal = snap.val();
+                                if (actVal && typeof actVal === 'object') {
+                                    app.actionsList = { ...(app.actionsList || {}), ...actVal };
+                                    if (typeof localforage !== 'undefined') {
+                                        localforage.setItem('soft_actions_hd', app.actionsList).catch(() => {});
+                                        localforage.setItem('soft_actions_hd_ts', Date.now()).catch(() => {});
+                                    }
+                                }
+                                app._actionsLoadedFromCloud = true;
+                            }
+                        } catch (e) {
+                            console.warn("Aviso ao carregar ações sob demanda:", e);
+                        } finally {
+                            app._actionsLoadingPromise = null;
+                        }
+                        return app.actionsList;
+                    })();
+                    return app._actionsLoadingPromise.then(() => {
+                        if (typeof callback === 'function') callback();
+                        return app.actionsList;
+                    });
                 },
                 saveSoftlingoModulos() {
                     try { localStorage.setItem('softlingo_modulos_backup', JSON.stringify(app.softlingoModulos || {})); } catch (e) {}
@@ -831,6 +981,7 @@ storage: {
                     return Promise.resolve();
                 },
                 saveConfig() {
+                    this.invalidateCoreCache();
                     app.config = this.sanitizeFirebaseObject(app.config);
                     try { localStorage.setItem('soft_config_backup', JSON.stringify(app.config)); } catch (e) {}
                     return firebase.database().ref('sistema_bonificacao/config').set(app.config);
@@ -840,24 +991,41 @@ storage: {
                     return this.saveConfig();
                 },
                 saveVisaoGeral() {
+                    this.invalidateCoreCache();
                     app.visaoGeralData = this.normalizeVisaoGeralKeys(app.visaoGeralData || {});
                     try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.visaoGeralData)); } catch (e) {}
                     try { localforage.setItem('soft_visao_geral', app.visaoGeralData); } catch (e) {}
                     return firebase.database().ref('sistema_bonificacao/visaoGeralData').set(app.visaoGeralData);
                 },
-                saveActions() {
-                    try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
+                saveActions(singleId = null) {
+                    if (typeof localforage !== 'undefined' && app.actionsList) {
+                        localforage.setItem('soft_actions_hd', app.actionsList).catch(() => {});
+                        localforage.setItem('soft_actions_hd_ts', Date.now()).catch(() => {});
+                    }
+                    if (singleId && app.actionsList && app.actionsList[singleId]) {
+                        return firebase.database().ref('sistema_bonificacao/actions/' + singleId).set(app.actionsList[singleId]);
+                    }
+                    if (!app.actionsList || Object.keys(app.actionsList).length === 0) {
+                        console.warn("Segurança de Integridade: saveActions abortado pois actionsList está vazia.");
+                        return Promise.resolve();
+                    }
                     return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList);
                 },
-                saveNotifications() { return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList); },
-                saveEvents() { return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
-                saveOperacoes() { return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
-                saveAtas() { return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
-                saveLaudos() { return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
-                saveApresentacoes() { return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
-                saveEstoque() { return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
-                saveEstoqueLogs() { return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
+                saveNotifications() { 
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList);
+                    }
+                    return Promise.resolve();
+                },
+                saveEvents() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
+                saveOperacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
+                saveAtas() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
+                saveLaudos() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
+                saveApresentacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
+                saveEstoque() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
+                saveEstoqueLogs() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
                 saveImpressoes(singleId = null) {
+                    this.invalidateCoreCache();
                     if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
                     if (singleId) {
                         const item = (app.impressoesList || {})[singleId];
@@ -870,12 +1038,14 @@ storage: {
                     const sanitizedObj = this.sanitizeFirebaseObject(app.impressoesList || {});
                     return firebase.database().ref('sistema_bonificacao/impressoes').set(sanitizedObj);
                 },
-                saveImpressoesStats() { return firebase.database().ref('sistema_bonificacao/impressoesStats').set(app.impressoesStats || { arquivos: 0, folhas: 0 }); },
+                saveImpressoesStats() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/impressoesStats').set(app.impressoesStats || { arquivos: 0, folhas: 0 }); },
                 saveMonitorias() {
+                    this.invalidateCoreCache();
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
                     return firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias || {}); 
                 },
                 saveAnatel() { 
+                    this.invalidateCoreCache();
                     app.allAnatel[app.currentMonth] = app.anatelData; 
                     return firebase.database().ref('sistema_bonificacao/anatel').set(app.allAnatel || {}); 
                 },
@@ -1106,6 +1276,7 @@ storage: {
                 notify(userId, title, message, type = 'info') {
                     app.utils.playCuteSound(); // Toca o som fofo sempre que for chamado!
                     const id = 'notif_' + Date.now() + Math.floor(Math.random()*1000);
+                    if (!app.notificationsList) app.notificationsList = {};
                     app.notificationsList[id] = { id, userId, title, message, type, read: false, timestamp: Date.now() };
                     app.storage.saveNotifications();
                     if (!userId || (app.currentUser && app.currentUser.matricula === userId) || (app.isAdmin && userId === 'admin')) {
@@ -1727,7 +1898,7 @@ storage: {
                     app.actionsList[id].status = 'reprovado';
                     const act = app.actionsList[id];
                     
-                    app.storage.saveActions().then(() => {
+                    app.storage.saveActions(id).then(() => {
                         app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi reprovada. Fale com a gestão.`, 'error');
                         app.ui.showAlert("Feito", "Ação reprovada e descartada da métrica.", "info");
                         app.ui.renderTab('validar_acoes', true);
@@ -2797,77 +2968,93 @@ storage: {
 
             auth: {
                 login() {
-                    // --- NOVA TRAVA DE SEGURANÇA ---
-                    // Se o usuário clicar em entrar antes da internet baixar os dados do Firebase:
+                    const mat = document.getElementById("login-mat").value.trim();
+                    const pwd = document.getElementById("login-pwd").value.trim();
+                    const remember = document.getElementById("login-remember").checked;
+                    
+                    if(remember) {
+                        localStorage.setItem("soft_saved_mat", mat);
+                    } else {
+                        localStorage.removeItem("soft_saved_mat");
+                    }
+
+                    // 1. Acesso ADM: Imediato e prioritario sem travas
+                    if(mat === "gestaosoft" && pwd === "qualidade2026") {
+                        app.isAdmin = true; app.currentUser = null; app.currentTab = "dashboard_adm";
+                        localStorage.setItem("soft_session_date", new Date().toLocaleDateString("pt-BR"));
+                        localStorage.setItem("soft_session_mat", "gestaosoft");
+                        localStorage.setItem("soft_session_admin", "true");
+                        const ws = document.getElementById("session-wait-screen");
+                        if (ws) ws.classList.add("hidden");
+                        document.getElementById("view-login").classList.add("hidden");
+                        app.ui.showApp();
+                        return;
+                    }
+
+                    // 2. Se ja temos usuarios em memoria (do cache local ou da carga rapida de 536 bytes)
+                    if (app.users && app.users.length > 0) {
+                        const userIdx = app.users.findIndex(u => String(u.matricula).trim() === mat && String(u.senha).trim() === pwd);
+                        if(userIdx > -1) {
+                            app.isAdmin = false;
+                            app.users[userIdx].loginCount = (app.users[userIdx].loginCount || 0) + 1;
+                            app.currentUser = app.users[userIdx];
+                            app.currentTab = "meu_painel";
+                            localStorage.setItem("soft_session_date", new Date().toLocaleDateString("pt-BR"));
+                            localStorage.setItem("soft_session_mat", app.users[userIdx].matricula);
+                            localStorage.setItem("soft_session_admin", "false");
+                            app.storage.saveUsers();
+
+                            const ws = document.getElementById("session-wait-screen");
+                            if (ws) ws.classList.add("hidden");
+                            document.getElementById("view-login").classList.add("hidden");
+                            this.processAcceptances();
+                            return;
+                        }
+                    }
+
+                    // 3. Se ainda esta sincronizando e o usuario nao foi encontrado no cache:
                     if (!app.dataLoaded) {
-                        const loaderScreen = document.getElementById('sync-loader-screen');
-                        if (loaderScreen) loaderScreen.classList.remove('hidden');
+                        const loaderScreen = document.getElementById("sync-loader-screen");
+                        if (loaderScreen) loaderScreen.classList.remove("hidden");
                         
-                        // O sistema checa sozinho a cada 1 segundo se os dados já chegaram
+                        let checkTries = 0;
                         const checkData = setInterval(() => {
-                            if (app.dataLoaded) {
-                                clearInterval(checkData); // Para o radar
-                                if (loaderScreen) loaderScreen.classList.add('hidden'); // Esconde o loader
-                                app.auth.login(); // Faz o login automaticamente!
+                            checkTries++;
+                            if (app.dataLoaded || (app.users && app.users.length > 0)) {
+                                clearInterval(checkData);
+                                if (loaderScreen) loaderScreen.classList.add("hidden");
+                                app.auth.login();
+                            } else if (checkTries >= 25) {
+                                clearInterval(checkData);
+                                if (loaderScreen) loaderScreen.classList.add("hidden");
+                                app.ui.showAlert("Conexao Lenta", "Os dados do Firebase estao demorando para responder. Verifique sua conexao a internet e tente novamente.", "warning");
                             }
                         }, 1000);
                         
-                        return; // Pausa a execução atual
-                    }
-                    // -------------------------------
-
-                    const mat = document.getElementById('login-mat').value.trim();
-                    const pwd = document.getElementById('login-pwd').value.trim();
-                    const remember = document.getElementById('login-remember').checked;
-                    
-                    if(remember) {
-                        localStorage.setItem('soft_saved_mat', mat);
-                    } else {
-                        localStorage.removeItem('soft_saved_mat');
+                        return;
                     }
 
-                    if(mat === 'gestaosoft' && pwd === 'qualidade2026') {
-                        app.isAdmin = true; app.currentUser = null; app.currentTab = 'dashboard_adm';
-                        localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
-                        localStorage.setItem('soft_session_mat', 'gestaosoft');
-                        localStorage.setItem('soft_session_admin', 'true');
-                        document.getElementById('view-login').classList.add('hidden');
-                        app.ui.showApp(); return;
-                    }
-
-                    const userIdx = app.users.findIndex(u => u.matricula === mat && u.senha === pwd);
-                    if(userIdx > -1) {
-                        app.isAdmin = false; 
-                        app.users[userIdx].loginCount = (app.users[userIdx].loginCount || 0) + 1;
-                        app.currentUser = app.users[userIdx];
-                        app.currentTab = 'meu_painel';
-                        localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
-                        localStorage.setItem('soft_session_mat', app.users[userIdx].matricula);
-                        localStorage.setItem('soft_session_admin', 'false');
-                        app.storage.saveUsers();
-
-                        document.getElementById('view-login').classList.add('hidden');
-                        this.processAcceptances();
-                    } else {
-                        app.ui.showAlert("Acesso Negado", "Matrícula ou senha incorretos. Verifique suas credenciais e tente novamente.", "error");
-                    }
+                    // 4. Se o banco ja carregou e as credenciais estao incorretas:
+                    app.ui.showAlert("Acesso Negado", "Matricula ou senha incorretos. Verifique suas credenciais e tente novamente.", "error");
                 },
 
                 processAcceptances() {
+                    const ws = document.getElementById("session-wait-screen");
+                    if (ws) ws.classList.add("hidden");
                     if(!app.currentUser) return;
                     const u = app.currentUser;
                     
-                    // ALERTA DE SENHA PADRÃO 12345
-                    if(u.senha === '12345') {
-                        app.ui.showAlert("Aviso de Segurança Crítico", "Sua senha atual é muito fraca (12345). Por favor, altere sua senha agora mesmo para proteger seus dados.", "error");
+                    // ALERTA DE SENHA PADRAO 12345
+                    if(String(u.senha).trim() === "12345") {
+                        app.ui.showAlert("Aviso de Seguran\u00e7a Cr\u00edtico", "Sua senha atual \u00e9 muito fraca (12345). Por favor, altere sua senha agora mesmo para proteger seus dados.", "error");
                         app.ui.openPwdModal();
-                        return; // Trava o fluxo até ele mudar a senha
+                        return; // Trava o fluxo ate ele mudar a senha
                     }
                     
                     if (!u.aceiteTermos) {
-                        document.getElementById('terms-modal').classList.remove('hidden');
+                        document.getElementById("terms-modal").classList.remove("hidden");
                     } else if (!u.aceiteDiretrizes && u.loginCount >= 2) {
-                        document.getElementById('guidelines-modal').classList.remove('hidden');
+                        document.getElementById("guidelines-modal").classList.remove("hidden");
                     } else {
                         app.ui.showApp();
                     }
@@ -2929,14 +3116,14 @@ storage: {
 
                 forgotPassword() {
                     const mat = document.getElementById('login-mat').value.trim();
-                    if(!mat) return app.ui.showAlert("Aviso", "Digite sua matrÃ­cula no campo antes de clicar em Esqueci a senha.", "error");
+                    if(!mat) return app.ui.showAlert("Aviso", "Digite sua matrícula no campo antes de clicar em Esqueci a senha.", "error");
                     
-                    app.notifications.notify('ADM', 'SolicitaÃ§Ã£o de Senha', `O colaborador da matrÃ­cula ${mat} solicitou o reset de senha.`, 'error');
-                    app.ui.showAlert("SolicitaÃ§Ã£o Enviada", "A administraÃ§Ã£o foi notificada para redefinir sua senha. Aguarde o retorno do seu gestor.", "success");
+                    app.notifications.notify('ADM', 'Solicitação de Senha', `O colaborador da matrícula ${mat} solicitou o reset de senha.`, 'error');
+                    app.ui.showAlert("Solicitação Enviada", "A administração foi notificada para redefinir sua senha. Aguarde o retorno do seu gestor.", "success");
                 },
 
                 // =========================================================================
-                // CADASTRO DE NOVO USUÃRIO COM VERIFICAÃ‡ÃƒO POR E-MAIL (PRIMEIRO ACESSO)
+                // CADASTRO DE NOVO USUÁRIO COM VERIFICAÇÃO POR E-MAIL (PRIMEIRO ACESSO)
                 // =========================================================================
                 abrirModalCadastro() {
                     const exist = document.getElementById('modal-cadastro-novo-usuario');
@@ -2965,8 +3152,8 @@ storage: {
                                         <i class="fa-solid fa-user-plus"></i>
                                     </div>
                                     <div>
-                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Primeiro Acesso â€¢ Criar Conta</h3>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400">AutenticaÃ§Ã£o institucional Softmarketing</p>
+                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Primeiro Acesso • Criar Conta</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Autenticação institucional Softmarketing</p>
                                     </div>
                                 </div>
                                 <button onclick="document.getElementById('modal-cadastro-novo-usuario').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
@@ -2983,16 +3170,16 @@ storage: {
                                 <div class="flex-1 h-0.5 bg-slate-200 dark:bg-slate-700 mx-2"></div>
                                 <div id="step-dot-2" class="flex items-center gap-1.5 text-xs font-bold text-slate-400">
                                     <span class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center text-[11px] font-black">2</span>
-                                    <span>CÃ³digo</span>
+                                    <span>Código</span>
                                 </div>
                                 <div class="flex-1 h-0.5 bg-slate-200 dark:bg-slate-700 mx-2"></div>
                                 <div id="step-dot-3" class="flex items-center gap-1.5 text-xs font-bold text-slate-400">
                                     <span class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center text-[11px] font-black">3</span>
-                                    <span>MatrÃ­cula & Senha</span>
+                                    <span>Matrícula & Senha</span>
                                 </div>
                             </div>
 
-                            <!-- ConteÃºdo DinÃ¢mico das Etapas -->
+                            <!-- Conteúdo Dinâmico das Etapas -->
                             <div id="cadastro-step-container">
                                 <!-- Renderizado via renderCadastroStep -->
                             </div>
@@ -3028,52 +3215,69 @@ storage: {
                             <form onsubmit="event.preventDefault(); app.auth.enviarCodigoCadastro();" class="space-y-4">
                                 <div>
                                     <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Nome Completo</label>
-                                    <input type="text" id="cad-nome" required value="${app.auth._regState.nome || ''}" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Seu nome completo">
+                                    <input type="text" id="reg-nome" required value="${app.auth._regState.nome || ''}" oninput="this.value = this.value.toUpperCase(); app.auth._regState.nome = this.value;" class="w-full px-4 py-3 uppercase rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500 font-bold" placeholder="SEU NOME COMPLETO" style="text-transform: uppercase;">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">E-mail Corporativo</label>
                                     <div class="relative">
                                         <i class="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="email" id="cad-email" required value="${app.auth._regState.email || ''}" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="seu.nome@softmarketing.com.br">
+                                        <input type="email" id="reg-email" required value="${app.auth._regState.email || ''}" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="seu.nome@softmarketing.com.br">
                                     </div>
-                                    <span class="text-[11px] text-slate-400 mt-1 block">Um cÃ³digo de autenticaÃ§Ã£o de 6 dÃ­gitos serÃ¡ enviado para validaÃ§Ã£o.</span>
+                                    <span class="text-[11px] text-slate-400 mt-1 block">Informe seu e-mail corporativo para autenticação institucional.</span>
                                 </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Perfil / Cargo Pretendido</label>
-                                    <select id="cad-cargo" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500">
-                                        <option value="Operador">Operador de Atendimento</option>
-                                        <option value="Qualidade">Monitor / Analista de Qualidade</option>
-                                        <option value="Treinamento">Instrutor de Treinamento</option>
-                                        <option value="Supervisor">Supervisor de OperaÃ§Ãµes</option>
-                                    </select>
+                                
+                                <div class="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 rounded-xl flex items-center gap-3 text-xs">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm shrink-0">
+                                        <i class="fa-solid fa-headset"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-blue-800 dark:text-blue-300">Perfil Inicial: Operador de Atendimento</div>
+                                        <div class="text-[11px] text-blue-600 dark:text-blue-400">Seu cadastro será validado pelo setor de Treinamento para vinculação à equipe.</div>
+                                    </div>
                                 </div>
+
                                 <button type="submit" class="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-sm">
-                                    <i class="fa-solid fa-paper-plane"></i> Enviar CÃ³digo de VerificaÃ§Ã£o
+                                    <i class="fa-solid fa-paper-plane"></i> Gerar & Enviar Código de Verificação
                                 </button>
                             </form>
                         `;
                     } else if (step === 2) {
                         container.innerHTML = `
                             <form onsubmit="event.preventDefault(); app.auth.validarCodigoCadastro();" class="space-y-4">
-                                <div class="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-3">
-                                    <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 flex items-center justify-center text-lg shrink-0">
-                                        <i class="fa-solid fa-envelope-circle-check"></i>
+                                <div class="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-2">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shrink-0">
+                                            <i class="fa-solid fa-envelope-circle-check"></i>
+                                        </div>
+                                        <div>
+                                            <div>Código de autenticação gerado para <strong>${app.auth._regState.email}</strong></div>
+                                            <div class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">Utilize o código oficial abaixo para validar sua solicitação:</div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        CÃ³digo de autenticaÃ§Ã£o enviado para <strong>${app.auth._regState.email}</strong>.
-                                        <div class="mt-1 font-black text-emerald-700 dark:text-emerald-300">CÃ³digo de VerificaÃ§Ã£o: <span class="tracking-widest bg-emerald-200 dark:bg-emerald-900/80 px-2.5 py-0.5 rounded text-sm">${app.auth._regState.codigoEnviado}</span></div>
+                                    <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-300 dark:border-emerald-700 flex items-center justify-between">
+                                        <div>
+                                            <span class="text-[10px] font-bold text-slate-400 block uppercase">Código de 6 Dígitos:</span>
+                                            <span class="text-2xl font-black tracking-[0.25em] text-emerald-600 dark:text-emerald-400">${app.auth._regState.codigoEnviado}</span>
+                                        </div>
+                                        <button type="button" onclick="document.getElementById('reg-codigo').value = '${app.auth._regState.codigoEnviado}'" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-clone"></i> Inserir Código
+                                        </button>
+                                    </div>
+                                    <div class="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-circle-info text-blue-500"></i>
+                                        Ambiente corporativo direto: o código de segurança foi gerado com sucesso.
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Digite o CÃ³digo de 6 DÃ­gitos</label>
-                                    <input type="text" id="cad-codigo" maxlength="6" required class="w-full px-4 py-3 text-center text-2xl font-black tracking-[0.3em] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-green-500" placeholder="000000">
+                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Digite o Código de 6 Dígitos</label>
+                                    <input type="text" id="reg-codigo" maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/\\D/g, '').slice(0, 6)" required class="w-full px-4 py-3 text-center text-2xl font-black tracking-[0.3em] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-green-500" placeholder="000000">
                                 </div>
                                 <div class="flex items-center gap-2 pt-2">
                                     <button type="button" onclick="app.auth.renderCadastroStep(1)" class="w-1/3 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                                         Voltar
                                     </button>
                                     <button type="submit" class="w-2/3 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-sm">
-                                        <i class="fa-solid fa-shield-halved"></i> Validar CÃ³digo
+                                        <i class="fa-solid fa-shield-halved"></i> Validar Código
                                     </button>
                                 </div>
                             </form>
@@ -3082,25 +3286,25 @@ storage: {
                         container.innerHTML = `
                             <form onsubmit="event.preventDefault(); app.auth.finalizarCadastroUsuario();" class="space-y-4">
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">MatrÃ­cula Desejada (Login de Acesso)</label>
+                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Matrícula Desejada (Login de Acesso)</label>
                                     <div class="relative">
                                         <i class="fa-solid fa-id-card absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="text" id="cad-matricula" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Ex: M10234 ou 88231">
+                                        <input type="text" id="reg-matricula" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" required oninput="this.value = this.value.replace(/\\D/g, '').slice(0, 5)" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500 font-bold" placeholder="Ex: 12345">
                                     </div>
-                                    <span id="cad-mat-aviso" class="text-[11px] text-slate-400 mt-1 block">Esta matrÃ­cula serÃ¡ o seu login definitivo.</span>
+                                    <span id="reg-mat-aviso" class="text-[11px] text-amber-600 dark:text-amber-400 mt-1 block font-bold">Obrigatório exatamente 5 números (apenas dígitos).</span>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Invente sua Senha de Acesso</label>
                                     <div class="relative">
                                         <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="password" id="cad-senha" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="MÃ­nimo 4 caracteres">
+                                        <input type="password" id="reg-senha" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Mínimo 4 caracteres">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Confirme sua Senha</label>
                                     <div class="relative">
                                         <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="password" id="cad-senha-conf" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Repita a mesma senha">
+                                        <input type="password" id="reg-senha-conf" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Repita a mesma senha">
                                     </div>
                                 </div>
                                 <button type="submit" class="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-sm">
@@ -3112,72 +3316,116 @@ storage: {
                 },
 
                 enviarCodigoCadastro() {
-                    const nome = document.getElementById('cad-nome').value.trim();
-                    const email = document.getElementById('cad-email').value.trim();
-                    const cargo = document.getElementById('cad-cargo').value;
+                    try {
+                        const nomeInput = document.getElementById('reg-nome');
+                        const emailInput = document.getElementById('reg-email');
+                        const nome = (nomeInput ? nomeInput.value : '').trim().toUpperCase();
+                        const email = (emailInput ? emailInput.value : '').trim().toLowerCase();
 
-                    if (!nome || !email) {
-                        app.ui.showAlert("Campos ObrigatÃ³rios", "Por favor, preencha seu nome completo e seu e-mail.", "error");
-                        return;
+                        if (!nome) {
+                            app.ui.showAlert("Campo Obrigatório", "Por favor, preencha seu nome completo.", "warning");
+                            return;
+                        }
+
+                        if (!email) {
+                            app.ui.showAlert("Campo Obrigatório", "Por favor, preencha seu e-mail corporativo.", "warning");
+                            return;
+                        }
+
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!emailRegex.test(email)) {
+                            app.ui.showAlert("E-mail Inválido", "Por favor, informe um endereço de e-mail corporativo válido (exemplo: seu.nome@softmarketing.com.br).", "warning");
+                            return;
+                        }
+
+                        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+                        app.auth._regState.nome = nome;
+                        app.auth._regState.email = email;
+                        app.auth._regState.tipoAcesso = 'Operador';
+                        app.auth._regState.codigoEnviado = codigo;
+
+                        this.renderCadastroStep(2);
+                    } catch (err) {
+                        console.error("Erro em enviarCodigoCadastro:", err);
+                        app.ui.showAlert("Erro ao Gerar Código", "Ocorreu uma falha ao preparar a autenticação. Tente novamente.", "error");
                     }
-
-                    const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-                    app.auth._regState.nome = nome;
-                    app.auth._regState.email = email;
-                    app.auth._regState.tipoAcesso = cargo;
-                    app.auth._regState.codigoEnviado = codigo;
-
-                    app.auth.renderCadastroStep(2);
                 },
 
                 validarCodigoCadastro() {
-                    const codDigitado = document.getElementById('cad-codigo').value.trim();
+                    const codDigitado = (document.getElementById('reg-codigo')?.value || '').trim();
                     if (codDigitado !== app.auth._regState.codigoEnviado) {
-                        app.ui.showAlert("CÃ³digo InvÃ¡lido", "O cÃ³digo digitado nÃ£o confere com o cÃ³digo gerado para seu e-mail.", "error");
+                        app.ui.showAlert("Código Inválido", "O código digitado não confere com o código gerado para seu e-mail.", "error");
                         return;
                     }
                     app.auth._regState.codigoValido = true;
-                    app.auth.renderCadastroStep(3);
+                    this.renderCadastroStep(3);
                 },
 
-                finalizarCadastroUsuario() {
-                    const mat = document.getElementById('cad-matricula').value.trim();
-                    const pwd = document.getElementById('cad-senha').value.trim();
-                    const pwdConf = document.getElementById('cad-senha-conf').value.trim();
+                async finalizarCadastroUsuario() {
+                    const mat = (document.getElementById('reg-matricula')?.value || '').trim();
+                    const pwd = (document.getElementById('reg-senha')?.value || '').trim();
+                    const pwdConf = (document.getElementById('reg-senha-conf')?.value || '').trim();
 
                     if (!mat || !pwd) {
-                        app.ui.showAlert("AtenÃ§Ã£o", "Preencha a matrÃ­cula e a senha de acesso.", "error");
+                        app.ui.showAlert("Atenção", "Preencha a matrícula e a senha de acesso.", "warning");
+                        return;
+                    }
+
+                    // Validação estrita: exatamente 5 números
+                    if (!/^\d{5}$/.test(mat)) {
+                        app.ui.showAlert("Matrícula Inválida", "A matrícula corporativa deve conter obrigatoriamente exatamente 5 números (apenas dígitos).", "error");
                         return;
                     }
 
                     if (pwd.length < 4) {
-                        app.ui.showAlert("Senha Curta", "A senha deve conter no mÃ­nimo 4 caracteres.", "error");
+                        app.ui.showAlert("Senha Curta", "A senha de acesso deve conter no mínimo 4 caracteres.", "warning");
                         return;
                     }
 
                     if (pwd !== pwdConf) {
-                        app.ui.showAlert("Senhas NÃ£o Conferem", "A confirmaÃ§Ã£o de senha Ã© diferente da senha digitada.", "error");
+                        app.ui.showAlert("Senhas Não Conferem", "A confirmação de senha é diferente da senha digitada.", "warning");
                         return;
                     }
 
-                    // Verifica se matrÃ­cula jÃ¡ existe
-                    const exists = app.users.some(u => String(u.matricula).trim() === mat);
+                    // Verifica se matrícula já existe
+                    // Garante que a base completa de usuarios esteja carregada antes de salvar o novo operador
+                    if (!Array.isArray(app.users) || app.users.length < 5) {
+                        if (typeof firebase !== 'undefined' && firebase.database) {
+                            try {
+                                const snap = await firebase.database().ref("sistema_bonificacao/users").once("value");
+                                const uVal = snap.val();
+                                if (uVal) {
+                                    const rawU = Array.isArray(uVal) ? uVal : Object.values(uVal);
+                                    if (rawU.length >= 5) {
+                                        app.users = rawU.filter(u => u !== null && u !== undefined);
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+                    }
+
+                    const exists = (app.users || []).some(u => String(u.matricula).trim() === mat);
                     if (exists) {
-                        app.ui.showAlert("MatrÃ­cula Existente", "JÃ¡ existe um colaborador cadastrado com esta matrÃ­cula. Escolha outra matrÃ­cula corporativa.", "error");
+                        app.ui.showAlert("Matrícula Existente", `Já existe um colaborador cadastrado com a matrícula ${mat}. Escolha outra numeração corporativa.`, "error");
                         return;
                     }
 
-                    // Cria o usuÃ¡rio
+                    // Criação oficial do perfil OPERADOR com status pendente de validação pelo Treinamento
                     const novoUsuario = {
-                        nome: app.auth._regState.nome,
+                        nome: app.auth._regState.nome.toUpperCase(),
                         matricula: mat,
                         email: app.auth._regState.email,
                         senha: pwd,
-                        tipoAcesso: app.auth._regState.tipoAcesso || 'Operador',
+                        tipoAcesso: 'Operador',
+                        cargo: 'Operador de Atendimento',
+                        statusValidacao: 'Pendente',
+                        gestorMatricula: null,
+                        supervisor: 'Aguardando Treinamento',
                         operacoes: ['Geral'],
-                        abasLiberadas: ['meu_painel', 'provas_certificacoes', 'softlingo'],
+                        abasLiberadas: ['meu_painel', 'ranking_monitorias', 'treinamentos', 'perfil', 'regras', 'legal'],
                         results: {},
                         loginCount: 1,
+                        cadastradoVia: 'Primeiro Acesso',
                         aceiteTermos: new Date().toISOString(),
                         aceiteDiretrizes: new Date().toISOString(),
                         criadoEm: new Date().toISOString()
@@ -3188,10 +3436,14 @@ storage: {
                         app.storage.saveUsers();
                     }
 
+                    // Notifica ADM/Treinamento
+                    if (app.notifications && typeof app.notifications.notify === 'function') {
+                        app.notifications.notify('ADM', 'Novo Operador Cadastrado', `O operador ${novoUsuario.nome} (Matrícula: ${mat}) realizou o primeiro acesso e aguarda validação.`, 'info');
+                    }
+
                     // Fecha o modal de cadastro
                     const modalCad = document.getElementById('modal-cadastro-novo-usuario');
                     if (modalCad) modalCad.remove();
-
                     // Auto-login imediato
                     app.isAdmin = false;
                     app.currentUser = novoUsuario;
@@ -3199,10 +3451,12 @@ storage: {
                     localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
                     localStorage.setItem('soft_session_mat', mat);
                     localStorage.setItem('soft_session_admin', 'false');
+                    localStorage.setItem('soft_session_tab', 'meu_painel');
 
                     document.getElementById('view-login').classList.add('hidden');
                     app.ui.showApp();
-                    app.ui.showAlert("Cadastro Realizado!", `Bem-vindo(a) Ã  Softmarketing, <strong>${novoUsuario.nome}</strong>! Sua matrÃ­cula Ã© <strong>${mat}</strong>.`, "success");
+                    app.ui.renderTab('meu_painel', true);
+                    app.ui.showAlert("Cadastro Realizado!", `Bem-vindo(a) à Softmarketing, <strong>${novoUsuario.nome}</strong>! Sua matrícula é <strong>${mat}</strong>.<br><small class="text-slate-500">Seu perfil de Operador foi criado e está aguardando vinculação pelo setor de Treinamento.</small>`, "success");
                 },
 
                 executeChangePassword() {
@@ -3504,18 +3758,8 @@ storage: {
             }
         }, 1000);
 
-        // 5. VIGILÂNCIA REALTIME NO FIREBASE: Detecta se outro navegador/sessão foi aberto
-        if (typeof firebase !== 'undefined' && firebase.database) {
-            const sessRef = firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat);
-            this._firebaseSessaoRef = sessRef;
-            sessRef.on('value', (snap) => {
-                if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
-                const val = snap.val();
-                if (val && val.sessionId && val.sessionId !== this.estadoAtivo.sessionId) {
-                    this.finalizarProva(false, "Desclassificado: Tentativa de abertura simultânea em outro navegador ou dispositivo detectada.");
-                }
-            });
-        }
+        // 5. VIGILÂNCIA DE SESSÃO: Checagem já realizada na abertura com onDisconnect (sem listener .on contínuo para proteger cota Firebase)
+        this._firebaseSessaoRef = null;
 
         // 6. BROADCAST CHANNEL: Detecta abertura de novas abas no mesmo navegador
         try {
@@ -4271,23 +4515,23 @@ storage: {
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
-                gruposAcessoLista: ['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
+                gruposAcessoLista: ['Operador', 'Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
 
                 getPresetsGruposAcesso() {
                     const todasAbas = this.getAllSystemTabs();
                     const defaultUserIds = todasAbas.filter(t => t.isDefault).map(t => t.id);
                     const allIds = todasAbas.map(t => t.id);
 
-                    const defaults = {
+                    const defaults = { 'Operador': ['meu_painel', 'ranking_monitorias', 'treinamentos', 'perfil', 'regras', 'legal'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
                         'Gerente': allIds.filter(id => id !== 'teste_duolingo')
                     };
 
@@ -4335,7 +4579,7 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores'];
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         // Se foi colocado em perfil de gestão mas ainda só tinha abas antigas de monitor, aplica o preset ADM do grupo automaticamente
                         if (!hasAnyAdminSaved) return [...new Set([...savedTabs, ...presetTabs])];
@@ -4660,6 +4904,16 @@ storage: {
                     
                     // Resgata backups locais imediatamente (para nunca perder Visão Geral Setorial ao dar F5)
                     try {
+                        const localUsersRaw = localStorage.getItem("soft_users_backup");
+                        if (localUsersRaw) {
+                            const localUsers = JSON.parse(localUsersRaw);
+                            if (Array.isArray(localUsers) && localUsers.length >= 5) {
+                                app.users = localUsers;
+                                console.log("Usuarios carregados do cache local:", app.users.length);
+                            } else {
+                                console.warn("Cache local de usuarios ignorado por conter menos de 5 registros.");
+                            }
+                        }
                         const localCfgRaw = localStorage.getItem('soft_config_backup');
                         if (localCfgRaw) {
                             const localCfg = JSON.parse(localCfgRaw);
@@ -5006,7 +5260,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -5239,8 +5493,19 @@ storage: {
                             else if(tabId === 'gestao_reportes') { this.abrirModalGestaoReportesDev(); return; }
                             else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
                             else if(tabId === 'legal') this.renderView_Legal(viewDiv);
-                            else if(tabId === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv);
-                            else if(tabId === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv);
+                            else if(tabId === 'registrar_acao') {
+                                this.renderView_RegistrarAcao(viewDiv);
+                                if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                                    app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv); });
+                                }
+                            }
+                            else if(tabId === 'validar_acoes') {
+                                this.renderView_ValidarAcoes(viewDiv);
+                                if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                                    app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv); });
+                                }
+                            }
+                            else if(tabId === 'validacao_operadores') this.renderView_ValidacaoOperadores(viewDiv);
                             else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
                             else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
                             else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
@@ -5291,6 +5556,258 @@ storage: {
                     // Aplica melhorias leves de UX apenas na aba ativa
                     requestAnimationFrame(() => this.applyPremiumUX(viewDiv));
                 },
+
+                                renderView_ValidacaoOperadores(container) {
+                    if (!app.hasAdminAccess('validacao_operadores') && !app.hasAdminAccess('hierarquia') && app.currentUser?.tipoAcesso !== 'Treinamento' && !app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') {
+                        container.innerHTML = `<div class="p-8 text-center text-slate-500 font-bold">Acesso restrito ao setor de Treinamento e Gestão.</div>`;
+                        return;
+                    }
+
+                    if (!this._validacaoOpFilter) this._validacaoOpFilter = 'pendentes';
+                    if (!this._validacaoOpSearch) this._validacaoOpSearch = '';
+
+                    const allUsers = app.users || [];
+                    const operadores = allUsers.filter(u => u.tipoAcesso === 'Operador' || u.statusValidacao);
+
+                    const pendentesCount = operadores.filter(u => u.statusValidacao !== 'Aprovado').length;
+                    const aprovadosCount = operadores.filter(u => u.statusValidacao === 'Aprovado').length;
+                    const totalCount = operadores.length;
+
+                    const supervisores = allUsers.filter(u => ['Gestor', 'Supervisor', 'Treinamento', 'Gerente', 'Dev'].includes(u.tipoAcesso) || u.isGestor);
+                    
+                    const opsList = (typeof app.getOperacoesSetoriais === 'function' ? app.getOperacoesSetoriais().map(o => o.nome) : []) || [];
+                    if (opsList.length === 0 && app.operacoesList) {
+                        Object.values(app.operacoesList).forEach(op => { if (op && op.nome) opsList.push(op.nome); });
+                    }
+                    const opsUnicas = [...new Set(['Geral', ...opsList])];
+
+                    let filtrados = operadores;
+                    if (this._validacaoOpFilter === 'pendentes') {
+                        filtrados = filtrados.filter(u => u.statusValidacao !== 'Aprovado');
+                    } else if (this._validacaoOpFilter === 'aprovados') {
+                        filtrados = filtrados.filter(u => u.statusValidacao === 'Aprovado');
+                    }
+
+                    if (this._validacaoOpSearch) {
+                        const q = this._validacaoOpSearch.toLowerCase();
+                        filtrados = filtrados.filter(u => (u.nome || '').toLowerCase().includes(q) || String(u.matricula).includes(q) || (u.email || '').toLowerCase().includes(q));
+                    }
+
+                    container.innerHTML = `
+                        <div class="space-y-6">
+                            <!-- Header Corporativo -->
+                            <div class="bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
+                                <div class="absolute -right-12 -bottom-12 text-9xl text-white/5 pointer-events-none">
+                                    <i class="fa-solid fa-user-check"></i>
+                                </div>
+                                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div>
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-widest mb-2 border border-emerald-400/30">
+                                            <i class="fa-solid fa-graduation-cap"></i> Treinamento & Gestão de Acessos
+                                        </div>
+                                        <h2 class="text-2xl md:text-3xl font-black">Validação & Hierarquia de Operadores</h2>
+                                        <p class="text-xs md:text-sm text-slate-300 max-w-2xl mt-1">
+                                            Valide os operadores que realizaram o primeiro acesso e vincule-os à hierarquia do Supervisor ou à sua equipe de Treinamento.
+                                        </p>
+                                    </div>
+
+                                    <!-- Métricas Rápidas -->
+                                    <div class="flex items-center gap-3">
+                                        <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
+                                            <span class="text-[10px] uppercase font-bold text-slate-300 block">Pendentes</span>
+                                            <span class="text-2xl font-black text-amber-300">${pendentesCount}</span>
+                                        </div>
+                                        <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
+                                            <span class="text-[10px] uppercase font-bold text-slate-300 block">Validados</span>
+                                            <span class="text-2xl font-black text-emerald-300">${aprovadosCount}</span>
+                                        </div>
+                                        <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
+                                            <span class="text-[10px] uppercase font-bold text-slate-300 block">Total</span>
+                                            <span class="text-2xl font-black text-white">${totalCount}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Filtros e Busca -->
+                            <div class="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                                <div class="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-full md:w-auto">
+                                    <button type="button" onclick="app.ui._validacaoOpFilter = 'pendentes'; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" class="px-4 py-2 rounded-lg text-xs font-bold transition-all ${this._validacaoOpFilter === 'pendentes' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}">
+                                        <i class="fa-solid fa-clock mr-1"></i> Pendentes (${pendentesCount})
+                                    </button>
+                                    <button type="button" onclick="app.ui._validacaoOpFilter = 'aprovados'; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" class="px-4 py-2 rounded-lg text-xs font-bold transition-all ${this._validacaoOpFilter === 'aprovados' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}">
+                                        <i class="fa-solid fa-circle-check mr-1"></i> Validados (${aprovadosCount})
+                                    </button>
+                                    <button type="button" onclick="app.ui._validacaoOpFilter = 'todos'; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" class="px-4 py-2 rounded-lg text-xs font-bold transition-all ${this._validacaoOpFilter === 'todos' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}">
+                                        <i class="fa-solid fa-users mr-1"></i> Todos (${totalCount})
+                                    </button>
+                                </div>
+
+                                <div class="relative w-full md:w-72">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                    <input type="text" value="${this._validacaoOpSearch || ''}" oninput="app.ui._validacaoOpSearch = this.value; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" placeholder="Buscar operador ou matrícula..." class="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500">
+                                </div>
+                            </div>
+
+                            <!-- Grade de Operadores -->
+                            ${filtrados.length === 0 ? `
+                                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center text-slate-400">
+                                    <div class="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center text-2xl mx-auto mb-3">
+                                        <i class="fa-solid fa-user-slash"></i>
+                                    </div>
+                                    <h4 class="font-bold text-base text-slate-700 dark:text-slate-200">Nenhum operador encontrado</h4>
+                                    <p class="text-xs text-slate-500 mt-1">Nenhum cadastro corresponde ao filtro selecionado.</p>
+                                </div>
+                            ` : `
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    ${filtrados.map(op => {
+                                        const isAprovado = op.statusValidacao === 'Aprovado';
+                                        const opAtual = (op.operacoes && op.operacoes[0]) || 'Geral';
+                                        const currentUserMat = (app.currentUser && app.currentUser.matricula) || '';
+
+                                        return `
+                                            <div class="bg-white dark:bg-slate-900 border ${isAprovado ? 'border-slate-200 dark:border-slate-800' : 'border-amber-300 dark:border-amber-700/60 shadow-md shadow-amber-500/5'} rounded-2xl p-5 flex flex-col justify-between transition-all hover:shadow-lg">
+                                                <div>
+                                                    <div class="flex items-start justify-between gap-3 mb-3">
+                                                        <div class="flex items-center gap-3">
+                                                            <div class="w-11 h-11 rounded-xl ${isAprovado ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-600'} flex items-center justify-center text-lg font-black shrink-0">
+                                                                <i class="fa-solid fa-headset"></i>
+                                                            </div>
+                                                            <div>
+                                                                <h4 class="font-black text-sm text-slate-800 dark:text-white uppercase leading-snug">${op.nome}</h4>
+                                                                <div class="flex items-center gap-2 mt-0.5">
+                                                                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400">Mat: <strong class="text-slate-700 dark:text-slate-200">${op.matricula}</strong></span>
+                                                                    <span class="text-slate-300 dark:text-slate-600">•</span>
+                                                                    <span class="text-[10px] text-slate-400 truncate max-w-[140px]">${op.email || 'Sem e-mail'}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            ${isAprovado ? `
+                                                                <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1">
+                                                                    <i class="fa-solid fa-check"></i> Validado
+                                                                </span>
+                                                            ` : `
+                                                                <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 flex items-center gap-1 animate-pulse">
+                                                                    <i class="fa-solid fa-clock"></i> Pendente
+                                                                </span>
+                                                            `}
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+                                                        <div>
+                                                            <div class="flex items-center justify-between mb-1">
+                                                                <label class="font-bold text-slate-600 dark:text-slate-400 text-[11px]">Supervisor / Treinador:</label>
+                                                                ${currentUserMat ? `
+                                                                    <button type="button" onclick="document.getElementById('sel-sup-${op.matricula}').value = '${currentUserMat}'" class="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold flex items-center gap-1">
+                                                                        <i class="fa-solid fa-hand"></i> Puxar para mim
+                                                                    </button>
+                                                                ` : ''}
+                                                            </div>
+                                                            <select id="sel-sup-${op.matricula}" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
+                                                                <option value="">-- Selecione o Responsável --</option>
+                                                                ${supervisores.map(s => `
+                                                                    <option value="${s.matricula}" ${String(s.matricula) === String(op.gestorMatricula) ? 'selected' : ''}>${s.nome} (${s.tipoAcesso || 'Supervisor'})</option>
+                                                                `).join('')}
+                                                            </select>
+                                                        </div>
+
+                                                        <div>
+                                                            <label class="block font-bold text-slate-600 dark:text-slate-400 text-[11px] mb-1">Operação / Campanha:</label>
+                                                            <select id="sel-op-${op.matricula}" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
+                                                                ${opsUnicas.map(o => `
+                                                                    <option value="${o}" ${o === opAtual ? 'selected' : ''}>${o}</option>
+                                                                `).join('')}
+                                                            </select>
+                                                        </div>
+
+                                                        ${op.validadoPor ? `
+                                                            <div class="text-[10px] text-slate-400 pt-1">
+                                                                Validado por <strong>${op.validadoPor}</strong> em ${new Date(op.validadoEm || Date.now()).toLocaleDateString('pt-BR')}
+                                                            </div>
+                                                        ` : ''}
+                                                    </div>
+                                                </div>
+
+                                                <div class="flex items-center gap-2 pt-4 mt-3 border-t border-slate-100 dark:border-slate-800/80">
+                                                    <button type="button" onclick="app.ui.salvarValidacaoOperador('${op.matricula}')" class="flex-1 py-2.5 px-3 rounded-xl ${isAprovado ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'} font-bold text-xs transition flex items-center justify-center gap-1.5">
+                                                        <i class="fa-solid fa-check-double"></i>
+                                                        <span>${isAprovado ? 'Atualizar Vínculo' : 'Aprovar & Puxar'}</span>
+                                                    </button>
+                                                    <button type="button" onclick="app.ui.removerOperadorCadastro('${op.matricula}')" class="p-2.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition text-xs" title="Excluir Operador">
+                                                        <i class="fa-solid fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            `}
+                        </div>
+                    `;
+                },
+
+                salvarValidacaoOperador(matricula) {
+                    const op = (app.users || []).find(u => String(u.matricula) === String(matricula));
+                    if (!op) {
+                        app.ui.showAlert("Erro", "Operador não localizado no banco de dados.", "error");
+                        return;
+                    }
+
+                    const selSup = document.getElementById('sel-sup-' + matricula);
+                    const selOp = document.getElementById('sel-op-' + matricula);
+
+                    const supMat = selSup ? selSup.value.trim() : '';
+                    const operacao = selOp ? selOp.value.trim() : 'Geral';
+
+                    if (!supMat) {
+                        app.ui.showAlert("Atenção", "Selecione o Supervisor ou Analista de Treinamento responsável para vincular à hierarquia.", "warning");
+                        return;
+                    }
+
+                    const supervisor = (app.users || []).find(u => String(u.matricula) === String(supMat));
+                    const supervisorNome = supervisor ? supervisor.nome : 'Supervisor';
+
+                    op.statusValidacao = 'Aprovado';
+                    op.gestorMatricula = supMat;
+                    op.supervisor = supervisorNome;
+                    op.operacoes = [operacao];
+                    op.validadoPor = (app.currentUser && app.currentUser.nome) || 'Treinamento';
+                    op.validadoEm = new Date().toISOString();
+
+                    if (app.storage && typeof app.storage.saveUsers === 'function') {
+                        app.storage.saveUsers().then(() => {
+                            if (app.notifications && typeof app.notifications.notify === 'function') {
+                                app.notifications.notify(op.matricula, 'Cadastro Aprovado!', `Você foi vinculado(a) à supervisão de ${supervisorNome} na operação ${operacao}.`, 'success');
+                            }
+                            app.ui.showAlert("Operador Validado!", `O colaborador <strong>${op.nome}</strong> foi aprovado(a) e vinculado(a) à supervisão de <strong>${supervisorNome}</strong> (${operacao}) com sucesso!`, "success");
+                            const container = document.getElementById('view-container-validacao_operadores');
+                            if (container) app.ui.renderView_ValidacaoOperadores(container);
+                        });
+                    }
+                },
+
+                removerOperadorCadastro(matricula) {
+                    const op = (app.users || []).find(u => String(u.matricula) === String(matricula));
+                    if (!op) return;
+
+                    if (!confirm(`Tem certeza que deseja excluir o operador ${op.nome} (Matrícula: ${matricula})?`)) return;
+
+                    const idx = app.users.findIndex(u => String(u.matricula) === String(matricula));
+                    if (idx !== -1) {
+                        app.users.splice(idx, 1);
+                        if (app.storage && typeof app.storage.saveUsers === 'function') {
+                            app.storage.saveUsers().then(() => {
+                                app.ui.showAlert("Removido", `Operador ${op.nome} removido do sistema.`, "info");
+                                const container = document.getElementById('view-container-validacao_operadores');
+                                if (container) app.ui.renderView_ValidacaoOperadores(container);
+                            });
+                        }
+                    }
+                },
+
+
 
                 renderView_ValidarAcoes(container) {
                     if(!app.hasAdminAccess('validar_acoes')) return;
@@ -5599,6 +6116,20 @@ storage: {
                 renderView_RegistrarAcao(container) {
                     if(app.isAdmin && !app.currentUser) return;
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    const pendingBannerOperador = (app.currentUser && app.currentUser.statusValidacao === 'Pendente') ? `
+                        <div class="mb-6 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between text-amber-900 dark:text-amber-200 shadow-sm animate-fade-in">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0">
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-sm">Cadastro em ValidaÃ§Ã£o de Equipe</h4>
+                                    <p class="text-xs text-amber-700 dark:text-amber-300">Seu primeiro acesso como <strong>Operador</strong> foi registrado com sucesso. O setor de <strong>Treinamento</strong> estÃ¡ vinculando sua matrÃ­cula ao seu Supervisor oficial.</p>
+                                </div>
+                            </div>
+                            <span class="px-3 py-1 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-black uppercase tracking-wider shrink-0">Aguardando VÃ­nculo</span>
+                        </div>
+                    ` : '';
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     const todayIso = new Date().toISOString().split('T')[0];
 
@@ -7424,11 +7955,20 @@ storage: {
                 },
 
 
-                                abrirModalFirebaseDev() {
+                                abrirModalFirebaseDev(_presencaFetched = false) {
                     if (!app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') {
                         if (app.ui && typeof app.ui.showAlert === 'function') {
-                            app.ui.showAlert("Acesso Restrito", "Apenas o Desenvolvedor do sistema tem permissÃ£o para acessar o monitoramento da base de dados.", "error");
+                            app.ui.showAlert("Acesso Restrito", "Apenas o Desenvolvedor do sistema tem permissão para acessar o monitoramento da base de dados.", "error");
                         }
+                        return;
+                    }
+                    if (!_presencaFetched && typeof firebase !== 'undefined' && firebase.database) {
+                        firebase.database().ref('presenca_online').once('value').then(snap => {
+                            app.presencaOnline = snap.val() || {};
+                            this.abrirModalFirebaseDev(true);
+                        }).catch(() => {
+                            this.abrirModalFirebaseDev(true);
+                        });
                         return;
                     }
 
@@ -7479,11 +8019,10 @@ storage: {
                     const limiteBandaGB = 10;   // 10 GB/mÃªs no plano Spark
                     const pctSpark = Math.min(100, ((totalBytesMemoria / (1024 * 1024 * 1024)) * 100)).toFixed(2);
 
-                    // ConexÃµes simultÃ¢neas e presenÃ§a em tempo real
+                    // Conexões simultâneas consultadas sob demanda (gerenciadas via onDisconnect)
                     let onlineUsersList = [];
                     if (app.presencaOnline && typeof app.presencaOnline === 'object') {
-                        const now = Date.now();
-                        onlineUsersList = Object.values(app.presencaOnline).filter(u => u && (now - (u.ts || 0) < 120000));
+                        onlineUsersList = Object.values(app.presencaOnline).filter(u => u && u.matricula);
                     }
                     if (onlineUsersList.length === 0 && app.currentUser) {
                         onlineUsersList.push({ nome: app.currentUser.nome, matricula: app.currentUser.matricula, cargo: app.currentUser.tipoAcesso || 'Dev', ts: Date.now() });
@@ -19113,6 +19652,10 @@ storage: {
 
                 openAcoesSelectorModal() {
                     if(!app.analiseCSVDinamicoData) return;
+                    if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                        app.storage.ensureActionsLoaded(() => this.openAcoesSelectorModal());
+                        return;
+                    }
                     if(!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
                     
                     const acoesAprovadas = Object.values(app.actionsList || {}).filter(a => a.status === 'aprovado').sort((a,b) => b.timestamp - a.timestamp);
@@ -21599,6 +22142,10 @@ storage: {
                 },
 
                 execReprocessarPontuacoes() {
+                    if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                        app.storage.ensureActionsLoaded(() => this.execReprocessarPontuacoes());
+                        return;
+                    }
                     // 1. Identifica os IDs das metas no banco
                     const gCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gAcoes = app.config.goals.find(g => g.type === 'actions');
@@ -23568,18 +24115,8 @@ app.fcrExam = {
             }
         }, 1000);
 
-        // 5. VIGILÂNCIA REALTIME NO FIREBASE: Detecta se outro navegador/sessão foi aberto
-        if (typeof firebase !== 'undefined' && firebase.database) {
-            const sessRef = firebase.database().ref('sistema_bonificacao/sessoes_prova_ativas/' + mat);
-            this._firebaseSessaoRef = sessRef;
-            sessRef.on('value', (snap) => {
-                if (!this.estadoAtivo || this.estadoAtivo.finalizado) return;
-                const val = snap.val();
-                if (val && val.sessionId && val.sessionId !== this.estadoAtivo.sessionId) {
-                    this.finalizarProva(false, "Desclassificado: Tentativa de abertura simultânea em outro navegador ou dispositivo detectada.");
-                }
-            });
-        }
+        // 5. VIGILÂNCIA DE SESSÃO: Checagem já realizada na abertura com onDisconnect (sem listener .on contínuo para proteger cota Firebase)
+        this._firebaseSessaoRef = null;
 
         // 6. BROADCAST CHANNEL: Detecta abertura de novas abas no mesmo navegador
         try {
@@ -24188,6 +24725,12 @@ app.duolingo = {
     subaba: 'trilha', // 'trilha' | 'cms' | 'gargalos'
     selectedTemaId: null, // null = Grade de Temas; string = Trilha do Tema
     activeSession: null,
+    cmsSelectedTemaId: null,
+    cmsTargetModuloId: null,
+    cmsTargetLicaoId: null,
+    cmsExpandedLicoes: {},
+    cmsAdicionandoModulo: false,
+    cmsAdicionandoLicaoModuloId: null,
 
     defaultTemas: [
         {
@@ -24580,12 +25123,12 @@ app.duolingo = {
     // RENDER PRINCIPAL DA ABA SOFTLINGO
     // =========================================================================
     render(container) {
-        let root = container;
+        if (container) this.lastContainer = container;
+        let root = container || this.lastContainer;
         if (!root) {
-            root = document.getElementById('view-container-softlingo') || document.getElementById('view-container-teste_duolingo');
+            root = document.getElementById('view-container-softlingo') || document.getElementById('view-container-teste_duolingo') || document.getElementById('duolingo-root');
         }
         if (!root) return;
-
         // Se estiver em sessão de aula ativa, renderiza a tela cheia de aula
         if (this.activeSession) {
             root.innerHTML = this.renderLessonView();
@@ -24891,7 +25434,7 @@ app.duolingo = {
     },
 
     // =========================================================================
-    // PAINEL DE CRIAÇÃO (CMS COM AUTONOMIA TOTAL)
+    // PAINEL DE CRIAÇÃO (CMS ESTÚDIO HIERÁRQUICO UNIFICADO)
     // =========================================================================
     renderCMS() {
         const temas = this.getTemas();
@@ -24915,9 +25458,29 @@ app.duolingo = {
             });
         });
 
+        // Garante que haja um tema selecionado no CMS
+        if (!this.cmsSelectedTemaId || !temas.some(t => t.id === this.cmsSelectedTemaId)) {
+            this.cmsSelectedTemaId = temas[0] ? temas[0].id : null;
+        }
+
+        const currentTema = this.getTemaById(this.cmsSelectedTemaId) || temas[0];
+
+        // Se o módulo alvo não pertencer ao tema atual, atualiza
+        if (this.cmsTargetModuloId && currentTema) {
+            const modExists = (currentTema.modulos || []).some(m => m.id === this.cmsTargetModuloId);
+            if (!modExists) this.cmsTargetModuloId = currentTema.modulos?.[0]?.id || null;
+        }
+        if (this.cmsTargetModuloId && currentTema) {
+            const curMod = (currentTema.modulos || []).find(m => m.id === this.cmsTargetModuloId);
+            if (this.cmsTargetLicaoId && curMod) {
+                const licExists = (curMod.licoes || []).some(l => l.id === this.cmsTargetLicaoId);
+                if (!licExists) this.cmsTargetLicaoId = curMod.licoes?.[0]?.id || null;
+            }
+        }
+
         return `
             <div class="space-y-8 animate-fade-in">
-                <!-- RESUMO DO CMS -->
+                <!-- RESUMO GERAL DO CMS -->
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                         <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Temas Cadastrados</span>
@@ -24925,59 +25488,330 @@ app.duolingo = {
                         <span class="text-xs text-slate-500 mt-1 block">${totalModulos} módulos • ${totalLicoes} lições</span>
                     </div>
                     <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Questões no Banco</span>
+                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Banco de Questões</span>
                         <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalPerguntas}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">Distribuídas em toda a base</span>
+                        <span class="text-xs text-slate-500 mt-1 block">Distribuídas em todos os módulos</span>
                     </div>
                     <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                         <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500 block mb-1">Publicadas (Operação)</span>
                         <div class="text-3xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">${totalPublicadas}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">Visíveis na trilha dos colaboradores</span>
+                        <span class="text-xs text-slate-500 mt-1 block">Ativas e visíveis nas trilhas</span>
                     </div>
                     <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                         <span class="text-[10px] font-black uppercase tracking-widest text-amber-500 block mb-1">Em Rascunho</span>
                         <div class="text-3xl font-black text-amber-600 dark:text-amber-400 tabular-nums">${totalRascunho}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">Aguardando validação do supervisor</span>
+                        <span class="text-xs text-slate-500 mt-1 block">Aguardando aprovação de qualidade</span>
                     </div>
                 </div>
 
-                <!-- BARRA DE GESTÃO DA ESTRUTURA (CRIAR TEMAS, MÓDULOS E LIÇÕES) -->
-                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700 mb-4">
+                <!-- SELETOR DE TEMAS & BOTÃO NOVO TEMA -->
+                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
                         <div>
-                            <h3 class="text-base font-black text-slate-800 dark:text-white">Arquitetura de Treinamentos (Estrutura Autônoma)</h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Cadastre quantos Temas, Módulos e Lições desejar com títulos totalmente personalizados.</p>
+                            <h3 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                <i class="fa-solid fa-sitemap text-purple-600"></i> Estúdio Hierárquico: Selecione ou Crie um Tema
+                            </h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Gerencie temas, crie módulos em cascata e adicione lições com formulário integrado na mesma tela.</p>
                         </div>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button onclick="app.duolingo.abrirModalNovoTema()" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-plus"></i> Novo Tema
-                            </button>
-                            <button onclick="app.duolingo.abrirModalNovoModulo()" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-plus"></i> Novo Módulo
-                            </button>
-                            <button onclick="app.duolingo.abrirModalNovaLicao()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-plus"></i> Nova Lição
-                            </button>
-                        </div>
+                        <button onclick="app.duolingo.abrirModalNovoTema()" class="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-2">
+                            <i class="fa-solid fa-plus"></i> Criar Novo Tema
+                        </button>
+                    </div>
+
+                    <!-- Pílulas dos Temas -->
+                    <div class="flex items-center gap-2 overflow-x-auto pb-2">
+                        ${temas.map(t => {
+                            const isSel = currentTema && t.id === currentTema.id;
+                            const modCount = (t.modulos || []).length;
+                            return `
+                                <button onclick="app.duolingo.selecionarTemaCMS('${t.id}')" class="px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${isSel ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}">
+                                    <i class="fa-solid ${t.icone || 'fa-graduation-cap'}"></i>
+                                    <span>${t.titulo}</span>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] ${isSel ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">${modCount} mod</span>
+                                </button>
+                            `;
+                        }).join('')}
                     </div>
                 </div>
 
-                <!-- FORMULÁRIO DE CADASTRO DE NOVA PERGUNTA ADAPTATIVO -->
-                <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 mb-6">
+                <!-- ÁRVORE DO TEMA SELECIONADO: MÓDULOS E LIÇÕES -->
+                ${currentTema ? `
+                    <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                        <!-- Cabeçalho do Tema Selecionado -->
+                        <div class="p-6 md:p-8 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div class="space-y-1.5 max-w-2xl">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="px-3 py-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-black uppercase tracking-wider">
+                                        <i class="fa-solid ${currentTema.icone || 'fa-graduation-cap'} mr-1"></i> Tema Ativo
+                                    </span>
+                                    ${(currentTema.indicadores || []).map(ind => `
+                                        <span class="px-2.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold">${ind}</span>
+                                    `).join('')}
+                                </div>
+                                <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">${currentTema.titulo}</h2>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">${currentTema.descricao || 'Sem descrição cadastrada.'}</p>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-2">
+                                    <i class="fa-solid fa-plus"></i> Adicionar Módulo neste Tema
+                                </button>
+                                <button onclick="app.duolingo.excluirTemaCMS('${currentTema.id}')" class="p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold transition" title="Excluir este Tema">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Formulário Inline de Novo Módulo (se aberto) -->
+                        ${this.cmsAdicionandoModulo ? `
+                            <div class="p-6 bg-sky-50/50 dark:bg-sky-950/20 border-b border-sky-200 dark:border-sky-800/60 animate-fade-in">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-sky-800 dark:text-sky-300 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-circle-plus"></i> Cadastrar Novo Módulo neste Tema
+                                    </h4>
+                                    <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs">
+                                        <i class="fa-solid fa-xmark"></i> Cancelar
+                                    </button>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div class="md:col-span-2">
+                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Título do Módulo</label>
+                                        <input type="text" id="inline-mod-titulo" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500 font-bold" placeholder="Ex: MÓDULO ${(currentTema.modulos || []).length + 1}: Técnicas de Negociação e Empatia">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Ícone FontAwesome</label>
+                                        <input type="text" id="inline-mod-icone" value="fa-book-open" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500" placeholder="fa-book-open, fa-headphones">
+                                    </div>
+                                    <div class="md:col-span-3">
+                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Descrição Curta</label>
+                                        <textarea id="inline-mod-desc" rows="2" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500" placeholder="Objetivo operacional e competências desenvolvidas nesta seção..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-end gap-2 mt-3">
+                                    <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                        Cancelar
+                                    </button>
+                                    <button onclick="app.duolingo.salvarNovoModuloInline('${currentTema.id}')" class="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-check"></i> Salvar Módulo
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- Lista dos Módulos do Tema -->
+                        <div class="p-6 md:p-8 space-y-6">
+                            ${(currentTema.modulos || []).length === 0 ? `
+                                <div class="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400 space-y-3">
+                                    <i class="fa-solid fa-folder-open text-4xl text-slate-300 dark:text-slate-600"></i>
+                                    <div class="text-sm font-bold text-slate-600 dark:text-slate-300">Nenhum módulo cadastrado ainda neste tema.</div>
+                                    <p class="text-xs text-slate-400">Clique no botão abaixo para adicionar o primeiro módulo deste treinamento.</p>
+                                    <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition inline-flex items-center gap-2">
+                                        <i class="fa-solid fa-plus"></i> Adicionar Primeiro Módulo
+                                    </button>
+                                </div>
+                            ` : (currentTema.modulos || []).map(m => `
+                                <div class="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 p-5 md:p-6 space-y-4">
+                                    <!-- Cabeçalho do Módulo -->
+                                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center text-lg shrink-0">
+                                                <i class="fa-solid ${m.icone || 'fa-book-open'}"></i>
+                                            </div>
+                                            <div>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-sm font-black text-slate-800 dark:text-white">MÓDULO ${m.numero}: ${m.titulo}</span>
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">
+                                                        ${(m.licoes || []).length} Lições
+                                                    </span>
+                                                </div>
+                                                <span class="text-xs text-slate-500 dark:text-slate-400 block">${m.descricao || 'Sem descrição.'}</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm">
+                                                <i class="fa-solid fa-plus"></i> Adicionar Lição
+                                            </button>
+                                            <button onclick="app.duolingo.excluirModuloCMS('${currentTema.id}', '${m.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir Módulo">
+                                                <i class="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Formulário Inline de Nova Lição (se aberto para este módulo) -->
+                                    ${this.cmsAdicionandoLicaoModuloId === m.id ? `
+                                        <div class="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/60 animate-fade-in space-y-3">
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                                                    <i class="fa-solid fa-circle-plus"></i> Cadastrar Nova Lição no Módulo ${m.numero}
+                                                </span>
+                                                <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs">
+                                                    <i class="fa-solid fa-xmark"></i>
+                                                </button>
+                                            </div>
+                                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                                <div class="md:col-span-2">
+                                                    <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Título da Lição</label>
+                                                    <input type="text" id="inline-lic-titulo-${m.id}" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ex: Abordagem Inicial e Sondagem Conectiva">
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Número</label>
+                                                    <input type="text" id="inline-lic-num-${m.id}" value="${m.numero}.${(m.licoes || []).length + 1}" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500">
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">XP</label>
+                                                        <input type="number" id="inline-lic-xp-${m.id}" value="10" class="w-full px-2 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Vidas</label>
+                                                        <input type="number" id="inline-lic-vidas-${m.id}" value="3" class="w-full px-2 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center justify-end gap-2 pt-1">
+                                                <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 transition">
+                                                    Cancelar
+                                                </button>
+                                                <button onclick="app.duolingo.salvarNovaLicaoInline('${currentTema.id}', '${m.id}')" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5">
+                                                    <i class="fa-solid fa-check"></i> Salvar Lição
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
+                                    <!-- Lista de Lições do Módulo -->
+                                    <div class="space-y-3">
+                                        ${(m.licoes || []).length === 0 ? `
+                                            <div class="p-4 text-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-400">
+                                                Nenhuma lição neste módulo ainda. Clique em <strong>"Adicionar Lição"</strong> acima.
+                                            </div>
+                                        ` : (m.licoes || []).map(l => {
+                                            const qtdQ = (l.desafios || []).length;
+                                            const isExpanded = !!this.cmsExpandedLicoes[l.id];
+                                            const isTarget = this.cmsTargetLicaoId === l.id;
+                                            return `
+                                                <div class="rounded-xl border ${isTarget ? 'border-sky-400 dark:border-sky-500 ring-2 ring-sky-400/20' : 'border-slate-200 dark:border-slate-700'} bg-white dark:bg-slate-800 transition-all overflow-hidden">
+                                                    <div class="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                                        <div class="flex items-center gap-3">
+                                                            <span class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center text-xs font-black shrink-0">
+                                                                ${l.numero}
+                                                            </span>
+                                                            <div>
+                                                                <div class="flex items-center gap-2">
+                                                                    <span class="text-xs font-bold text-slate-800 dark:text-white">${l.titulo}</span>
+                                                                    ${isTarget ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">Alvo Ativo</span>` : ''}
+                                                                </div>
+                                                                <span class="text-[11px] text-slate-400">${l.xp} XP • ${l.vidas} Vidas • <strong class="${qtdQ > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">${qtdQ} Questões</strong></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex items-center gap-2 shrink-0">
+                                                            <button onclick="app.duolingo.selecionarLicaoParaNovaQuestao('${currentTema.id}', '${m.id}', '${l.id}')" class="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5" title="Abrir formulário e vincular perguntas diretamente a esta lição">
+                                                                <i class="fa-solid fa-plus"></i> Nova Questão Nesta Lição
+                                                            </button>
+                                                            <button onclick="app.duolingo.toggleExpandirQuestoesLicao('${l.id}')" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition flex items-center gap-1" title="Ver questões cadastradas nesta lição">
+                                                                <i class="fa-solid ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-[10px]"></i>
+                                                                <span>(${qtdQ})</span>
+                                                            </button>
+                                                            <button onclick="app.duolingo.excluirLicaoCMS('${currentTema.id}', '${m.id}', '${l.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir Lição">
+                                                                <i class="fa-solid fa-trash-can text-xs"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Gaveta com Questões Desta Lição (se expandida) -->
+                                                    ${isExpanded ? `
+                                                        <div class="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 space-y-2 animate-fade-in">
+                                                            <div class="flex items-center justify-between pb-1">
+                                                                <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Questões desta Lição (${qtdQ})</span>
+                                                                <button onclick="app.duolingo.selecionarLicaoParaNovaQuestao('${currentTema.id}', '${m.id}', '${l.id}')" class="text-[11px] font-bold text-sky-600 hover:underline flex items-center gap-1">
+                                                                    <i class="fa-solid fa-circle-plus"></i> Adicionar Pergunta
+                                                                </button>
+                                                            </div>
+                                                            ${qtdQ === 0 ? `
+                                                                <div class="p-3 text-center text-xs text-slate-400 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                                                                    Nenhuma pergunta cadastrada para esta lição ainda. Clique em <strong>"Nova Questão Nesta Lição"</strong> acima para criar.
+                                                                </div>
+                                                            ` : (l.desafios || []).map((d, dIdx) => {
+                                                                const isPub = d.status === 'publicado' || !d.status;
+                                                                return `
+                                                                    <div class="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                                                                        <div class="space-y-0.5">
+                                                                            <div class="flex items-center gap-2">
+                                                                                <span class="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-black text-[10px] flex items-center justify-center shrink-0">
+                                                                                    ${dIdx + 1}
+                                                                                </span>
+                                                                                <span class="font-bold text-slate-800 dark:text-white line-clamp-1">${d.enunciado}</span>
+                                                                                <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+                                                                                    ${(d.tipo || '').replace(/_/g, ' ')}
+                                                                                </span>
+                                                                            </div>
+                                                                            <span class="text-[10px] text-slate-400 block ml-7 truncate"><i class="fa-solid fa-bullseye mr-1"></i>${d.cenario}</span>
+                                                                        </div>
+                                                                        <div class="flex items-center gap-2 shrink-0 self-end sm:self-center ml-7 sm:ml-0">
+                                                                            <button onclick="app.duolingo.toggleStatusQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider transition ${isPub ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}">
+                                                                                <i class="fa-solid ${isPub ? 'fa-check' : 'fa-clock'} mr-1"></i> ${isPub ? 'Publicado' : 'Rascunho'}
+                                                                            </button>
+                                                                            <button onclick="app.duolingo.excluirQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir questão">
+                                                                                <i class="fa-solid fa-trash-can text-xs"></i>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                `;
+                                                            }).join('')}
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- FORMULÁRIO DE CADASTRO DE PERGUNTA ADAPTATIVO & INTEGRADO -->
+                <div id="form-cms-questao" class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
                         <div>
-                            <h3 class="text-lg md:text-xl font-black text-slate-800 dark:text-white tracking-tight">Cadastrar Nova Questão Gamificada</h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">O formulário abaixo se adapta dinamicamente ao tipo de desafio selecionado.</p>
+                            <h3 class="text-lg md:text-xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
+                                <i class="fa-solid fa-circle-question text-sky-600"></i> Cadastrar Nova Questão Gamificada
+                            </h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Selecione o destino e preencha as regras operacionais. O formulário se adapta dinamicamente ao tipo escolhido.</p>
                         </div>
                     </div>
 
-                    <form id="form-cms-questao" onsubmit="app.duolingo.salvarNovaQuestao(event)" class="space-y-5">
+                    <!-- Banner de Alvo Ativo (se Lição estiver selecionada) -->
+                    ${(() => {
+                        if (this.cmsTargetModuloId && this.cmsTargetLicaoId && currentTema) {
+                            const mod = (currentTema.modulos || []).find(m => m.id === this.cmsTargetModuloId);
+                            const lic = mod ? (mod.licoes || []).find(l => l.id === this.cmsTargetLicaoId) : null;
+                            if (mod && lic) {
+                                return `
+                                    <div class="p-3.5 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 rounded-2xl flex items-center justify-between text-xs text-sky-900 dark:text-sky-200">
+                                        <div class="flex items-center gap-2.5">
+                                            <div class="w-8 h-8 rounded-xl bg-sky-100 dark:bg-sky-900/60 text-sky-600 dark:text-sky-300 flex items-center justify-center text-sm shrink-0">
+                                                <i class="fa-solid fa-bullseye"></i>
+                                            </div>
+                                            <div>
+                                                <span class="text-[10px] font-black uppercase text-sky-600 dark:text-sky-400 block">Vinculação Rápida Ativa</span>
+                                                <div class="font-bold">Tema: <strong>${currentTema.titulo}</strong> &gt; Módulo: <strong>${mod.titulo}</strong> &gt; Lição: <strong>${lic.numero} - ${lic.titulo}</strong></div>
+                                            </div>
+                                        </div>
+                                        <span class="text-[11px] text-sky-600 dark:text-sky-400 font-bold hidden sm:inline-block">Os seletores abaixo já foram preenchidos automaticamente!</span>
+                                    </div>
+                                `;
+                            }
+                        }
+                        return '';
+                    })()}
+
+                    <form onsubmit="app.duolingo.salvarNovaQuestao(event)" class="space-y-5">
                         <!-- Cascata de Seleção: Tema -> Módulo -> Lição -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Tema / Trilha</label>
                                 <select id="cms-q-tema" onchange="app.duolingo.atualizarCascataCMS()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                                    ${temas.map(t => `<option value="${t.id}">${t.titulo}</option>`).join('')}
+                                    ${temas.map(t => `<option value="${t.id}" ${currentTema && t.id === currentTema.id ? 'selected' : ''}>${t.titulo}</option>`).join('')}
                                 </select>
                             </div>
                             <div>
@@ -25008,7 +25842,7 @@ app.duolingo = {
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Cenário Operacional / Contexto da Ligação</label>
-                                <input type="text" id="cms-q-cenario" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-sky-500" placeholder="Ex: Cliente solicita cancelamento por lentidão crônica...">
+                                <input type="text" id="cms-q-cenario" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-sky-500" placeholder="Ex: Cliente solicita cancelamento por lentidão recorrente no produto...">
                             </div>
                         </div>
 
@@ -25029,7 +25863,7 @@ app.duolingo = {
                                 <label class="block text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1">
                                     <i class="fa-solid fa-circle-check mr-1"></i> Feedback Imediato de Acerto
                                 </label>
-                                <textarea id="cms-q-feedback-acerto" rows="2" required class="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/30 dark:bg-emerald-950/20 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ex: Exato! O conceito demonstra a correta aplicação da regra..."></textarea>
+                                <textarea id="cms-q-feedback-acerto" rows="2" required class="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/30 dark:bg-emerald-950/20 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ex: Exato! O conceito demonstra a correta aplicação da regra institucional..."></textarea>
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-rose-600 dark:text-rose-400 mb-1">
@@ -25051,12 +25885,14 @@ app.duolingo = {
                     </form>
                 </div>
 
-                <!-- TABELA DE QUESTÕES CADASTRADAS NO CMS -->
+                <!-- TABELA GLOBAL DE TODAS AS QUESTÕES CADASTRADAS -->
                 <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     <div class="p-6 border-b border-slate-100 dark:border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div>
-                            <h3 class="text-base font-black text-slate-800 dark:text-white">Repositório de Questões Cadastradas</h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Gerencie a publicação e exclusão das perguntas do Softlingo.</p>
+                            <h3 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                <i class="fa-solid fa-database text-sky-600"></i> Repositório Geral de Questões
+                            </h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Visão consolidada de todas as perguntas de todos os temas com publicação e auditoria rápida.</p>
                         </div>
                     </div>
 
@@ -25082,6 +25918,207 @@ app.duolingo = {
     },
 
     // =========================================================================
+    // NAVEGAÇÃO E AÇÕES HIERÁRQUICAS DO CMS
+    // =========================================================================
+    selecionarTemaCMS(temaId) {
+        this.cmsSelectedTemaId = temaId;
+        const tema = this.getTemaById(temaId);
+        if (tema && (tema.modulos || []).length > 0) {
+            this.cmsTargetModuloId = tema.modulos[0].id;
+            if ((tema.modulos[0].licoes || []).length > 0) {
+                this.cmsTargetLicaoId = tema.modulos[0].licoes[0].id;
+            } else {
+                this.cmsTargetLicaoId = null;
+            }
+        } else {
+            this.cmsTargetModuloId = null;
+            this.cmsTargetLicaoId = null;
+        }
+        this.render();
+    },
+
+    toggleNovoModuloInline(temaId) {
+        this.cmsSelectedTemaId = temaId;
+        this.cmsAdicionandoModulo = !this.cmsAdicionandoModulo;
+        this.render();
+        if (this.cmsAdicionandoModulo) {
+            setTimeout(() => {
+                const el = document.getElementById('inline-mod-titulo');
+                if (el) el.focus();
+            }, 100);
+        }
+    },
+
+    salvarNovoModuloInline(temaId) {
+        const titulo = (document.getElementById('inline-mod-titulo')?.value || '').trim();
+        const icone = (document.getElementById('inline-mod-icone')?.value || '').trim() || 'fa-book-open';
+        const desc = (document.getElementById('inline-mod-desc')?.value || '').trim();
+
+        if (!titulo) {
+            return app.ui.showAlert("Atenção", "Por favor, informe o título do módulo.", "warning");
+        }
+
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        if (!tema) return;
+
+        if (!tema.modulos) tema.modulos = [];
+        const novoMod = {
+            id: 'mod_' + Date.now(),
+            temaId: temaId,
+            numero: tema.modulos.length + 1,
+            titulo: titulo,
+            icone: icone,
+            descricao: desc,
+            licoes: []
+        };
+
+        tema.modulos.push(novoMod);
+        this.saveTemas(temas);
+        this.cmsAdicionandoModulo = false;
+        this.cmsTargetModuloId = novoMod.id;
+
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert("Módulo Criado!", `O módulo <strong>${titulo}</strong> foi adicionado com sucesso.`, "success");
+        }
+        this.render();
+    },
+
+    excluirModuloCMS(temaId, moduloId) {
+        if (!confirm("Deseja realmente remover este módulo e todas as suas lições?")) return;
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        if (!tema) return;
+
+        tema.modulos = (tema.modulos || []).filter(m => m.id !== moduloId);
+        tema.modulos.forEach((m, idx) => m.numero = idx + 1);
+
+        if (this.cmsTargetModuloId === moduloId) {
+            this.cmsTargetModuloId = tema.modulos[0]?.id || null;
+            this.cmsTargetLicaoId = tema.modulos[0]?.licoes?.[0]?.id || null;
+        }
+
+        this.saveTemas(temas);
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert("Módulo Excluído", "O módulo foi removido da árvore.", "info");
+        }
+        this.render();
+    },
+
+    toggleNovaLicaoInline(moduloId) {
+        this.cmsAdicionandoLicaoModuloId = this.cmsAdicionandoLicaoModuloId === moduloId ? null : moduloId;
+        this.render();
+        if (this.cmsAdicionandoLicaoModuloId) {
+            setTimeout(() => {
+                const el = document.getElementById('inline-lic-titulo-' + moduloId);
+                if (el) el.focus();
+            }, 100);
+        }
+    },
+
+    salvarNovaLicaoInline(temaId, moduloId) {
+        const titulo = (document.getElementById('inline-lic-titulo-' + moduloId)?.value || '').trim();
+        const num = (document.getElementById('inline-lic-num-' + moduloId)?.value || '').trim() || '1.1';
+        const xp = parseInt(document.getElementById('inline-lic-xp-' + moduloId)?.value) || 10;
+        const vidas = parseInt(document.getElementById('inline-lic-vidas-' + moduloId)?.value) || 3;
+
+        if (!titulo) {
+            return app.ui.showAlert("Atenção", "Por favor, informe o título da lição.", "warning");
+        }
+
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        if (!tema) return;
+        const modulo = (tema.modulos || []).find(m => m.id === moduloId);
+        if (!modulo) return;
+
+        if (!modulo.licoes) modulo.licoes = [];
+        const novaLic = {
+            id: 'lic_' + Date.now(),
+            moduloId: moduloId,
+            numero: num,
+            titulo: titulo,
+            xp: xp,
+            vidas: vidas,
+            desafios: []
+        };
+
+        modulo.licoes.push(novaLic);
+        this.saveTemas(temas);
+        this.cmsAdicionandoLicaoModuloId = null;
+        this.cmsTargetModuloId = moduloId;
+        this.cmsTargetLicaoId = novaLic.id;
+        this.cmsExpandedLicoes[novaLic.id] = true;
+
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert("Lição Criada!", `A lição <strong>${titulo}</strong> foi criada. Agora você pode adicionar perguntas diretamente a ela!`, "success");
+        }
+        this.render();
+    },
+
+    excluirLicaoCMS(temaId, moduloId, licaoId) {
+        if (!confirm("Deseja realmente remover esta lição e todas as suas perguntas?")) return;
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        if (!tema) return;
+        const modulo = (tema.modulos || []).find(m => m.id === moduloId);
+        if (!modulo) return;
+
+        modulo.licoes = (modulo.licoes || []).filter(l => l.id !== licaoId);
+        delete this.cmsExpandedLicoes[licaoId];
+        if (this.cmsTargetLicaoId === licaoId) {
+            this.cmsTargetLicaoId = modulo.licoes[0]?.id || null;
+        }
+
+        this.saveTemas(temas);
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert("Lição Excluída", "A lição foi removida com sucesso.", "info");
+        }
+        this.render();
+    },
+
+    excluirTemaCMS(temaId) {
+        const temas = this.getTemas();
+        if (temas.length <= 1) {
+            return app.ui.showAlert("Operação Não Permitida", "Você deve manter pelo menos um tema cadastrado no Softlingo.", "warning");
+        }
+        const tema = temas.find(t => t.id === temaId);
+        if (!confirm(`Deseja realmente excluir o tema "${tema?.titulo}" e toda a sua árvore de módulos e lições?`)) return;
+
+        const filtrados = temas.filter(t => t.id !== temaId);
+        this.saveTemas(filtrados);
+        this.cmsSelectedTemaId = filtrados[0]?.id || null;
+        this.cmsTargetModuloId = null;
+        this.cmsTargetLicaoId = null;
+
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert("Tema Excluído", "O tema foi removido com sucesso.", "info");
+        }
+        this.render();
+    },
+
+    toggleExpandirQuestoesLicao(licaoId) {
+        this.cmsExpandedLicoes[licaoId] = !this.cmsExpandedLicoes[licaoId];
+        this.render();
+    },
+
+    selecionarLicaoParaNovaQuestao(temaId, moduloId, licaoId) {
+        this.cmsSelectedTemaId = temaId;
+        this.cmsTargetModuloId = moduloId;
+        this.cmsTargetLicaoId = licaoId;
+        this.cmsExpandedLicoes[licaoId] = true;
+        this.render();
+        setTimeout(() => {
+            const el = document.getElementById('form-cms-questao');
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const enunc = document.getElementById('cms-q-enunciado');
+                if (enunc) enunc.focus();
+            }
+        }, 150);
+    },
+
+    // =========================================================================
     // CASCATA E FORMULÁRIO DINÂMICO ADAPTATIVO DO CMS
     // =========================================================================
     atualizarCascataCMS() {
@@ -25089,11 +26126,11 @@ app.duolingo = {
         const moduloSelect = document.getElementById('cms-q-modulo');
         if (!temaSelect || !moduloSelect) return;
 
-        const temaId = temaSelect.value;
+        const temaId = temaSelect.value || this.cmsSelectedTemaId;
         const tema = this.getTemaById(temaId);
-        const modulos = tema.modulos || [];
+        const modulos = tema ? (tema.modulos || []) : [];
 
-        moduloSelect.innerHTML = modulos.map(m => `<option value="${m.id}">${m.titulo}</option>`).join('');
+        moduloSelect.innerHTML = modulos.map(m => `<option value="${m.id}" ${m.id === this.cmsTargetModuloId ? 'selected' : ''}>${m.titulo}</option>`).join('');
         this.atualizarLicoesCascataCMS();
     },
 
@@ -25106,10 +26143,10 @@ app.duolingo = {
         const temaId = temaSelect.value;
         const moduloId = moduloSelect.value;
         const tema = this.getTemaById(temaId);
-        const modulo = (tema.modulos || []).find(m => m.id === moduloId);
+        const modulo = tema ? (tema.modulos || []).find(m => m.id === moduloId) : null;
         const licoes = modulo ? (modulo.licoes || []) : [];
 
-        licaoSelect.innerHTML = licoes.map(l => `<option value="${l.id}">${l.numero} - ${l.titulo}</option>`).join('');
+        licaoSelect.innerHTML = licoes.map(l => `<option value="${l.id}" ${l.id === this.cmsTargetLicaoId ? 'selected' : ''}>${l.numero} - ${l.titulo}</option>`).join('');
     },
 
     atualizarCamposTipoCMS() {
@@ -25138,7 +26175,7 @@ app.duolingo = {
         } else if (tipo === 'ESCOLHA_DE_FALA') {
             container.innerHTML = `
                 <div class="space-y-3">
-                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Alternativas de Fala (Preencha as 3 opções e marque o gabarito):</span>
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Alternativas de Fala (Preencha as 3 opções e marque o gabarito oficial):</span>
                     <div>
                         <div class="flex items-center gap-2">
                             <input type="radio" name="cms_fala_gabarito" value="0" checked class="w-4 h-4 text-sky-600" title="Marcar como Opção Correta">
@@ -25237,7 +26274,7 @@ app.duolingo = {
                 <form onsubmit="event.preventDefault(); app.duolingo.salvarNovoTema();" class="space-y-3">
                     <div>
                         <label class="block text-xs font-bold mb-1">Título do Tema</label>
-                        <input type="text" id="novo-tema-titulo" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="Ex: Comunicação Não-Violenta no Call Center">
+                        <input type="text" id="novo-tema-titulo" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold" placeholder="Ex: Comunicação Não-Violenta no Call Center">
                     </div>
                     <div>
                         <label class="block text-xs font-bold mb-1">Ícone FontAwesome</label>
@@ -25281,189 +26318,15 @@ app.duolingo = {
         const temas = this.getTemas();
         temas.push(novoTema);
         this.saveTemas(temas);
+        this.cmsSelectedTemaId = novoTema.id;
+        this.cmsTargetModuloId = null;
+        this.cmsTargetLicaoId = null;
 
         const m = document.getElementById('modal-cms-novo-tema');
         if (m) m.remove();
 
         if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Tema Criado!", `O tema <strong>${titulo}</strong> foi adicionado com sucesso.`, "success");
-        }
-        this.render();
-    },
-
-    abrirModalNovoModulo() {
-        const temas = this.getTemas();
-        const modal = document.createElement('div');
-        modal.id = 'modal-cms-novo-modulo';
-        modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-800 dark:text-slate-100';
-        modal.innerHTML = `
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
-                    <h3 class="font-black text-slate-800 dark:text-white text-base">Adicionar Novo Módulo / Seção</h3>
-                    <button onclick="document.getElementById('modal-cms-novo-modulo').remove()" class="text-slate-400 hover:text-white">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </div>
-                <form onsubmit="event.preventDefault(); app.duolingo.salvarNovoModulo();" class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Tema Pertencente</label>
-                        <select id="novo-mod-tema" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                            ${temas.map(t => `<option value="${t.id}">${t.titulo}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Título do Módulo</label>
-                        <input type="text" id="novo-mod-titulo" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="Ex: MÓDULO 3: Técnicas de Negociação e Empatia">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Ícone</label>
-                        <input type="text" id="novo-mod-icone" value="fa-book-open" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="fa-headphones, fa-comments">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Descrição</label>
-                        <textarea id="novo-mod-desc" rows="2" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="Compreenda como contornar objeções..."></textarea>
-                    </div>
-                    <button type="submit" class="w-full mt-3 bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition">
-                        Adicionar Módulo
-                    </button>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    },
-
-    salvarNovoModulo() {
-        const temaId = document.getElementById('novo-mod-tema').value;
-        const titulo = document.getElementById('novo-mod-titulo').value.trim();
-        const icone = document.getElementById('novo-mod-icone').value.trim() || 'fa-book-open';
-        const desc = document.getElementById('novo-mod-desc').value.trim();
-
-        if (!titulo) return;
-
-        const temas = this.getTemas();
-        const tema = temas.find(t => t.id === temaId);
-        if (!tema) return;
-
-        if (!tema.modulos) tema.modulos = [];
-        const num = tema.modulos.length + 1;
-
-        tema.modulos.push({
-            id: 'mod_' + Date.now(),
-            temaId: temaId,
-            numero: num,
-            titulo: titulo,
-            icone: icone,
-            descricao: desc,
-            licoes: []
-        });
-
-        this.saveTemas(temas);
-        const m = document.getElementById('modal-cms-novo-modulo');
-        if (m) m.remove();
-
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Módulo Criado!", `O módulo <strong>${titulo}</strong> foi adicionado ao tema.`, "success");
-        }
-        this.render();
-    },
-
-    abrirModalNovaLicao() {
-        const temas = this.getTemas();
-        const modal = document.createElement('div');
-        modal.id = 'modal-cms-nova-licao';
-        modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-800 dark:text-slate-100';
-        modal.innerHTML = `
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
-                    <h3 class="font-black text-slate-800 dark:text-white text-base">Adicionar Nova Lição</h3>
-                    <button onclick="document.getElementById('modal-cms-nova-licao').remove()" class="text-slate-400 hover:text-white">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </div>
-                <form onsubmit="event.preventDefault(); app.duolingo.salvarNovaLicao();" class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Tema</label>
-                        <select id="nova-lic-tema" onchange="app.duolingo.atualizarModulosNovaLicao()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                            ${temas.map(t => `<option value="${t.id}">${t.titulo}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Módulo</label>
-                        <select id="nova-lic-modulo" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                            <!-- Preenchido dinamicamente -->
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Título da Lição</label>
-                        <input type="text" id="nova-lic-titulo" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="Ex: Abordagem Inicial Empática">
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <div>
-                            <label class="block text-xs font-bold mb-1">Número</label>
-                            <input type="text" id="nova-lic-num" value="1.1" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold mb-1">XP</label>
-                            <input type="number" id="nova-lic-xp" value="10" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold mb-1">Vidas</label>
-                            <input type="number" id="nova-lic-vidas" value="3" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                        </div>
-                    </div>
-                    <button type="submit" class="w-full mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition">
-                        Adicionar Lição
-                    </button>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        this.atualizarModulosNovaLicao();
-    },
-
-    atualizarModulosNovaLicao() {
-        const temaSelect = document.getElementById('nova-lic-tema');
-        const moduloSelect = document.getElementById('nova-lic-modulo');
-        if (!temaSelect || !moduloSelect) return;
-
-        const tema = this.getTemaById(temaSelect.value);
-        moduloSelect.innerHTML = (tema.modulos || []).map(m => `<option value="${m.id}">${m.titulo}</option>`).join('');
-    },
-
-    salvarNovaLicao() {
-        const temaId = document.getElementById('nova-lic-tema').value;
-        const moduloId = document.getElementById('nova-lic-modulo').value;
-        const titulo = document.getElementById('nova-lic-titulo').value.trim();
-        const num = document.getElementById('nova-lic-num').value.trim() || '1.1';
-        const xp = parseInt(document.getElementById('nova-lic-xp').value) || 10;
-        const vidas = parseInt(document.getElementById('nova-lic-vidas').value) || 3;
-
-        if (!titulo || !moduloId) return;
-
-        const temas = this.getTemas();
-        const tema = temas.find(t => t.id === temaId);
-        if (!tema) return;
-        const modulo = (tema.modulos || []).find(m => m.id === moduloId);
-        if (!modulo) return;
-
-        if (!modulo.licoes) modulo.licoes = [];
-
-        modulo.licoes.push({
-            id: 'lic_' + Date.now(),
-            moduloId: moduloId,
-            numero: num,
-            titulo: titulo,
-            xp: xp,
-            vidas: vidas,
-            desafios: []
-        });
-
-        this.saveTemas(temas);
-        const m = document.getElementById('modal-cms-nova-licao');
-        if (m) m.remove();
-
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Lição Criada!", `A lição <strong>${titulo}</strong> foi criada com sucesso.`, "success");
+            app.ui.showAlert("Tema Criado!", `O tema <strong>${titulo}</strong> foi adicionado. Agora você pode criar módulos e lições diretamente na tela!`, "success");
         }
         this.render();
     },
@@ -25564,8 +26427,13 @@ app.duolingo = {
         }
 
         this.saveTemas(temas);
+        this.cmsSelectedTemaId = temaId;
+        this.cmsTargetModuloId = modId;
+        this.cmsTargetLicaoId = licaoId;
+        this.cmsExpandedLicoes[licaoId] = true;
+
         if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Questão Salva", `A questão foi salva com status: <b>${publicar ? 'PUBLICADO' : 'RASCUNHO'}</b>.`, "success");
+            app.ui.showAlert("Questão Salva!", `A questão foi adicionada com status: <b>${publicar ? 'PUBLICADO' : 'RASCUNHO'}</b>. Você pode continuar cadastrando a próxima pergunta!`, "success");
         }
         this.render();
     },
@@ -25652,7 +26520,6 @@ app.duolingo = {
         }
         return rows.join('');
     },
-
     // =========================================================================
     // PAINEL DE GARGALOS (IDENTIFICAÇÃO DE USUÁRIOS E AÇÃO DE QUALIDADE)
     // =========================================================================

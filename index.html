@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal de Resultados | Softmarketing</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/%3E%3C/svg%3E">
 
     <!-- SheetJS (Excel Export) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -69,7 +70,6 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
         <link rel="stylesheet" href="style.css">
 </head>
-</head>
     
 <body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
 
@@ -106,6 +106,7 @@
             <span class="loader"></span>
             <h2 class="text-xl font-black text-slate-800 dark:text-white mt-8 mb-2 tracking-tight">Sincronizando...</h2>
             <p class="text-slate-500 dark:text-slate-400 text-sm">Aguarde, estamos baixando os dados do servidor.</p>
+            <button type="button" onclick="document.getElementById('sync-loader-screen') && document.getElementById('sync-loader-screen').classList.add('hidden')" class="mt-4 px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-xmark"></i> Cancelar</button>
         </div>
     </div>
 
@@ -138,6 +139,7 @@
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tipo de Acesso (Grupo)</label>
                     <select id="cad-tipo-acesso" onchange="app.ui.aplicarPresetNoModal(this.value, 'cad-aba-check')" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                        <option value="Operador">Operador</option>
                         <option value="Qualidade">Qualidade</option>
                         <option value="Treinamento">Treinamento</option>
                         <option value="Dev">Dev</option>
@@ -192,6 +194,7 @@
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tipo de Acesso (Grupo)</label>
                     <select id="edit-tipo-acesso" onchange="app.ui.aplicarPresetNoModal(this.value, 'edit-aba-check')" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-purple-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                        <option value="Operador">Operador</option>
                         <option value="Qualidade">Qualidade</option>
                         <option value="Treinamento">Treinamento</option>
                         <option value="Dev">Dev</option>
@@ -639,23 +642,50 @@
         <div class="space-y-1.5 max-w-sm">
             <h2 class="text-2xl font-black text-slate-800 dark:text-white tracking-wider uppercase">AGUARDE</h2>
             <p class="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium">
-                Carregando sua sessão e sincronizando seus dados...
+                Carregando sua sess&atilde;o e sincronizando seus dados...
             </p>
+            <div class="pt-4">
+                <button type="button" onclick="window.emergencyDismissWaitScreen ? window.emergencyDismissWaitScreen() : (function(){ try { localStorage.removeItem('soft_session_mat'); localStorage.removeItem('soft_session_date'); localStorage.removeItem('soft_session_admin'); } catch(e){} document.getElementById('session-wait-screen') && document.getElementById('session-wait-screen').classList.add('hidden'); document.getElementById('view-login') && document.getElementById('view-login').classList.remove('hidden'); })()" class="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-2 mx-auto cursor-pointer shadow-sm">
+                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Voltar para a Tela de Login
+                </button>
+            </div>
         </div>
     </div>
     <script>
+        window.emergencyDismissWaitScreen = function() {
+            try {
+                localStorage.removeItem("soft_session_mat");
+                localStorage.removeItem("soft_session_date");
+                localStorage.removeItem("soft_session_admin");
+            } catch(e) {}
+            var ws = document.getElementById("session-wait-screen");
+            if (ws) ws.classList.add("hidden");
+            var lv = document.getElementById("view-login");
+            if (lv) lv.classList.remove("hidden");
+        };
+
         (function() {
             try {
-                const sMat = localStorage.getItem('soft_session_mat');
-                const sDate = localStorage.getItem('soft_session_date');
-                const todayStr = new Date().toLocaleDateString('pt-BR');
+                const sMat = localStorage.getItem("soft_session_mat");
+                const sDate = localStorage.getItem("soft_session_date");
+                const todayStr = new Date().toLocaleDateString("pt-BR");
                 if (sMat && sDate === todayStr) {
-                    const lView = document.getElementById('view-login');
-                    if (lView) lView.classList.add('hidden');
-                    const wScreen = document.getElementById('session-wait-screen');
-                    if (wScreen) wScreen.classList.remove('hidden');
+                    const lView = document.getElementById("view-login");
+                    if (lView) lView.classList.add("hidden");
+                    const wScreen = document.getElementById("session-wait-screen");
+                    if (wScreen) wScreen.classList.remove("hidden");
                 }
             } catch (e) {}
+
+            // Trava de seguranca global: Se a tela ficar presa em AGUARDE por mais de 3.5 segundos, restaura automaticamente a tela de login
+            setTimeout(function() {
+                var ws = document.getElementById("session-wait-screen");
+                var vApp = document.getElementById("view-app");
+                if (ws && !ws.classList.contains("hidden") && (!vApp || vApp.classList.contains("hidden"))) {
+                    console.warn("[Softmarketing] Timeout do AGUARDE atingido (3.5s). Restaurando tela de login.");
+                    window.emergencyDismissWaitScreen();
+                }
+            }, 12000);
         })();
     </script>
 
