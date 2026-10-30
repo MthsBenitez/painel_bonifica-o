@@ -620,6 +620,9 @@ storage: {
                             if (data.softlingo) {
                                 app.softlingoModulos = data.softlingo.modulos || null;
                                 app.tentativasRespostas = data.softlingo.tentativas_respostas || {};
+                                if (data.softlingo.mascotes && app.duolingo && typeof app.duolingo.mesclarListaMascotes === 'function') {
+                                    app.duolingo.mesclarListaMascotes(Array.isArray(data.softlingo.mascotes) ? data.softlingo.mascotes : Object.values(data.softlingo.mascotes));
+                                }
                             } else {
                                 try {
                                     const localSM = localStorage.getItem('softlingo_modulos_backup');
@@ -627,6 +630,27 @@ storage: {
                                     const localTR = localStorage.getItem('softlingo_tentativas_backup');
                                     if (localTR) app.tentativasRespostas = JSON.parse(localTR);
                                 } catch(e) {}
+                            }
+                            if (data.softlingo_temas && app.duolingo && typeof app.duolingo.normalizeTemas === 'function') {
+                                const fbTemas = app.duolingo.normalizeTemas(data.softlingo_temas);
+                                try {
+                                    const localRaw = localStorage.getItem('softlingo_temas_backup');
+                                    if (localRaw) {
+                                        const localTemas = app.duolingo.normalizeTemas(JSON.parse(localRaw));
+                                        // Preserva o backup local se tiver mais questões/edições recentes ou usa o do Firebase
+                                        if (localTemas.length > 0) {
+                                            app.softlingoTemas = localTemas;
+                                        } else {
+                                            app.softlingoTemas = fbTemas;
+                                            localStorage.setItem('softlingo_temas_backup', JSON.stringify(fbTemas));
+                                        }
+                                    } else if (fbTemas.length > 0) {
+                                        app.softlingoTemas = fbTemas;
+                                        localStorage.setItem('softlingo_temas_backup', JSON.stringify(fbTemas));
+                                    }
+                                } catch (e) {
+                                    app.softlingoTemas = fbTemas;
+                                }
                             }
                             if (data.fcrProvas) {
                                 app.fcrProvas = data.fcrProvas;
@@ -13188,6 +13212,20 @@ storage: {
                     if(!canManageMon && !app.currentUser) return;
                     
                     let state = app.monitoriasData || {};
+                    if (state.detalhes && Array.isArray(state.detalhes.linhas) && state.detalhes.linhas.length > 0 && app.admin && typeof app.admin.inverterEConectarAvaliadorBase === 'function') {
+                        const precisaReprocessarNomes = state.detalhes.linhas.some(l => {
+                            const monRaw = String(l.monitor || '');
+                            if (monRaw.includes(',')) return true;
+                            const resolved = app.admin.inverterEConectarAvaliadorBase(monRaw);
+                            return resolved.conectado && resolved.nomeFinal !== monRaw;
+                        });
+                        if (precisaReprocessarNomes && !this._reprocessandoMonitoriasNomes) {
+                            this._reprocessandoMonitoriasNomes = true;
+                            app.admin.recalcularPainelMonitorias(state.detalhes.linhas);
+                            this._reprocessandoMonitoriasNomes = false;
+                            return;
+                        }
+                    }
                     const rankingArray = state.ranking || []; 
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     
@@ -13342,8 +13380,13 @@ storage: {
                                     <td class="py-3 px-4 flex items-center gap-3">
                                         <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
                                         <div>
-                                            <div class="font-bold text-blue-600 dark:text-blue-400 text-sm flex items-center gap-2">
+                                            <div class="font-bold text-blue-600 dark:text-blue-400 text-sm flex items-center gap-2 flex-wrap">
                                                 <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:text-blue-700 transition-colors" title="Abrir Calculadora / Editar Lançamento">${userObj.nome}</span> 
+                                                ${(r.totalManual > 0 || (app.monitoriasData?.lancamentosManuais?.[r.matricula]?.totalManual > 0)) ? `
+                                                    <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-black flex items-center gap-1" title="Lançamento manual fixado (não apaga ao atualizar relatórios)">
+                                                        <i class="fa-solid fa-lock text-[8px]"></i> Manual +${r.totalManual || app.monitoriasData?.lancamentosManuais?.[r.matricula]?.totalManual}
+                                                    </span>
+                                                ` : ''}
                                                 <button onclick="app.admin.toggleIsentarMeta('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-teal-100 hover:text-teal-600 px-1.5 py-0.5 rounded shadow-sm text-[9px] uppercase tracking-widest font-black transition-colors" title="Isentar Colaborador da Meta de 400 Mensal">
                                                     <i class="fa-solid ${isIsento ? 'fa-star text-teal-500' : 'fa-star-half-stroke'}"></i> ${isIsento ? 'Isento' : 'Isentar'}
                                                 </button>
@@ -17802,30 +17845,148 @@ storage: {
                     input.value = ''; 
                 },
                 
+                calcularBasePlanilhaPorMatricula(matricula, linhasOverride = null) {
+                    const linhas = Array.isArray(linhasOverride)
+                        ? linhasOverride
+                        : ((app.monitoriasData && app.monitoriasData.detalhes && Array.isArray(app.monitoriasData.detalhes.linhas)) ? app.monitoriasData.detalhes.linhas : []);
+                    let totalPlanilha = 0;
+                    let metaFbPlanilha = 0;
+                    let realFbPlanilha = 0;
+                    let pendenteFbPlanilha = 0;
+
+                    if (!matricula) return { totalPlanilha, metaFbPlanilha, realFbPlanilha, pendenteFbPlanilha };
+
+                    linhas.forEach(linha => {
+                        if (linha.source === 'MANUAL') return;
+                        if (linha.isRegisteredMonitor && String(linha.matriculaMonitor) === String(matricula)) {
+                            totalPlanilha += 1;
+                            if (app.isNotaFeedback(linha.nota)) {
+                                metaFbPlanilha += 1;
+                                const isAplicado = String(linha.status || '').toLowerCase().includes('feedback_aplicado') || String(linha.status || '').toLowerCase().includes('feedback aplicado');
+                                if (isAplicado) realFbPlanilha += 1;
+                                else pendenteFbPlanilha += 1;
+                            }
+                        }
+                    });
+                    return { totalPlanilha, metaFbPlanilha, realFbPlanilha, pendenteFbPlanilha };
+                },
+
+                sincronizarLancamentosManuaisExistentes(linhasReferencia = null) {
+                    if (!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { linhas: [] }, lancamentosManuais: {} };
+                    if (!app.monitoriasData.lancamentosManuais || typeof app.monitoriasData.lancamentosManuais !== 'object') {
+                        app.monitoriasData.lancamentosManuais = {};
+                    }
+                    const rankingAtual = Array.isArray(app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
+                    rankingAtual.forEach(r => {
+                        if (!r || !r.matricula) return;
+                        const basePlan = this.calcularBasePlanilhaPorMatricula(r.matricula, linhasReferencia);
+                        const diffTotal = Math.max(0, (parseInt(r.total) || 0) - basePlan.totalPlanilha);
+                        const diffFbs = Math.max(0, (parseInt(r.pendenteFeedback) || 0) - basePlan.pendenteFbPlanilha);
+                        const jaTemManual = app.monitoriasData.lancamentosManuais[r.matricula];
+
+                        if (!jaTemManual && (r.totalManual > 0 || r.operacao === 'Manual' || diffTotal > 0 || diffFbs > 0)) {
+                            app.monitoriasData.lancamentosManuais[r.matricula] = {
+                                matricula: r.matricula,
+                                nome: r.nome,
+                                totalManual: r.totalManual !== undefined ? r.totalManual : diffTotal,
+                                fbsManual: r.pendenteFeedbackManual !== undefined ? r.pendenteFeedbackManual : diffFbs,
+                                operacao: r.operacao || 'Manual',
+                                atualizadoEm: Date.now()
+                            };
+                        }
+                    });
+                },
+
+                atualizarResumoModalMonitoriaManual(matr) {
+                    const infoBox = document.getElementById('man-breakdown-info');
+                    const inpTotal = document.getElementById('man-total');
+                    const inpFbs = document.getElementById('man-fbs');
+                    if (!matr) {
+                        if (infoBox) infoBox.innerHTML = 'Selecione um colaborador para visualizar o saldo das planilhas e o lançamento manual fixo.';
+                        return;
+                    }
+                    this.sincronizarLancamentosManuaisExistentes();
+                    const basePlan = this.calcularBasePlanilhaPorMatricula(matr);
+                    const manObj = app.monitoriasData?.lancamentosManuais?.[matr] || null;
+                    const ranking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
+                    const rExist = ranking.find(r => r.matricula === matr);
+
+                    const manualSalvo = manObj ? (parseInt(manObj.totalManual) || 0) : (rExist ? Math.max(0, (rExist.total || 0) - basePlan.totalPlanilha) : 0);
+                    const fbsManSalvo = manObj ? (parseInt(manObj.fbsManual) || 0) : (rExist ? Math.max(0, (rExist.pendenteFeedback || 0) - basePlan.pendenteFbPlanilha) : 0);
+                    const totalConsolidado = basePlan.totalPlanilha + manualSalvo;
+                    const fbsConsolidado = basePlan.pendenteFbPlanilha + fbsManSalvo;
+
+                    if (inpTotal) inpTotal.value = totalConsolidado;
+                    if (inpFbs) inpFbs.value = fbsConsolidado;
+                    if (infoBox) {
+                        infoBox.innerHTML = `
+                            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                <span><i class="fa-solid fa-file-excel text-blue-500 mr-1"></i>Planilhas: <b>${basePlan.totalPlanilha}</b></span>
+                                <span><i class="fa-solid fa-lock text-emerald-600 mr-1"></i>Manual Fixo: <b class="text-emerald-600 dark:text-emerald-400">+${manualSalvo}</b></span>
+                                <span>Total Atual: <b>${totalConsolidado}</b></span>
+                            </div>
+                        `;
+                    }
+                },
+
                 abrirModalMonitoriaManual(matriculaEdit = null) {
+                    this.sincronizarLancamentosManuaisExistentes();
                     const ranking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
                     let nome = '', matr = '', total = 0, fbsPendentes = 0;
+                    let basePlan = { totalPlanilha: 0, pendenteFbPlanilha: 0 };
+                    let manualSalvo = 0;
                     
                     if (matriculaEdit) {
+                        matr = matriculaEdit;
+                        basePlan = this.calcularBasePlanilhaPorMatricula(matriculaEdit);
+                        const manObj = app.monitoriasData?.lancamentosManuais?.[matriculaEdit];
                         const m = ranking.find(r => r.matricula === matriculaEdit);
-                        if(m) { nome = m.nome; matr = m.matricula; total = m.total; fbsPendentes = m.pendenteFeedback || 0; }
+                        if (m) {
+                            nome = m.nome;
+                            total = m.total;
+                            fbsPendentes = m.pendenteFeedback || 0;
+                            manualSalvo = manObj ? (manObj.totalManual || 0) : Math.max(0, total - basePlan.totalPlanilha);
+                        } else if (manObj) {
+                            nome = manObj.nome;
+                            manualSalvo = manObj.totalManual || 0;
+                            total = basePlan.totalPlanilha + manualSalvo;
+                            fbsPendentes = basePlan.pendenteFbPlanilha + (manObj.fbsManual || 0);
+                        }
                     }
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-headphones text-emerald-500"></i> ${matriculaEdit ? 'Editar' : 'Inserir'} Monitoria Manual`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-headphones text-emerald-500"></i> ${matriculaEdit ? 'Editar' : 'Inserir'} Monitoria Manual Fixa`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="space-y-4">
+                            <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+                                <i class="fa-solid fa-shield-halved text-emerald-500 text-base mt-0.5"></i>
+                                <div>
+                                    <span class="font-black block">Lançamento Manual Blindado</span>
+                                    <span class="text-[11px] opacity-90">Os lançamentos manuais ficam salvos separadamente e <b>não são apagados</b> quando você atualizar o Relatório Padrão ou o Relatório da Amil.</span>
+                                </div>
+                            </div>
+
                             <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Colaborador</label>
-                                <select id="man-matr" ${matriculaEdit ? 'disabled' : ''} class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white cursor-pointer">
+                                <select id="man-matr" ${matriculaEdit ? 'disabled' : ''} onchange="app.admin.atualizarResumoModalMonitoriaManual(this.value)" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm dark:text-white cursor-pointer">
                                     <option value="">Selecione...</option>
                                     ${app.users.map(u => `<option value="${u.matricula}" ${u.matricula === matr ? 'selected' : ''}>${u.nome}</option>`).join('')}
                                 </select>
+                            </div>
+
+                            <div id="man-breakdown-info" class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs">
+                                ${matriculaEdit ? `
+                                    <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                        <span><i class="fa-solid fa-file-excel text-blue-500 mr-1"></i>Planilhas: <b>${basePlan.totalPlanilha}</b></span>
+                                        <span><i class="fa-solid fa-lock text-emerald-600 mr-1"></i>Manual Fixo: <b class="text-emerald-600 dark:text-emerald-400">+${manualSalvo}</b></span>
+                                        <span>Total Atual: <b>${total}</b></span>
+                                    </div>
+                                ` : 'Selecione um colaborador para visualizar o saldo das planilhas e o lançamento manual fixo.'}
                             </div>
                             
                             <div class="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/50 space-y-4">
                                 <div class="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest"><i class="fa-solid fa-calculator"></i> Calculadora (Ajuste Rápido)</div>
                                 
                                 <div>
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Total Realizado</label>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Total Realizado (Planilha + Manual)</label>
                                     <div class="flex items-center gap-2">
                                         <input type="number" id="man-total" value="${total}" class="w-20 p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none text-sm font-black text-slate-800 dark:text-white text-center shadow-sm">
                                         <span class="text-slate-400 font-bold text-lg">±</span>
@@ -17849,9 +18010,9 @@ storage: {
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        ${matriculaEdit ? `<button onclick="app.admin.removerMonitoriaManual('${matriculaEdit}')" class="mr-auto px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-sm transition-colors"><i class="fa-solid fa-trash"></i> Remover</button>` : ''}
+                        ${matriculaEdit ? `<button onclick="app.admin.removerMonitoriaManual('${matriculaEdit}')" class="mr-auto px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-sm transition-colors"><i class="fa-solid fa-trash"></i> Remover Manual</button>` : ''}
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
-                        <button onclick="app.admin.salvarMonitoriaManual()" class="px-5 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm shadow-md">Salvar Lançamento</button>
+                        <button onclick="app.admin.salvarMonitoriaManual()" class="px-5 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm shadow-md">Salvar Lançamento Fixo</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
@@ -17863,69 +18024,57 @@ storage: {
                     
                     if(!matr) return app.ui.showAlert("Aviso", "Selecione um colaborador.", "error");
 
-                    // CORREÇÃO: Garante o array seguro para não travar inserções
-                    if(!app.monitoriasData) app.monitoriasData = { ranking: [], ultimaAtualizacao: Date.now() };
+                    if(!app.monitoriasData) app.monitoriasData = { ranking: [], detalhes: { linhas: [] }, lancamentosManuais: {}, ultimaAtualizacao: Date.now() };
+                    if(!app.monitoriasData.lancamentosManuais) app.monitoriasData.lancamentosManuais = {};
                     
                     const usr = app.users.find(u => u.matricula === matr);
-                    let ranking = app.monitoriasData.ranking || []; 
-                    
-                    let idx = ranking.findIndex(r => r.matricula === matr);
+                    if (!usr) return app.ui.showAlert("Aviso", "Colaborador não encontrado na base.", "error");
 
-                    if (idx > -1) {
-                        ranking[idx].total = total;
-                        ranking[idx].falta = Math.max(0, 400 - total);
-                        ranking[idx].pendenteFeedback = fbs;
+                    const basePlan = this.calcularBasePlanilhaPorMatricula(matr);
+                    const totalManual = Math.max(0, total - basePlan.totalPlanilha);
+                    const fbsManual = Math.max(0, fbs - basePlan.pendenteFbPlanilha);
+
+                    if (totalManual > 0 || fbsManual > 0) {
+                        app.monitoriasData.lancamentosManuais[matr] = {
+                            matricula: matr,
+                            nome: usr.nome,
+                            totalManual: totalManual,
+                            fbsManual: fbsManual,
+                            operacao: (usr.operacoes && usr.operacoes[0]) || 'Manual',
+                            atualizadoEm: Date.now()
+                        };
                     } else {
-                        ranking.push({ nome: usr.nome, matricula: matr, total: total, falta: Math.max(0, 400 - total), pendenteFeedback: fbs, operacao: (usr.operacoes && usr.operacoes[0]) || 'Manual' });
+                        delete app.monitoriasData.lancamentosManuais[matr];
                     }
 
-                    // Automatiza para "Meus Resultados" (G1 e G2)
-                    if(!usr.results) usr.results = {};
-                    if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
-                    
-                    if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
-                    usr.results[app.currentMonth]['g1'].real = total;
-
-                    // Injeta a lógica corrigida para G2 (Feedback) subtraindo pendentes
-                    if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
-                    const rItem = ranking.find(r => r.matricula === matr);
-                    if (rItem) {
-                        let metaCalculada = Math.max(rItem.metaFb || 0, rItem.pendenteFeedback || 0);
-                        usr.results[app.currentMonth]['g2'].meta = metaCalculada;
-                        usr.results[app.currentMonth]['g2'].real = Math.max(0, metaCalculada - (rItem.pendenteFeedback || 0));
-                    }
-
-                    app.monitoriasData.ranking = ranking; // Reatribui pro objeto principal
-                    app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
-                    
-                    // ATUALIZAÇÃO ATÔMICA
-                    firebase.database().ref('sistema_bonificacao').update({
-                        users: app.users,
-                        monitorias: app.allMonitorias
-                    }).then(() => {
-                        document.getElementById('global-modal').classList.add('hidden');
-                        app.ui.showAlert("Sucesso", "Lançamento manual salvo e contabilizado nos resultados.", "success");
-                        app.ui.renderTab('import_monitorias', true);
-                    });
+                    document.getElementById('global-modal').classList.add('hidden');
+                    this.recalcularPainelMonitorias(false, "Lançamento manual fixado! Mesmo quando você atualizar o Relatório Padrão ou da Amil, essas monitorias continuarão salvas automaticamente.");
                 },
 
                 removerMonitoriaManual(matr) {
-                    app.monitoriasData.ranking = app.monitoriasData.ranking.filter(r => r.matricula !== matr);
-                    // Zera nos Meus Resultados também
-                    const usr = app.users.find(u => u.matricula === matr);
-                    if(usr && usr.results && usr.results[app.currentMonth] && usr.results[app.currentMonth]['g1']) {
-                        usr.results[app.currentMonth]['g1'].real = 0;
+                    if (app.monitoriasData && app.monitoriasData.lancamentosManuais && app.monitoriasData.lancamentosManuais[matr]) {
+                        delete app.monitoriasData.lancamentosManuais[matr];
                     }
-                    
-                    app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
-                    // ATUALIZAÇÃO ATÔMICA
-                    firebase.database().ref('sistema_bonificacao').update({
-                        users: app.users,
-                        monitorias: app.allMonitorias
-                    }).then(() => {
-                        document.getElementById('global-modal').classList.add('hidden');
-                        app.ui.renderTab('import_monitorias', true);
-                    });
+                    if (app.monitoriasData && Array.isArray(app.monitoriasData.ranking)) {
+                        const basePlan = this.calcularBasePlanilhaPorMatricula(matr);
+                        if (basePlan.totalPlanilha === 0) {
+                            app.monitoriasData.ranking = app.monitoriasData.ranking.filter(r => r.matricula !== matr);
+                            const usr = app.users.find(u => u.matricula === matr);
+                            if(usr && usr.results && usr.results[app.currentMonth] && usr.results[app.currentMonth]['g1']) {
+                                usr.results[app.currentMonth]['g1'].real = 0;
+                            }
+                        } else {
+                            const r = app.monitoriasData.ranking.find(x => x.matricula === matr);
+                            if (r) {
+                                r.total = basePlan.totalPlanilha;
+                                r.totalManual = 0;
+                                r.pendenteFeedback = basePlan.pendenteFbPlanilha;
+                                r.pendenteFeedbackManual = 0;
+                            }
+                        }
+                    }
+                    document.getElementById('global-modal').classList.add('hidden');
+                    this.recalcularPainelMonitorias(false, "Lançamento manual removido com sucesso.");
                 },
             
             // ==========================================
@@ -17962,31 +18111,205 @@ storage: {
                 },
             
                 // ==========================================
+                // HELPER: INVERTER "SOBRENOME, NOME" E CONECTAR COM A BASE DE USUÁRIOS (AMIL / MONITORIA)
+                // ==========================================
+                inverterNomeVirgula(rawStr) {
+                    let limpo = app.utils.fixEncoding(String(rawStr || '')).replace(/[\r\n\t]+/g, ' ').trim();
+                    if (!limpo) return '';
+                    // Remove eventual matrícula no início ex: "36515 - SILVA, MARIA" -> trata apenas a parte do nome se houver hífen
+                    if (/^\d+\s*-\s*/.test(limpo)) {
+                        limpo = limpo.replace(/^\d+\s*-\s*/, '').trim();
+                    }
+                    // Remove sufixos entre parênteses ou colchetes ex: "SILVA, MARIA (AMIL)"
+                    limpo = limpo.replace(/\s*[\(\[][^\)\]]*[\)\]]\s*$/g, '').trim();
+
+                    if (limpo.includes(',')) {
+                        const partes = limpo.split(',');
+                        const sobrenomeAntesDaVirgula = partes[0].trim();
+                        const nomeDepoisDaVirgula = partes.slice(1).join(' ').trim();
+                        if (nomeDepoisDaVirgula && sobrenomeAntesDaVirgula) {
+                            return `${nomeDepoisDaVirgula} ${sobrenomeAntesDaVirgula}`.replace(/\s+/g, ' ').trim();
+                        }
+                        return (nomeDepoisDaVirgula || sobrenomeAntesDaVirgula).replace(/\s+/g, ' ').trim();
+                    }
+                    return limpo.replace(/\s+/g, ' ').trim();
+                },
+
+                inverterEConectarAvaliadorBase(avaliadorRaw) {
+                    const bruto = app.utils.fixEncoding(String(avaliadorRaw || '')).replace(/[\r\n\t]+/g, ' ').trim();
+                    if (!bruto) {
+                        return { monitorObj: null, nomeFormatado: '', matricula: null, isRegistered: false, nomeDepoisVirgula: '', sobrenomeAntesVirgula: '' };
+                    }
+
+                    // Extrai eventual matrícula se vier no formato "12345 - SOBRENOME, NOME"
+                    let matriculaExtraida = null;
+                    let textoNome = bruto;
+                    if (/^\d+\s*-\s*/.test(bruto)) {
+                        const pHifen = bruto.split('-');
+                        matriculaExtraida = pHifen[0].trim();
+                        textoNome = pHifen.slice(1).join('-').trim();
+                    }
+
+                    let sobrenomeAntesVirgula = '';
+                    let nomeDepoisVirgula = '';
+                    if (textoNome.includes(',')) {
+                        const partes = textoNome.replace(/\s*[\(\[][^\)\]]*[\)\]]\s*$/g, '').split(',');
+                        sobrenomeAntesVirgula = (partes[0] || '').trim();
+                        nomeDepoisVirgula = partes.slice(1).join(' ').trim();
+                    }
+
+                    const nomeInvertido = this.inverterNomeVirgula(textoNome);
+
+                    const norm = (s) => app.utils.fixEncoding(String(s || ''))
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9\s]/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    const stopwords = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E']);
+                    const getTokens = (s) => norm(s).split(' ').filter(t => t.length > 1 && !stopwords.has(t));
+
+                    const aliasesMap = (app.config && app.config.aliases) ? app.config.aliases : {};
+                    const candidatosAlias = [
+                        bruto.toUpperCase(),
+                        app.storage.sanitizeFirebaseKey(bruto.toUpperCase()),
+                        nomeInvertido.toUpperCase(),
+                        app.storage.sanitizeFirebaseKey(nomeInvertido.toUpperCase()),
+                        norm(bruto),
+                        app.storage.sanitizeFirebaseKey(norm(bruto)),
+                        norm(nomeInvertido),
+                        app.storage.sanitizeFirebaseKey(norm(nomeInvertido))
+                    ];
+                    if (matriculaExtraida) {
+                        candidatosAlias.push(matriculaExtraida.toUpperCase(), app.storage.sanitizeFirebaseKey(matriculaExtraida.toUpperCase()));
+                    }
+
+                    let matMapeada = null;
+                    for (const ch of candidatosAlias) {
+                        if (ch && aliasesMap[ch]) {
+                            matMapeada = aliasesMap[ch];
+                            break;
+                        }
+                    }
+
+                    const listaUsuarios = Array.isArray(app.users) ? app.users : [];
+                    let monitorObj = null;
+
+                    // 1. Busca por alias salvo ou matrícula explícita
+                    if (matMapeada) {
+                        monitorObj = listaUsuarios.find(u => String(u.matricula) === String(matMapeada));
+                    }
+                    if (!monitorObj && matriculaExtraida) {
+                        monitorObj = listaUsuarios.find(u => String(u.matricula) === String(matriculaExtraida));
+                    }
+
+                    // 2. Busca por nome completo normalizado (invertido ou original)
+                    const normInv = norm(nomeInvertido);
+                    const normBruto = norm(bruto);
+                    if (!monitorObj && normInv) {
+                        monitorObj = listaUsuarios.find(u => norm(u.nome) === normInv || norm(u.nome) === normBruto);
+                    }
+
+                    // 3. Conexão Inteligente de Tokens (Nome depois da vírgula + Sobrenome antes da vírgula vs Base de Usuários)
+                    if (!monitorObj && normInv) {
+                        const tokensInv = getTokens(nomeInvertido);
+                        const tokensDepois = nomeDepoisVirgula ? getTokens(nomeDepoisVirgula) : (tokensInv.length > 0 ? [tokensInv[0]] : []);
+                        const tokensAntes = sobrenomeAntesVirgula ? getTokens(sobrenomeAntesVirgula) : tokensInv.slice(1);
+                        const primeiroNome = tokensDepois[0] || tokensInv[0] || '';
+
+                        let melhorCandidato = null;
+                        let melhorScore = 0;
+
+                        listaUsuarios.forEach(u => {
+                            const tokensUser = getTokens(u.nome);
+                            if (tokensUser.length === 0) return;
+
+                            const userPrimeiroNome = tokensUser[0];
+                            const isQualidade = typeof app.isUserQualidade === 'function' && app.isUserQualidade(u);
+                            const bonusQualidade = isQualidade ? 5 : 0;
+
+                            // Caso 3A: Primeiro nome coincide (ex: nome depois da vírgula começa com o mesmo primeiro nome da base)
+                            if (primeiroNome && userPrimeiroNome === primeiroNome) {
+                                // Verifica quantos tokens em comum existem entre o nome invertido e o nome na base
+                                const comunsTotal = tokensUser.filter(t => tokensInv.includes(t)).length;
+                                const todosUserNoInv = tokensUser.every(t => tokensInv.includes(t));
+                                const todosInvNoUser = tokensInv.every(t => tokensUser.includes(t));
+                                const temSobrenomeComum = tokensAntes.length > 0 && tokensAntes.some(t => tokensUser.slice(1).includes(t));
+                                const todosDepoisNoUser = tokensDepois.length > 1 && tokensDepois.every(t => tokensUser.includes(t));
+
+                                let score = 0;
+                                if (todosUserNoInv && tokensUser.length >= 2) {
+                                    score = 100 + (comunsTotal * 10) + bonusQualidade;
+                                } else if (todosInvNoUser && tokensInv.length >= 2) {
+                                    score = 95 + (comunsTotal * 10) + bonusQualidade;
+                                } else if (temSobrenomeComum) {
+                                    score = 80 + (comunsTotal * 10) + bonusQualidade;
+                                } else if (todosDepoisNoUser) {
+                                    score = 70 + (comunsTotal * 10) + bonusQualidade;
+                                } else if (tokensUser.length === 1 && isQualidade) {
+                                    // Usuário cadastrado apenas com o primeiro nome na equipe de Qualidade
+                                    score = 60 + bonusQualidade;
+                                }
+
+                                if (score > melhorScore) {
+                                    melhorScore = score;
+                                    melhorCandidato = u;
+                                }
+                            } else {
+                                // Caso 3B: Todos os tokens do usuário da base (mínimo 2 nomes) estão contidos no nome da planilha ou vice-versa
+                                const menor = tokensUser.length <= tokensInv.length ? tokensUser : tokensInv;
+                                const maior = tokensUser.length <= tokensInv.length ? tokensInv : tokensUser;
+                                if (menor.length >= 2 && menor.every(t => maior.includes(t))) {
+                                    const score = 75 + (menor.length * 10) + bonusQualidade;
+                                    if (score > melhorScore) {
+                                        melhorScore = score;
+                                        melhorCandidato = u;
+                                    }
+                                }
+                            }
+                        });
+
+                        if (melhorCandidato && melhorScore >= 60) {
+                            monitorObj = melhorCandidato;
+                        }
+                    }
+
+                    return {
+                        monitorObj: monitorObj || null,
+                        nomeFormatado: monitorObj ? monitorObj.nome : (nomeInvertido || bruto),
+                        matricula: monitorObj ? monitorObj.matricula : matriculaExtraida,
+                        isRegistered: !!monitorObj,
+                        nomeInvertido: nomeInvertido || bruto
+                    };
+                },
+
+                // ==========================================
                 // 2. RECALCULADOR MESTRE UNIFICADO
                 // ==========================================
-                recalcularPainelMonitorias(isMatchZero = false) {
+                recalcularPainelMonitorias(isMatchZero = false, customMsgSucesso = null) {
                     let linhasGlobais = [];
                     if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                         linhasGlobais = app.monitoriasData.detalhes.linhas;
                     }
 
-                    // Aplica todos os vínculos de nomes (DE/PARA) salvos em app.config.aliases sobre as linhas em memória
-                    const aliasesMap = (app.config && app.config.aliases) ? app.config.aliases : {};
+                    // Garante que qualquer lançamento manual pré-existente em app.monitoriasData.ranking seja preservado em lancamentosManuais
+                    this.sincronizarLancamentosManuaisExistentes(linhasGlobais);
+
+                    // Aplica inversão de "Sobrenome, Nome" e conexão inteligente com app.users + app.config.aliases sobre as linhas em memória
                     linhasGlobais.forEach(linha => {
-                        if (!linha.isRegisteredMonitor && linha.monitor) {
-                            const monRaw = String(linha.monitor).trim();
-                            const monUpper = monRaw.toUpperCase();
-                            const monSafe = app.storage.sanitizeFirebaseKey(monUpper);
-                            const parteMat = monUpper.includes('-') ? monUpper.split('-')[0].trim() : monUpper;
-                            const parteMatSafe = app.storage.sanitizeFirebaseKey(parteMat);
-                            const mappedMat = aliasesMap[monSafe] || aliasesMap[monUpper] || aliasesMap[parteMatSafe] || aliasesMap[parteMat];
-                            if (mappedMat) {
-                                const u = app.users.find(x => x.matricula === mappedMat);
-                                if (u) {
+                        if (linha.monitor) {
+                            // Se o nome ainda tiver vírgula ou não estiver conectado, inverte e tenta conectar com a base de usuários
+                            if (!linha.isRegisteredMonitor || String(linha.monitor).includes(',')) {
+                                const resMatch = this.inverterEConectarAvaliadorBase(linha.rawMonitorOriginal || linha.monitor);
+                                if (resMatch.isRegistered && resMatch.monitorObj) {
                                     linha.rawMonitorOriginal = linha.rawMonitorOriginal || linha.monitor;
                                     linha.isRegisteredMonitor = true;
-                                    linha.matriculaMonitor = u.matricula;
-                                    linha.monitor = u.nome;
+                                    linha.matriculaMonitor = resMatch.monitorObj.matricula;
+                                    linha.monitor = resMatch.monitorObj.nome;
+                                } else if (String(linha.monitor).includes(',')) {
+                                    linha.rawMonitorOriginal = linha.rawMonitorOriginal || linha.monitor;
+                                    linha.monitor = resMatch.nomeFormatado;
                                 }
                             }
                         }
@@ -18000,23 +18323,27 @@ storage: {
                     // Pré-popula as monitoras cadastradas no sistema
                     app.users.forEach(u => {
                         rankingMap[u.matricula] = {
-                            nome: u.nome, matricula: u.matricula, total: 0, falta: 400, pendenteFeedback: 0, 
+                            nome: u.nome, matricula: u.matricula, total: 0, totalPlanilha: 0, totalManual: 0, falta: 400, pendenteFeedback: 0, 
+                            pendenteFeedbackPlanilha: 0, pendenteFeedbackManual: 0,
                             metaFb: 0, realFb: 0, // <--- INICIALIZADO AQUI PARA PREVENIR ERRO SILENCIOSO DE CÁLCULO
                             operacao: (u.operacoes && u.operacoes[0]) || 'N/A'
                         };
                     });
             
                     linhasGlobais.forEach(linha => {
+                        if (linha.source === 'MANUAL') return;
                         if (linha.isRegisteredMonitor && linha.matriculaMonitor) {
                             if (!rankingMap[linha.matriculaMonitor]) {
                                 rankingMap[linha.matriculaMonitor] = {
-                                    nome: linha.monitor, matricula: linha.matriculaMonitor, total: 0, falta: 400, pendenteFeedback: 0, 
+                                    nome: linha.monitor, matricula: linha.matriculaMonitor, total: 0, totalPlanilha: 0, totalManual: 0, falta: 400, pendenteFeedback: 0, 
+                                    pendenteFeedbackPlanilha: 0, pendenteFeedbackManual: 0,
                                     metaFb: 0, realFb: 0, // Injeção dos novos contadores de Feedback
                                     operacao: linha.operacao || 'N/A'
                                 };
                             }
                             
                             rankingMap[linha.matriculaMonitor].total += 1;
+                            rankingMap[linha.matriculaMonitor].totalPlanilha += 1;
                             rankingMap[linha.matriculaMonitor].falta = Math.max(0, 400 - rankingMap[linha.matriculaMonitor].total);
             
                             if (app.isNotaFeedback(linha.nota)) {
@@ -18026,6 +18353,7 @@ storage: {
                                     rankingMap[linha.matriculaMonitor].realFb += 1; // +1 no Feedback Realizado
                                 } else {
                                     rankingMap[linha.matriculaMonitor].pendenteFeedback += 1;
+                                    rankingMap[linha.matriculaMonitor].pendenteFeedbackPlanilha += 1;
                                 }
                             }
                         }
@@ -18039,10 +18367,47 @@ storage: {
                             opsMap[opNomeFormatado].soma += linha.nota;
                         }
                     });
+
+                    // SOMA AUTOMÁTICA DOS LANÇAMENTOS MANUAIS FIXOS (NUNCA SE PERDEM AO ATUALIZAR RELATÓRIOS!)
+                    const lancamentosManuais = (app.monitoriasData && app.monitoriasData.lancamentosManuais) ? app.monitoriasData.lancamentosManuais : {};
+                    Object.values(lancamentosManuais).forEach(man => {
+                        if (!man || !man.matricula) return;
+                        const tMan = parseInt(man.totalManual) || 0;
+                        const fbMan = parseInt(man.fbsManual) || 0;
+                        if (tMan <= 0 && fbMan <= 0) return;
+
+                        if (!rankingMap[man.matricula]) {
+                            const usrObj = app.users.find(u => u.matricula === man.matricula);
+                            rankingMap[man.matricula] = {
+                                nome: usrObj ? usrObj.nome : (man.nome || 'Colaborador'),
+                                matricula: man.matricula,
+                                total: 0,
+                                totalPlanilha: 0,
+                                totalManual: 0,
+                                falta: 400,
+                                pendenteFeedback: 0,
+                                pendenteFeedbackPlanilha: 0,
+                                pendenteFeedbackManual: 0,
+                                metaFb: 0,
+                                realFb: 0,
+                                operacao: man.operacao || (usrObj && usrObj.operacoes && usrObj.operacoes[0]) || 'Manual'
+                            };
+                        }
+
+                        rankingMap[man.matricula].totalManual = tMan;
+                        rankingMap[man.matricula].total = (rankingMap[man.matricula].totalPlanilha || 0) + tMan;
+                        rankingMap[man.matricula].falta = Math.max(0, 400 - rankingMap[man.matricula].total);
+                        rankingMap[man.matricula].pendenteFeedbackManual = fbMan;
+                        rankingMap[man.matricula].pendenteFeedback = (rankingMap[man.matricula].pendenteFeedbackPlanilha || 0) + fbMan;
+                        if (fbMan > 0) {
+                            rankingMap[man.matricula].metaFb = (rankingMap[man.matricula].metaFb || 0) + fbMan;
+                        }
+                        rankingMap[man.matricula].isManual = true;
+                    });
             
                     // Recupera isenções anteriores antes de reescrever o ranking
                     let oldRanking = (app.monitoriasData && app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
-                    let novoRanking = Object.values(rankingMap).filter(r => r.total > 0).sort((a,b) => b.total - a.total).map(r => {
+                    let novoRanking = Object.values(rankingMap).filter(r => r.total > 0 || r.totalManual > 0).sort((a,b) => b.total - a.total).map(r => {
                         let oldR = oldRanking.find(x => x.matricula === r.matricula);
                         if(oldR && oldR.isentaMeta) r.isentaMeta = true;
                         return r;
@@ -18052,8 +18417,9 @@ storage: {
                         nome: o.nome, qtd: o.qtd, media: (o.soma / o.qtd).toFixed(2)
                     })).sort((a,b) => parseFloat(a.media) - parseFloat(b.media));
             
-                    if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
+                    if (!app.monitoriasData) app.monitoriasData = { detalhes: {}, lancamentosManuais: {} };
                     if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
+                    if (!app.monitoriasData.lancamentosManuais) app.monitoriasData.lancamentosManuais = lancamentosManuais;
                     
                     app.monitoriasData.ranking = novoRanking;
                     app.monitoriasData.detalhes.mediaTotal = novaMediaTotal;
@@ -18063,7 +18429,7 @@ storage: {
             
                     novoRanking.forEach(r => {
                         const usr = app.users.find(u => u.matricula === r.matricula);
-                        if(usr && app.isUserQualidade(usr)) {
+                        if(usr && (app.isUserQualidade(usr) || r.totalManual > 0)) {
                             if(!usr.results) usr.results = {};
                             if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
                             
@@ -18089,10 +18455,12 @@ storage: {
                         monitorias: app.allMonitorias
                     }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
-                        if (isMatchZero) {
-                            app.ui.showAlert("Importação Concluída com Alertas", "Os dados foram importados, porém <b>nenhum nome bateu com a equipe cadastrada</b>. Eles aparecerão na tabela como 'Outros Sup'. Use o botão 'Vincular Nomes' para corrigir.", "info");
+                        if (customMsgSucesso) {
+                            app.ui.showAlert("Sucesso", customMsgSucesso, "success");
+                        } else if (isMatchZero) {
+                            app.ui.showAlert("Importação Concluída com Alertas", "Os dados foram importados (preservando os lançamentos manuais), porém <b>nenhum nome da planilha bateu com a equipe cadastrada</b>. Use o botão 'Vincular Nomes' para corrigir.", "info");
                         } else {
-                            app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente.", "success");
+                            app.ui.showAlert("Importação Finalizada", "Os relatórios foram cruzados e somados perfeitamente (seus lançamentos manuais foram mantidos automaticamente).", "success");
                         }
                     });
                 },
@@ -18103,16 +18471,53 @@ storage: {
                 processarPlanilhaAmil(input) {
                     const file = input.files[0];
                     if (!file) return;
-                    app.ui.showAlert("Processando Amil...", "Cruzando colunas e invertendo nomes...", "info");
+                    app.ui.showAlert("Processando Amil...", "Lendo coluna Avaliador, invertendo 'Sobrenome, Nome' e conectando com a base de usuários...", "info");
             
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
-                            const firstSheet = workbook.SheetNames[0];
-                            // CORREÇÃO: Lê os dados usando a referência correta do arquivo
-                            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+                            const normHeader = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n\t]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+
+                            // Localiza a aba (sheet) e a linha de cabeçalho que contém "Avaliador"
+                            let jsonData = [];
+                            const sheetNames = workbook.SheetNames || [];
+                            // Prioriza aba chamada "Avaliador" se existir, senão varre as abas procurando a coluna "Avaliador"
+                            const orderedSheets = [
+                                ...sheetNames.filter(n => normHeader(n).includes('AVALIADOR')),
+                                ...sheetNames.filter(n => !normHeader(n).includes('AVALIADOR'))
+                            ];
+
+                            for (const sName of orderedSheets) {
+                                const sheet = workbook.Sheets[sName];
+                                if (!sheet) continue;
+                                const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                                if (!matrix || matrix.length === 0) continue;
+
+                                // Procura em qual das primeiras 15 linhas está o cabeçalho "Avaliador"
+                                let headerRowIdx = -1;
+                                for (let rIdx = 0; rIdx < Math.min(15, matrix.length); rIdx++) {
+                                    const rowArr = Array.isArray(matrix[rIdx]) ? matrix[rIdx] : [];
+                                    if (rowArr.some(cell => {
+                                        const nc = normHeader(cell);
+                                        return nc === 'AVALIADOR' || nc.includes('AVALIADOR') || nc === 'MONITOR' || nc === 'AUDITOR';
+                                    })) {
+                                        headerRowIdx = rIdx;
+                                        break;
+                                    }
+                                }
+
+                                if (headerRowIdx >= 0) {
+                                    jsonData = XLSX.utils.sheet_to_json(sheet, { range: headerRowIdx, defval: "" });
+                                    if (jsonData.length > 0) break;
+                                }
+                            }
+
+                            // Fallback para a primeira aba caso o cabeçalho tenha outro nome
+                            if (jsonData.length === 0 && sheetNames.length > 0) {
+                                jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetNames[0]], { defval: "" });
+                            }
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "O arquivo da Amil está vazio.", "error");
             
@@ -18120,73 +18525,99 @@ storage: {
                             if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                                 linhasAtuais = app.monitoriasData.detalhes.linhas;
                             }
+
+                            // Preserva lançamentos manuais antes de substituir as linhas da planilha
+                            this.sincronizarLancamentosManuaisExistentes(linhasAtuais);
             
                             // ETIQUETA: Mantém as Padrão, deleta as Amil antigas
                             let linhasMantidas = linhasAtuais.filter(l => l.source !== 'AMIL');
                             let linhasNovas = [];
                             let matchCount = 0;
             
-                            const getValByKeyword = (row, keyword) => {
-                                const key = Object.keys(row).find(k => k.toUpperCase().includes(keyword));
-                                return key ? row[key] : undefined;
+                            // Busca inteligente por lista de palavras-chave separadas por '|' respeitando a ordem de prioridade (AVALIADOR primeiro!)
+                            const getValByKeyword = (row, keywordStr, excludeStr = '') => {
+                                const keywords = String(keywordStr || '').split('|').map(k => normHeader(k)).filter(Boolean);
+                                const excludes = excludeStr ? String(excludeStr).split('|').map(k => normHeader(k)).filter(Boolean) : [];
+                                const keys = Object.keys(row);
+
+                                // 1ª Passada: Match exato do cabeçalho na ordem de prioridade (ex: coluna exatamente "Avaliador")
+                                for (const kw of keywords) {
+                                    const exactKey = keys.find(k => {
+                                        const nk = normHeader(k);
+                                        if (excludes.length > 0 && excludes.some(ex => nk.includes(ex))) return false;
+                                        return nk === kw;
+                                    });
+                                    if (exactKey !== undefined && row[exactKey] !== undefined && String(row[exactKey]).trim() !== '') {
+                                        return row[exactKey];
+                                    }
+                                }
+
+                                // 2ª Passada: Contém a palavra-chave na ordem de prioridade
+                                for (const kw of keywords) {
+                                    const partialKey = keys.find(k => {
+                                        const nk = normHeader(k);
+                                        if (excludes.length > 0 && excludes.some(ex => nk.includes(ex))) return false;
+                                        return nk.includes(kw);
+                                    });
+                                    if (partialKey !== undefined && row[partialKey] !== undefined && String(row[partialKey]).trim() !== '') {
+                                        return row[partialKey];
+                                    }
+                                }
+                                return undefined;
                             };
             
                             jsonData.forEach(row => {
-                                // Busca Inteligente de Colunas aprimorada
-                                let avaliadorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR');
+                                // Prioriza estritamente a coluna "Avaliador" (excluindo colunas de operador/nota/status)
+                                let avaliadorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|AUDITOR|SUPERVISOR', 'NOTA|PONTUACAO|STATUS|OPERADOR|FUNCIONARIO|COLABORADOR|ATENDENTE|AGENTE');
                                 if (!avaliadorRaw) {
-                                    const keyNome = Object.keys(row).find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
+                                    const keyNome = Object.keys(row).find(k => {
+                                        const nk = normHeader(k);
+                                        return nk.includes('NOME') && !nk.includes('OPERADOR') && !nk.includes('COLABORADOR') && !nk.includes('FUNCION') && !nk.includes('ATENDENTE') && !nk.includes('AGENTE');
+                                    });
                                     if (keyNome) avaliadorRaw = row[keyNome];
                                 }
-                                if (!avaliadorRaw) return;
+                                if (!avaliadorRaw || String(avaliadorRaw).trim() === '') return;
+
+                                // Inverte "Sobrenome, Nome" (nome sempre depois da vírgula) e conecta com a base de usuários (app.users)
+                                const matchAvaliador = this.inverterEConectarAvaliadorBase(avaliadorRaw);
+                                if (!matchAvaliador.nomeFormatado) return;
+                                if (matchAvaliador.isRegistered) matchCount++;
             
-                                let nomeFormatado = String(avaliadorRaw).trim();
-                                if (nomeFormatado.includes(',')) {
-                                    let partes = nomeFormatado.split(',');
-                                    nomeFormatado = partes[1].trim() + ' ' + partes[0].trim();
-                                }
+                                let funcRaw = getValByKeyword(row, 'FUNCIONARIO|OPERADOR|COLABORADOR|ATENDENTE|AGENTE|AVALIADO', 'AVALIADOR|MONITOR|AUDITOR|NOTA|PONTUACAO') || 'Não Identificado';
+                                let operadorFmt = this.inverterNomeVirgula(funcRaw) || 'Não Identificado';
             
-                                let funcRaw = getValByKeyword(row, 'FUNCIONÁRIO|FUNCIONARIO|OPERADOR|COLABORADOR') || 'Não Identificado';
-                                let operadorFmt = String(funcRaw).trim();
-                                
-                                if (operadorFmt.includes(',')) {
-                                    let p = operadorFmt.split(',');
-                                    operadorFmt = p[1].trim() + ' ' + p[0].trim();
-                                }
-            
-                                let p1 = getValByKeyword(row, 'PONTUAÇÃO');
-                                let p2 = getValByKeyword(row, 'PONTUACAO');
-                                let p3 = getValByKeyword(row, 'NOTA');
-                                // Pega o valor se existir (mesmo sendo 0)
-                                let notaRaw = (p1 !== undefined && p1 !== "") ? p1 : ((p2 !== undefined && p2 !== "") ? p2 : p3);
-                                
+                                let notaRaw = getValByKeyword(row, 'PONTUACAO|NOTA|RESULTADO|SCORE|MEDIA');
                                 let notaFormatada = 'N/A';
                                 if (notaRaw !== undefined && notaRaw !== null && notaRaw !== "") {
-                                    if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
+                                    if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.').trim();
                                     notaFormatada = parseFloat(notaRaw);
                                 }
-            
-                                const keyNormal = nomeFormatado.toUpperCase();
-                                let matriculaEncontrada = app.config?.aliases?.[keyNormal] || null;
-                                // Busca ESTRITA (Sem adivinhar pelo primeiro nome)
-                                let monitorObj = app.users.find(u => u.matricula === matriculaEncontrada || u.nome.toUpperCase() === keyNormal);
-            
-                                if(monitorObj) matchCount++;
+
+                                let statusLido = String(getValByKeyword(row, 'STATUS|SITUACAO|FEEDBACK') || 'Importação Amil').trim();
+                                let dataRaw = getValByKeyword(row, 'DATA|GRAVACAO|AVALIACAO');
+                                let dataFmt = new Date().toLocaleDateString('pt-BR');
+                                if (typeof dataRaw === 'number' && dataRaw > 20000) {
+                                    const dt = new Date((dataRaw - 25569) * 86400 * 1000);
+                                    dataFmt = dt.toLocaleDateString('pt-BR');
+                                } else if (dataRaw && String(dataRaw).trim() !== '') {
+                                    dataFmt = String(dataRaw).trim();
+                                }
             
                                 linhasNovas.push({
                                     source: 'AMIL', // ETIQUETA MÁGICA
-                                    monitor: monitorObj ? monitorObj.nome : nomeFormatado,
-                                    matriculaMonitor: monitorObj ? monitorObj.matricula : null,
-                                    isRegisteredMonitor: !!monitorObj,
+                                    rawMonitorOriginal: app.utils.fixEncoding(String(avaliadorRaw).trim()),
+                                    monitor: matchAvaliador.nomeFormatado,
+                                    matriculaMonitor: matchAvaliador.matricula,
+                                    isRegisteredMonitor: matchAvaliador.isRegistered,
                                     operador: app.utils.fixEncoding(operadorFmt),
                                     nota: isNaN(notaFormatada) ? 'N/A' : notaFormatada,
-                                    status: 'Importação Amil',
+                                    status: statusLido,
                                     operacao: 'AMIL',
-                                    data: new Date().toLocaleDateString('pt-BR')
+                                    data: dataFmt
                                 });
                             });
             
-                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna de Avaliador/Monitor. Verifique o cabeçalho do arquivo.", "error");
+                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna 'Avaliador' (ou Monitor) com dados válidos. Verifique o cabeçalho do arquivo.", "error");
                             
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
@@ -18197,7 +18628,7 @@ storage: {
             
                         } catch (err) {
                             console.error(err);
-                            app.ui.showAlert("Erro", "Falha ao processar o CSV da Amil.", "error");
+                            app.ui.showAlert("Erro", "Falha ao processar o relatório da Amil: " + (err.message || err), "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
@@ -18226,6 +18657,9 @@ storage: {
                             if (app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                                 linhasAtuais = app.monitoriasData.detalhes.linhas;
                             }
+
+                            // Preserva lançamentos manuais antes de substituir as linhas da planilha
+                            this.sincronizarLancamentosManuaisExistentes(linhasAtuais);
             
                             let linhasMantidas = linhasAtuais.filter(l => l.source !== 'PADRAO');
                             let linhasNovas = [];
@@ -18255,32 +18689,14 @@ storage: {
                                 }
                                 if (!monitorRaw) return;
              
-                                const monitorSupStr = app.utils.fixEncoding(String(monitorRaw)).trim();
-                                
-                                // Separa a matrícula e o nome caso venha no formato "36515 - GRAZIELLA DANIEL"
-                                let matricula = monitorSupStr.includes('-') ? monitorSupStr.split('-')[0].trim() : monitorSupStr;
-                                let nomeParte = monitorSupStr.includes('-') ? monitorSupStr.split('-')[1].trim() : monitorSupStr;
-                                
-                                const keyAliasCompleta = monitorSupStr.toUpperCase();
-                                const keyAliasParte = matricula.toUpperCase();
-                                
-                                if (app.config && app.config.aliases) {
-                                    if (app.config.aliases[keyAliasCompleta]) matricula = app.config.aliases[keyAliasCompleta];
-                                    else if (app.config.aliases[keyAliasParte]) matricula = app.config.aliases[keyAliasParte];
-                                }
-                                
-                                // Procura o usuário de forma ESTRITA (Matrícula ou Nome Exato). Se não achar, vai pro Radar de Vínculos.
-                                let userObj = app.users.find(u => 
-                                    u.matricula === matricula || 
-                                    u.nome.toUpperCase() === nomeParte.toUpperCase()
-                                );
-             
-                                if(userObj) {
-                                    matricula = userObj.matricula;
+                                // Suporta tanto o formato padrão ("36515 - NOME") quanto formato invertido com vírgula ("SOBRENOME, NOME")
+                                const matchMon = this.inverterEConectarAvaliadorBase(monitorRaw);
+                                const isRegisteredMonitor = matchMon.isRegistered;
+                                const matricula = matchMon.matricula;
+                                if (isRegisteredMonitor) {
                                     matchCount++;
                                 }
             
-                                const isRegisteredMonitor = !!userObj;
                                 const titulo = String(getValByKeyword(row, 'TITULO|TÍTULO') || '').toLowerCase();
                                 const operacao = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERACAO|OPERAÇÃO|CAMPANHA|SETOR') || '')).toUpperCase().trim();
                                 const isNeutro = titulo.includes('neutro') || operacao.includes('NEUTROS');
@@ -18296,7 +18712,8 @@ storage: {
                                     notaFinalLida = parseFloat(notaRaw);
                                 }
             
-                                let opNomeDetalhe = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO|ATENDENTE') || 'Não Identificado')).trim();
+                                let opNomeRaw = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO|ATENDENTE') || 'Não Identificado')).trim();
+                                let opNomeDetalhe = opNomeRaw.includes(',') ? this.inverterNomeVirgula(opNomeRaw) : opNomeRaw;
                                 
                                 let dataRaw = getValByKeyword(row, 'DATA|GRAVACAO|GRAVAÇÃO');
                                 let dataFmt = periodoAnalisado;
@@ -18311,7 +18728,8 @@ storage: {
             
                                 linhasNovas.push({
                                     source: 'PADRAO',
-                                    monitor: isRegisteredMonitor ? userObj.nome : monitorSupStr,
+                                    rawMonitorOriginal: app.utils.fixEncoding(String(monitorRaw).trim()),
+                                    monitor: matchMon.nomeFormatado,
                                     matriculaMonitor: isRegisteredMonitor ? matricula : null,
                                     isRegisteredMonitor: isRegisteredMonitor,
                                     operador: opNomeDetalhe,
@@ -18450,23 +18868,22 @@ storage: {
                     const diagArea = document.getElementById('alias-diagnostic-area');
                     const aliasesMap = (app.config && app.config.aliases) ? app.config.aliases : {};
             
-                    // Garante que qualquer linha já mapeada no aliasesMap seja atualizada antes de montar o Radar
+                    // Garante que qualquer linha já mapeada no aliasesMap ou com "Sobrenome, Nome" seja conectada antes de montar o Radar
                     let houveAutoCorrecao = false;
                     if(app.monitoriasData && app.monitoriasData.detalhes && app.monitoriasData.detalhes.linhas) {
                         app.monitoriasData.detalhes.linhas.forEach(l => {
-                            if(!l.isRegisteredMonitor && l.monitor && l.monitor !== 'Não Identificado') {
-                                const mUpper = String(l.monitor).trim().toUpperCase();
-                                const mSafe = app.storage.sanitizeFirebaseKey(mUpper);
-                                const mappedMat = aliasesMap[mSafe] || aliasesMap[mUpper];
-                                if (mappedMat) {
-                                    const u = app.users.find(x => x.matricula === mappedMat);
-                                    if (u) {
-                                        l.rawMonitorOriginal = l.rawMonitorOriginal || l.monitor;
-                                        l.isRegisteredMonitor = true;
-                                        l.matriculaMonitor = u.matricula;
-                                        l.monitor = u.nome;
-                                        houveAutoCorrecao = true;
-                                    }
+                            if((!l.isRegisteredMonitor || String(l.monitor).includes(',')) && l.monitor && l.monitor !== 'Não Identificado') {
+                                const resMatch = this.inverterEConectarAvaliadorBase(l.rawMonitorOriginal || l.monitor);
+                                if (resMatch.isRegistered && resMatch.monitorObj) {
+                                    l.rawMonitorOriginal = l.rawMonitorOriginal || l.monitor;
+                                    l.isRegisteredMonitor = true;
+                                    l.matriculaMonitor = resMatch.monitorObj.matricula;
+                                    l.monitor = resMatch.monitorObj.nome;
+                                    houveAutoCorrecao = true;
+                                } else if (String(l.monitor).includes(',')) {
+                                    l.rawMonitorOriginal = l.rawMonitorOriginal || l.monitor;
+                                    l.monitor = resMatch.nomeFormatado;
+                                    houveAutoCorrecao = true;
                                 }
                             }
                         });
@@ -20038,21 +20455,31 @@ storage: {
                     setTimeout(() => {
                         window.scrollTo(0, 0);
                         const area = document.getElementById('view-container-analise_csv_dinamico');
+                        if (!area) return;
                         area.classList.add('pdf-clean-mode');
+                        const wasDark = document.documentElement.classList.contains('dark');
+                        if (wasDark) document.documentElement.classList.remove('dark');
+
+                        const detailsOpened = [];
+                        area.querySelectorAll('details:not([open])').forEach(d => {
+                            d.setAttribute('open', 'open');
+                            detailsOpened.push(d);
+                        });
+                        area.querySelectorAll('.scroll-reveal-card, .reveal-item').forEach(el => {
+                            el.classList.add('is-visible', 'show-item');
+                        });
                         
                         const style = document.createElement('style');
                         style.id = 'pdf-fix-styles-analise';
                         style.innerHTML = `
                             @media print {
                                 @page { size: A4 landscape; margin: 10mm; }
-                                body * { visibility: hidden; }
-                                #view-container-analise_csv_dinamico, #view-container-analise_csv_dinamico * { visibility: visible; }
-                                body { background: #ffffff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                                #view-app, main, #content-container { padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; overflow: visible !important; }
-                                #view-container-analise_csv_dinamico { position: absolute; left: 0; top: 0; width: 100%; }
-                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .hideable-box, #btn-sair-apresentacao, header, nav, #global-modal { display: none !important; }
+                                html, body { background: #ffffff !important; color: #0f172a !important; height: auto !important; max-height: none !important; overflow: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                                #view-app, main, #content-container, #view-container-analise_csv_dinamico { position: static !important; display: block !important; padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; height: auto !important; max-height: none !important; overflow: visible !important; visibility: visible !important; opacity: 1 !important; transform: none !important; }
+                                .pdf-clean-mode .scroll-reveal-card, .pdf-clean-mode .reveal-item, .scroll-reveal-card, .reveal-item { opacity: 1 !important; transform: none !important; visibility: visible !important; transition: none !important; }
+                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .hideable-box, #btn-sair-apresentacao, header, nav, aside, #global-modal, #toast-container, #command-palette-modal { display: none !important; }
                                 .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar, .pdf-clean-mode details, .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
-                                .pdf-clean-mode .glass-card, .chapter-marker, details { box-shadow: none !important; border: 1px solid rgba(226, 232, 240, 0.8) !important; background: #f8fafc !important; page-break-inside: avoid !important; break-inside: avoid !important; display: block !important; margin-bottom: 24px !important; }
+                                .pdf-clean-mode .glass-card, .chapter-marker, details { box-shadow: none !important; border: 1px solid rgba(203, 213, 225, 0.9) !important; background: #ffffff !important; color: #0f172a !important; page-break-inside: avoid !important; break-inside: avoid !important; display: block !important; margin-bottom: 18px !important; }
                                 .pdf-clean-mode canvas { max-width: 100% !important; page-break-inside: avoid !important; break-inside: avoid !important; }
                                 body .pdf-clean-mode .hidden-in-print, body .hidden-in-print { display: none !important; opacity: 0 !important; visibility: hidden !important; }
                                 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -20064,12 +20491,14 @@ storage: {
                             window.print();
                             setTimeout(() => {
                                 area.classList.remove('pdf-clean-mode');
+                                detailsOpened.forEach(d => d.removeAttribute('open'));
+                                if (wasDark) document.documentElement.classList.add('dark');
                                 const fixStyle = document.getElementById('pdf-fix-styles-analise');
                                 if (fixStyle) fixStyle.remove();
                                 if (!oldMode) app.ui.toggleEditModeAnalise();
                             }, 1000);
-                        }, 800);
-                    }, 800);
+                        }, 600);
+                    }, 500);
                 },
 
                 confirmarNomeCSV() {
@@ -25276,31 +25705,708 @@ app.duolingo = {
     ],
 
     // =========================================================================
+    // MOTOR DE ÁUDIO SENSORIAL SOFTLINGO (SONS GOSTOSOS, AVELUDADOS & MUSICAIS)
+    // =========================================================================
+    _audioCtx: null,
+    _masterOut: null,
+    soundEnabled: localStorage.getItem('softlingo_sound_enabled') !== 'false',
+
+    _getAudioEngine() {
+        if (!this.soundEnabled) return null;
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return null;
+            if (!this._audioCtx) {
+                this._audioCtx = new AudioCtx();
+                const comp = this._audioCtx.createDynamicsCompressor();
+                comp.threshold.setValueAtTime(-16, this._audioCtx.currentTime);
+                comp.knee.setValueAtTime(24, this._audioCtx.currentTime);
+                comp.ratio.setValueAtTime(4, this._audioCtx.currentTime);
+                comp.attack.setValueAtTime(0.005, this._audioCtx.currentTime);
+                comp.release.setValueAtTime(0.18, this._audioCtx.currentTime);
+
+                const warmFilter = this._audioCtx.createBiquadFilter();
+                warmFilter.type = 'lowpass';
+                warmFilter.frequency.setValueAtTime(4400, this._audioCtx.currentTime);
+                warmFilter.Q.setValueAtTime(0.7, this._audioCtx.currentTime);
+
+                warmFilter.connect(comp);
+                comp.connect(this._audioCtx.destination);
+                this._masterOut = warmFilter;
+            }
+            if (this._audioCtx.state === 'suspended') {
+                this._audioCtx.resume();
+            }
+            return { ctx: this._audioCtx, out: this._masterOut };
+        } catch (e) {
+            return null;
+        }
+    },
+
+    _playWarmTone({ freq = 523.25, freqEnd = null, start = 0, duration = 0.16, vol = 0.16, type = 'sine', overtone = 0.25 }) {
+        const eng = this._getAudioEngine();
+        if (!eng) return;
+        const { ctx, out } = eng;
+        const t0 = ctx.currentTime + start;
+        const tEnd = t0 + duration;
+
+        // Oscilador Fundamental (aveludado)
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = type;
+        osc1.frequency.setValueAtTime(freq, t0);
+        if (freqEnd) {
+            osc1.frequency.exponentialRampToValueAtTime(freqEnd, tEnd);
+        }
+
+        const attack = Math.min(0.014, duration * 0.22);
+        gain1.gain.setValueAtTime(0.0001, t0);
+        gain1.gain.linearRampToValueAtTime(vol, t0 + attack);
+        gain1.gain.exponentialRampToValueAtTime(0.0001, tEnd);
+
+        osc1.connect(gain1);
+        gain1.connect(out);
+        osc1.start(t0);
+        osc1.stop(tEnd + 0.01);
+
+        // Harmônico de oitava suave (brilho de marimba / cristal)
+        if (overtone > 0) {
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = 'triangle';
+            osc2.frequency.setValueAtTime(freq * 2, t0);
+            if (freqEnd) {
+                osc2.frequency.exponentialRampToValueAtTime(freqEnd * 2, tEnd);
+            }
+            gain2.gain.setValueAtTime(0.0001, t0);
+            gain2.gain.linearRampToValueAtTime(vol * overtone, t0 + attack * 0.8);
+            gain2.gain.exponentialRampToValueAtTime(0.0001, t0 + duration * 0.65);
+
+            osc2.connect(gain2);
+            gain2.connect(out);
+            osc2.start(t0);
+            osc2.stop(tEnd + 0.01);
+        }
+    },
+
+    playSound(effect = 'tap', extra = 0) {
+        if (!this.soundEnabled) return;
+        switch (effect) {
+            case 'tap':
+                // Clique tátil suave de madeira/bolha
+                this._playWarmTone({ freq: 420, freqEnd: 580, start: 0, duration: 0.055, vol: 0.11, type: 'sine', overtone: 0.15 });
+                break;
+
+            case 'select':
+                // Pop gostoso ao selecionar alternativa (estilo Duolingo card tap)
+                this._playWarmTone({ freq: 523.25, freqEnd: 659.25, start: 0, duration: 0.075, vol: 0.14, type: 'sine', overtone: 0.22 });
+                this._playWarmTone({ freq: 783.99, start: 0.025, duration: 0.08, vol: 0.08, type: 'triangle', overtone: 0.1 });
+                break;
+
+            case 'move_up':
+                // Kalimba ascendente ao subir passo
+                this._playWarmTone({ freq: 587.33, start: 0, duration: 0.065, vol: 0.12, type: 'sine', overtone: 0.2 });
+                this._playWarmTone({ freq: 783.99, start: 0.035, duration: 0.085, vol: 0.13, type: 'sine', overtone: 0.25 });
+                break;
+
+            case 'move_down':
+                // Kalimba descendente ao descer passo
+                this._playWarmTone({ freq: 783.99, start: 0, duration: 0.065, vol: 0.12, type: 'sine', overtone: 0.2 });
+                this._playWarmTone({ freq: 587.33, start: 0.035, duration: 0.085, vol: 0.13, type: 'sine', overtone: 0.25 });
+                break;
+
+            case 'start':
+                // Arpejo acolhedor de início de aula (C5 -> E5 -> G5 -> C6)
+                this._playWarmTone({ freq: 523.25, start: 0.00, duration: 0.16, vol: 0.13, type: 'sine', overtone: 0.2 });
+                this._playWarmTone({ freq: 659.25, start: 0.06, duration: 0.18, vol: 0.14, type: 'sine', overtone: 0.22 });
+                this._playWarmTone({ freq: 783.99, start: 0.12, duration: 0.22, vol: 0.15, type: 'sine', overtone: 0.25 });
+                this._playWarmTone({ freq: 1046.50, start: 0.19, duration: 0.36, vol: 0.17, type: 'sine', overtone: 0.3 });
+                break;
+
+            case 'correct': {
+                // Chime duplo cristalino estilo Duolingo de resposta correta (com brilho extra em combos!)
+                const comboBoost = Math.min(3, Math.max(0, Number(extra) || 0)) * 0.02;
+                this._playWarmTone({ freq: 587.33, start: 0.00, duration: 0.14, vol: 0.16, type: 'sine', overtone: 0.25 }); // D5
+                this._playWarmTone({ freq: 783.99, start: 0.00, duration: 0.14, vol: 0.10, type: 'triangle', overtone: 0.15 }); // G5
+                this._playWarmTone({ freq: 880.00, start: 0.09, duration: 0.16, vol: 0.16, type: 'sine', overtone: 0.28 }); // A5
+                this._playWarmTone({ freq: 1174.66, start: 0.16, duration: 0.42, vol: 0.20 + comboBoost, type: 'sine', overtone: 0.35 }); // D6
+                this._playWarmTone({ freq: 1479.98, start: 0.17, duration: 0.38, vol: 0.11 + comboBoost, type: 'triangle', overtone: 0.15 }); // F#6
+                break;
+            }
+
+            case 'wrong':
+                // Som macio e acolhedor de erro (marimba grave F4 -> Db4, sem timbre estridente)
+                this._playWarmTone({ freq: 349.23, freqEnd: 330.0, start: 0.00, duration: 0.16, vol: 0.16, type: 'sine', overtone: 0.08 });
+                this._playWarmTone({ freq: 277.18, freqEnd: 261.63, start: 0.12, duration: 0.28, vol: 0.18, type: 'sine', overtone: 0.06 });
+                break;
+
+            case 'next':
+                // Transição suave para a próxima pergunta
+                this._playWarmTone({ freq: 440.00, freqEnd: 587.33, start: 0, duration: 0.08, vol: 0.11, type: 'sine', overtone: 0.18 });
+                break;
+
+            case 'victory':
+                // Fanfarra deliciosa de conclusão de lição + chuva de XP
+                [
+                    { f: 523.25, s: 0.00, d: 0.16, v: 0.16 }, // C5
+                    { f: 659.25, s: 0.08, d: 0.16, v: 0.16 }, // E5
+                    { f: 783.99, s: 0.16, d: 0.18, v: 0.17 }, // G5
+                    { f: 1046.50, s: 0.25, d: 0.48, v: 0.20 }, // C6
+                    { f: 1318.51, s: 0.33, d: 0.52, v: 0.16 }, // E6
+                    { f: 1567.98, s: 0.42, d: 0.62, v: 0.18 }  // G6
+                ].forEach(n => this._playWarmTone({ freq: n.f, start: n.s, duration: n.d, vol: n.v, type: 'sine', overtone: 0.32 }));
+                break;
+
+            case 'gameover':
+                // Cadência suave de caixinha de música quando as vidas acabam
+                [
+                    { f: 440.00, s: 0.00, d: 0.18, v: 0.15 }, // A4
+                    { f: 392.00, s: 0.14, d: 0.18, v: 0.15 }, // G4
+                    { f: 349.23, s: 0.28, d: 0.20, v: 0.15 }, // F4
+                    { f: 293.66, s: 0.44, d: 0.42, v: 0.17 }  // D4
+                ].forEach(n => this._playWarmTone({ freq: n.f, start: n.s, duration: n.d, vol: n.v, type: 'sine', overtone: 0.12 }));
+                break;
+
+            case 'save':
+                // Chime agradável de confirmação ao salvar/publicar no CMS
+                this._playWarmTone({ freq: 587.33, start: 0.00, duration: 0.12, vol: 0.13, type: 'sine', overtone: 0.22 });
+                this._playWarmTone({ freq: 880.00, start: 0.07, duration: 0.14, vol: 0.14, type: 'sine', overtone: 0.25 });
+                this._playWarmTone({ freq: 1174.66, start: 0.14, duration: 0.28, vol: 0.16, type: 'sine', overtone: 0.3 });
+                break;
+        }
+    },
+
+    toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        try {
+            localStorage.setItem('softlingo_sound_enabled', this.soundEnabled ? 'true' : 'false');
+        } catch (e) {}
+        if (this.soundEnabled) {
+            this.playSound('correct');
+        }
+        this.render(null, true);
+    },
+
+    // =========================================================================
+    // MOTOR DO MASCOTE OFICIAL DO SOFTLINGO (PASTA images/ COM AUTO-DESCOBERTA)
+    // =========================================================================
+    pastaMascotes: 'images',
+    _mascotesSynced: false,
+    mascotesPadrao: [
+        'alegre.png',
+        'apavorado.png',
+        'bravo.png',
+        'chorando.png',
+        'comemorando.png',
+        'desespero.png',
+        'estressado.png',
+        'euforico.png',
+        'exausto.png',
+        'facepalm.png',
+        'frustrado.png',
+        'furia.png',
+        'joinha.png',
+        'lamentando.png',
+        'olhos_brilhando.png',
+        'por_favor.png',
+        'preocupado.png',
+        'sem_paciencia.png'
+    ],
+    mascotesArquivos: null,
+
+    obterListaArquivosMascote() {
+        if (!Array.isArray(this.mascotesArquivos) || this.mascotesArquivos.length === 0) {
+            let salvos = [];
+            try {
+                const raw = localStorage.getItem('softlingo_mascotes_v1');
+                if (raw) salvos = JSON.parse(raw);
+            } catch (e) {}
+            const uniao = new Set([...this.mascotesPadrao, ...(Array.isArray(salvos) ? salvos : [])]);
+            this.mascotesArquivos = Array.from(uniao).filter(f => /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(String(f).trim()));
+        }
+        return this.mascotesArquivos;
+    },
+
+    mesclarListaMascotes(novosArquivos, salvarRemoto = false) {
+        if (!Array.isArray(novosArquivos)) return false;
+        const atuais = this.obterListaArquivosMascote();
+        const setUnico = new Set(atuais);
+        let adicionou = false;
+
+        novosArquivos.forEach(item => {
+            if (!item) return;
+            const limpo = String(item).trim().replace(/^.*[\\\/]/, '');
+            if (/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(limpo) && !setUnico.has(limpo)) {
+                setUnico.add(limpo);
+                adicionou = true;
+            }
+        });
+
+        this.mascotesArquivos = Array.from(setUnico).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        try {
+            localStorage.setItem('softlingo_mascotes_v1', JSON.stringify(this.mascotesArquivos));
+        } catch (e) {}
+
+        if (salvarRemoto && typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('sistema_bonificacao/softlingo/mascotes').set(this.mascotesArquivos);
+        }
+        return adicionou;
+    },
+
+    async sincronizarPastaMascotes(forcar = false) {
+        if (this._mascotesSynced && !forcar) return;
+        this._mascotesSynced = true;
+        this.obterListaArquivosMascote();
+        let houveNovidade = false;
+
+        // 1. Consulta manifest.json dentro da pasta images/
+        try {
+            const respMan = await fetch(`${this.pastaMascotes}/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+            if (respMan.ok) {
+                const jsonMan = await respMan.json();
+                const listaMan = Array.isArray(jsonMan) ? jsonMan : (jsonMan.arquivos || jsonMan.images || []);
+                if (this.mesclarListaMascotes(listaMan, false)) houveNovidade = true;
+            }
+        } catch (e) {}
+
+        // 2. Consulta listagem automática do diretório images/ (servidores locais/web que expõem índice da pasta)
+        try {
+            const respDir = await fetch(`${this.pastaMascotes}/?t=${Date.now()}`, { cache: 'no-store' });
+            if (respDir.ok) {
+                const texto = await respDir.text();
+                const encontrados = [];
+                const regexHref = /href=["']([^"']+\.(?:png|jpg|jpeg|webp|gif|svg))["']/gi;
+                let m;
+                while ((m = regexHref.exec(texto)) !== null) {
+                    const nomeArq = decodeURIComponent(m[1]).replace(/^.*[\\\/]/, '');
+                    if (nomeArq) encontrados.push(nomeArq);
+                }
+                if (encontrados.length > 0 && this.mesclarListaMascotes(encontrados, true)) {
+                    houveNovidade = true;
+                }
+            }
+        } catch (e) {}
+
+        // 3. Consulta automática da pasta images/ no repositório GitHub (quando publicado no GitHub Pages)
+        try {
+            const respGh = await fetch('https://api.github.com/repos/MthsBenitez/painel_bonifica-o/contents/images', { cache: 'no-store' });
+            if (respGh.ok) {
+                const itensGh = await respGh.json();
+                if (Array.isArray(itensGh)) {
+                    const nomesGh = itensGh
+                        .map(it => it && it.name)
+                        .filter(n => n && /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(n));
+                    if (nomesGh.length > 0 && this.mesclarListaMascotes(nomesGh, true)) {
+                        houveNovidade = true;
+                    }
+                }
+            }
+        } catch (e) {}
+
+        if (houveNovidade && !this.activeSession) {
+            this.render(null, true);
+        }
+    },
+
+    gerarMetadadosMascote(arquivo) {
+        const cleanFile = String(arquivo || 'alegre.png').trim().replace(/^.*[\\\/]/, '');
+        const base = cleanFile.replace(/\.[^.]+$/, '').toLowerCase();
+        const label = base
+            .split(/[_\-\s]+/)
+            .filter(Boolean)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+
+        const mapaCategorias = {
+            alegre: { cat: 'positivo', desc: 'Saudação / Clima Positivo' },
+            joinha: { cat: 'positivo', desc: 'Aprovação / Dica / Acerto' },
+            comemorando: { cat: 'vitoria', desc: 'Vitória / Meta Batida' },
+            euforico: { cat: 'vitoria', desc: 'Combo / Excelência Máxima' },
+            olhos_brilhando: { cat: 'vitoria', desc: 'Encantamento / Recompensa XP' },
+            por_favor: { cat: 'contexto', desc: 'Empatia / Solicitação / Sondagem' },
+            preocupado: { cat: 'contexto', desc: 'Atenção / Cliente Sensível' },
+            estressado: { cat: 'alerta', desc: 'Cliente Sob Pressão / Tensão' },
+            apavorado: { cat: 'alerta', desc: 'Risco Crítico / Urgência' },
+            desespero: { cat: 'alerta', desc: 'Alerta de Erro / Vidas Baixas' },
+            bravo: { cat: 'alerta', desc: 'Cliente Bravo / Atrito' },
+            furia: { cat: 'alerta', desc: 'Cliente Furioso / Crise Crítica' },
+            sem_paciencia: { cat: 'alerta', desc: 'Impaciência / Demora na Fila' },
+            frustrado: { cat: 'alerta', desc: 'Frustração / Falha de Resolução' },
+            facepalm: { cat: 'derrota', desc: 'Erro Básico / Falha Evitável' },
+            lamentando: { cat: 'derrota', desc: 'Lamento / Nota Baixa' },
+            exausto: { cat: 'derrota', desc: 'Cansaço / Retrabalho / FCR' },
+            chorando: { cat: 'derrota', desc: 'Vidas Esgotadas / Game Over' }
+        };
+
+        let info = mapaCategorias[base];
+        if (!info) {
+            if (/feliz|sorri|festa|vitori|sucesso|parabens|top|legal|otimo|brilh|campe|animad/i.test(base)) {
+                info = { cat: 'vitoria', desc: 'Expressão Positiva / Conquista' };
+            } else if (/triste|chora|erro|perde|cansa|derrota|lament|facepalm| decep/i.test(base)) {
+                info = { cat: 'derrota', desc: 'Expressão de Erro / Fim de Vidas' };
+            } else if (/bravo|raiva|irrit|medo|susto|alerta|nervoso|tenso|furia|frustrad|paciencia/i.test(base)) {
+                info = { cat: 'alerta', desc: 'Expressão de Alerta / Tensão' };
+            } else {
+                info = { cat: 'contexto', desc: 'Expressão Dinâmica do Mascote' };
+            }
+        }
+
+        return {
+            arquivo: cleanFile,
+            url: `${this.pastaMascotes}/${encodeURIComponent(cleanFile)}`,
+            nome: label || 'Mascote',
+            categoria: info.cat,
+            descricao: info.desc
+        };
+    },
+
+    obterCatalogoMascotes() {
+        return this.obterListaArquivosMascote().map(f => this.gerarMetadadosMascote(f));
+    },
+
+    renderMascoteAvatar(arquivo, sizeClasses = 'w-20 h-20 rounded-2xl', extraClasses = '') {
+        const meta = this.gerarMetadadosMascote(arquivo || 'alegre.png');
+        return `
+            <div class="${sizeClasses} bg-white border-2 border-slate-200 dark:border-slate-700 shadow-md overflow-hidden shrink-0 select-none relative group ${extraClasses}" title="Mascote Softlingo: ${app.utils.escapeHtml(meta.nome)} (${app.utils.escapeHtml(meta.descricao)})">
+                <img src="${meta.url}" alt="${app.utils.escapeHtml(meta.nome)}" onerror="this.onerror=null; this.src='images/alegre.png';" class="w-full h-[106%] object-cover object-top transition-transform duration-300 group-hover:scale-105">
+            </div>
+        `;
+    },
+
+    escolherMascoteParaDesafio(challenge, session) {
+        const lista = this.obterListaArquivosMascote();
+        if (challenge && challenge.mascote && challenge.mascote !== 'auto') {
+            const limpo = String(challenge.mascote).replace(/^.*[\\\/]/, '');
+            return limpo;
+        }
+
+        const textoAnalise = `${challenge?.cenario || ''} ${challenge?.enunciado || ''}`.toLowerCase();
+
+        // 1. Se qualquer imagem nova na pasta images/ tiver seu nome citado no cenário/enunciado, prioriza automaticamente!
+        for (const arq of lista) {
+            const stem = arq.replace(/\.[^.]+$/, '').toLowerCase();
+            const termo = stem.replace(/_/g, ' ');
+            if (termo.length >= 4 && !['alegre', 'joinha'].includes(stem) && textoAnalise.includes(termo)) {
+                return arq;
+            }
+        }
+
+        // 2. Se o operador estiver na última vida, mascote demonstra tensão/cuidado
+        if (session && session.vidas === 1 && lista.includes('desespero.png')) {
+            return 'desespero.png';
+        }
+
+        // 3. Mapeamento inteligente de contexto operacional para todas as expressões da pasta images/
+        if (/furios|fúria|furia|grita|xing|ameaça|ameaca|procon|processo/i.test(textoAnalise)) {
+            if (lista.includes('furia.png')) return 'furia.png';
+            if (lista.includes('bravo.png')) return 'bravo.png';
+        }
+        if (/irritad|exaltad|brav|reclama|supervis|insatisfeit/i.test(textoAnalise)) {
+            if (lista.includes('bravo.png')) return 'bravo.png';
+            if (lista.includes('estressado.png')) return 'estressado.png';
+        }
+        if (/demora|espera|fila|impacien|sem paciência|sem paciencia|tempo|tma|tme/i.test(textoAnalise)) {
+            if (lista.includes('sem_paciencia.png')) return 'sem_paciencia.png';
+            if (lista.includes('exausto.png')) return 'exausto.png';
+        }
+        if (/frustrad|não foi concluída|nao foi concluida|segunda vez|recontato|fcr|novamente/i.test(textoAnalise)) {
+            if (lista.includes('frustrado.png')) return 'frustrado.png';
+            if (lista.includes('lamentando.png')) return 'lamentando.png';
+        }
+        if (/erro grave|falha crítica|falha critica|esqueceu|omitiu|caça-erro|caca-erro/i.test(textoAnalise) || challenge?.tipo === 'CACA_ERRO') {
+            if (lista.includes('facepalm.png')) return 'facepalm.png';
+            if (lista.includes('apavorado.png')) return 'apavorado.png';
+        }
+        if (/cancelament|concorr|perda|risco|fraude|seguran|indevid|anatel/i.test(textoAnalise)) {
+            if (lista.includes('apavorado.png')) return 'apavorado.png';
+            if (lista.includes('preocupado.png')) return 'preocupado.png';
+        }
+        if (/nota baixa|detrator|nps|csat|avaliação negativa|avaliacao negativa/i.test(textoAnalise)) {
+            if (lista.includes('lamentando.png')) return 'lamentando.png';
+            if (lista.includes('preocupado.png')) return 'preocupado.png';
+        }
+        if (/solicita|ajuda|gentileza|dúvida|duvida|sondagem|escuta|empatia|acolh/i.test(textoAnalise)) {
+            if (lista.includes('por_favor.png')) return 'por_favor.png';
+            if (lista.includes('alegre.png')) return 'alegre.png';
+        }
+        if (/benefício|beneficio|elogio|satisfeit|fideliza|oferta|desconto|encant|excelên|excelen/i.test(textoAnalise)) {
+            if (lista.includes('olhos_brilhando.png')) return 'olhos_brilhando.png';
+            if (lista.includes('euforico.png')) return 'euforico.png';
+        }
+
+        // 4. Rotação determinística usando todas as imagens da pasta images/ (inclusive novas imagens!)
+        const pool = lista.length > 0 ? lista : ['alegre.png'];
+        const seedStr = String(challenge?.id || challenge?.enunciado || '0');
+        let hash = 0;
+        for (let i = 0; i < seedStr.length; i++) {
+            hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
+            hash |= 0;
+        }
+        return pool[Math.abs(hash) % pool.length] || 'alegre.png';
+    },
+
+    escolherMascoteFeedback(acertou, challenge) {
+        const lista = this.obterListaArquivosMascote();
+        if (acertou) {
+            const positivos = lista.filter(f => {
+                const c = this.gerarMetadadosMascote(f).categoria;
+                return c === 'vitoria' || c === 'positivo';
+            });
+            const pool = positivos.length > 0 ? positivos : ['joinha.png', 'comemorando.png', 'euforico.png', 'olhos_brilhando.png', 'alegre.png'];
+            return pool[Math.floor(Math.random() * pool.length)];
+        } else {
+            const alertas = lista.filter(f => {
+                const c = this.gerarMetadadosMascote(f).categoria;
+                return c === 'alerta' || c === 'derrota' || f === 'preocupado.png';
+            });
+            const pool = alertas.length > 0 ? alertas : ['facepalm.png', 'frustrado.png', 'preocupado.png', 'desespero.png', 'lamentando.png'];
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+    },
+
+    selecionarMascoteCMS(arquivo) {
+        this.playSound('tap');
+        const inp = document.getElementById('cms-q-mascote');
+        if (inp) inp.value = arquivo;
+        if (this.cmsDraft) this.cmsDraft.mascote = arquivo;
+        document.querySelectorAll('.cms-mascote-btn').forEach(btn => {
+            const isSel = btn.getAttribute('data-mascote') === arquivo;
+            btn.className = `cms-mascote-btn p-1.5 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 cursor-pointer ${isSel ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-sky-400'}`;
+        });
+        this.capturarRascunhoFormularioAuto();
+    },
+
+    processarArquivosPastaMascotesCMS(inputEl) {
+        const files = Array.from(inputEl?.files || []);
+        if (files.length === 0) return;
+        const nomes = files
+            .map(f => f.name)
+            .filter(n => /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(n));
+        if (nomes.length === 0) {
+            return app.ui.showAlert("Nenhuma Imagem", "Nenhum arquivo de imagem (.png, .jpg, .webp, .gif, .svg) foi encontrado na seleção.", "warning");
+        }
+        this.mesclarListaMascotes(nomes, true);
+        this.render(null, true);
+        app.ui.showAlert("Pasta Sincronizada!", `Foram identificadas e sincronizadas <strong>${nomes.length} imagem(ns)</strong> da pasta <code>images/</code> no catálogo do mascote!`, "success");
+    },
+
+    adicionarMascotePorNomeCMS() {
+        const nome = prompt("Digite o nome do novo arquivo de imagem que você colocou dentro da pasta images/ (ex: pensando.png):");
+        if (!nome) return;
+        let limpo = nome.trim().replace(/^.*[\\\/]/, '');
+        if (!/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(limpo)) {
+            limpo += '.png';
+        }
+        const imgTeste = new Image();
+        imgTeste.onload = () => {
+            this.mesclarListaMascotes([limpo], true);
+            this.selecionarMascoteCMS(limpo);
+            this.render(null, true);
+            app.ui.showAlert("Mascote Adicionado!", `A imagem <strong>images/${limpo}</strong> foi carregada e já está disponível em todo o Softlingo!`, "success");
+        };
+        imgTeste.onerror = () => {
+            this.mesclarListaMascotes([limpo], true);
+            this.render(null, true);
+            app.ui.showAlert("Arquivo Registrado", `O nome <strong>images/${limpo}</strong> foi cadastrado na lista. Certifique-se de que o arquivo está salvo dentro da pasta <code>images/</code>.`, "warning");
+        };
+        imgTeste.src = `${this.pastaMascotes}/${encodeURIComponent(limpo)}?t=${Date.now()}`;
+    },
+
     // PERSISTÊNCIA E LEITURA DOS TEMAS (FIREBASE + LOCALSTORAGE)
     // =========================================================================
+    _stateLoaded: false,
+    cmsDraft: null,
+
+    normalizeTemas(rawTemas) {
+        if (!rawTemas) return [];
+        const arr = Array.isArray(rawTemas) ? rawTemas : Object.values(rawTemas);
+        return arr.filter(Boolean).map(t => ({
+            ...t,
+            indicadores: t.indicadores ? (Array.isArray(t.indicadores) ? t.indicadores : Object.values(t.indicadores)) : [],
+            modulos: (t.modulos ? (Array.isArray(t.modulos) ? t.modulos : Object.values(t.modulos)) : []).filter(Boolean).map(m => ({
+                ...m,
+                licoes: (m.licoes ? (Array.isArray(m.licoes) ? m.licoes : Object.values(m.licoes)) : []).filter(Boolean).map(l => ({
+                    ...l,
+                    desafios: (l.desafios ? (Array.isArray(l.desafios) ? l.desafios : Object.values(l.desafios)) : []).filter(Boolean).map(d => ({
+                        ...d,
+                        opcoes: d.opcoes ? (Array.isArray(d.opcoes) ? d.opcoes : Object.values(d.opcoes)) : [],
+                        linhas: d.linhas ? (Array.isArray(d.linhas) ? d.linhas : Object.values(d.linhas)) : undefined,
+                        itens: d.itens ? (Array.isArray(d.itens) ? d.itens : Object.values(d.itens)) : undefined,
+                        gabarito: (d.tipo === 'ORDENAR_FLUXO' && d.gabarito && !Array.isArray(d.gabarito) && typeof d.gabarito === 'object') ? Object.values(d.gabarito) : d.gabarito
+                    }))
+                }))
+            }))
+        }));
+    },
+
+    capturarRascunhoFormularioAuto() {
+        const formEl = document.getElementById('form-cms-questao');
+        if (!formEl) return;
+
+        const radVf = document.querySelector('input[name="cms_vf_gabarito"]:checked');
+        const radFala = document.querySelector('input[name="cms_fala_gabarito"]:checked');
+        const radCaca = document.querySelector('input[name="cms_caca_gabarito"]:checked');
+        const radLac = document.querySelector('input[name="cms_lacuna_gabarito"]:checked');
+
+        const prev = this.cmsDraft || {};
+        this.cmsDraft = {
+            tipo: document.getElementById('cms-q-tipo')?.value ?? prev.tipo ?? 'VERDADEIRO_OU_FALSO',
+            mascote: document.getElementById('cms-q-mascote')?.value ?? prev.mascote ?? 'auto',
+            cenario: document.getElementById('cms-q-cenario')?.value ?? prev.cenario ?? '',
+            enunciado: document.getElementById('cms-q-enunciado')?.value ?? prev.enunciado ?? '',
+            feedbackAcerto: document.getElementById('cms-q-feedback-acerto')?.value ?? prev.feedbackAcerto ?? '',
+            feedbackErro: document.getElementById('cms-q-feedback-erro')?.value ?? prev.feedbackErro ?? '',
+            vfGabarito: radVf ? radVf.value : (prev.vfGabarito ?? 'Verdadeiro'),
+            op0: document.getElementById('cms-op-0') ? document.getElementById('cms-op-0').value : (prev.op0 ?? ''),
+            op1: document.getElementById('cms-op-1') ? document.getElementById('cms-op-1').value : (prev.op1 ?? ''),
+            op2: document.getElementById('cms-op-2') ? document.getElementById('cms-op-2').value : (prev.op2 ?? ''),
+            falaGabarito: radFala ? radFala.value : (prev.falaGabarito ?? '0'),
+            linha1: document.getElementById('cms-linha-1') ? document.getElementById('cms-linha-1').value : (prev.linha1 ?? ''),
+            linha2: document.getElementById('cms-linha-2') ? document.getElementById('cms-linha-2').value : (prev.linha2 ?? ''),
+            linha3: document.getElementById('cms-linha-3') ? document.getElementById('cms-linha-3').value : (prev.linha3 ?? ''),
+            cacaGabarito: radCaca ? radCaca.value : (prev.cacaGabarito ?? '2'),
+            lacunaTexto: document.getElementById('cms-lacuna-texto') ? document.getElementById('cms-lacuna-texto').value : (prev.lacunaTexto ?? ''),
+            lacunaOp0: document.getElementById('cms-lacuna-op-0') ? document.getElementById('cms-lacuna-op-0').value : (prev.lacunaOp0 ?? ''),
+            lacunaOp1: document.getElementById('cms-lacuna-op-1') ? document.getElementById('cms-lacuna-op-1').value : (prev.lacunaOp1 ?? ''),
+            lacunaOp2: document.getElementById('cms-lacuna-op-2') ? document.getElementById('cms-lacuna-op-2').value : (prev.lacunaOp2 ?? ''),
+            lacunaGabarito: radLac ? radLac.value : (prev.lacunaGabarito ?? '0'),
+            ordem1: document.getElementById('cms-ordem-1') ? document.getElementById('cms-ordem-1').value : (prev.ordem1 ?? ''),
+            ordem2: document.getElementById('cms-ordem-2') ? document.getElementById('cms-ordem-2').value : (prev.ordem2 ?? ''),
+            ordem3: document.getElementById('cms-ordem-3') ? document.getElementById('cms-ordem-3').value : (prev.ordem3 ?? ''),
+            ordem4: document.getElementById('cms-ordem-4') ? document.getElementById('cms-ordem-4').value : (prev.ordem4 ?? '')
+        };
+        this.salvarEstadoCMS();
+    },
+
+    salvarEstadoCMS() {
+        try {
+            const state = {
+                subaba: this.subaba,
+                selectedTemaId: this.selectedTemaId,
+                cmsSelectedTemaId: this.cmsSelectedTemaId,
+                cmsTargetModuloId: this.cmsTargetModuloId,
+                cmsTargetLicaoId: this.cmsTargetLicaoId,
+                cmsExpandedLicoes: this.cmsExpandedLicoes || {},
+                cmsEditingQuestaoId: this.cmsEditingQuestaoId,
+                cmsManterContexto: this.cmsManterContexto,
+                cmsDraft: this.cmsDraft
+            };
+            localStorage.setItem('softlingo_cms_state_v3', JSON.stringify(state));
+        } catch (e) {}
+    },
+
+    carregarEstadoCMS() {
+        if (this._stateLoaded) return;
+        this._stateLoaded = true;
+        try {
+            const raw = localStorage.getItem('softlingo_cms_state_v3');
+            if (!raw) return;
+            const st = JSON.parse(raw);
+            if (!st || typeof st !== 'object') return;
+            if (st.subaba) this.subaba = st.subaba;
+            if (st.selectedTemaId !== undefined) this.selectedTemaId = st.selectedTemaId;
+            if (st.cmsSelectedTemaId) this.cmsSelectedTemaId = st.cmsSelectedTemaId;
+            if (st.cmsTargetModuloId) this.cmsTargetModuloId = st.cmsTargetModuloId;
+            if (st.cmsTargetLicaoId) this.cmsTargetLicaoId = st.cmsTargetLicaoId;
+            if (st.cmsExpandedLicoes && typeof st.cmsExpandedLicoes === 'object') this.cmsExpandedLicoes = st.cmsExpandedLicoes;
+            if (st.cmsEditingQuestaoId !== undefined) this.cmsEditingQuestaoId = st.cmsEditingQuestaoId;
+            if (st.cmsManterContexto !== undefined) this.cmsManterContexto = st.cmsManterContexto;
+            if (st.cmsDraft && typeof st.cmsDraft === 'object') this.cmsDraft = st.cmsDraft;
+        } catch (e) {}
+    },
+
+    restaurarRascunhoNoFormularioCMS() {
+        const d = this.cmsDraft;
+        if (!d) return;
+
+        const tipo = d.tipo || 'VERDADEIRO_OU_FALSO';
+        const inpTipo = document.getElementById('cms-q-tipo');
+        if (inpTipo) inpTipo.value = tipo;
+        document.querySelectorAll('.cms-tipo-card-btn').forEach(btn => {
+            const isMatch = btn.getAttribute('data-tipo-card') === tipo;
+            btn.className = `cms-tipo-card-btn p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${isMatch ? 'bg-sky-50 dark:bg-sky-950/50 border-sky-500 text-sky-700 dark:text-sky-300 font-black shadow-xs' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold hover:border-sky-300'}`;
+        });
+        this.atualizarCamposTipoCMS(true);
+
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el && val !== undefined && val !== null) el.value = val;
+        };
+        setVal('cms-q-mascote', d.mascote || 'auto');
+        document.querySelectorAll('.cms-mascote-btn').forEach(btn => {
+            const isSel = btn.getAttribute('data-mascote') === (d.mascote || 'auto');
+            btn.className = `cms-mascote-btn p-1.5 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 cursor-pointer ${isSel ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-sky-400'}`;
+        });
+        setVal('cms-q-cenario', d.cenario);
+        setVal('cms-q-enunciado', d.enunciado);
+        setVal('cms-q-feedback-acerto', d.feedbackAcerto);
+        setVal('cms-q-feedback-erro', d.feedbackErro);
+
+        if (tipo === 'VERDADEIRO_OU_FALSO') {
+            const r = document.querySelector(`input[name="cms_vf_gabarito"][value="${d.vfGabarito || 'Verdadeiro'}"]`);
+            if (r) r.checked = true;
+        } else if (tipo === 'ESCOLHA_DE_FALA') {
+            setVal('cms-op-0', d.op0);
+            setVal('cms-op-1', d.op1);
+            setVal('cms-op-2', d.op2);
+            const r = document.querySelector(`input[name="cms_fala_gabarito"][value="${d.falaGabarito || '0'}"]`);
+            if (r) r.checked = true;
+        } else if (tipo === 'CACA_ERRO') {
+            setVal('cms-linha-1', d.linha1);
+            setVal('cms-linha-2', d.linha2);
+            setVal('cms-linha-3', d.linha3);
+            const r = document.querySelector(`input[name="cms_caca_gabarito"][value="${d.cacaGabarito || '2'}"]`);
+            if (r) r.checked = true;
+        } else if (tipo === 'PREENCHER_LACUNA') {
+            setVal('cms-lacuna-texto', d.lacunaTexto);
+            setVal('cms-lacuna-op-0', d.lacunaOp0);
+            setVal('cms-lacuna-op-1', d.lacunaOp1);
+            setVal('cms-lacuna-op-2', d.lacunaOp2);
+            const r = document.querySelector(`input[name="cms_lacuna_gabarito"][value="${d.lacunaGabarito || '0'}"]`);
+            if (r) r.checked = true;
+            this.atualizarPreviewLacunaCMS();
+        } else if (tipo === 'ORDENAR_FLUXO') {
+            setVal('cms-ordem-1', d.ordem1);
+            setVal('cms-ordem-2', d.ordem2);
+            setVal('cms-ordem-3', d.ordem3);
+            setVal('cms-ordem-4', d.ordem4);
+        }
+    },
+
+    limparFormularioCMS(confirmar = true) {
+        if (confirmar && !confirm("Deseja limpar todos os campos digitados no formulário?")) return;
+        this.cmsEditingQuestaoId = null;
+        this.cmsDraft = null;
+        this.salvarEstadoCMS();
+        this.playSound('save');
+        this.render(null, true);
+    },
+
     getTemas() {
         try {
             const raw = localStorage.getItem('softlingo_temas_backup');
             if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                const parsed = this.normalizeTemas(JSON.parse(raw));
+                if (parsed.length > 0) return parsed;
             }
         } catch (e) {}
 
-        if (Array.isArray(app.softlingoTemas) && app.softlingoTemas.length > 0) {
-            return app.softlingoTemas;
+        if (app.softlingoTemas) {
+            const norm = this.normalizeTemas(app.softlingoTemas);
+            if (norm.length > 0) return norm;
         }
 
         return this.defaultTemas;
     },
 
     saveTemas(temas) {
+        const clean = this.normalizeTemas(temas);
         try {
-            localStorage.setItem('softlingo_temas_backup', JSON.stringify(temas));
+            localStorage.setItem('softlingo_temas_backup', JSON.stringify(clean));
         } catch (e) {}
-        app.softlingoTemas = temas;
+        app.softlingoTemas = clean;
         if (typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref('sistema_bonificacao/softlingo_temas').set(temas);
+            firebase.database().ref('sistema_bonificacao/softlingo_temas').set(clean);
         }
     },
 
@@ -25318,7 +26424,6 @@ app.duolingo = {
             const t = this.getTemaById(this.selectedTemaId);
             return t ? (t.modulos || []) : [];
         }
-        // Retorna todos os módulos de todos os temas concatenados
         const temas = this.getTemas();
         const all = [];
         temas.forEach(t => {
@@ -25342,17 +26447,24 @@ app.duolingo = {
     },
 
     selecionarTema(temaId) {
+        this.playSound('select');
         this.selectedTemaId = temaId;
+        this.salvarEstadoCMS();
         this.render();
     },
 
     voltarParaTemas() {
+        this.playSound('tap');
         this.selectedTemaId = null;
+        this.salvarEstadoCMS();
         this.render();
     },
 
     setSubaba(sub) {
+        this.playSound('tap');
+        this.capturarRascunhoFormularioAuto();
         this.subaba = sub;
+        this.salvarEstadoCMS();
         this.render();
     },
 
@@ -25405,20 +26517,37 @@ app.duolingo = {
     },
 
     // =========================================================================
-    // RENDER PRINCIPAL DA ABA SOFTLINGO
+    // RENDER PRINCIPAL DA ABA SOFTLINGO (LARGURA TOTAL SEM MARGENS ESTREITAS)
     // =========================================================================
-    render(container) {
+    render(container, skipCapture = false) {
+        this.carregarEstadoCMS();
+        this.sincronizarPastaMascotes();
+        if (!skipCapture && !this.activeSession) {
+            this.capturarRascunhoFormularioAuto();
+        }
+        this.salvarEstadoCMS();
+
         if (container) this.lastContainer = container;
         let root = container || this.lastContainer;
         if (!root) {
             root = document.getElementById('view-container-softlingo') || document.getElementById('view-container-teste_duolingo') || document.getElementById('duolingo-root');
         }
-        if (!root) return;
-        // Se estiver em sessão de aula ativa, renderiza a tela cheia de aula
+        // Se estiver em sessão de aula ativa, renderiza o overlay de tela cheia diretamente no body (sem destruir o formulário do CMS por trás!)
+        const existingLessonOverlay = document.getElementById('duo-lesson-overlay');
         if (this.activeSession) {
-            root.innerHTML = this.renderLessonView();
+            let overlay = existingLessonOverlay;
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'duo-lesson-overlay';
+                overlay.className = 'fixed inset-0 z-[9990] bg-white dark:bg-slate-900 flex flex-col justify-between select-none animate-fade-in text-slate-800 dark:text-slate-100 overflow-y-auto custom-scrollbar';
+                document.body.appendChild(overlay);
+            }
+            overlay.innerHTML = this.renderLessonView();
             return;
+        } else if (existingLessonOverlay) {
+            existingLessonOverlay.remove();
         }
+        if (!root) return;
 
         const xp = this.getUserXP();
         const temas = this.getTemas();
@@ -25427,14 +26556,12 @@ app.duolingo = {
         const concluidas = this.getLicoesConcluidas().length;
 
         let html = `
-            <div class="max-w-6xl mx-auto space-y-6 pb-20 animate-fade-in">
+            <div class="w-full max-w-full space-y-6 pb-20 animate-fade-in">
                 <!-- CABEÇALHO GAMIFICADO ESTILO SOFTLINGO -->
                 <div class="glass-card rounded-3xl p-6 md:p-8 bg-gradient-to-br from-white via-slate-50 to-emerald-50/30 dark:from-slate-900 dark:via-slate-800/80 dark:to-emerald-950/20 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
                     <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
                         <div class="flex items-center gap-4">
-                            <div class="w-16 h-16 rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] text-white flex items-center justify-center text-3xl shadow-lg shrink-0">
-                                <i class="fa-solid fa-gamepad"></i>
-                            </div>
+                            ${this.renderMascoteAvatar(concluidas > 0 ? 'comemorando.png' : 'alegre.png', 'w-20 h-20 rounded-3xl', 'border-b-4 border-[#58CC02]')}
                             <div>
                                 <div class="flex items-center gap-2">
                                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
@@ -25467,6 +26594,10 @@ app.duolingo = {
                                     <span class="text-base font-black text-slate-800 dark:text-white tabular-nums">3 / 3</span>
                                 </div>
                             </div>
+                            <button onclick="app.duolingo.toggleSound()" class="px-3.5 py-2.5 rounded-xl border ${this.soundEnabled ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 dark:border-slate-700 text-slate-400'} font-bold text-xs transition flex items-center gap-1.5 cursor-pointer" title="${this.soundEnabled ? 'Sons do Softlingo Ativados (Clique para silenciar)' : 'Sons Silenciados (Clique para ativar)'}">
+                                <i class="fa-solid ${this.soundEnabled ? 'fa-volume-high text-emerald-500' : 'fa-volume-xmark'}"></i>
+                                <span class="hidden sm:inline">${this.soundEnabled ? 'Som Ativo' : 'Mudo'}</span>
+                            </button>
                             <button onclick="app.duolingo.resetProgresso()" class="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:text-rose-600 transition flex items-center gap-1.5" title="Zerar progresso para novos testes">
                                 <i class="fa-solid fa-rotate-left"></i> Reset
                             </button>
@@ -25510,15 +26641,18 @@ app.duolingo = {
 
         root.innerHTML = html;
 
-        // Se estiver no CMS, inicializa os campos dinâmicos
+        // Se estiver no CMS, inicializa os campos dinâmicos e restaura o rascunho em andamento (não perde no F5 nem ao simular!)
         if (this.subaba === 'cms') {
             setTimeout(() => {
                 this.atualizarCascataCMS();
-                this.atualizarCamposTipoCMS();
-            }, 100);
+                if (this.cmsDraft) {
+                    this.restaurarRascunhoNoFormularioCMS();
+                } else {
+                    this.atualizarCamposTipoCMS();
+                }
+            }, 30);
         }
     },
-
     // =========================================================================
     // NÍVEL 1: GRADE DE TEMAS (ANTECEDE SEÇÃO E MÓDULO)
     // =========================================================================
@@ -25634,8 +26768,8 @@ app.duolingo = {
                     </div>
                 </div>
 
-                <!-- BANNER DO TEMA -->
-                <div class="bg-gradient-to-r from-sky-600 via-indigo-600 to-purple-600 rounded-3xl p-6 md:p-8 text-white shadow-lg relative overflow-hidden">
+                <!-- BANNER DO TEMA COM MASCOTE OFICIAL SOFTLINGO -->
+                <div class="bg-gradient-to-r from-sky-600 via-indigo-600 to-purple-600 rounded-3xl p-6 md:p-8 text-white shadow-lg relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                     <div class="relative z-10 max-w-3xl">
                         <span class="text-[10px] font-black uppercase tracking-widest text-sky-200 block mb-1">Trilha Gamificada Especializada</span>
                         <h3 class="text-xl md:text-2xl font-black tracking-tight leading-tight">${tema.titulo}</h3>
@@ -25646,6 +26780,13 @@ app.duolingo = {
                                     ${ind}
                                 </span>
                             `).join('')}
+                        </div>
+                    </div>
+                    <div class="relative z-10 flex items-center gap-3 bg-white/15 backdrop-blur-md p-3 rounded-3xl border border-white/20 shrink-0">
+                        ${this.renderMascoteAvatar('olhos_brilhando.png', 'w-20 h-20 rounded-2xl')}
+                        <div class="pr-2 max-w-[170px]">
+                            <span class="text-[10px] font-black uppercase tracking-wider text-amber-300 block">Mascote Softlingo</span>
+                            <p class="text-xs font-bold text-white leading-snug mt-0.5">Complete as lições para dominar os indicadores!</p>
                         </div>
                     </div>
                 </div>
@@ -25665,10 +26806,12 @@ app.duolingo = {
             return html;
         }
 
+        const listaMascotesTrilha = this.obterListaArquivosMascote().filter(f => !['chorando.png', 'desespero.png'].includes(f));
         modulos.forEach((modulo, modIdx) => {
+            const mascoteSecao = listaMascotesTrilha[modIdx % Math.max(1, listaMascotesTrilha.length)] || 'joinha.png';
             html += `
                 <div class="relative pt-4">
-                    <!-- Banner de Seção do Módulo -->
+                    <!-- Banner de Seção do Módulo com Mascote -->
                     <div class="bg-gradient-to-r from-slate-800 to-slate-900 dark:from-slate-800/90 dark:to-slate-950 rounded-3xl p-6 text-white shadow-md mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-700/60">
                         <div class="flex items-center gap-4">
                             <div class="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center text-2xl shadow-inner shrink-0 text-cyan-300">
@@ -25679,6 +26822,9 @@ app.duolingo = {
                                 <h3 class="text-lg md:text-xl font-black tracking-tight">${modulo.titulo}</h3>
                                 <p class="text-xs text-slate-300 mt-1 max-w-xl font-medium">${modulo.descricao || ''}</p>
                             </div>
+                        </div>
+                        <div class="flex items-center gap-3 shrink-0">
+                            ${this.renderMascoteAvatar(mascoteSecao, 'w-16 h-16 rounded-2xl')}
                         </div>
                     </div>
 
@@ -25719,8 +26865,21 @@ app.duolingo = {
     },
 
     // =========================================================================
-    // PAINEL DE CRIAÇÃO (CMS ESTÚDIO HIERÁRQUICO UNIFICADO)
+    // PAINEL DE CRIAÇÃO (CMS ESTÚDIO DO CRIADOR 2.0 - SPLIT-SCREEN & ASSISTENTES)
     // =========================================================================
+    cmsEditingQuestaoId: null,
+    cmsEditingModuloId: null,
+    cmsEditingLicaoId: null,
+    cmsFilterStatus: 'todos',
+    cmsFilterTipo: 'todos',
+    cmsSearchQuery: '',
+    cmsManterContexto: true,
+    cmsIconesDisponiveis: [
+        'fa-headset', 'fa-graduation-cap', 'fa-book-open', 'fa-bullseye',
+        'fa-comments', 'fa-shield-halved', 'fa-award', 'fa-star',
+        'fa-bolt', 'fa-chart-line', 'fa-user-check', 'fa-heart-pulse'
+    ],
+
     renderCMS() {
         const temas = this.getTemas();
         let totalPerguntas = 0;
@@ -25743,456 +26902,647 @@ app.duolingo = {
             });
         });
 
-        // Garante que haja um tema selecionado no CMS
         if (!this.cmsSelectedTemaId || !temas.some(t => t.id === this.cmsSelectedTemaId)) {
             this.cmsSelectedTemaId = temas[0] ? temas[0].id : null;
         }
 
         const currentTema = this.getTemaById(this.cmsSelectedTemaId) || temas[0];
 
-        // Se o módulo alvo não pertencer ao tema atual, atualiza
         if (this.cmsTargetModuloId && currentTema) {
             const modExists = (currentTema.modulos || []).some(m => m.id === this.cmsTargetModuloId);
             if (!modExists) this.cmsTargetModuloId = currentTema.modulos?.[0]?.id || null;
+        } else if (!this.cmsTargetModuloId && currentTema) {
+            this.cmsTargetModuloId = currentTema.modulos?.[0]?.id || null;
         }
+
         if (this.cmsTargetModuloId && currentTema) {
             const curMod = (currentTema.modulos || []).find(m => m.id === this.cmsTargetModuloId);
             if (this.cmsTargetLicaoId && curMod) {
                 const licExists = (curMod.licoes || []).some(l => l.id === this.cmsTargetLicaoId);
                 if (!licExists) this.cmsTargetLicaoId = curMod.licoes?.[0]?.id || null;
+            } else if (!this.cmsTargetLicaoId && curMod) {
+                this.cmsTargetLicaoId = curMod.licoes?.[0]?.id || null;
             }
         }
 
+        const isEditingQ = !!this.cmsEditingQuestaoId;
+
         return `
-            <div class="space-y-8 animate-fade-in">
-                <!-- RESUMO GERAL DO CMS -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Temas Cadastrados</span>
-                        <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${temas.length}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">${totalModulos} módulos • ${totalLicoes} lições</span>
-                    </div>
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Banco de Questões</span>
-                        <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${totalPerguntas}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">Distribuídas em todos os módulos</span>
-                    </div>
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500 block mb-1">Publicadas (Operação)</span>
-                        <div class="text-3xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">${totalPublicadas}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">Ativas e visíveis nas trilhas</span>
-                    </div>
-                    <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-amber-500 block mb-1">Em Rascunho</span>
-                        <div class="text-3xl font-black text-amber-600 dark:text-amber-400 tabular-nums">${totalRascunho}</div>
-                        <span class="text-xs text-slate-500 mt-1 block">Aguardando aprovação de qualidade</span>
-                    </div>
-                </div>
-
-                <!-- SELETOR DE TEMAS & BOTÃO NOVO TEMA -->
-                <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
+            <div class="space-y-6 animate-fade-in">
+                <!-- BARRA DE INDICADORES & FERRAMENTAS RÁPIDAS DO CRIADOR -->
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-4 mb-4 border-b border-slate-100 dark:border-slate-700/70">
                         <div>
-                            <h3 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                <i class="fa-solid fa-sitemap text-purple-600"></i> Estúdio Hierárquico: Selecione ou Crie um Tema
-                            </h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Gerencie temas, crie módulos em cascata e adicione lições com formulário integrado na mesma tela.</p>
+                            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 text-[10px] font-black uppercase tracking-widest mb-1">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Creator Studio 2.0 • Edição Rápida
+                            </div>
+                            <h3 class="text-lg md:text-xl font-black text-slate-800 dark:text-white tracking-tight">Estúdio de Criação & Gestão de Conteúdo Softlingo</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Crie, edite, duplique, reordene e simule lições e questões em tela dividida sem perder o contexto.</p>
                         </div>
-                        <button onclick="app.duolingo.abrirModalNovoTema()" class="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-2">
-                            <i class="fa-solid fa-plus"></i> Criar Novo Tema
-                        </button>
+                        <div class="flex flex-wrap items-center gap-2">
+                            ${totalRascunho > 0 ? `
+                                <button onclick="app.duolingo.publicarTodosRascunhosCMS()" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-sm transition flex items-center gap-1.5" title="Publicar imediatamente todas as questões que estão em rascunho">
+                                    <i class="fa-solid fa-bolt"></i> Publicar ${totalRascunho} Rascunho(s)
+                                </button>
+                            ` : ''}
+                            <button onclick="app.duolingo.abrirModalLoteCMS()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-import text-indigo-500"></i> Importar / Exportar JSON
+                            </button>
+                            <button onclick="app.duolingo.abrirModalNovoTema()" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-sm transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-plus"></i> Novo Tema
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Pílulas dos Temas -->
-                    <div class="flex items-center gap-2 overflow-x-auto pb-2">
-                        ${temas.map(t => {
-                            const isSel = currentTema && t.id === currentTema.id;
-                            const modCount = (t.modulos || []).length;
-                            return `
-                                <button onclick="app.duolingo.selecionarTemaCMS('${t.id}')" class="px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${isSel ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}">
-                                    <i class="fa-solid ${t.icone || 'fa-graduation-cap'}"></i>
-                                    <span>${t.titulo}</span>
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] ${isSel ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">${modCount} mod</span>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Estrutura Ativa</span>
+                                <div class="text-xl font-black text-slate-800 dark:text-white tabular-nums mt-0.5">${temas.length} Temas</div>
+                                <span class="text-[11px] text-slate-500">${totalModulos} mód. • ${totalLicoes} lições</span>
+                            </div>
+                            <div class="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center"><i class="fa-solid fa-sitemap"></i></div>
+                        </div>
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Banco Total</span>
+                                <div class="text-xl font-black text-slate-800 dark:text-white tabular-nums mt-0.5">${totalPerguntas}</div>
+                                <span class="text-[11px] text-slate-500">Questões gamificadas</span>
+                            </div>
+                            <div class="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center"><i class="fa-solid fa-database"></i></div>
+                        </div>
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] font-black uppercase tracking-wider text-emerald-500 block">Publicadas</span>
+                                <div class="text-xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">${totalPublicadas}</div>
+                                <span class="text-[11px] text-slate-500">Visíveis na operação</span>
+                            </div>
+                            <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"><i class="fa-solid fa-circle-check"></i></div>
+                        </div>
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] font-black uppercase tracking-wider text-amber-500 block">Em Rascunho</span>
+                                <div class="text-xl font-black text-amber-600 dark:text-amber-400 tabular-nums mt-0.5">${totalRascunho}</div>
+                                <span class="text-[11px] text-slate-500">Em construção</span>
+                            </div>
+                            <div class="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center"><i class="fa-solid fa-pen-ruler"></i></div>
+                        </div>
+                    </div>
+
+                    <!-- PAINEL SELETOR DE TEMA ATUAL (CLARO, RÁPIDO E FÁCIL DE SELECIONAR) -->
+                    <div class="pt-5 mt-5 border-t border-slate-200 dark:border-slate-700/80 space-y-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center font-black text-xs">1</span>
+                                <div>
+                                    <h4 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">Selecione o Tema Atual para Editar ou Criar Questões</h4>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Clique em um dos cards abaixo ou troque rapidamente na caixa de seleção:</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <select onchange="app.duolingo.selecionarTemaCMS(this.value)" class="flex-1 sm:w-80 px-3.5 py-2.5 rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-black outline-none focus:border-purple-600 cursor-pointer">
+                                    ${temas.map(t => `<option value="${t.id}" ${currentTema && t.id === currentTema.id ? 'selected' : ''}>TEMA ATIVO: ${t.titulo}</option>`).join('')}
+                                </select>
+                                <button onclick="app.duolingo.abrirModalNovoTema()" class="px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs shrink-0 transition shadow-xs flex items-center gap-1.5">
+                                    <i class="fa-solid fa-plus"></i> Criar Tema
                                 </button>
-                            `;
-                        }).join('')}
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            ${temas.map(t => {
+                                const isSel = currentTema && t.id === currentTema.id;
+                                const modCount = (t.modulos || []).length;
+                                let licCount = 0;
+                                let qCount = 0;
+                                (t.modulos || []).forEach(m => {
+                                    licCount += (m.licoes || []).length;
+                                    (m.licoes || []).forEach(l => qCount += (l.desafios || []).length);
+                                });
+                                return `
+                                    <div onclick="app.duolingo.selecionarTemaCMS('${t.id}')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${isSel ? 'bg-purple-50/90 dark:bg-purple-950/40 border-purple-600 dark:border-purple-500 ring-2 ring-purple-500/20 shadow-sm' : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 hover:border-purple-400'}">
+                                        <div class="flex items-start gap-3 min-w-0">
+                                            <div class="w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${isSel ? 'bg-purple-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}">
+                                                <i class="fa-solid ${t.icone || 'fa-graduation-cap'}"></i>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <div class="flex items-center gap-1.5 mb-1">
+                                                    <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${isSel ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">
+                                                        ${isSel ? '<i class="fa-solid fa-check mr-0.5"></i> TEMA ATUAL' : 'Clique p/ Selecionar'}
+                                                    </span>
+                                                </div>
+                                                <h5 class="text-xs md:text-sm font-black text-slate-800 dark:text-white leading-snug line-clamp-2">${t.titulo}</h5>
+                                                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1 block">
+                                                    ${modCount} Módulos • ${licCount} Lições • ${qCount} Questões
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <button type="button" onclick="event.stopPropagation(); app.duolingo.abrirModalNovoTema('${t.id}')" class="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-white dark:hover:bg-slate-800 transition shrink-0" title="Editar este Tema">
+                                            <i class="fa-solid fa-pen text-xs"></i>
+                                        </button>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
                     </div>
                 </div>
 
-                <!-- ÁRVORE DO TEMA SELECIONADO: MÓDULOS E LIÇÕES -->
-                ${currentTema ? `
-                    <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                        <!-- Cabeçalho do Tema Selecionado -->
-                        <div class="p-6 md:p-8 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                            <div class="space-y-1.5 max-w-2xl">
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="px-3 py-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-black uppercase tracking-wider">
-                                        <i class="fa-solid ${currentTema.icone || 'fa-graduation-cap'} mr-1"></i> Tema Ativo
-                                    </span>
-                                    ${(currentTema.indicadores || []).map(ind => `
-                                        <span class="px-2.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold">${ind}</span>
-                                    `).join('')}
+                <!-- LAYOUT SPLIT-SCREEN: ESQUERDA (ÁRVORE DO TEMA) | DIREITA (EDITOR INTELIGENTE DE QUESTÃO) -->
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                    <!-- COLUNA ESQUERDA (6 COLUNAS): ÁRVORE INTERATIVA DE MÓDULOS, LIÇÕES E QUESTÕES -->
+                    <div class="xl:col-span-6 space-y-4">
+                        ${currentTema ? `
+                            <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                <!-- Cabeçalho do Tema Ativo com Edição Rápida -->
+                                <div class="p-5 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700">
+                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-1.5 flex-wrap mb-1">
+                                                <span class="px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black uppercase">
+                                                    <i class="fa-solid ${currentTema.icone || 'fa-graduation-cap'} mr-1"></i> Tema Selecionado
+                                                </span>
+                                                ${(currentTema.indicadores || []).map(ind => `
+                                                    <span class="px-2 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold">${ind}</span>
+                                                `).join('')}
+                                            </div>
+                                            <h2 class="text-lg font-black text-slate-800 dark:text-white truncate" title="${currentTema.titulo}">${currentTema.titulo}</h2>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">${currentTema.descricao || 'Sem descrição cadastrada.'}</p>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 shrink-0">
+                                            <button onclick="app.duolingo.abrirModalNovoTema('${currentTema.id}')" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-purple-500 text-xs font-bold transition flex items-center gap-1.5" title="Editar nome, ícone e indicadores deste Tema">
+                                                <i class="fa-solid fa-pen text-purple-500"></i> Editar
+                                            </button>
+                                            <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5">
+                                                <i class="fa-solid fa-plus"></i> Módulo
+                                            </button>
+                                            <button onclick="app.duolingo.toggleExpandirTodasLicoesCMS('${currentTema.id}')" class="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-sky-600 text-xs transition" title="Expandir ou Recolher todas as lições">
+                                                <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
+                                            </button>
+                                            <button onclick="app.duolingo.excluirTemaCMS('${currentTema.id}')" class="p-2 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs transition" title="Excluir Tema">
+                                                <i class="fa-solid fa-trash-can"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">${currentTema.titulo}</h2>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">${currentTema.descricao || 'Sem descrição cadastrada.'}</p>
-                            </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-2">
-                                    <i class="fa-solid fa-plus"></i> Adicionar Módulo neste Tema
-                                </button>
-                                <button onclick="app.duolingo.excluirTemaCMS('${currentTema.id}')" class="p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold transition" title="Excluir este Tema">
-                                    <i class="fa-solid fa-trash-can"></i>
-                                </button>
-                            </div>
-                        </div>
 
-                        <!-- Formulário Inline de Novo Módulo (se aberto) -->
-                        ${this.cmsAdicionandoModulo ? `
-                            <div class="p-6 bg-sky-50/50 dark:bg-sky-950/20 border-b border-sky-200 dark:border-sky-800/60 animate-fade-in">
-                                <div class="flex items-center justify-between mb-3">
-                                    <h4 class="text-xs font-black uppercase tracking-wider text-sky-800 dark:text-sky-300 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-circle-plus"></i> Cadastrar Novo Módulo neste Tema
-                                    </h4>
-                                    <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs">
-                                        <i class="fa-solid fa-xmark"></i> Cancelar
-                                    </button>
-                                </div>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div class="md:col-span-2">
-                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Título do Módulo</label>
-                                        <input type="text" id="inline-mod-titulo" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500 font-bold" placeholder="Ex: MÓDULO ${(currentTema.modulos || []).length + 1}: Técnicas de Negociação e Empatia">
+                                <!-- Formulário Inline de Criar / Editar Módulo -->
+                                ${this.cmsAdicionandoModulo ? (() => {
+                                    const modEdit = this.cmsEditingModuloId ? (currentTema.modulos || []).find(x => x.id === this.cmsEditingModuloId) : null;
+                                    const iconeAtual = modEdit ? (modEdit.icone || 'fa-book-open') : 'fa-book-open';
+                                    return `
+                                    <div class="p-5 bg-sky-50/60 dark:bg-sky-950/20 border-b border-sky-200 dark:border-sky-800/60 animate-fade-in space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <h4 class="text-xs font-black uppercase tracking-wider text-sky-800 dark:text-sky-300 flex items-center gap-1.5">
+                                                <i class="fa-solid ${modEdit ? 'fa-pen' : 'fa-circle-plus'}"></i> ${modEdit ? 'Editar Módulo' : 'Novo Módulo neste Tema'}
+                                            </h4>
+                                            <button onclick="app.duolingo.cmsAdicionandoModulo = false; app.duolingo.cmsEditingModuloId = null; app.duolingo.render();" class="text-slate-400 hover:text-slate-600 text-xs">
+                                                <i class="fa-solid fa-xmark"></i> Fechar
+                                            </button>
+                                        </div>
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Título do Módulo</label>
+                                                <input type="text" id="inline-mod-titulo" value="${modEdit ? app.utils.escapeHtml(modEdit.titulo) : ''}" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-sky-500" placeholder="Ex: Fundamentos e Sondagem Eficiente">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Ícone</label>
+                                                <input type="text" id="inline-mod-icone" value="${iconeAtual}" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Clique para escolher um ícone rapidamente:</span>
+                                            <div class="flex flex-wrap gap-1.5">
+                                                ${this.cmsIconesDisponiveis.map(ic => `
+                                                    <button type="button" onclick="document.getElementById('inline-mod-icone').value='${ic}'" class="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-sky-500 hover:text-sky-600 flex items-center justify-center text-xs transition" title="${ic}">
+                                                        <i class="fa-solid ${ic}"></i>
+                                                    </button>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Descrição do Módulo</label>
+                                            <input type="text" id="inline-mod-desc" value="${modEdit ? app.utils.escapeHtml(modEdit.descricao || '') : ''}" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:ring-2 focus:ring-sky-500" placeholder="Objetivo prático desta seção...">
+                                        </div>
+                                        <div class="flex justify-end gap-2">
+                                            <button onclick="app.duolingo.salvarNovoModuloInline('${currentTema.id}')" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-1.5">
+                                                <i class="fa-solid fa-check"></i> ${modEdit ? 'Salvar Alterações' : 'Criar Módulo'}
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Ícone FontAwesome</label>
-                                        <input type="text" id="inline-mod-icone" value="fa-book-open" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500" placeholder="fa-book-open, fa-headphones">
-                                    </div>
-                                    <div class="md:col-span-3">
-                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Descrição Curta</label>
-                                        <textarea id="inline-mod-desc" rows="2" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500" placeholder="Objetivo operacional e competências desenvolvidas nesta seção..."></textarea>
-                                    </div>
-                                </div>
-                                <div class="flex items-center justify-end gap-2 mt-3">
-                                    <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                        Cancelar
-                                    </button>
-                                    <button onclick="app.duolingo.salvarNovoModuloInline('${currentTema.id}')" class="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5">
-                                        <i class="fa-solid fa-check"></i> Salvar Módulo
-                                    </button>
+                                    `;
+                                })() : ''}
+
+                                <!-- Lista de Módulos e Lições -->
+                                <div class="p-4 sm:p-5 space-y-4 max-h-[780px] overflow-y-auto custom-scrollbar">
+                                    ${(currentTema.modulos || []).length === 0 ? `
+                                        <div class="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400 space-y-2">
+                                            <i class="fa-solid fa-folder-open text-3xl text-slate-300"></i>
+                                            <div class="text-sm font-bold text-slate-600 dark:text-slate-300">Nenhum módulo neste tema</div>
+                                            <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2 rounded-xl bg-sky-600 text-white font-bold text-xs inline-flex items-center gap-1.5">
+                                                <i class="fa-solid fa-plus"></i> Criar Primeiro Módulo
+                                            </button>
+                                        </div>
+                                    ` : (currentTema.modulos || []).map((m, mIdx) => `
+                                        <div class="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-900/40 p-4 space-y-3">
+                                            <!-- Cabeçalho do Módulo -->
+                                            <div class="flex items-start justify-between gap-2 pb-2.5 border-b border-slate-200/80 dark:border-slate-800">
+                                                <div class="flex items-center gap-2.5 min-w-0">
+                                                    <div class="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center text-base shrink-0">
+                                                        <i class="fa-solid ${m.icone || 'fa-book-open'}"></i>
+                                                    </div>
+                                                    <div class="min-w-0">
+                                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                                            <span class="text-xs font-black text-slate-800 dark:text-white truncate">MÓD. ${m.numero || (mIdx + 1)}: ${m.titulo}</span>
+                                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">${(m.licoes || []).length} lições</span>
+                                                        </div>
+                                                        <span class="text-[11px] text-slate-500 dark:text-slate-400 block truncate">${m.descricao || 'Sem descrição'}</span>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center gap-1 shrink-0">
+                                                    <button onclick="app.duolingo.moverModuloCMS('${currentTema.id}', '${m.id}', -1)" ${mIdx === 0 ? 'disabled' : ''} class="p-1.5 rounded-lg ${mIdx === 0 ? 'text-slate-300 dark:text-slate-700' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60'}" title="Subir Módulo"><i class="fa-solid fa-arrow-up text-[10px]"></i></button>
+                                                    <button onclick="app.duolingo.moverModuloCMS('${currentTema.id}', '${m.id}', 1)" ${mIdx === (currentTema.modulos.length - 1) ? 'disabled' : ''} class="p-1.5 rounded-lg ${mIdx === (currentTema.modulos.length - 1) ? 'text-slate-300 dark:text-slate-700' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60'}" title="Descer Módulo"><i class="fa-solid fa-arrow-down text-[10px]"></i></button>
+                                                    <button onclick="app.duolingo.abrirEdicaoModuloInline('${currentTema.id}', '${m.id}')" class="p-1.5 text-slate-400 hover:text-sky-600 rounded-lg transition" title="Editar Módulo"><i class="fa-solid fa-pen text-xs"></i></button>
+                                                    <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition flex items-center gap-1 shadow-xs" title="Adicionar Lição">
+                                                        <i class="fa-solid fa-plus"></i> Lição
+                                                    </button>
+                                                    <button onclick="app.duolingo.excluirModuloCMS('${currentTema.id}', '${m.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir Módulo"><i class="fa-solid fa-trash-can text-xs"></i></button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Formulário Inline de Nova / Editar Lição -->
+                                            ${this.cmsAdicionandoLicaoModuloId === m.id ? (() => {
+                                                const licEdit = this.cmsEditingLicaoId ? (m.licoes || []).find(x => x.id === this.cmsEditingLicaoId) : null;
+                                                return `
+                                                <div class="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/60 animate-fade-in space-y-2.5">
+                                                    <div class="flex items-center justify-between">
+                                                        <span class="text-[11px] font-black uppercase text-emerald-800 dark:text-emerald-300">
+                                                            <i class="fa-solid ${licEdit ? 'fa-pen' : 'fa-circle-plus'} mr-1"></i> ${licEdit ? 'Editar Lição' : 'Nova Lição'}
+                                                        </span>
+                                                        <button onclick="app.duolingo.cmsAdicionandoLicaoModuloId = null; app.duolingo.cmsEditingLicaoId = null; app.duolingo.render();" class="text-slate-400 hover:text-slate-600 text-xs"><i class="fa-solid fa-xmark"></i></button>
+                                                    </div>
+                                                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                                                        <div class="sm:col-span-2">
+                                                            <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Título da Lição</label>
+                                                            <input type="text" id="inline-lic-titulo-${m.id}" value="${licEdit ? app.utils.escapeHtml(licEdit.titulo) : ''}" class="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none">
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nº</label>
+                                                            <input type="text" id="inline-lic-num-${m.id}" value="${licEdit ? app.utils.escapeHtml(String(licEdit.numero)) : `${m.numero}.${(m.licoes || []).length + 1}`}" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none">
+                                                        </div>
+                                                        <div class="grid grid-cols-2 gap-1.5">
+                                                            <div>
+                                                                <label class="block text-[10px] font-bold text-slate-500 mb-0.5">XP</label>
+                                                                <input type="number" id="inline-lic-xp-${m.id}" value="${licEdit ? (licEdit.xp || 10) : 10}" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none">
+                                                            </div>
+                                                            <div>
+                                                                <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Vidas</label>
+                                                                <input type="number" id="inline-lic-vidas-${m.id}" value="${licEdit ? (licEdit.vidas || 3) : 3}" class="w-full px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none">
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex justify-end">
+                                                        <button onclick="app.duolingo.salvarNovaLicaoInline('${currentTema.id}', '${m.id}')" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition">
+                                                            <i class="fa-solid fa-check mr-1"></i> ${licEdit ? 'Atualizar Lição' : 'Salvar Lição'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                `;
+                                            })() : ''}
+
+                                            <!-- Lista de Lições do Módulo -->
+                                            <div class="space-y-2">
+                                                ${(m.licoes || []).length === 0 ? `
+                                                    <div class="p-3 text-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-400">
+                                                        Nenhuma lição cadastrada. Clique em <strong>+ Lição</strong> acima.
+                                                    </div>
+                                                ` : (m.licoes || []).map((l, lIdx) => {
+                                                    const qtdQ = (l.desafios || []).length;
+                                                    const isExpanded = !!this.cmsExpandedLicoes[l.id];
+                                                    const isTarget = this.cmsTargetLicaoId === l.id;
+                                                    return `
+                                                        <div class="rounded-xl border ${isTarget ? 'border-sky-500 dark:border-sky-400 ring-2 ring-sky-500/15' : 'border-slate-200 dark:border-slate-700'} bg-white dark:bg-slate-800 transition-all overflow-hidden">
+                                                            <div class="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                                                <div class="flex items-center gap-2.5 min-w-0 cursor-pointer" onclick="app.duolingo.selecionarLicaoParaNovaQuestao('${currentTema.id}', '${m.id}', '${l.id}')">
+                                                                    <span class="w-7 h-7 rounded-lg ${isTarget ? 'bg-sky-600 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'} flex items-center justify-center text-[11px] font-black shrink-0">
+                                                                        ${l.numero}
+                                                                    </span>
+                                                                    <div class="min-w-0">
+                                                                        <div class="flex items-center gap-1.5">
+                                                                            <span class="text-xs font-bold text-slate-800 dark:text-white truncate">${l.titulo}</span>
+                                                                            ${isTarget ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">Editando Aqui</span>` : ''}
+                                                                        </div>
+                                                                        <span class="text-[10px] text-slate-400">${l.xp} XP • ${l.vidas} Vidas • <strong class="${qtdQ > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500'}">${qtdQ} questão(ões)</strong></span>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="flex items-center gap-1 shrink-0 self-end sm:self-center">
+                                                                    <button onclick="app.duolingo.moverLicaoCMS('${currentTema.id}', '${m.id}', '${l.id}', -1)" ${lIdx === 0 ? 'disabled' : ''} class="p-1 rounded ${lIdx === 0 ? 'text-slate-300 dark:text-slate-700' : 'text-slate-400 hover:text-slate-700'}" title="Subir Lição"><i class="fa-solid fa-arrow-up text-[10px]"></i></button>
+                                                                    <button onclick="app.duolingo.moverLicaoCMS('${currentTema.id}', '${m.id}', '${l.id}', 1)" ${lIdx === (m.licoes.length - 1) ? 'disabled' : ''} class="p-1 rounded ${lIdx === (m.licoes.length - 1) ? 'text-slate-300 dark:text-slate-700' : 'text-slate-400 hover:text-slate-700'}" title="Descer Lição"><i class="fa-solid fa-arrow-down text-[10px]"></i></button>
+                                                                    ${qtdQ > 0 ? `
+                                                                        <button onclick="app.duolingo.iniciarLicao('${l.id}')" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-black transition flex items-center gap-1" title="Simular e testar esta lição agora">
+                                                                            <i class="fa-solid fa-play text-[9px]"></i> Testar
+                                                                        </button>
+                                                                    ` : ''}
+                                                                    <button onclick="app.duolingo.selecionarLicaoParaNovaQuestao('${currentTema.id}', '${m.id}', '${l.id}')" class="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-[10px] transition flex items-center gap-1" title="Criar nova questão nesta lição">
+                                                                        <i class="fa-solid fa-plus"></i> Questão
+                                                                    </button>
+                                                                    <button onclick="app.duolingo.abrirEdicaoLicaoInline('${m.id}', '${l.id}')" class="p-1.5 text-slate-400 hover:text-sky-600 rounded-lg transition" title="Editar Lição"><i class="fa-solid fa-pen text-[11px]"></i></button>
+                                                                    <button onclick="app.duolingo.toggleExpandirQuestoesLicao('${l.id}')" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold transition flex items-center gap-1" title="Ver questões desta lição">
+                                                                        <i class="fa-solid ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-[9px]"></i> ${qtdQ}
+                                                                    </button>
+                                                                    <button onclick="app.duolingo.excluirLicaoCMS('${currentTema.id}', '${m.id}', '${l.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir Lição"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
+                                                                </div>
+                                                            </div>
+
+                                                            ${isExpanded ? `
+                                                                <div class="px-3 pb-3 pt-2 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 space-y-1.5 animate-fade-in">
+                                                                    ${qtdQ === 0 ? `
+                                                                        <div class="p-2.5 text-center text-[11px] text-slate-400 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                                                                            Nenhuma questão ainda. Use o painel ao lado para adicionar!
+                                                                        </div>
+                                                                    ` : (l.desafios || []).map((d, dIdx) => {
+                                                                        const isPub = d.status === 'publicado' || !d.status;
+                                                                        const isBeingEdited = this.cmsEditingQuestaoId === d.id;
+                                                                        return `
+                                                                            <div class="p-2.5 bg-white dark:bg-slate-800 rounded-xl border ${isBeingEdited ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-200 dark:border-slate-700'} flex items-center justify-between gap-2 text-xs">
+                                                                                <div class="min-w-0 flex-1 cursor-pointer" onclick="app.duolingo.carregarQuestaoParaEdicaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" title="Clique para editar esta questão no painel ao lado">
+                                                                                    <div class="flex items-center gap-1.5">
+                                                                                        <span class="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-black text-[9px] flex items-center justify-center shrink-0">${dIdx + 1}</span>
+                                                                                        <span class="font-bold text-slate-800 dark:text-white truncate">${d.enunciado}</span>
+                                                                                    </div>
+                                                                                    <div class="flex items-center gap-2 mt-0.5 ml-5">
+                                                                                        <span class="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-500">${(d.tipo || '').replace(/_/g, ' ')}</span>
+                                                                                        <span class="text-[10px] text-slate-400 truncate">${d.cenario || ''}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div class="flex items-center gap-1 shrink-0">
+                                                                                    <button onclick="app.duolingo.moverQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}', -1)" ${dIdx === 0 ? 'disabled' : ''} class="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" title="Subir Questão"><i class="fa-solid fa-arrow-up text-[9px]"></i></button>
+                                                                                    <button onclick="app.duolingo.moverQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}', 1)" ${dIdx === (l.desafios.length - 1) ? 'disabled' : ''} class="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" title="Descer Questão"><i class="fa-solid fa-arrow-down text-[9px]"></i></button>
+                                                                                    <button onclick="app.duolingo.testarQuestaoUnicaCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition" title="Simular / Testar esta questão"><i class="fa-solid fa-play text-[10px]"></i></button>
+                                                                                    <button onclick="app.duolingo.carregarQuestaoParaEdicaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition" title="Editar questão no formulário"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                                                                                    <button onclick="app.duolingo.duplicarQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition" title="Duplicar / Clonar questão"><i class="fa-solid fa-copy text-[10px]"></i></button>
+                                                                                    <button onclick="app.duolingo.toggleStatusQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isPub ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}" title="Alternar Publicado/Rascunho">
+                                                                                        ${isPub ? 'Pub' : 'Rasc'}
+                                                                                    </button>
+                                                                                    <button onclick="app.duolingo.excluirQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir questão"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
+                                                                                </div>
+                                                                            </div>
+                                                                        `;
+                                                                    }).join('')}
+                                                                </div>
+                                                            ` : ''}
+                                                        </div>
+                                                    `;
+                                                }).join('')}
+                                            </div>
+                                        </div>
+                                    `).join('')}
                                 </div>
                             </div>
                         ` : ''}
+                    </div>
 
-                        <!-- Lista dos Módulos do Tema -->
-                        <div class="p-6 md:p-8 space-y-6">
-                            ${(currentTema.modulos || []).length === 0 ? `
-                                <div class="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400 space-y-3">
-                                    <i class="fa-solid fa-folder-open text-4xl text-slate-300 dark:text-slate-600"></i>
-                                    <div class="text-sm font-bold text-slate-600 dark:text-slate-300">Nenhum módulo cadastrado ainda neste tema.</div>
-                                    <p class="text-xs text-slate-400">Clique no botão abaixo para adicionar o primeiro módulo deste treinamento.</p>
-                                    <button onclick="app.duolingo.toggleNovoModuloInline('${currentTema.id}')" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition inline-flex items-center gap-2">
-                                        <i class="fa-solid fa-plus"></i> Adicionar Primeiro Módulo
+                    <!-- COLUNA DIREITA (6 COLUNAS - STICKY): EDITOR INTELIGENTE DE QUESTÃO COM ASSISTENTE -->
+                    <div id="form-cms-questao" class="xl:col-span-6 xl:sticky xl:top-4 bg-white dark:bg-slate-800 p-6 rounded-3xl border ${isEditingQ ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm space-y-5">
+                        <!-- Topo do Editor -->
+                        <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${isEditingQ ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}">
+                                        <i class="fa-solid ${isEditingQ ? 'fa-pen-to-square' : 'fa-bolt'} mr-1"></i> ${isEditingQ ? 'Modo Edição de Questão' : 'Criação Rápida de Questão'}
+                                    </span>
+                                    <span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i> Auto-Save Ativo (protegido contra F5 e Simulação)
+                                    </span>
+                                </div>
+                                <h3 class="text-base md:text-lg font-black text-slate-800 dark:text-white mt-1">
+                                    ${isEditingQ ? 'Editando Questão Selecionada' : 'Cadastrar Nova Questão Gamificada'}
+                                </h3>
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                ${isEditingQ ? `
+                                    <button type="button" onclick="app.duolingo.cancelarEdicaoQuestaoCMS()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1">
+                                        <i class="fa-solid fa-xmark"></i> Cancelar Edição
+                                    </button>
+                                ` : `
+                                    <button type="button" onclick="app.duolingo.limparFormularioCMS(true)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-700 text-slate-600 hover:text-rose-600 dark:text-slate-300 text-xs font-bold transition flex items-center gap-1" title="Limpar todos os campos do formulário">
+                                        <i class="fa-solid fa-eraser"></i> Limpar
+                                    </button>
+                                `}
+                                <button type="button" onclick="app.duolingo.preencherExemploTipoCMS()" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-bold transition flex items-center gap-1.5" title="Preenche todos os campos abaixo com um modelo pronto para você só adaptar">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Preencher Exemplo
+                                </button>
+                            </div>
+                        </div>
+
+                        <form oninput="app.duolingo.capturarRascunhoFormularioAuto()" onchange="app.duolingo.capturarRascunhoFormularioAuto()" onsubmit="app.duolingo.salvarNovaQuestao(event)" class="space-y-4">
+                            <!-- Destino: Tema > Módulo > Lição -->
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3.5 rounded-2xl bg-purple-50/40 dark:bg-slate-900/60 border border-purple-200/70 dark:border-slate-700/60">
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 mb-1">1. Tema Atual</label>
+                                    <select id="cms-q-tema" onchange="app.duolingo.selecionarTemaCMS(this.value)" class="w-full px-2.5 py-2 rounded-xl border border-purple-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                                        ${temas.map(t => `<option value="${t.id}" ${currentTema && t.id === currentTema.id ? 'selected' : ''}>${t.titulo}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase text-sky-600 dark:text-sky-400 mb-1">2. Módulo</label>
+                                    <select id="cms-q-modulo" onchange="app.duolingo.atualizarLicoesCascataCMS(); app.duolingo.salvarEstadoCMS();" class="w-full px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white text-xs font-bold outline-none cursor-pointer"></select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">3. Lição Alvo</label>
+                                    <select id="cms-q-licao" onchange="app.duolingo.cmsTargetLicaoId = this.value; app.duolingo.salvarEstadoCMS();" class="w-full px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white text-xs font-bold outline-none cursor-pointer"></select>
+                                </div>
+                            </div>
+
+                            <!-- Seletor Visual de Tipo de Desafio (Cards Interativos) -->
+                            <div>
+                                <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Formato Interativo da Questão:</label>
+                                <input type="hidden" id="cms-q-tipo" value="VERDADEIRO_OU_FALSO">
+                                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                    ${[
+                                        { id: 'VERDADEIRO_OU_FALSO', label: 'V ou F', icon: 'fa-scale-balanced' },
+                                        { id: 'ESCOLHA_DE_FALA', label: 'Múltipla Escolha', icon: 'fa-list-check' },
+                                        { id: 'CACA_ERRO', label: 'Caça-Erro', icon: 'fa-magnifying-glass-chart' },
+                                        { id: 'PREENCHER_LACUNA', label: 'Completar Lacuna', icon: 'fa-pen-line' },
+                                        { id: 'ORDENAR_FLUXO', label: 'Ordenar (1º-4º)', icon: 'fa-arrow-down-1-9' }
+                                    ].map(tp => `
+                                        <button type="button" data-tipo-card="${tp.id}" onclick="app.duolingo.selecionarTipoCardCMS('${tp.id}')" class="cms-tipo-card-btn p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${tp.id === 'VERDADEIRO_OU_FALSO' ? 'bg-sky-50 dark:bg-sky-950/50 border-sky-500 text-sky-700 dark:text-sky-300 font-black shadow-xs' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold hover:border-sky-300'}">
+                                            <i class="fa-solid ${tp.icon} text-sm"></i>
+                                            <span class="text-[10px] leading-tight">${tp.label}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Seletor Visual de Expressão do Mascote (Pasta images/ Dinâmica) -->
+                            <div class="p-3.5 rounded-2xl bg-emerald-50/40 dark:bg-slate-900/60 border border-emerald-200/70 dark:border-slate-700/60 space-y-2.5">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div>
+                                        <label class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                                            <i class="fa-solid fa-face-smile-beam text-emerald-500"></i> Expressão do Mascote Softlingo (Pasta <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[11px]">images/</code> • ${this.obterListaArquivosMascote().length} expressões)
+                                        </label>
+                                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Escolha a reação do mascote para esta questão ou sincronize novas imagens adicionadas na pasta:</p>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <input type="file" id="cms-input-pasta-mascotes" webkitdirectory directory multiple accept="image/*" class="hidden" onchange="app.duolingo.processarArquivosPastaMascotesCMS(this)">
+                                        <input type="file" id="cms-input-arquivos-mascotes" multiple accept="image/*" class="hidden" onchange="app.duolingo.processarArquivosPastaMascotesCMS(this)">
+                                        <button type="button" onclick="document.getElementById('cms-input-pasta-mascotes').click()" class="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] transition flex items-center gap-1 shadow-xs" title="Ler automaticamente todas as imagens dentro da pasta images/">
+                                            <i class="fa-solid fa-folder-tree"></i> Sincronizar Pasta images/
+                                        </button>
+                                        <button type="button" onclick="document.getElementById('cms-input-arquivos-mascotes').click()" class="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-500 font-bold text-[11px] transition flex items-center gap-1" title="Selecionar novas imagens da pasta images/">
+                                            <i class="fa-solid fa-images text-sky-500"></i> + Imagens
+                                        </button>
+                                        <button type="button" onclick="app.duolingo.adicionarMascotePorNomeCMS()" class="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-purple-500 font-bold text-[11px] transition" title="Digitar o nome de um arquivo adicionado na pasta images/">
+                                            <i class="fa-solid fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <input type="hidden" id="cms-q-mascote" value="${app.utils.escapeHtml(this.cmsDraft?.mascote || 'auto')}">
+                                <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 max-h-52 overflow-y-auto custom-scrollbar p-1">
+                                    <button type="button" data-mascote="auto" onclick="app.duolingo.selecionarMascoteCMS('auto')" class="cms-mascote-btn p-1.5 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${(this.cmsDraft?.mascote || 'auto') === 'auto' ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-sky-400'}">
+                                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-sky-500 text-white flex items-center justify-center text-lg shadow-xs">
+                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                        </div>
+                                        <span class="text-[10px] font-black text-slate-700 dark:text-slate-200 leading-tight text-center">Automático</span>
+                                    </button>
+                                    ${this.obterCatalogoMascotes().map(m => {
+                                        const isSel = (this.cmsDraft?.mascote || 'auto') === m.arquivo;
+                                        return `
+                                            <button type="button" data-mascote="${app.utils.escapeHtml(m.arquivo)}" onclick="app.duolingo.selecionarMascoteCMS('${app.utils.escapeHtml(m.arquivo)}')" class="cms-mascote-btn p-1.5 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 cursor-pointer ${isSel ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-sky-400'}" title="${app.utils.escapeHtml(m.nome)} — ${app.utils.escapeHtml(m.descricao)} (${app.utils.escapeHtml(m.arquivo)})">
+                                                <div class="w-12 h-12 rounded-xl bg-white border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0">
+                                                    <img src="${m.url}" alt="${app.utils.escapeHtml(m.nome)}" onerror="this.onerror=null; this.src='images/alegre.png';" class="w-full h-[106%] object-cover object-top">
+                                                </div>
+                                                <span class="text-[10px] font-bold text-slate-700 dark:text-slate-200 leading-tight text-center truncate w-full">${app.utils.escapeHtml(m.nome)}</span>
+                                            </button>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Cenário Operacional com Chips de Preenchimento 1-Click -->
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <label class="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        <i class="fa-solid fa-headset text-sky-500 mr-1"></i> Contexto do Atendimento / Cenário Operacional
+                                    </label>
+                                    <span class="text-[10px] text-slate-400">Clique em um modelo pronto ou descreva a situação:</span>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5 mb-2">
+                                    ${[
+                                        { label: 'Sondagem & FCR', text: 'O cliente entra em contato pela segunda vez na semana relatando que sua solicitação anterior não foi concluída e pede resolução definitiva em linha.' },
+                                        { label: 'Cliente Irritado / Empatia', text: 'O cliente inicia a ligação em tom exaltado, reclamando da demora no atendimento e exigindo falar imediatamente com a supervisão.' },
+                                        { label: 'Retenção & Objeções', text: 'O cliente solicita o cancelamento do contrato alegando que encontrou uma oferta mais barata na concorrência e questiona os benefícios do plano atual.' },
+                                        { label: 'Auditoria CSAT / NPS', text: 'Durante a auditoria de monitoria, observa-se uma chamada em que o cliente avaliou o atendimento com nota baixa apesar da solução técnica aplicada.' },
+                                        { label: 'Segurança & CRM', text: 'O cliente solicita alteração cadastral e detalhamento de fatura, sendo obrigatória a validação positiva de segurança e registro completo no CRM.' }
+                                    ].map(c => `
+                                        <button type="button" onclick="document.getElementById('cms-q-cenario').value='${c.text}'" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-sky-100 dark:bg-slate-900 dark:hover:bg-sky-950/60 text-slate-700 dark:text-slate-300 hover:text-sky-700 text-[11px] font-bold transition border border-slate-200/80 dark:border-slate-700">
+                                            + ${c.label}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                                <textarea id="cms-q-cenario" rows="3" required class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-sm font-medium leading-relaxed outline-none focus:ring-2 focus:ring-sky-500" placeholder="Descreva o contexto ou situação que o operador encontrará na tela (Ex: Cliente liga questionando cobrança indevida na fatura e ameaça cancelar o serviço...)"></textarea>
+                            </div>
+
+                            <!-- Enunciado da Pergunta -->
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
+                                    <i class="fa-solid fa-circle-question text-indigo-500 mr-1"></i> Enunciado da Pergunta / Desafio
+                                </label>
+                                <textarea id="cms-q-enunciado" rows="2" required class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-sm font-bold leading-snug outline-none focus:ring-2 focus:ring-sky-500" placeholder="Digite a pergunta clara e objetiva para o operador responder..."></textarea>
+                            </div>
+
+                            <!-- CONTAINER ADAPTATIVO POR TIPO -->
+                            <div id="cms-tipo-container" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/60 space-y-3"></div>
+
+                            <!-- Feedbacks de Monitoria com Gerador Rápido -->
+                            <div class="space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Explicações Pedagógicas (Aparecem após responder)</span>
+                                    <button type="button" onclick="app.duolingo.gerarFeedbacksPadraoCMS()" class="text-[11px] font-bold text-sky-600 hover:underline flex items-center gap-1">
+                                        <i class="fa-solid fa-magic"></i> Preencher Feedbacks Padrão
                                     </button>
                                 </div>
-                            ` : (currentTema.modulos || []).map(m => `
-                                <div class="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 p-5 md:p-6 space-y-4">
-                                    <!-- Cabeçalho do Módulo -->
-                                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center text-lg shrink-0">
-                                                <i class="fa-solid ${m.icone || 'fa-book-open'}"></i>
-                                            </div>
-                                            <div>
-                                                <div class="flex items-center gap-2">
-                                                    <span class="text-sm font-black text-slate-800 dark:text-white">MÓDULO ${m.numero}: ${m.titulo}</span>
-                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">
-                                                        ${(m.licoes || []).length} Lições
-                                                    </span>
-                                                </div>
-                                                <span class="text-xs text-slate-500 dark:text-slate-400 block">${m.descricao || 'Sem descrição.'}</span>
-                                            </div>
-                                        </div>
-                                        <div class="flex items-center gap-2 shrink-0">
-                                            <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm">
-                                                <i class="fa-solid fa-plus"></i> Adicionar Lição
-                                            </button>
-                                            <button onclick="app.duolingo.excluirModuloCMS('${currentTema.id}', '${m.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir Módulo">
-                                                <i class="fa-solid fa-trash-can text-xs"></i>
-                                            </button>
-                                        </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">
+                                            <i class="fa-solid fa-circle-check mr-1"></i> Quando Acertar
+                                        </label>
+                                        <textarea id="cms-q-feedback-acerto" rows="2" required class="w-full px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/30 dark:bg-emerald-950/20 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ex: Perfeito! Essa conduta garante a resolutividade no primeiro contato..."></textarea>
                                     </div>
-
-                                    <!-- Formulário Inline de Nova Lição (se aberto para este módulo) -->
-                                    ${this.cmsAdicionandoLicaoModuloId === m.id ? `
-                                        <div class="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/60 animate-fade-in space-y-3">
-                                            <div class="flex items-center justify-between">
-                                                <span class="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                                                    <i class="fa-solid fa-circle-plus"></i> Cadastrar Nova Lição no Módulo ${m.numero}
-                                                </span>
-                                                <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs">
-                                                    <i class="fa-solid fa-xmark"></i>
-                                                </button>
-                                            </div>
-                                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                                <div class="md:col-span-2">
-                                                    <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Título da Lição</label>
-                                                    <input type="text" id="inline-lic-titulo-${m.id}" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ex: Abordagem Inicial e Sondagem Conectiva">
-                                                </div>
-                                                <div>
-                                                    <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Número</label>
-                                                    <input type="text" id="inline-lic-num-${m.id}" value="${m.numero}.${(m.licoes || []).length + 1}" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500">
-                                                </div>
-                                                <div class="grid grid-cols-2 gap-2">
-                                                    <div>
-                                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">XP</label>
-                                                        <input type="number" id="inline-lic-xp-${m.id}" value="10" class="w-full px-2 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Vidas</label>
-                                                        <input type="number" id="inline-lic-vidas-${m.id}" value="3" class="w-full px-2 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500">
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="flex items-center justify-end gap-2 pt-1">
-                                                <button onclick="app.duolingo.toggleNovaLicaoInline('${m.id}')" class="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 transition">
-                                                    Cancelar
-                                                </button>
-                                                <button onclick="app.duolingo.salvarNovaLicaoInline('${currentTema.id}', '${m.id}')" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5">
-                                                    <i class="fa-solid fa-check"></i> Salvar Lição
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ` : ''}
-
-                                    <!-- Lista de Lições do Módulo -->
-                                    <div class="space-y-3">
-                                        ${(m.licoes || []).length === 0 ? `
-                                            <div class="p-4 text-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-400">
-                                                Nenhuma lição neste módulo ainda. Clique em <strong>"Adicionar Lição"</strong> acima.
-                                            </div>
-                                        ` : (m.licoes || []).map(l => {
-                                            const qtdQ = (l.desafios || []).length;
-                                            const isExpanded = !!this.cmsExpandedLicoes[l.id];
-                                            const isTarget = this.cmsTargetLicaoId === l.id;
-                                            return `
-                                                <div class="rounded-xl border ${isTarget ? 'border-sky-400 dark:border-sky-500 ring-2 ring-sky-400/20' : 'border-slate-200 dark:border-slate-700'} bg-white dark:bg-slate-800 transition-all overflow-hidden">
-                                                    <div class="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                                                        <div class="flex items-center gap-3">
-                                                            <span class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center text-xs font-black shrink-0">
-                                                                ${l.numero}
-                                                            </span>
-                                                            <div>
-                                                                <div class="flex items-center gap-2">
-                                                                    <span class="text-xs font-bold text-slate-800 dark:text-white">${l.titulo}</span>
-                                                                    ${isTarget ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">Alvo Ativo</span>` : ''}
-                                                                </div>
-                                                                <span class="text-[11px] text-slate-400">${l.xp} XP • ${l.vidas} Vidas • <strong class="${qtdQ > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">${qtdQ} Questões</strong></span>
-                                                            </div>
-                                                        </div>
-                                                        <div class="flex items-center gap-2 shrink-0">
-                                                            <button onclick="app.duolingo.selecionarLicaoParaNovaQuestao('${currentTema.id}', '${m.id}', '${l.id}')" class="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5" title="Abrir formulário e vincular perguntas diretamente a esta lição">
-                                                                <i class="fa-solid fa-plus"></i> Nova Questão Nesta Lição
-                                                            </button>
-                                                            <button onclick="app.duolingo.toggleExpandirQuestoesLicao('${l.id}')" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition flex items-center gap-1" title="Ver questões cadastradas nesta lição">
-                                                                <i class="fa-solid ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-[10px]"></i>
-                                                                <span>(${qtdQ})</span>
-                                                            </button>
-                                                            <button onclick="app.duolingo.excluirLicaoCMS('${currentTema.id}', '${m.id}', '${l.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir Lição">
-                                                                <i class="fa-solid fa-trash-can text-xs"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Gaveta com Questões Desta Lição (se expandida) -->
-                                                    ${isExpanded ? `
-                                                        <div class="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 space-y-2 animate-fade-in">
-                                                            <div class="flex items-center justify-between pb-1">
-                                                                <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Questões desta Lição (${qtdQ})</span>
-                                                                <button onclick="app.duolingo.selecionarLicaoParaNovaQuestao('${currentTema.id}', '${m.id}', '${l.id}')" class="text-[11px] font-bold text-sky-600 hover:underline flex items-center gap-1">
-                                                                    <i class="fa-solid fa-circle-plus"></i> Adicionar Pergunta
-                                                                </button>
-                                                            </div>
-                                                            ${qtdQ === 0 ? `
-                                                                <div class="p-3 text-center text-xs text-slate-400 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-                                                                    Nenhuma pergunta cadastrada para esta lição ainda. Clique em <strong>"Nova Questão Nesta Lição"</strong> acima para criar.
-                                                                </div>
-                                                            ` : (l.desafios || []).map((d, dIdx) => {
-                                                                const isPub = d.status === 'publicado' || !d.status;
-                                                                return `
-                                                                    <div class="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
-                                                                        <div class="space-y-0.5">
-                                                                            <div class="flex items-center gap-2">
-                                                                                <span class="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-black text-[10px] flex items-center justify-center shrink-0">
-                                                                                    ${dIdx + 1}
-                                                                                </span>
-                                                                                <span class="font-bold text-slate-800 dark:text-white line-clamp-1">${d.enunciado}</span>
-                                                                                <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
-                                                                                    ${(d.tipo || '').replace(/_/g, ' ')}
-                                                                                </span>
-                                                                            </div>
-                                                                            <span class="text-[10px] text-slate-400 block ml-7 truncate"><i class="fa-solid fa-bullseye mr-1"></i>${d.cenario}</span>
-                                                                        </div>
-                                                                        <div class="flex items-center gap-2 shrink-0 self-end sm:self-center ml-7 sm:ml-0">
-                                                                            <button onclick="app.duolingo.toggleStatusQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider transition ${isPub ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}">
-                                                                                <i class="fa-solid ${isPub ? 'fa-check' : 'fa-clock'} mr-1"></i> ${isPub ? 'Publicado' : 'Rascunho'}
-                                                                            </button>
-                                                                            <button onclick="app.duolingo.excluirQuestaoCMS('${currentTema.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition" title="Excluir questão">
-                                                                                <i class="fa-solid fa-trash-can text-xs"></i>
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                `;
-                                                            }).join('')}
-                                                        </div>
-                                                    ` : ''}
-                                                </div>
-                                            `;
-                                        }).join('')}
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-rose-600 dark:text-rose-400 mb-1">
+                                            <i class="fa-solid fa-circle-xmark mr-1"></i> Quando Errar (Regra)
+                                        </label>
+                                        <textarea id="cms-q-feedback-erro" rows="2" required class="w-full px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-800/60 bg-rose-50/30 dark:bg-rose-950/20 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-rose-500" placeholder="Ex: Atenção! Pela diretriz de monitoria, é obrigatório confirmar os dados..."></textarea>
                                     </div>
                                 </div>
-                            `).join('')}
-                        </div>
+                            </div>
+
+                            <!-- Rodapé de Ações do Formulário -->
+                            <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <button type="button" onclick="app.duolingo.simularQuestaoDoFormularioCMS()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1.5" title="Testar interativamente como o operador verá esta questão">
+                                        <i class="fa-solid fa-eye text-sky-500"></i> Simular na Tela
+                                    </button>
+                                    <label class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 cursor-pointer select-none">
+                                        <input type="checkbox" id="cms-manter-contexto" ${this.cmsManterContexto ? 'checked' : ''} onchange="app.duolingo.cmsManterContexto = this.checked" class="w-3.5 h-3.5 accent-sky-600 rounded">
+                                        <span>Manter cenário após salvar</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2 justify-end">
+                                    <button type="submit" name="action" value="rascunho" class="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-floppy-disk text-amber-500"></i> Rascunho
+                                    </button>
+                                    <button type="submit" name="action" value="publicado" class="duo-btn-green font-black uppercase tracking-wider py-2.5 px-5 rounded-xl text-xs shadow-md transition-transform active:translate-y-1 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-paper-plane"></i> ${isEditingQ ? 'Salvar e Publicar' : 'Publicar Agora'}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
                     </div>
-                ` : ''}
-
-                <!-- FORMULÁRIO DE CADASTRO DE PERGUNTA ADAPTATIVO & INTEGRADO -->
-                <div id="form-cms-questao" class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
-                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
-                        <div>
-                            <h3 class="text-lg md:text-xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
-                                <i class="fa-solid fa-circle-question text-sky-600"></i> Cadastrar Nova Questão Gamificada
-                            </h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Selecione o destino e preencha as regras operacionais. O formulário se adapta dinamicamente ao tipo escolhido.</p>
-                        </div>
-                    </div>
-
-                    <!-- Banner de Alvo Ativo (se Lição estiver selecionada) -->
-                    ${(() => {
-                        if (this.cmsTargetModuloId && this.cmsTargetLicaoId && currentTema) {
-                            const mod = (currentTema.modulos || []).find(m => m.id === this.cmsTargetModuloId);
-                            const lic = mod ? (mod.licoes || []).find(l => l.id === this.cmsTargetLicaoId) : null;
-                            if (mod && lic) {
-                                return `
-                                    <div class="p-3.5 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 rounded-2xl flex items-center justify-between text-xs text-sky-900 dark:text-sky-200">
-                                        <div class="flex items-center gap-2.5">
-                                            <div class="w-8 h-8 rounded-xl bg-sky-100 dark:bg-sky-900/60 text-sky-600 dark:text-sky-300 flex items-center justify-center text-sm shrink-0">
-                                                <i class="fa-solid fa-bullseye"></i>
-                                            </div>
-                                            <div>
-                                                <span class="text-[10px] font-black uppercase text-sky-600 dark:text-sky-400 block">Vinculação Rápida Ativa</span>
-                                                <div class="font-bold">Tema: <strong>${currentTema.titulo}</strong> &gt; Módulo: <strong>${mod.titulo}</strong> &gt; Lição: <strong>${lic.numero} - ${lic.titulo}</strong></div>
-                                            </div>
-                                        </div>
-                                        <span class="text-[11px] text-sky-600 dark:text-sky-400 font-bold hidden sm:inline-block">Os seletores abaixo já foram preenchidos automaticamente!</span>
-                                    </div>
-                                `;
-                            }
-                        }
-                        return '';
-                    })()}
-
-                    <form onsubmit="app.duolingo.salvarNovaQuestao(event)" class="space-y-5">
-                        <!-- Cascata de Seleção: Tema -> Módulo -> Lição -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Tema / Trilha</label>
-                                <select id="cms-q-tema" onchange="app.duolingo.atualizarCascataCMS()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                                    ${temas.map(t => `<option value="${t.id}" ${currentTema && t.id === currentTema.id ? 'selected' : ''}>${t.titulo}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Módulo / Seção</label>
-                                <select id="cms-q-modulo" onchange="app.duolingo.atualizarLicoesCascataCMS()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                                    <!-- Preenchido via atualizarCascataCMS -->
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Lição Específica</label>
-                                <select id="cms-q-licao" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                                    <!-- Preenchido via atualizarLicoesCascataCMS -->
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Tipo de Desafio Adaptativo -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Tipo de Desafio Gamificado</label>
-                                <select id="cms-q-tipo" onchange="app.duolingo.atualizarCamposTipoCMS()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500">
-                                    <option value="VERDADEIRO_OU_FALSO">Verdadeiro ou Falso (Conceitual)</option>
-                                    <option value="ESCOLHA_DE_FALA">Escolha de Fala / Alternativa Múltipla</option>
-                                    <option value="CACA_ERRO">Caça-Erro em Diálogo de Atendimento</option>
-                                    <option value="PREENCHER_LACUNA">Preencher Lacuna com Termo Operacional</option>
-                                    <option value="ORDENAR_FLUXO">Ordenar Fluxo / Zonas de Classificação</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Cenário Operacional / Contexto da Ligação</label>
-                                <input type="text" id="cms-q-cenario" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-sky-500" placeholder="Ex: Cliente solicita cancelamento por lentidão recorrente no produto...">
-                            </div>
-                        </div>
-
-                        <!-- Enunciado -->
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Enunciado da Pergunta</label>
-                            <textarea id="cms-q-enunciado" rows="2" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-sky-500" placeholder="Escreva a pergunta ou desafio a ser respondido pelo colaborador..."></textarea>
-                        </div>
-
-                        <!-- CONTAINER ADAPTATIVO POR TIPO (RENDERIZADO DINAMICAMENTE) -->
-                        <div id="cms-tipo-container" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/60 space-y-3">
-                            <!-- Preenchido via atualizarCamposTipoCMS() -->
-                        </div>
-
-                        <!-- Justificativas e Feedbacks de Monitoria -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1">
-                                    <i class="fa-solid fa-circle-check mr-1"></i> Feedback Imediato de Acerto
-                                </label>
-                                <textarea id="cms-q-feedback-acerto" rows="2" required class="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/30 dark:bg-emerald-950/20 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ex: Exato! O conceito demonstra a correta aplicação da regra institucional..."></textarea>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-rose-600 dark:text-rose-400 mb-1">
-                                    <i class="fa-solid fa-circle-xmark mr-1"></i> Feedback Imediato de Erro (Regra de Monitoria)
-                                </label>
-                                <textarea id="cms-q-feedback-erro" rows="2" required class="w-full px-3.5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-800/60 bg-rose-50/30 dark:bg-rose-950/20 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-rose-500" placeholder="Ex: Atenção! Na regra de monitoria, esta postura gera penalidade de qualidade..."></textarea>
-                            </div>
-                        </div>
-
-                        <!-- Botões de Ação do CMS -->
-                        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-700">
-                            <button type="submit" name="action" value="rascunho" class="px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-floppy-disk text-amber-500"></i> Salvar como Rascunho
-                            </button>
-                            <button type="submit" name="action" value="publicado" class="duo-btn-green font-black uppercase tracking-wider py-2.5 px-7 rounded-xl text-xs shadow-md transition-transform active:translate-y-1 flex items-center gap-1.5">
-                                <i class="fa-solid fa-paper-plane"></i> Publicar para Operação
-                            </button>
-                        </div>
-                    </form>
                 </div>
 
-                <!-- TABELA GLOBAL DE TODAS AS QUESTÕES CADASTRADAS -->
+                <!-- REPOSITÓRIO GERAL DE QUESTÕES COM BUSCA E FILTROS RÁPIDOS -->
                 <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div class="p-6 border-b border-slate-100 dark:border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
                         <div>
                             <h3 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                <i class="fa-solid fa-database text-sky-600"></i> Repositório Geral de Questões
+                                <i class="fa-solid fa-table-list text-sky-600"></i> Repositório Geral de Questões (${totalPerguntas})
                             </h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Visão consolidada de todas as perguntas de todos os temas com publicação e auditoria rápida.</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Busque, filtre, simule, duplique ou edite qualquer questão com 1 clique.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="relative flex-1 sm:w-64">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                <input type="text" value="${app.utils.escapeHtml(this.cmsSearchQuery || '')}" oninput="app.duolingo.cmsSearchQuery = this.value; document.getElementById('cms-repo-tbody').innerHTML = app.duolingo.renderLinhasQuestoesCMS();" placeholder="Buscar por enunciado ou cenário..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500">
+                            </div>
+                            <select onchange="app.duolingo.cmsFilterTipo = this.value; document.getElementById('cms-repo-tbody').innerHTML = app.duolingo.renderLinhasQuestoesCMS();" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none">
+                                <option value="todos" ${this.cmsFilterTipo === 'todos' ? 'selected' : ''}>Todos os Formatos</option>
+                                <option value="VERDADEIRO_OU_FALSO" ${this.cmsFilterTipo === 'VERDADEIRO_OU_FALSO' ? 'selected' : ''}>Verdadeiro ou Falso</option>
+                                <option value="ESCOLHA_DE_FALA" ${this.cmsFilterTipo === 'ESCOLHA_DE_FALA' ? 'selected' : ''}>Múltipla Escolha</option>
+                                <option value="CACA_ERRO" ${this.cmsFilterTipo === 'CACA_ERRO' ? 'selected' : ''}>Caça-Erro</option>
+                                <option value="PREENCHER_LACUNA" ${this.cmsFilterTipo === 'PREENCHER_LACUNA' ? 'selected' : ''}>Preencher Lacuna</option>
+                                <option value="ORDENAR_FLUXO" ${this.cmsFilterTipo === 'ORDENAR_FLUXO' ? 'selected' : ''}>Ordenar Fluxo</option>
+                            </select>
+                            <select onchange="app.duolingo.cmsFilterStatus = this.value; document.getElementById('cms-repo-tbody').innerHTML = app.duolingo.renderLinhasQuestoesCMS();" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none">
+                                <option value="todos" ${this.cmsFilterStatus === 'todos' ? 'selected' : ''}>Todos os Status</option>
+                                <option value="publicado" ${this.cmsFilterStatus === 'publicado' ? 'selected' : ''}>Publicadas</option>
+                                <option value="rascunho" ${this.cmsFilterStatus === 'rascunho' ? 'selected' : ''}>Rascunhos</option>
+                            </select>
                         </div>
                     </div>
 
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto max-h-[460px] custom-scrollbar">
                         <table class="w-full text-left text-xs border-collapse">
-                            <thead class="bg-slate-50 dark:bg-slate-900 text-slate-400 uppercase tracking-wider font-black text-[10px]">
+                            <thead class="bg-slate-50 dark:bg-slate-900 text-slate-400 uppercase tracking-wider font-black text-[10px] sticky top-0 z-10">
                                 <tr>
                                     <th class="py-3 px-5">Enunciado & Cenário</th>
-                                    <th class="py-3 px-4">Tema / Módulo / Lição</th>
-                                    <th class="py-3 px-4">Tipo</th>
+                                    <th class="py-3 px-4">Tema / Lição</th>
+                                    <th class="py-3 px-4">Formato</th>
                                     <th class="py-3 px-4 text-center">Status</th>
-                                    <th class="py-3 px-4 text-right">Ações</th>
+                                    <th class="py-3 px-4 text-right">Ações do Criador</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                            <tbody id="cms-repo-tbody" class="divide-y divide-slate-100 dark:divide-slate-700/60">
                                 ${this.renderLinhasQuestoesCMS()}
                             </tbody>
                         </table>
@@ -26203,35 +27553,50 @@ app.duolingo = {
     },
 
     // =========================================================================
-    // NAVEGAÇÃO E AÇÕES HIERÁRQUICAS DO CMS
+    // NAVEGAÇÃO, EDIÇÃO, REORDENAÇÃO E ASSISTENTES DO CMS 2.0
     // =========================================================================
     selecionarTemaCMS(temaId) {
+        this.capturarRascunhoFormularioAuto();
         this.cmsSelectedTemaId = temaId;
         const tema = this.getTemaById(temaId);
         if (tema && (tema.modulos || []).length > 0) {
             this.cmsTargetModuloId = tema.modulos[0].id;
-            if ((tema.modulos[0].licoes || []).length > 0) {
-                this.cmsTargetLicaoId = tema.modulos[0].licoes[0].id;
-            } else {
-                this.cmsTargetLicaoId = null;
-            }
+            this.cmsTargetLicaoId = tema.modulos[0].licoes?.[0]?.id || null;
         } else {
             this.cmsTargetModuloId = null;
             this.cmsTargetLicaoId = null;
         }
+        this.salvarEstadoCMS();
+        this.playSound('save');
+        this.render(null, true);
+    },
+
+    toggleExpandirTodasLicoesCMS(temaId) {
+        const tema = this.getTemaById(temaId);
+        if (!tema) return;
+        const allIds = [];
+        (tema.modulos || []).forEach(m => (m.licoes || []).forEach(l => allIds.push(l.id)));
+        const anyClosed = allIds.some(id => !this.cmsExpandedLicoes[id]);
+        allIds.forEach(id => { this.cmsExpandedLicoes[id] = anyClosed; });
         this.render();
     },
 
     toggleNovoModuloInline(temaId) {
         this.cmsSelectedTemaId = temaId;
+        this.cmsEditingModuloId = null;
         this.cmsAdicionandoModulo = !this.cmsAdicionandoModulo;
         this.render();
         if (this.cmsAdicionandoModulo) {
-            setTimeout(() => {
-                const el = document.getElementById('inline-mod-titulo');
-                if (el) el.focus();
-            }, 100);
+            setTimeout(() => document.getElementById('inline-mod-titulo')?.focus(), 80);
         }
+    },
+
+    abrirEdicaoModuloInline(temaId, moduloId) {
+        this.cmsSelectedTemaId = temaId;
+        this.cmsEditingModuloId = moduloId;
+        this.cmsAdicionandoModulo = true;
+        this.render();
+        setTimeout(() => document.getElementById('inline-mod-titulo')?.focus(), 80);
     },
 
     salvarNovoModuloInline(temaId) {
@@ -26246,8 +27611,22 @@ app.duolingo = {
         const temas = this.getTemas();
         const tema = temas.find(t => t.id === temaId);
         if (!tema) return;
-
         if (!tema.modulos) tema.modulos = [];
+
+        if (this.cmsEditingModuloId) {
+            const mod = tema.modulos.find(m => m.id === this.cmsEditingModuloId);
+            if (mod) {
+                mod.titulo = titulo;
+                mod.icone = icone;
+                mod.descricao = desc;
+            }
+            this.cmsEditingModuloId = null;
+            this.cmsAdicionandoModulo = false;
+            this.saveTemas(temas);
+            this.render();
+            return;
+        }
+
         const novoMod = {
             id: 'mod_' + Date.now(),
             temaId: temaId,
@@ -26262,10 +27641,21 @@ app.duolingo = {
         this.saveTemas(temas);
         this.cmsAdicionandoModulo = false;
         this.cmsTargetModuloId = novoMod.id;
+        this.render();
+    },
 
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Módulo Criado!", `O módulo <strong>${titulo}</strong> foi adicionado com sucesso.`, "success");
-        }
+    moverModuloCMS(temaId, moduloId, direcao) {
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        if (!tema || !Array.isArray(tema.modulos)) return;
+        const idx = tema.modulos.findIndex(m => m.id === moduloId);
+        const novoIdx = idx + direcao;
+        if (idx < 0 || novoIdx < 0 || novoIdx >= tema.modulos.length) return;
+        const tmp = tema.modulos[idx];
+        tema.modulos[idx] = tema.modulos[novoIdx];
+        tema.modulos[novoIdx] = tmp;
+        tema.modulos.forEach((m, i) => { m.numero = i + 1; });
+        this.saveTemas(temas);
         this.render();
     },
 
@@ -26284,21 +27674,23 @@ app.duolingo = {
         }
 
         this.saveTemas(temas);
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Módulo Excluído", "O módulo foi removido da árvore.", "info");
-        }
         this.render();
     },
 
     toggleNovaLicaoInline(moduloId) {
+        this.cmsEditingLicaoId = null;
         this.cmsAdicionandoLicaoModuloId = this.cmsAdicionandoLicaoModuloId === moduloId ? null : moduloId;
         this.render();
         if (this.cmsAdicionandoLicaoModuloId) {
-            setTimeout(() => {
-                const el = document.getElementById('inline-lic-titulo-' + moduloId);
-                if (el) el.focus();
-            }, 100);
+            setTimeout(() => document.getElementById('inline-lic-titulo-' + moduloId)?.focus(), 80);
         }
+    },
+
+    abrirEdicaoLicaoInline(moduloId, licaoId) {
+        this.cmsAdicionandoLicaoModuloId = moduloId;
+        this.cmsEditingLicaoId = licaoId;
+        this.render();
+        setTimeout(() => document.getElementById('inline-lic-titulo-' + moduloId)?.focus(), 80);
     },
 
     salvarNovaLicaoInline(temaId, moduloId) {
@@ -26316,8 +27708,23 @@ app.duolingo = {
         if (!tema) return;
         const modulo = (tema.modulos || []).find(m => m.id === moduloId);
         if (!modulo) return;
-
         if (!modulo.licoes) modulo.licoes = [];
+
+        if (this.cmsEditingLicaoId) {
+            const lic = modulo.licoes.find(l => l.id === this.cmsEditingLicaoId);
+            if (lic) {
+                lic.titulo = titulo;
+                lic.numero = num;
+                lic.xp = xp;
+                lic.vidas = vidas;
+            }
+            this.cmsEditingLicaoId = null;
+            this.cmsAdicionandoLicaoModuloId = null;
+            this.saveTemas(temas);
+            this.render();
+            return;
+        }
+
         const novaLic = {
             id: 'lic_' + Date.now(),
             moduloId: moduloId,
@@ -26334,10 +27741,22 @@ app.duolingo = {
         this.cmsTargetModuloId = moduloId;
         this.cmsTargetLicaoId = novaLic.id;
         this.cmsExpandedLicoes[novaLic.id] = true;
+        this.render();
+    },
 
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Lição Criada!", `A lição <strong>${titulo}</strong> foi criada. Agora você pode adicionar perguntas diretamente a ela!`, "success");
-        }
+    moverLicaoCMS(temaId, moduloId, licaoId, direcao) {
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        const modulo = tema ? (tema.modulos || []).find(m => m.id === moduloId) : null;
+        if (!modulo || !Array.isArray(modulo.licoes)) return;
+        const idx = modulo.licoes.findIndex(l => l.id === licaoId);
+        const novoIdx = idx + direcao;
+        if (idx < 0 || novoIdx < 0 || novoIdx >= modulo.licoes.length) return;
+        const tmp = modulo.licoes[idx];
+        modulo.licoes[idx] = modulo.licoes[novoIdx];
+        modulo.licoes[novoIdx] = tmp;
+        modulo.licoes.forEach((l, i) => { l.numero = `${modulo.numero}.${i + 1}`; });
+        this.saveTemas(temas);
         this.render();
     },
 
@@ -26356,9 +27775,6 @@ app.duolingo = {
         }
 
         this.saveTemas(temas);
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Lição Excluída", "A lição foi removida com sucesso.", "info");
-        }
         this.render();
     },
 
@@ -26375,10 +27791,6 @@ app.duolingo = {
         this.cmsSelectedTemaId = filtrados[0]?.id || null;
         this.cmsTargetModuloId = null;
         this.cmsTargetLicaoId = null;
-
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Tema Excluído", "O tema foi removido com sucesso.", "info");
-        }
         this.render();
     },
 
@@ -26391,16 +27803,325 @@ app.duolingo = {
         this.cmsSelectedTemaId = temaId;
         this.cmsTargetModuloId = moduloId;
         this.cmsTargetLicaoId = licaoId;
+        this.cmsEditingQuestaoId = null;
         this.cmsExpandedLicoes[licaoId] = true;
         this.render();
         setTimeout(() => {
-            const el = document.getElementById('form-cms-questao');
-            if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                const enunc = document.getElementById('cms-q-enunciado');
-                if (enunc) enunc.focus();
+            const enunc = document.getElementById('cms-q-enunciado');
+            if (enunc) enunc.focus();
+        }, 100);
+    },
+
+    selecionarTipoCardCMS(tipo) {
+        this.playSound('tap');
+        this.capturarRascunhoFormularioAuto();
+        const inp = document.getElementById('cms-q-tipo');
+        if (inp) inp.value = tipo;
+        if (this.cmsDraft) this.cmsDraft.tipo = tipo;
+        document.querySelectorAll('.cms-tipo-card-btn').forEach(btn => {
+            const isMatch = btn.getAttribute('data-tipo-card') === tipo;
+            btn.className = `cms-tipo-card-btn p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${isMatch ? 'bg-sky-50 dark:bg-sky-950/50 border-sky-500 text-sky-700 dark:text-sky-300 font-black shadow-xs' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold hover:border-sky-300'}`;
+        });
+        this.atualizarCamposTipoCMS();
+        this.restaurarRascunhoNoFormularioCMS();
+        this.salvarEstadoCMS();
+    },
+
+    // =========================================================================
+    // EDIÇÃO, DUPLICAÇÃO, REORDENAÇÃO E SIMULAÇÃO DE QUESTÕES NO CMS
+    // =========================================================================
+    carregarQuestaoParaEdicaoCMS(temaId, modId, licaoId, questaoId) {
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        const mod = tema ? (tema.modulos || []).find(m => m.id === modId) : null;
+        const lic = mod ? (mod.licoes || []).find(l => l.id === licaoId) : null;
+        const q = lic ? (lic.desafios || []).find(d => d.id === questaoId) : null;
+        if (!q) return;
+
+        this.cmsSelectedTemaId = temaId;
+        this.cmsTargetModuloId = modId;
+        this.cmsTargetLicaoId = licaoId;
+        this.cmsEditingQuestaoId = questaoId;
+        this.cmsExpandedLicoes[licaoId] = true;
+
+        const matchNum = String(q.gabarito || '').match(/(\d+)/);
+        const errIdx = matchNum ? matchNum[1] : '2';
+        const falaIdx = Math.max(0, (q.opcoes || []).findIndex(op => op === q.gabarito));
+        const lacIdx = Math.max(0, (q.opcoes || []).findIndex(op => op === q.gabarito));
+        const ordArr = Array.isArray(q.gabarito) ? q.gabarito : (q.itens || []);
+
+        this.cmsDraft = {
+            tipo: q.tipo || 'VERDADEIRO_OU_FALSO',
+            mascote: q.mascote || 'auto',
+            cenario: q.cenario || '',
+            enunciado: q.enunciado || '',
+            feedbackAcerto: q.feedbackAcerto || '',
+            feedbackErro: q.feedbackErro || '',
+            vfGabarito: q.gabarito === 'Falso' ? 'Falso' : 'Verdadeiro',
+            op0: q.opcoes?.[0] || '',
+            op1: q.opcoes?.[1] || '',
+            op2: q.opcoes?.[2] || '',
+            falaGabarito: String(falaIdx),
+            linha1: q.linhas?.[0] || '',
+            linha2: q.linhas?.[1] || '',
+            linha3: q.linhas?.[2] || '',
+            cacaGabarito: String(errIdx),
+            lacunaTexto: q.texto || '',
+            lacunaOp0: q.opcoes?.[0] || '',
+            lacunaOp1: q.opcoes?.[1] || '',
+            lacunaOp2: q.opcoes?.[2] || '',
+            lacunaGabarito: String(lacIdx),
+            ordem1: ordArr[0] || '',
+            ordem2: ordArr[1] || '',
+            ordem3: ordArr[2] || '',
+            ordem4: ordArr[3] || ''
+        };
+        this.salvarEstadoCMS();
+        this.playSound('save');
+        this.render(null, true);
+        setTimeout(() => {
+            document.getElementById('form-cms-questao')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 80);
+    },
+
+    cancelarEdicaoQuestaoCMS() {
+        this.cmsEditingQuestaoId = null;
+        this.cmsDraft = null;
+        this.salvarEstadoCMS();
+        this.playSound('save');
+        this.render(null, true);
+    },
+
+    duplicarQuestaoCMS(temaId, modId, licaoId, questaoId) {
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        const mod = tema ? (tema.modulos || []).find(m => m.id === modId) : null;
+        const lic = mod ? (mod.licoes || []).find(l => l.id === licaoId) : null;
+        if (!lic || !Array.isArray(lic.desafios)) return;
+        const idx = lic.desafios.findIndex(d => d.id === questaoId);
+        if (idx === -1) return;
+
+        const original = lic.desafios[idx];
+        const copia = JSON.parse(JSON.stringify(original));
+        copia.id = 'q_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        copia.enunciado = copia.enunciado + ' (Cópia)';
+        lic.desafios.splice(idx + 1, 0, copia);
+
+        this.saveTemas(temas);
+        this.cmsExpandedLicoes[licaoId] = true;
+        this.carregarQuestaoParaEdicaoCMS(temaId, modId, licaoId, copia.id);
+    },
+
+    moverQuestaoCMS(temaId, modId, licaoId, questaoId, direcao) {
+        const temas = this.getTemas();
+        const tema = temas.find(t => t.id === temaId);
+        const mod = tema ? (tema.modulos || []).find(m => m.id === modId) : null;
+        const lic = mod ? (mod.licoes || []).find(l => l.id === licaoId) : null;
+        if (!lic || !Array.isArray(lic.desafios)) return;
+        const idx = lic.desafios.findIndex(d => d.id === questaoId);
+        const novoIdx = idx + direcao;
+        if (idx < 0 || novoIdx < 0 || novoIdx >= lic.desafios.length) return;
+        const tmp = lic.desafios[idx];
+        lic.desafios[idx] = lic.desafios[novoIdx];
+        lic.desafios[novoIdx] = tmp;
+        this.saveTemas(temas);
+        this.render();
+    },
+
+    testarQuestaoUnicaCMS(temaId, modId, licaoId, questaoId) {
+        const tema = this.getTemaById(temaId);
+        const mod = tema ? (tema.modulos || []).find(m => m.id === modId) : null;
+        const lic = mod ? (mod.licoes || []).find(l => l.id === licaoId) : null;
+        const q = lic ? (lic.desafios || []).find(d => d.id === questaoId) : null;
+        if (!q) return;
+        this.iniciarSimulacaoQuestaoObjeto(q, lic ? lic.titulo : 'Simulação do Criador');
+    },
+
+    iniciarSimulacaoQuestaoObjeto(qObj, tituloSimulacao = 'Pré-visualização do Criador') {
+        this.playSound('start');
+        const clone = JSON.parse(JSON.stringify(qObj));
+        let orderedItems = [];
+        if (clone.tipo === 'ORDENAR_FLUXO') {
+            orderedItems = [...(clone.itens || clone.gabarito || [])].sort(() => Math.random() - 0.5);
+            if (orderedItems.length > 1 && orderedItems.join('|||') === (clone.gabarito || []).join('|||')) {
+                orderedItems.reverse();
             }
-        }, 150);
+        }
+        this.activeSession = {
+            lessonId: clone.licaoId || 'simulacao_cms',
+            licao: { id: 'simulacao_cms', titulo: tituloSimulacao, xp: 10, vidas: 3 },
+            questionQueue: [clone],
+            totalOriginal: 1,
+            acertosUnicos: 0,
+            vidas: 3,
+            tentativasPorQuestao: {},
+            selectedOption: null,
+            orderedItems: orderedItems,
+            feedbackStatus: null
+        };
+        this.render();
+    },
+
+    simularQuestaoDoFormularioCMS() {
+        const built = this.construirQuestaoDoFormulario(true);
+        if (!built) return;
+        this.iniciarSimulacaoQuestaoObjeto(built, 'Teste Rápido do Formulário');
+    },
+
+    publicarTodosRascunhosCMS() {
+        const temas = this.getTemas();
+        let count = 0;
+        temas.forEach(t => {
+            (t.modulos || []).forEach(m => {
+                (m.licoes || []).forEach(l => {
+                    (l.desafios || []).forEach(d => {
+                        if (d.status === 'rascunho') {
+                            d.status = 'publicado';
+                            count++;
+                        }
+                    });
+                });
+            });
+        });
+        if (count === 0) return app.ui.showAlert("Tudo Publicado", "Não há nenhuma questão em rascunho no momento.", "info");
+        this.saveTemas(temas);
+        this.render();
+        app.ui.showAlert("Rascunhos Publicados!", `Todas as <strong>${count} questão(ões)</strong> em rascunho foram publicadas e já estão ativas nas trilhas!`, "success");
+    },
+
+    // =========================================================================
+    // ASSISTENTES 1-CLICK (EXEMPLOS PRÁTICOS, LACUNAS E FEEDBACKS PADRÃO)
+    // =========================================================================
+    inserirLacunaInputCMS() {
+        const el = document.getElementById('cms-lacuna-texto');
+        if (!el) return;
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        const txt = el.value;
+        const prefix = (start > 0 && txt[start - 1] !== ' ') ? ' ' : '';
+        const suffix = (end < txt.length && txt[end] !== ' ' && txt[end] !== '.' && txt[end] !== ',') ? ' ' : '';
+        el.value = txt.substring(0, start) + prefix + '________' + suffix + txt.substring(end);
+        el.focus();
+        this.atualizarPreviewLacunaCMS();
+        this.capturarRascunhoFormularioAuto();
+    },
+
+    atualizarPreviewLacunaCMS() {
+        const previewEl = document.getElementById('cms-lacuna-preview');
+        const txtEl = document.getElementById('cms-lacuna-texto');
+        if (!previewEl || !txtEl) return;
+
+        let rawTxt = txtEl.value.trim();
+        const rad = document.querySelector('input[name="cms_lacuna_gabarito"]:checked');
+        const gIdx = rad ? parseInt(rad.value) : 0;
+        const opCorreta = (document.getElementById('cms-lacuna-op-' + gIdx)?.value || '').trim() || 'resposta correta';
+
+        if (!rawTxt) {
+            previewEl.innerHTML = `<span class="text-slate-400 italic">Digite a frase acima e clique no botão amarelo "+ Inserir Espaço da Lacuna" para ver a prévia aqui...</span>`;
+            return;
+        }
+
+        const temLacuna = /________|___|\[lacuna\]/i.test(rawTxt);
+        let normalized = rawTxt.replace(/\[lacuna\]|___+/gi, '________');
+        if (!temLacuna) {
+            normalized = normalized + ' ________';
+        }
+
+        const partes = opCorreta.split(/[|\/,]/).map(s => s.trim()).filter(Boolean);
+        let bIdx = 0;
+        const htmlPreview = app.utils.escapeHtml(normalized).replace(/________/g, () => {
+            const p = partes[bIdx] || opCorreta;
+            bIdx++;
+            return `<span class="inline-block px-2.5 py-0.5 mx-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-400 font-black">${app.utils.escapeHtml(p)}</span>`;
+        });
+
+        previewEl.innerHTML = `
+            <div class="text-xs md:text-sm font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
+                ${htmlPreview}
+            </div>
+            ${!temLacuna ? `<div class="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mt-1"><i class="fa-solid fa-circle-info mr-1"></i>Dica: Você ainda não clicou em "+ Inserir Espaço da Lacuna", então o espaço foi adicionado automaticamente ao final da frase.</div>` : ''}
+        `;
+    },
+
+    gerarFeedbacksPadraoCMS() {
+        const fAc = document.getElementById('cms-q-feedback-acerto');
+        const fEr = document.getElementById('cms-q-feedback-erro');
+        if (fAc) fAc.value = 'Excelente! Você aplicou corretamente a diretriz de qualidade e garantiu a resolutividade no atendimento.';
+        if (fEr) fEr.value = 'Atenção à regra de monitoria: revise o procedimento operacional padrão para evitar recontatos e falhas críticas.';
+        this.capturarRascunhoFormularioAuto();
+    },
+
+    preencherExemploTipoCMS() {
+        const tipo = document.getElementById('cms-q-tipo')?.value || 'VERDADEIRO_OU_FALSO';
+        const cenEl = document.getElementById('cms-q-cenario');
+        const enuEl = document.getElementById('cms-q-enunciado');
+        const fAcEl = document.getElementById('cms-q-feedback-acerto');
+        const fErEl = document.getElementById('cms-q-feedback-erro');
+
+        if (tipo === 'VERDADEIRO_OU_FALSO') {
+            if (cenEl) cenEl.value = 'O cliente entra em contato para tirar uma dúvida sobre cobrança proporcional na fatura. Após a explicação inicial, o operador se prepara para encerrar o atendimento.';
+            if (enuEl) enuEl.value = 'Para garantir o FCR (Resolução no 1º Contato), o operador deve confirmar em linha se a dúvida principal e eventuais dúvidas secundárias foram sanadas antes de encerrar.';
+            if (fAcEl) fAcEl.value = 'Correto! A validação ativa em linha evita que o cliente precise retornar à fila.';
+            if (fErEl) fErEl.value = 'Atenção: Encerrar sem validar a solução completa gera recontato e impacta o FCR.';
+            const rad = document.querySelector('input[name="cms_vf_gabarito"][value="Verdadeiro"]');
+            if (rad) rad.checked = true;
+        } else if (tipo === 'ESCOLHA_DE_FALA') {
+            if (cenEl) cenEl.value = 'O cliente inicia a chamada demonstrando forte frustração porque já ligou duas vezes na semana sobre o mesmo problema sem obter solução definitiva.';
+            if (enuEl) enuEl.value = 'Diante desse contexto de atrito, qual é a melhor fala para acolher o cliente com empatia e assumir a resolução imediata?';
+            const op0 = document.getElementById('cms-op-0');
+            const op1 = document.getElementById('cms-op-1');
+            const op2 = document.getElementById('cms-op-2');
+            if (op0) op0.value = 'Compreendo perfeitamente sua frustração, Sr. João. Já consultei seu histórico e vou resolver sua solicitação agora mesmo neste atendimento.';
+            if (op1) op1.value = 'Infelizmente não tenho acesso ao que o outro atendente fez, então o senhor terá que explicar tudo novamente.';
+            if (op2) op2.value = 'Peço que mantenha a calma, caso contrário terei que encerrar a ligação imediatamente.';
+            const rad = document.querySelector('input[name="cms_fala_gabarito"][value="0"]');
+            if (rad) rad.checked = true;
+            if (fAcEl) fAcEl.value = 'Muito bem! A empatia aliada ao compromisso imediato desarma o atrito e eleva o CSAT.';
+            if (fErEl) fErEl.value = 'Cuidado: Ignorar o histórico ou confrontar o cliente agrava a insatisfação.';
+        } else if (tipo === 'CACA_ERRO') {
+            if (cenEl) cenEl.value = 'Durante a auditoria de qualidade de uma chamada de suporte técnico, o monitor avalia as 3 condutas realizadas pelo operador em linha.';
+            if (enuEl) enuEl.value = 'Analise as 3 etapas do atendimento abaixo e clique na linha em que o operador cometeu uma falha de procedimento:';
+            const l1 = document.getElementById('cms-linha-1');
+            const l2 = document.getElementById('cms-linha-2');
+            const l3 = document.getElementById('cms-linha-3');
+            if (l1) l1.value = 'Operador confirma os dados cadastrais de segurança antes de acessar a fatura.';
+            if (l2) l2.value = 'Operador transfere a chamada sem avisar o cliente e sem registrar o protocolo no CRM.';
+            if (l3) l3.value = 'Operador questiona se resta alguma dúvida adicional e encaminha para a pesquisa.';
+            const rad = document.querySelector('input[name="cms_caca_gabarito"][value="2"]');
+            if (rad) rad.checked = true;
+            if (fAcEl) fAcEl.value = 'Exato! A transferência cega sem registro no CRM é uma falha grave de qualidade.';
+            if (fErEl) fErEl.value = 'Observe a Linha 2: nunca transfira o cliente sem contextualização e registro prévio.';
+        } else if (tipo === 'PREENCHER_LACUNA') {
+            if (cenEl) cenEl.value = 'O cliente solicita o cancelamento do serviço alegando custo elevado. O operador precisa seguir o protocolo oficial de retenção.';
+            if (enuEl) enuEl.value = 'Escolha a alternativa que preenche corretamente a lacuna da diretriz abaixo:';
+            const txt = document.getElementById('cms-lacuna-texto');
+            const op0 = document.getElementById('cms-lacuna-op-0');
+            const op1 = document.getElementById('cms-lacuna-op-1');
+            const op2 = document.getElementById('cms-lacuna-op-2');
+            if (txt) txt.value = 'Antes de ofertar qualquer desconto ou benefício de retenção, é indispensável realizar a ________ para identificar a real necessidade do cliente.';
+            if (op0) op0.value = 'sondagem ativa';
+            if (op1) op1.value = 'transferência imediata';
+            if (op2) op2.value = 'finalização da chamada';
+            const rad = document.querySelector('input[name="cms_lacuna_gabarito"][value="0"]');
+            if (rad) rad.checked = true;
+            if (fAcEl) fAcEl.value = 'Perfeito! A sondagem ativa direciona o argumento certo para a necessidade real do cliente.';
+            if (fErEl) fErEl.value = 'Lembre-se: sem sondagem prévia, a argumentação de retenção perde eficácia.';
+            this.atualizarPreviewLacunaCMS();
+        } else if (tipo === 'ORDENAR_FLUXO') {
+            if (cenEl) cenEl.value = 'Atendimento receptivo de primeiro contato onde o cliente relata dúvida sobre o funcionamento do serviço contratado.';
+            if (enuEl) enuEl.value = 'Ordene o fluxo padrão de um atendimento nota 100 na monitoria de qualidade (do 1º ao 4º passo):';
+            const o1 = document.getElementById('cms-ordem-1');
+            const o2 = document.getElementById('cms-ordem-2');
+            const o3 = document.getElementById('cms-ordem-3');
+            const o4 = document.getElementById('cms-ordem-4');
+            if (o1) o1.value = 'Acolhimento empático e confirmação de segurança dos dados';
+            if (o2) o2.value = 'Sondagem ativa e diagnóstico da causa raiz no CRM';
+            if (o3) o3.value = 'Resolução completa em linha com confirmação do cliente';
+            if (o4) o4.value = 'Registro detalhado do protocolo e convite à pesquisa de satisfação';
+            if (fAcEl) fAcEl.value = 'Sequência impecável! Esse roteiro garante conformidade e alta satisfação.';
+            if (fErEl) fErEl.value = 'Revise a ordem lógica: Acolhimento -> Sondagem -> Resolução -> Fechamento.';
+        }
+        this.capturarRascunhoFormularioAuto();
     },
 
     // =========================================================================
@@ -26427,10 +28148,14 @@ app.duolingo = {
 
         const temaId = temaSelect.value;
         const moduloId = moduloSelect.value;
+        this.cmsTargetModuloId = moduloId;
         const tema = this.getTemaById(temaId);
         const modulo = tema ? (tema.modulos || []).find(m => m.id === moduloId) : null;
         const licoes = modulo ? (modulo.licoes || []) : [];
 
+        if (!this.cmsTargetLicaoId || !licoes.some(l => l.id === this.cmsTargetLicaoId)) {
+            this.cmsTargetLicaoId = licoes[0]?.id || null;
+        }
         licaoSelect.innerHTML = licoes.map(l => `<option value="${l.id}" ${l.id === this.cmsTargetLicaoId ? 'selected' : ''}>${l.numero} - ${l.titulo}</option>`).join('');
     },
 
@@ -26444,137 +28169,145 @@ app.duolingo = {
         if (tipo === 'VERDADEIRO_OU_FALSO') {
             container.innerHTML = `
                 <div>
-                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Gabarito Oficial (Resposta Correta):</span>
-                    <div class="flex items-center gap-6">
-                        <label class="flex items-center gap-2 cursor-pointer font-bold text-xs text-slate-700 dark:text-slate-200">
-                            <input type="radio" name="cms_vf_gabarito" value="Verdadeiro" checked class="w-4 h-4 text-emerald-600 focus:ring-emerald-500">
-                            <span>Verdadeiro</span>
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Selecione o Gabarito Oficial (Qual é a resposta certa?):</span>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer font-bold text-xs text-emerald-700 dark:text-emerald-300 hover:border-emerald-500 transition">
+                            <input type="radio" name="cms_vf_gabarito" value="Verdadeiro" checked class="w-4 h-4 accent-emerald-600">
+                            <span><i class="fa-solid fa-check mr-1"></i> Verdadeiro</span>
                         </label>
-                        <label class="flex items-center gap-2 cursor-pointer font-bold text-xs text-slate-700 dark:text-slate-200">
-                            <input type="radio" name="cms_vf_gabarito" value="Falso" class="w-4 h-4 text-rose-600 focus:ring-rose-500">
-                            <span>Falso</span>
+                        <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer font-bold text-xs text-rose-700 dark:text-rose-300 hover:border-rose-500 transition">
+                            <input type="radio" name="cms_vf_gabarito" value="Falso" class="w-4 h-4 accent-rose-600">
+                            <span><i class="fa-solid fa-xmark mr-1"></i> Falso</span>
                         </label>
                     </div>
                 </div>
             `;
         } else if (tipo === 'ESCOLHA_DE_FALA') {
             container.innerHTML = `
-                <div class="space-y-3">
-                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Alternativas de Fala (Preencha as 3 opções e marque o gabarito oficial):</span>
-                    <div>
+                <div class="space-y-2.5">
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Preencha as 3 alternativas e marque o círculo da resposta CORRETA:</span>
+                    ${[0, 1, 2].map(i => `
                         <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_fala_gabarito" value="0" checked class="w-4 h-4 text-sky-600" title="Marcar como Opção Correta">
-                            <input type="text" id="cms-op-0" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Opção A (Ex: Justificativa correta)">
+                            <input type="radio" name="cms_fala_gabarito" value="${i}" ${i === 0 ? 'checked' : ''} class="w-4 h-4 accent-emerald-600 shrink-0 cursor-pointer" title="Marcar como resposta correta">
+                            <span class="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black flex items-center justify-center shrink-0">${['A', 'B', 'C'][i]}</span>
+                            <input type="text" id="cms-op-${i}" required class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs md:text-sm outline-none focus:border-sky-500" placeholder="${i === 0 ? 'Alternativa A (Ex: Resposta correta e empática)' : 'Alternativa ' + ['A','B','C'][i] + ' (Distrator / incorreta)'}">
                         </div>
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_fala_gabarito" value="1" class="w-4 h-4 text-sky-600" title="Marcar como Opção Correta">
-                            <input type="text" id="cms-op-1" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Opção B (Distrator operacional)">
-                        </div>
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_fala_gabarito" value="2" class="w-4 h-4 text-sky-600" title="Marcar como Opção Correta">
-                            <input type="text" id="cms-op-2" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Opção C (Distrator grave)">
-                        </div>
-                    </div>
+                    `).join('')}
                 </div>
             `;
         } else if (tipo === 'CACA_ERRO') {
             container.innerHTML = `
-                <div class="space-y-3">
-                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Linhas do Diálogo / Auditoria (Selecione qual linha possui o erro):</span>
-                    <div>
+                <div class="space-y-2.5">
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Escreva as 3 frases do atendimento e marque a bolinha de qual linha CONTÉM O ERRO:</span>
+                    ${[1, 2, 3].map(i => `
                         <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_caca_gabarito" value="1" class="w-4 h-4 text-rose-600" title="Esta linha contém o erro">
-                            <span class="text-xs font-bold w-14 shrink-0">Linha 1:</span>
-                            <input type="text" id="cms-linha-1" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Ex: Atendente acolhe o cliente com empatia...">
+                            <input type="radio" name="cms_caca_gabarito" value="${i}" ${i === 2 ? 'checked' : ''} class="w-4 h-4 accent-rose-600 shrink-0 cursor-pointer" title="Marcar que a Linha ${i} contém o erro">
+                            <span class="text-xs font-black text-slate-600 dark:text-slate-300 w-16 shrink-0">Linha ${i}:</span>
+                            <input type="text" id="cms-linha-${i}" required class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs md:text-sm outline-none focus:border-sky-500" placeholder="${i === 2 ? 'Ex: Atendente interrompe o cliente (LINHA COM ERRO)...' : 'Ex: Conduta correta do operador...'}">
                         </div>
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_caca_gabarito" value="2" checked class="w-4 h-4 text-rose-600" title="Esta linha contém o erro">
-                            <span class="text-xs font-bold w-14 shrink-0">Linha 2:</span>
-                            <input type="text" id="cms-linha-2" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Ex: Atendente interrompe o cliente agressivamente (ERRO)...">
-                        </div>
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_caca_gabarito" value="3" class="w-4 h-4 text-rose-600" title="Esta linha contém o erro">
-                            <span class="text-xs font-bold w-14 shrink-0">Linha 3:</span>
-                            <input type="text" id="cms-linha-3" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Ex: Atendente finaliza com protocolo e pesquisa...">
-                        </div>
-                    </div>
+                    `).join('')}
                 </div>
             `;
         } else if (tipo === 'PREENCHER_LACUNA') {
             container.innerHTML = `
-                <div class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Texto com Lacuna (Use ________ no ponto a preencher):</label>
-                        <input type="text" id="cms-lacuna-texto" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Ex: Em uma escala de 0 a 10, o quanto você ________ a nossa empresa para um ________?">
-                    </div>
-                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Opções de Preenchimento (Pares separados por |):</span>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_lacuna_gabarito" value="0" checked class="w-4 h-4 text-sky-600">
-                            <input type="text" id="cms-lacuna-op-0" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Ex: recomendaria | amigo (Gabarito Correto)">
+                <div class="space-y-4">
+                    <!-- Passo 1: Frase com Lacuna -->
+                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <span class="text-xs font-black text-slate-800 dark:text-white block">1º Passo: Digite a frase com o espaço em branco</span>
+                                <span class="text-[11px] text-slate-500 dark:text-slate-400">Posicione o cursor onde a palavra ficará oculta e clique no botão amarelo:</span>
+                            </div>
+                            <button type="button" onclick="app.duolingo.inserirLacunaInputCMS()" class="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-black transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer">
+                                <i class="fa-solid fa-plus-circle"></i> Inserir Espaço da Lacuna ( ________ )
+                            </button>
+                        </div>
+                        <textarea id="cms-lacuna-texto" rows="2" required oninput="app.duolingo.atualizarPreviewLacunaCMS()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-sky-500" placeholder="Ex: Antes de ofertar um benefício, é indispensável realizar a ________ com o cliente."></textarea>
+
+                        <!-- Prévia Ao Vivo -->
+                        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-dashed border-slate-300 dark:border-slate-700">
+                            <span class="text-[10px] font-black uppercase tracking-wider text-sky-600 dark:text-sky-400 block mb-1">
+                                <i class="fa-solid fa-eye mr-1"></i> Como vai aparecer para o operador (Prévia ao vivo):
+                            </span>
+                            <div id="cms-lacuna-preview" class="text-xs text-slate-500"></div>
                         </div>
                     </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" name="cms_lacuna_gabarito" value="1" class="w-4 h-4 text-sky-600">
-                            <input type="text" id="cms-lacuna-op-1" required class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Ex: avaliaria | parente (Distrator)">
+
+                    <!-- Passo 2: 3 Opções (A, B, C) -->
+                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                        <div>
+                            <span class="text-xs font-black text-slate-800 dark:text-white block">2º Passo: Preencha as 3 opções (A, B e C) e marque a CORRETA</span>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400">Digite a palavra que preenche a lacuna em cada opção e marque a bolinha da resposta certa:</span>
                         </div>
+                        ${[0, 1, 2].map(i => `
+                            <div class="flex items-center gap-2.5">
+                                <input type="radio" name="cms_lacuna_gabarito" value="${i}" ${i === 0 ? 'checked' : ''} onchange="app.duolingo.atualizarPreviewLacunaCMS()" class="w-4 h-4 accent-emerald-600 shrink-0 cursor-pointer" title="Marcar Opção ${['A', 'B', 'C'][i]} como a resposta correta">
+                                <span class="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black flex items-center justify-center shrink-0">${['A', 'B', 'C'][i]}</span>
+                                <input type="text" id="cms-lacuna-op-${i}" required oninput="app.duolingo.atualizarPreviewLacunaCMS()" class="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs md:text-sm font-bold outline-none focus:border-sky-500" placeholder="${i === 0 ? 'Opção A (Ex: sondagem ativa)' : 'Opção ' + ['A', 'B', 'C'][i] + ' (Ex: palavra incorreta / distrator)'}">
+                            </div>
+                        `).join('')}
                     </div>
                 </div>
             `;
+            setTimeout(() => this.atualizarPreviewLacunaCMS(), 20);
         } else if (tipo === 'ORDENAR_FLUXO') {
             container.innerHTML = `
                 <div class="space-y-2">
-                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Passos na Ordem Sequencial Correta (1 a 4):</span>
-                    <input type="text" id="cms-ordem-1" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Passo 1 (Ex: Zona de Excelência 75-100)">
-                    <input type="text" id="cms-ordem-2" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Passo 2 (Ex: Zona de Qualidade 50-74)">
-                    <input type="text" id="cms-ordem-3" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Passo 3 (Ex: Zona de Aperfeiçoamento 0-49)">
-                    <input type="text" id="cms-ordem-4" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Passo 4 (Ex: Zona Crítica -100 a -1)">
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Digite os 4 passos na ORDEM CORRETA (o sistema embaralha automaticamente na aula):</span>
+                    ${[1, 2, 3, 4].map(i => `
+                        <div class="flex items-center gap-2">
+                            <span class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-black text-xs flex items-center justify-center shrink-0">${i}º</span>
+                            <input type="text" id="cms-ordem-${i}" required class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs md:text-sm outline-none focus:border-sky-500" placeholder="Passo ${i} da sequência correta...">
+                        </div>
+                    `).join('')}
                 </div>
             `;
         }
     },
+    // Modal de Criar ou Editar Tema com Seletor Visual de Ícones
+    abrirModalNovoTema(editTemaId = null) {
+        const temaEdit = editTemaId ? this.getTemaById(editTemaId) : null;
+        const iconeInicial = temaEdit ? (temaEdit.icone || 'fa-graduation-cap') : 'fa-graduation-cap';
+        const old = document.getElementById('modal-cms-novo-tema');
+        if (old) old.remove();
 
-    // Modais de Criação de Estrutura
-    abrirModalNovoTema() {
         const modal = document.createElement('div');
         modal.id = 'modal-cms-novo-tema';
         modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-800 dark:text-slate-100';
         modal.innerHTML = `
             <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
-                    <h3 class="font-black text-slate-800 dark:text-white text-base">Cadastrar Novo Tema / Trilha</h3>
+                    <h3 class="font-black text-slate-800 dark:text-white text-base">${temaEdit ? 'Editar Tema / Trilha' : 'Cadastrar Novo Tema / Trilha'}</h3>
                     <button onclick="document.getElementById('modal-cms-novo-tema').remove()" class="text-slate-400 hover:text-white">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
-                <form onsubmit="event.preventDefault(); app.duolingo.salvarNovoTema();" class="space-y-3">
+                <form onsubmit="event.preventDefault(); app.duolingo.salvarNovoTema('${editTemaId || ''}');" class="space-y-3">
                     <div>
                         <label class="block text-xs font-bold mb-1">Título do Tema</label>
-                        <input type="text" id="novo-tema-titulo" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold" placeholder="Ex: Comunicação Não-Violenta no Call Center">
+                        <input type="text" id="novo-tema-titulo" value="${temaEdit ? app.utils.escapeHtml(temaEdit.titulo) : ''}" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold" placeholder="Ex: Comunicação Não-Violenta no Call Center">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold mb-1">Ícone FontAwesome</label>
-                        <input type="text" id="novo-tema-icone" value="fa-graduation-cap" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="fa-headphones, fa-comments, fa-brain">
+                        <label class="block text-xs font-bold mb-1">Ícone do Tema (Clique abaixo ou digite)</label>
+                        <input type="text" id="novo-tema-icone" value="${iconeInicial}" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs mb-2">
+                        <div class="flex flex-wrap gap-1.5">
+                            ${this.cmsIconesDisponiveis.map(ic => `
+                                <button type="button" onclick="document.getElementById('novo-tema-icone').value='${ic}'" class="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-purple-500 hover:text-purple-600 flex items-center justify-center text-xs transition" title="${ic}">
+                                    <i class="fa-solid ${ic}"></i>
+                                </button>
+                            `).join('')}
+                        </div>
                     </div>
                     <div>
                         <label class="block text-xs font-bold mb-1">Descrição Curta</label>
-                        <textarea id="novo-tema-desc" rows="2" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="Objetivo operacional e metas desta trilha..."></textarea>
+                        <textarea id="novo-tema-desc" rows="2" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="Objetivo operacional e metas desta trilha...">${temaEdit ? app.utils.escapeHtml(temaEdit.descricao || '') : ''}</textarea>
                     </div>
                     <div>
                         <label class="block text-xs font-bold mb-1">Indicadores Impactados (Separados por vírgula)</label>
-                        <input type="text" id="novo-tema-ind" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="CSAT, Retenção, Aderência, FCR">
+                        <input type="text" id="novo-tema-ind" value="${temaEdit ? app.utils.escapeHtml((temaEdit.indicadores || []).join(', ')) : ''}" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="CSAT, Retenção, Aderência, FCR">
                     </div>
                     <button type="submit" class="w-full mt-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition">
-                        Criar Tema
+                        ${temaEdit ? 'Salvar Alterações do Tema' : 'Criar Tema'}
                     </button>
                 </form>
             </div>
@@ -26582,7 +28315,7 @@ app.duolingo = {
         document.body.appendChild(modal);
     },
 
-    salvarNovoTema() {
+    salvarNovoTema(editTemaId = '') {
         const titulo = document.getElementById('novo-tema-titulo').value.trim();
         const icone = document.getElementById('novo-tema-icone').value.trim() || 'fa-graduation-cap';
         const desc = document.getElementById('novo-tema-desc').value.trim();
@@ -26591,47 +28324,106 @@ app.duolingo = {
 
         if (!titulo) return;
 
-        const novoTema = {
-            id: 'tema_' + Date.now(),
-            titulo: titulo,
-            icone: icone,
-            descricao: desc,
-            indicadores: indicadores,
-            modulos: []
-        };
-
         const temas = this.getTemas();
-        temas.push(novoTema);
-        this.saveTemas(temas);
-        this.cmsSelectedTemaId = novoTema.id;
-        this.cmsTargetModuloId = null;
-        this.cmsTargetLicaoId = null;
+        if (editTemaId) {
+            const tExist = temas.find(t => t.id === editTemaId);
+            if (tExist) {
+                tExist.titulo = titulo;
+                tExist.icone = icone;
+                tExist.descricao = desc;
+                tExist.indicadores = indicadores;
+                this.saveTemas(temas);
+            }
+        } else {
+            const novoTema = {
+                id: 'tema_' + Date.now(),
+                titulo: titulo,
+                icone: icone,
+                descricao: desc,
+                indicadores: indicadores,
+                modulos: []
+            };
+            temas.push(novoTema);
+            this.saveTemas(temas);
+            this.cmsSelectedTemaId = novoTema.id;
+            this.cmsTargetModuloId = null;
+            this.cmsTargetLicaoId = null;
+        }
 
         const m = document.getElementById('modal-cms-novo-tema');
         if (m) m.remove();
-
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Tema Criado!", `O tema <strong>${titulo}</strong> foi adicionado. Agora você pode criar módulos e lições diretamente na tela!`, "success");
-        }
         this.render();
     },
 
-    salvarNovaQuestao(e) {
-        e.preventDefault();
-        const submitter = e.submitter;
-        const publicar = submitter && submitter.value === 'publicado';
+    abrirModalLoteCMS() {
+        const temas = this.getTemas();
+        const jsonAtual = JSON.stringify(temas, null, 2);
+        const old = document.getElementById('modal-cms-lote');
+        if (old) old.remove();
 
-        const temaId = document.getElementById('cms-q-tema').value;
-        const modId = document.getElementById('cms-q-modulo').value;
-        const licaoId = document.getElementById('cms-q-licao').value;
-        const tipo = document.getElementById('cms-q-tipo').value;
-        const cenario = document.getElementById('cms-q-cenario').value.trim();
-        const enunciado = document.getElementById('cms-q-enunciado').value.trim();
-        const feedbackAcerto = document.getElementById('cms-q-feedback-acerto').value.trim();
-        const feedbackErro = document.getElementById('cms-q-feedback-erro').value.trim();
+        const modal = document.createElement('div');
+        modal.id = 'modal-cms-lote';
+        modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-800 dark:text-slate-100';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                        <h3 class="font-black text-slate-800 dark:text-white text-base">Importar / Exportar Estrutura JSON do Softlingo</h3>
+                        <p class="text-xs text-slate-500">Copie o backup completo das trilhas ou cole um JSON editado para atualizar em lote.</p>
+                    </div>
+                    <button onclick="document.getElementById('modal-cms-lote').remove()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <textarea id="cms-lote-json-textarea" rows="12" class="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs outline-none custom-scrollbar">${app.utils.escapeHtml(jsonAtual)}</textarea>
+                <div class="flex items-center justify-between gap-3 pt-2">
+                    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('cms-lote-json-textarea').value); app.ui.showAlert('Copiado!', 'JSON copiado para a área de transferência.', 'success')" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-copy"></i> Copiar JSON
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="document.getElementById('modal-cms-lote').remove()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">Cancelar</button>
+                        <button type="button" onclick="app.duolingo.confirmarImportacaoLoteCMS()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-check"></i> Aplicar e Salvar JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    },
 
-        if (!enunciado || !cenario || !modId || !licaoId) {
-            return app.ui.showAlert("Atenção", "Preencha todos os campos obrigatórios.", "error");
+    confirmarImportacaoLoteCMS() {
+        const raw = document.getElementById('cms-lote-json-textarea')?.value || '';
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed) || parsed.length === 0) {
+                return app.ui.showAlert("JSON Inválido", "O conteúdo deve ser uma lista (Array) válida de temas do Softlingo.", "error");
+            }
+            this.saveTemas(parsed);
+            document.getElementById('modal-cms-lote')?.remove();
+            this.render();
+            app.ui.showAlert("Importação Concluída!", "Toda a árvore de temas, módulos, lições e questões foi atualizada com sucesso!", "success");
+        } catch (err) {
+            app.ui.showAlert("Erro de Sintaxe JSON", "Verifique se não faltou nenhuma vírgula ou aspas no JSON: " + err.message, "error");
+        }
+    },
+
+    construirQuestaoDoFormulario(isPreview = false) {
+        this.capturarRascunhoFormularioAuto();
+        const temaId = document.getElementById('cms-q-tema')?.value || this.cmsSelectedTemaId;
+        const modId = document.getElementById('cms-q-modulo')?.value || this.cmsTargetModuloId;
+        const licaoId = document.getElementById('cms-q-licao')?.value || this.cmsTargetLicaoId;
+        const tipo = document.getElementById('cms-q-tipo')?.value || 'VERDADEIRO_OU_FALSO';
+        const cenario = (document.getElementById('cms-q-cenario')?.value || '').trim();
+        const enunciado = (document.getElementById('cms-q-enunciado')?.value || '').trim();
+        const feedbackAcerto = (document.getElementById('cms-q-feedback-acerto')?.value || '').trim() || 'Conceito aplicado com perfeição!';
+        const feedbackErro = (document.getElementById('cms-q-feedback-erro')?.value || '').trim() || 'Atenção aos critérios técnicos de atendimento.';
+
+        if (!enunciado) {
+            app.ui.showAlert("Atenção", "Preencha pelo menos o enunciado da questão.", "warning");
+            return null;
+        }
+        if (!isPreview && (!cenario || !modId || !licaoId)) {
+            app.ui.showAlert("Atenção", "Selecione o Módulo/Lição e preencha o Contexto do Atendimento.", "error");
+            return null;
         }
 
         let gabarito = '';
@@ -26651,7 +28443,7 @@ app.duolingo = {
             opcoes = [op0, op1, op2];
             const rad = document.querySelector('input[name="cms_fala_gabarito"]:checked');
             const gIdx = rad ? parseInt(rad.value) : 0;
-            gabarito = opcoes[gIdx];
+            gabarito = opcoes[gIdx] || opcoes[0];
         } else if (tipo === 'CACA_ERRO') {
             const l1 = document.getElementById('cms-linha-1')?.value.trim() || 'Linha 1';
             const l2 = document.getElementById('cms-linha-2')?.value.trim() || 'Linha 2';
@@ -26662,13 +28454,19 @@ app.duolingo = {
             const errLine = rad ? rad.value : '2';
             gabarito = `Linha ${errLine} está incorreta.`;
         } else if (tipo === 'PREENCHER_LACUNA') {
-            texto = document.getElementById('cms-lacuna-texto')?.value.trim() || 'Texto com ________';
-            const op0 = document.getElementById('cms-lacuna-op-0')?.value.trim() || 'termo1 | termo2';
-            const op1 = document.getElementById('cms-lacuna-op-1')?.value.trim() || 'termoA | termoB';
-            opcoes = [op0, op1];
+            let rawTexto = document.getElementById('cms-lacuna-texto')?.value.trim() || 'Complete a lacuna: ________';
+            rawTexto = rawTexto.replace(/\[lacuna\]|___+/gi, '________');
+            if (!rawTexto.includes('________')) {
+                rawTexto = rawTexto + ' ________';
+            }
+            texto = rawTexto;
+            const op0 = document.getElementById('cms-lacuna-op-0')?.value.trim() || 'Opção A';
+            const op1 = document.getElementById('cms-lacuna-op-1')?.value.trim() || 'Opção B';
+            const op2 = document.getElementById('cms-lacuna-op-2')?.value.trim() || '';
+            opcoes = op2 ? [op0, op1, op2] : [op0, op1];
             const rad = document.querySelector('input[name="cms_lacuna_gabarito"]:checked');
             const gIdx = rad ? parseInt(rad.value) : 0;
-            gabarito = opcoes[gIdx];
+            gabarito = opcoes[gIdx] || opcoes[0];
         } else if (tipo === 'ORDENAR_FLUXO') {
             const o1 = document.getElementById('cms-ordem-1')?.value.trim() || 'Passo 1';
             const o2 = document.getElementById('cms-ordem-2')?.value.trim() || 'Passo 2';
@@ -26678,13 +28476,15 @@ app.duolingo = {
             gabarito = [o1, o2, o3, o4];
         }
 
-        const novaQ = {
-            id: 'q_' + Date.now(),
+        const mascoteEscolhido = document.getElementById('cms-q-mascote')?.value || 'auto';
+        return {
+            id: this.cmsEditingQuestaoId || ('q_' + Date.now()),
             temaId: temaId,
             moduloId: modId,
             licaoId: licaoId,
             tipo: tipo,
-            cenario: cenario,
+            mascote: mascoteEscolhido,
+            cenario: cenario || 'Cenário de Atendimento',
             enunciado: enunciado,
             opcoes: opcoes,
             linhas: linhas,
@@ -26692,19 +28492,64 @@ app.duolingo = {
             texto: texto,
             gabarito: gabarito,
             feedbackAcerto: feedbackAcerto,
-            feedbackErro: feedbackErro,
-            status: publicar ? 'publicado' : 'rascunho'
+            feedbackErro: feedbackErro
         };
+    },
+
+    salvarNovaQuestao(e) {
+        e.preventDefault();
+        const submitter = e.submitter;
+        const publicar = !submitter || submitter.value !== 'rascunho';
+
+        const novaQ = this.construirQuestaoDoFormulario(false);
+        if (!novaQ) return;
+        novaQ.status = publicar ? 'publicado' : 'rascunho';
+
+        const { temaId, moduloId: modId, licaoId, cenario, tipo } = novaQ;
+        const wasEditing = !!this.cmsEditingQuestaoId;
 
         const temas = this.getTemas();
-        for (const t of temas) {
-            for (const m of (t.modulos || [])) {
-                if (m.id === modId) {
-                    for (const l of (m.licoes || [])) {
-                        if (l.id === licaoId) {
-                            if (!l.desafios) l.desafios = [];
-                            l.desafios.push(novaQ);
-                            break;
+        if (wasEditing) {
+            let updatedInPlace = false;
+            temas.forEach(t => {
+                (t.modulos || []).forEach(m => {
+                    (m.licoes || []).forEach(l => {
+                        const idx = (l.desafios || []).findIndex(d => d.id === this.cmsEditingQuestaoId);
+                        if (idx > -1) {
+                            if (l.id === licaoId) {
+                                l.desafios[idx] = novaQ;
+                                updatedInPlace = true;
+                            } else {
+                                l.desafios.splice(idx, 1);
+                            }
+                        }
+                    });
+                });
+            });
+            if (!updatedInPlace) {
+                for (const t of temas) {
+                    for (const m of (t.modulos || [])) {
+                        if (m.id === modId) {
+                            for (const l of (m.licoes || [])) {
+                                if (l.id === licaoId) {
+                                    if (!l.desafios) l.desafios = [];
+                                    l.desafios.push(novaQ);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for (const t of temas) {
+                for (const m of (t.modulos || [])) {
+                    if (m.id === modId) {
+                        for (const l of (m.licoes || [])) {
+                            if (l.id === licaoId) {
+                                if (!l.desafios) l.desafios = [];
+                                l.desafios.push(novaQ);
+                                break;
+                            }
                         }
                     }
                 }
@@ -26715,14 +28560,33 @@ app.duolingo = {
         this.cmsSelectedTemaId = temaId;
         this.cmsTargetModuloId = modId;
         this.cmsTargetLicaoId = licaoId;
+        this.cmsEditingQuestaoId = null;
         this.cmsExpandedLicoes[licaoId] = true;
 
-        if (app.ui && typeof app.ui.showAlert === 'function') {
-            app.ui.showAlert("Questão Salva!", `A questão foi adicionada com status: <b>${publicar ? 'PUBLICADO' : 'RASCUNHO'}</b>. Você pode continuar cadastrando a próxima pergunta!`, "success");
+        // Se "Manter cenário após salvar" estiver ativo, preserva apenas tipo e cenário para a próxima questão; senão limpa o rascunho
+        if (!wasEditing && this.cmsManterContexto) {
+            this.cmsDraft = {
+                tipo: tipo,
+                cenario: cenario,
+                enunciado: '',
+                feedbackAcerto: '',
+                feedbackErro: ''
+            };
+        } else {
+            this.cmsDraft = null;
         }
-        this.render();
-    },
+        this.salvarEstadoCMS();
+        this.playSound('save');
+        this.render(null, true);
 
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert(
+                wasEditing ? "Questão Atualizada!" : "Questão Salva com Sucesso!",
+                `A questão foi gravada com status <b>${publicar ? 'PUBLICADO' : 'RASCUNHO'}</b>.`,
+                "success"
+            );
+        }
+    },
     toggleStatusQuestaoCMS(temaId, modId, licaoId, questaoId) {
         const temas = this.getTemas();
         for (const t of temas) {
@@ -26750,6 +28614,7 @@ app.duolingo = {
                 for (const l of (m.licoes || [])) {
                     if (l.id === licaoId) {
                         l.desafios = (l.desafios || []).filter(d => d.id !== questaoId);
+                        if (this.cmsEditingQuestaoId === questaoId) this.cmsEditingQuestaoId = null;
                         this.saveTemas(temas);
                         this.render();
                         return;
@@ -26762,16 +28627,27 @@ app.duolingo = {
     renderLinhasQuestoesCMS() {
         const temas = this.getTemas();
         const rows = [];
+        const qSearch = (this.cmsSearchQuery || '').trim().toLowerCase();
+        const fStatus = this.cmsFilterStatus || 'todos';
+        const fTipo = this.cmsFilterTipo || 'todos';
 
         temas.forEach(t => {
             (t.modulos || []).forEach(m => {
                 (m.licoes || []).forEach(l => {
                     (l.desafios || []).forEach(d => {
                         const isPub = d.status === 'publicado' || !d.status;
+                        const statusStr = isPub ? 'publicado' : 'rascunho';
+                        if (fStatus !== 'todos' && statusStr !== fStatus) return;
+                        if (fTipo !== 'todos' && d.tipo !== fTipo) return;
+                        if (qSearch) {
+                            const hay = `${d.enunciado || ''} ${d.cenario || ''} ${t.titulo || ''} ${l.titulo || ''}`.toLowerCase();
+                            if (!hay.includes(qSearch)) return;
+                        }
+
                         rows.push(`
                             <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors">
-                                <td class="py-3 px-5 max-w-md">
-                                    <span class="font-bold text-slate-800 dark:text-white block line-clamp-2">${d.enunciado}</span>
+                                <td class="py-3 px-5 max-w-md cursor-pointer" onclick="app.duolingo.carregarQuestaoParaEdicaoCMS('${t.id}', '${m.id}', '${l.id}', '${d.id}')">
+                                    <span class="font-bold text-slate-800 dark:text-white block line-clamp-2 hover:text-sky-600 transition-colors">${d.enunciado}</span>
                                     <span class="text-[10px] text-slate-400 mt-0.5 block truncate"><i class="fa-solid fa-bullseye mr-1"></i>${d.cenario}</span>
                                 </td>
                                 <td class="py-3 px-4">
@@ -26788,10 +28664,11 @@ app.duolingo = {
                                         <i class="fa-solid ${isPub ? 'fa-check' : 'fa-clock'} mr-1"></i> ${isPub ? 'Publicado' : 'Rascunho'}
                                     </button>
                                 </td>
-                                <td class="py-3 px-4 text-right">
-                                    <button onclick="app.duolingo.excluirQuestaoCMS('${t.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition" title="Excluir questão">
-                                        <i class="fa-solid fa-trash-can text-xs"></i>
-                                    </button>
+                                <td class="py-3 px-4 text-right whitespace-nowrap">
+                                    <button onclick="app.duolingo.testarQuestaoUnicaCMS('${t.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg transition" title="Simular / Testar Questão"><i class="fa-solid fa-play text-xs"></i></button>
+                                    <button onclick="app.duolingo.carregarQuestaoParaEdicaoCMS('${t.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/30 rounded-lg transition" title="Editar Questão"><i class="fa-solid fa-pen text-xs"></i></button>
+                                    <button onclick="app.duolingo.duplicarQuestaoCMS('${t.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg transition" title="Duplicar Questão"><i class="fa-solid fa-copy text-xs"></i></button>
+                                    <button onclick="app.duolingo.excluirQuestaoCMS('${t.id}', '${m.id}', '${l.id}', '${d.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition" title="Excluir questão"><i class="fa-solid fa-trash-can text-xs"></i></button>
                                 </td>
                             </tr>
                         `);
@@ -26801,7 +28678,7 @@ app.duolingo = {
         });
 
         if (rows.length === 0) {
-            return `<tr><td colspan="5" class="py-8 text-center text-slate-400">Nenhuma questão cadastrada no banco.</td></tr>`;
+            return `<tr><td colspan="5" class="py-8 text-center text-slate-400">Nenhuma questão encontrada para os filtros selecionados.</td></tr>`;
         }
         return rows.join('');
     },
@@ -27058,6 +28935,7 @@ app.duolingo = {
     iniciarLicao(lessonId) {
         const licao = this.getLessonById(lessonId);
         if (!licao) return;
+        this.playSound('start');
 
         const oldDrawer = document.getElementById('duo-feedback-drawer');
         if (oldDrawer) oldDrawer.remove();
@@ -27083,6 +28961,7 @@ app.duolingo = {
             questionQueue: questionQueue,
             totalOriginal: questionQueue.length,
             acertosUnicos: 0,
+            comboStreak: 0,
             vidas: licao.vidas || 3,
             tentativasPorQuestao: {},
             selectedOption: null,
@@ -27096,62 +28975,120 @@ app.duolingo = {
     renderLessonView() {
         const session = this.activeSession;
         if (!session || session.questionQueue.length === 0) {
-            return `<div>Fila vazia</div>`;
+            return `
+                <div class="max-w-xl mx-auto my-auto p-8 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl">
+                    <i class="fa-solid fa-folder-open text-4xl text-slate-300 mb-3"></i>
+                    <h3 class="text-lg font-black text-slate-800 dark:text-white">Nenhuma questão encontrada nesta lição</h3>
+                    <p class="text-sm text-slate-500 mt-1 mb-5">Cadastre pelo menos uma questão no Painel de Criação (CMS) para iniciar esta aula.</p>
+                    <button onclick="app.duolingo.activeSession = null; app.duolingo.render();" class="duo-btn-green px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-wider">Voltar</button>
+                </div>
+            `;
         }
 
         const challenge = session.questionQueue[0];
-        const progressPct = session.totalOriginal > 0 ? Math.min(100, Math.round((session.acertosUnicos / session.totalOriginal) * 100)) : 0;
+        const totalQ = Math.max(1, session.totalOriginal || 1);
+        const progressPct = Math.min(100, Math.round((session.acertosUnicos / totalQ) * 100));
+        const visualBarWidth = session.acertosUnicos === 0 ? 8 : Math.max(12, progressPct);
+        const xpAtual = this.getUserXP();
+        const xpLicao = session.licao?.xp || 10;
+        const vidasMax = session.licao?.vidas || 3;
+        const stepAtual = Math.min(totalQ, session.acertosUnicos + 1);
+
+        // Frase com lacuna (apenas para o tipo PREENCHER_LACUNA)
+        let fraseLacunaHtml = '';
+        if (challenge.tipo === 'PREENCHER_LACUNA' && challenge.texto) {
+            const partesSelecionadas = session.selectedOption ? String(session.selectedOption).split(/[|\/,]/).map(s => s.trim()).filter(Boolean) : [];
+            let blankIdx = 0;
+            const displayTexto = String(challenge.texto).replace(/________/g, () => {
+                const preenchimento = partesSelecionadas[blankIdx] || session.selectedOption || '________';
+                blankIdx++;
+                return `<span class="inline-block px-3.5 py-1 bg-[#DDF4FF] dark:bg-sky-900/70 text-[#1899D6] dark:text-sky-200 font-black rounded-xl border-2 border-[#84D8FF] dark:border-sky-500 mx-1">${preenchimento}</span>`;
+            });
+            fraseLacunaHtml = `
+                <div class="p-5 md:p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 mb-6">
+                    <p class="text-lg md:text-xl font-bold text-slate-800 dark:text-white leading-relaxed">
+                        ${displayTexto}
+                    </p>
+                </div>
+            `;
+        }
 
         return `
-            <div class="fixed inset-0 z-[9990] bg-white dark:bg-slate-900 flex flex-col justify-between select-none animate-fade-in text-slate-800 dark:text-slate-100 overflow-y-auto custom-scrollbar">
-                <!-- BARRA SUPERIOR (HEADER DA AULA): FECHAR, PROGRESSO E VIDAS -->
-                <div class="max-w-4xl w-full mx-auto px-4 py-4 md:py-6 flex items-center justify-between gap-4">
-                    <button onclick="app.duolingo.sairDaLicao()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xl p-2 rounded-xl transition">
-                        <i class="fa-solid fa-xmark"></i>
+            <!-- 1. BARRA SUPERIOR ESTILO DUOLINGO (SAIR, BARRA DE PROGRESSO, SOM, XP E VIDAS) -->
+            <div class="sticky top-0 z-30 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+                <div class="max-w-6xl w-full mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
+                    <button onclick="app.duolingo.sairDaLicao()" class="px-3.5 py-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 font-black text-xs uppercase tracking-wider flex items-center gap-2 transition shrink-0 cursor-pointer" title="Sair da lição">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                        <span class="hidden sm:inline">Sair</span>
                     </button>
 
-                    <!-- BARRA DE PROGRESSO DUOLINGO (AVANÇA PROPORCIONAL AOS ACERTOS ÚNICOS) -->
-                    <div class="flex-1 h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700/60 shadow-inner">
-                        <div class="h-full bg-gradient-to-r from-[#58CC02] to-[#46a302] rounded-full transition-all duration-500 shadow-sm" style="width: ${progressPct}%"></div>
-                    </div>
-
-                    <!-- CONTADOR DE VIDAS EM TEMPO REAL -->
-                    <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 font-black text-sm tabular-nums shadow-sm shrink-0">
-                        <i class="fa-solid fa-heart ${session.vidas === 1 ? 'animate-bounce' : ''}"></i>
-                        <span>${session.vidas}</span>
-                    </div>
-                </div>
-
-                <!-- CORPO DO DESAFIO (RENDERIZADOR DINÂMICO DE ACORDO COM O TIPO) -->
-                <div class="max-w-2xl w-full mx-auto px-4 py-4 flex-1 flex flex-col justify-center">
-                    <!-- Cenário Operacional -->
-                    <div class="mb-4">
-                        <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">
-                            <i class="fa-solid fa-bullseye mr-1"></i> ${challenge.cenario || 'Cenário de Atendimento'}
-                        </span>
-                    </div>
-
-                    <!-- Enunciado -->
-                    <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white leading-snug tracking-tight mb-6">
-                        ${challenge.enunciado}
-                    </h2>
-
-                    <!-- OPÇÕES DINÂMICAS RENDERIZADAS DE ACORDO COM O TIPO -->
-                    <div class="space-y-3 my-2">
-                        ${this.renderOpcoesDesafio(challenge)}
-                    </div>
-                </div>
-
-                <!-- RODAPÉ FIXO DE VERIFICAÇÃO / AVANÇO -->
-                <div class="border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md py-4 md:py-6 px-4">
-                    <div class="max-w-2xl w-full mx-auto flex items-center justify-between gap-4">
-                        <div class="text-xs text-slate-400 font-bold hidden sm:block">
-                            <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i> Fila Ativa: ${session.questionQueue.length} pergunta(s) restante(s)
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                            <span class="truncate max-w-[200px] sm:max-w-md">${session.licao?.titulo || 'Lição Softlingo'}</span>
+                            <span class="text-[#58CC02] tabular-nums shrink-0 ml-2">${stepAtual}/${totalQ} (${progressPct}%)</span>
                         </div>
-                        <button id="duo-btn-verificar" onclick="app.duolingo.verificarResposta()" disabled class="duo-btn-green duo-btn-disabled font-black uppercase tracking-wider py-4 px-10 rounded-2xl text-base shadow-md w-full sm:w-auto ml-auto transition-transform active:translate-y-2">
-                            VERIFICAR
-                        </button>
+                        <div class="duo-progress-container h-4">
+                            <div class="duo-progress-bar" style="width: ${visualBarWidth}%"></div>
+                        </div>
                     </div>
+
+                    <div class="flex items-center gap-2.5 shrink-0">
+                        <button onclick="app.duolingo.toggleSound()" class="w-9 h-9 rounded-xl border ${this.soundEnabled ? 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400'} flex items-center justify-center transition cursor-pointer" title="${this.soundEnabled ? 'Sons Ativos (Clique para silenciar)' : 'Sons Silenciados (Clique para ativar)'}">
+                            <i class="fa-solid ${this.soundEnabled ? 'fa-volume-high' : 'fa-volume-xmark'} text-sm"></i>
+                        </button>
+                        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-500 font-black text-sm tabular-nums" title="XP Acumulado (+${xpLicao} XP nesta aula)">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span>${xpAtual}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-500 font-black text-sm tabular-nums" title="Vidas Restantes">
+                            <i class="fa-solid fa-heart ${session.vidas === 1 ? 'animate-bounce' : ''}"></i>
+                            <span>${session.vidas}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. PALCO CENTRAL ESTILO DUOLINGO (COLUNA ÚNICA CENTRALIZADA, LIMPA E ORGANIZADA) -->
+            <div class="max-w-5xl w-full mx-auto px-4 sm:px-8 py-6 md:py-10 flex-1 flex flex-col justify-center">
+                
+                <!-- A. Mascote Oficial Softlingo + Balão de Contexto Duolingo -->
+                <div class="flex items-start sm:items-center gap-4 md:gap-6 mb-6">
+                    ${this.renderMascoteAvatar(this.escolherMascoteParaDesafio(challenge, session), 'w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-3xl', 'border-b-4 border-[#58CC02]')}
+                    <div class="duo-speech-bubble p-4 md:p-5 flex-1 shadow-xs">
+                        <span class="text-[11px] font-black uppercase tracking-wider text-[#1CB0F6] block mb-1">
+                            Contexto do Atendimento
+                        </span>
+                        <p class="text-base md:text-lg font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+                            ${challenge.cenario || 'Cenário de Atendimento'}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- B. Enunciado da Pergunta (Título Principal Limpo Estilo Duolingo) -->
+                <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white leading-snug tracking-tight mb-6">
+                    ${challenge.enunciado}
+                </h2>
+
+                <!-- C. Frase com Lacuna (quando aplicável) -->
+                ${fraseLacunaHtml}
+
+                <!-- D. Opções Interativas Táteis 3D -->
+                <div>
+                    ${this.renderOpcoesDesafio(challenge)}
+                </div>
+
+            </div>
+
+            <!-- 3. RODAPÉ FIXO ESTILO DUOLINGO -->
+            <div class="sticky bottom-0 z-20 border-t-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 md:py-5 px-4">
+                <div class="max-w-6xl w-full mx-auto px-4 sm:px-8 flex items-center justify-between gap-4">
+                    <div class="text-xs md:text-sm text-slate-400 font-bold hidden sm:flex items-center gap-2">
+                        <i class="fa-solid fa-layer-group text-slate-300 dark:text-slate-600"></i>
+                        <span>Restam ${session.questionQueue.length} questão(ões) na fila</span>
+                    </div>
+                    <button id="duo-btn-verificar" onclick="app.duolingo.verificarResposta()" ${session.selectedOption || challenge.tipo === 'ORDENAR_FLUXO' ? '' : 'disabled'} class="duo-btn-green ${session.selectedOption || challenge.tipo === 'ORDENAR_FLUXO' ? '' : 'duo-btn-disabled'} font-black uppercase tracking-wider py-3.5 px-10 rounded-2xl text-sm md:text-base shadow-md w-full sm:w-auto ml-auto">
+                        VERIFICAR
+                    </button>
                 </div>
             </div>
         `;
@@ -27162,98 +29099,105 @@ app.duolingo = {
         const tipo = challenge.tipo;
 
         if (tipo === 'VERDADEIRO_OU_FALSO') {
-            return (challenge.opcoes || ['Verdadeiro', 'Falso']).map(op => {
-                const isSelected = session.selectedOption === op;
-                return `
-                    <div onclick="app.duolingo.selecionarOpcao('${op}')" class="duo-card-opcao p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${isSelected ? 'duo-card-selected' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm'}">
-                        <span class="font-extrabold text-base md:text-lg text-slate-800 dark:text-white">${op}</span>
-                        <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-300 dark:border-slate-600'}">
-                            ${isSelected ? '<i class=\"fa-solid fa-check text-xs\"></i>' : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            return `
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    ${(challenge.opcoes || ['Verdadeiro', 'Falso']).map((op, idx) => {
+                        const isSelected = session.selectedOption === op;
+                        return `
+                            <div onclick="app.duolingo.selecionarOpcao('${op}')" class="duo-card-opcao duo-card-option p-5 rounded-2xl flex items-center justify-between gap-4 ${isSelected ? 'duo-card-selected' : ''}">
+                                <div class="flex items-center gap-3.5">
+                                    <span class="w-8 h-8 rounded-lg border-2 flex items-center justify-center font-black text-xs shrink-0 ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-200 dark:border-slate-600 text-slate-400'}">
+                                        ${idx + 1}
+                                    </span>
+                                    <span class="font-extrabold text-base md:text-lg text-slate-800 dark:text-white">${op}</span>
+                                </div>
+                                <i class="fa-solid ${op === 'Verdadeiro' ? 'fa-check text-emerald-500' : 'fa-xmark text-rose-500'} text-lg opacity-80"></i>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         if (tipo === 'ESCOLHA_DE_FALA') {
-            return (challenge.opcoes || []).map((op, idx) => {
-                const isSelected = session.selectedOption === op;
-                const letras = ['A', 'B', 'C', 'D'];
-                return `
-                    <div onclick="app.duolingo.selecionarOpcao('${escape(op)}', true)" class="duo-card-opcao p-4 md:p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${isSelected ? 'duo-card-selected' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm'}">
-                        <span class="w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${isSelected ? 'bg-[#1CB0F6] text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}">
-                            ${letras[idx] || (idx + 1)}
-                        </span>
-                        <span class="font-bold text-sm md:text-base text-slate-800 dark:text-slate-100 leading-snug flex-1">${op}</span>
-                    </div>
-                `;
-            }).join('');
+            const letras = ['A', 'B', 'C', 'D'];
+            return `
+                <div class="space-y-3">
+                    ${(challenge.opcoes || []).map((op, idx) => {
+                        const isSelected = session.selectedOption === op;
+                        return `
+                            <div onclick="app.duolingo.selecionarOpcao('${escape(op)}', true)" class="duo-card-opcao duo-card-option p-4 md:p-5 rounded-2xl flex items-center gap-4 ${isSelected ? 'duo-card-selected' : ''}">
+                                <span class="w-8 h-8 rounded-lg border-2 flex items-center justify-center font-black text-xs shrink-0 ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400'}">
+                                    ${letras[idx] || (idx + 1)}
+                                </span>
+                                <span class="font-bold text-base md:text-lg text-slate-800 dark:text-slate-100 leading-snug flex-1">${op}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         if (tipo === 'CACA_ERRO') {
-            let html = ``;
-            if (challenge.linhas && challenge.linhas.length > 0) {
-                html += `
-                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 mb-4 space-y-2">
-                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Diálogo Auditado:</span>
-                        ${challenge.linhas.map(l => `<div class="text-xs text-slate-700 dark:text-slate-300 font-semibold">• ${l}</div>`).join('')}
-                    </div>
-                `;
-            }
-            html += (challenge.opcoes || []).map(op => {
-                const isSelected = session.selectedOption === op;
-                return `
-                    <div onclick="app.duolingo.selecionarOpcao('${escape(op)}', true)" class="duo-card-opcao p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${isSelected ? 'duo-card-selected' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm'}">
-                        <span class="font-bold text-sm md:text-base text-slate-800 dark:text-slate-100">${op}</span>
-                        <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-300 dark:border-slate-600'}">
-                            ${isSelected ? '<i class=\"fa-solid fa-check text-[10px]\"></i>' : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-            return html;
+            const opcoes = challenge.opcoes || ['Linha 1 está incorreta.', 'Linha 2 está incorreta.', 'Linha 3 está incorreta.'];
+            return `
+                <div class="space-y-3">
+                    ${opcoes.map((op, idx) => {
+                        const isSelected = session.selectedOption === op;
+                        const textoDaLinha = (challenge.linhas && challenge.linhas[idx])
+                            ? String(challenge.linhas[idx]).replace(/^Linha\s*\d+\s*:\s*/i, '')
+                            : op;
+                        return `
+                            <div onclick="app.duolingo.selecionarOpcao('${escape(op)}', true)" class="duo-card-opcao duo-card-option p-4 md:p-5 rounded-2xl flex items-start gap-4 ${isSelected ? 'duo-card-selected' : ''}">
+                                <span class="px-3 py-1 rounded-lg border-2 font-black text-xs uppercase tracking-wider shrink-0 mt-0.5 ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400'}">
+                                    Linha ${idx + 1}
+                                </span>
+                                <span class="font-bold text-base md:text-lg text-slate-800 dark:text-slate-100 leading-relaxed flex-1">
+                                    ${textoDaLinha}
+                                </span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         if (tipo === 'PREENCHER_LACUNA') {
-            let html = ``;
-            if (challenge.texto) {
-                const displayTexto = challenge.texto.replace(/________/g, `<span class="inline-block px-3 py-1 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-black rounded-lg border border-amber-300 mx-1 underline">${session.selectedOption || '________'}</span>`);
-                html += `
-                    <div class="p-5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-sm md:text-base font-bold text-slate-800 dark:text-white leading-relaxed mb-4">
-                        ${displayTexto}
-                    </div>
-                `;
-            }
-            html += (challenge.opcoes || []).map(op => {
-                const isSelected = session.selectedOption === op;
-                return `
-                    <div onclick="app.duolingo.selecionarOpcao('${escape(op)}', true)" class="duo-card-opcao p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${isSelected ? 'duo-card-selected' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm'}">
-                        <span class="font-black text-sm md:text-base text-slate-800 dark:text-slate-100">${op}</span>
-                        <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-300 dark:border-slate-600'}">
-                            ${isSelected ? '<i class=\"fa-solid fa-check text-[10px]\"></i>' : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-            return html;
+            const ops = challenge.opcoes || [];
+            const letras = ['A', 'B', 'C', 'D'];
+            const gridCols = ops.length >= 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2';
+            return `
+                <div class="grid ${gridCols} gap-4">
+                    ${ops.map((op, idx) => {
+                        const isSelected = session.selectedOption === op;
+                        return `
+                            <div onclick="app.duolingo.selecionarOpcao('${escape(op)}', true)" class="duo-card-opcao duo-card-option p-4 md:p-5 rounded-2xl flex items-center gap-3.5 ${isSelected ? 'duo-card-selected' : ''}">
+                                <span class="w-8 h-8 rounded-lg border-2 flex items-center justify-center font-black text-xs shrink-0 ${isSelected ? 'border-[#1CB0F6] bg-[#1CB0F6] text-white' : 'border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400'}">
+                                    ${letras[idx] || (idx + 1)}
+                                </span>
+                                <span class="font-black text-base md:text-lg text-slate-800 dark:text-slate-100 leading-snug">${op}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         if (tipo === 'ORDENAR_FLUXO') {
             const items = session.orderedItems || challenge.itens || [];
             return `
-                <div class="space-y-2">
-                    <span class="text-xs text-slate-500 dark:text-slate-400 mb-2 block">Clique nas setas para ajustar a sequência do topo (1º) para a base (4º):</span>
+                <div class="space-y-3">
                     ${items.map((it, idx) => `
-                        <div class="p-3.5 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between shadow-sm">
-                            <div class="flex items-center gap-3">
-                                <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black text-xs tabular-nums">${idx + 1}º</span>
-                                <span class="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">${it}</span>
+                        <div class="duo-card-option p-4 md:p-5 rounded-2xl flex items-center justify-between gap-4">
+                            <div class="flex items-center gap-3.5 flex-1">
+                                <span class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black text-xs tabular-nums shrink-0">${idx + 1}º</span>
+                                <span class="font-bold text-base md:text-lg text-slate-800 dark:text-slate-100 leading-snug">${it}</span>
                             </div>
-                            <div class="flex items-center gap-1 shrink-0">
-                                <button onclick="app.duolingo.moverOrdem(${idx}, ${idx - 1})" ${idx === 0 ? 'disabled' : ''} class="w-8 h-8 rounded-lg ${idx === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold'} flex items-center justify-center transition">
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button onclick="app.duolingo.moverOrdem(${idx}, ${idx - 1})" ${idx === 0 ? 'disabled' : ''} class="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 ${idx === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-sky-50 hover:border-sky-400'} flex items-center justify-center transition">
                                     <i class="fa-solid fa-arrow-up"></i>
                                 </button>
-                                <button onclick="app.duolingo.moverOrdem(${idx}, ${idx + 1})" ${idx === items.length - 1 ? 'disabled' : ''} class="w-8 h-8 rounded-lg ${idx === items.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold'} flex items-center justify-center transition">
+                                <button onclick="app.duolingo.moverOrdem(${idx}, ${idx + 1})" ${idx === items.length - 1 ? 'disabled' : ''} class="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 ${idx === items.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-sky-50 hover:border-sky-400'} flex items-center justify-center transition">
                                     <i class="fa-solid fa-arrow-down"></i>
                                 </button>
                             </div>
@@ -27265,8 +29209,8 @@ app.duolingo = {
 
         return `<div>Opções não suportadas</div>`;
     },
-
     selecionarOpcao(opcao, isEscaped) {
+        this.playSound('select');
         const val = isEscaped ? unescape(opcao) : opcao;
         this.activeSession.selectedOption = val;
 
@@ -27293,6 +29237,7 @@ app.duolingo = {
         const session = this.activeSession;
         if (!session || !session.orderedItems) return;
         if (para < 0 || para >= session.orderedItems.length) return;
+        this.playSound(para < de ? 'move_up' : 'move_down');
 
         const tmp = session.orderedItems[de];
         session.orderedItems[de] = session.orderedItems[para];
@@ -27335,10 +29280,14 @@ app.duolingo = {
 
         if (acertou) {
             session.feedbackStatus = 'acerto';
+            session.comboStreak = (session.comboStreak || 0) + 1;
+            this.playSound('correct', session.comboStreak);
             this.exibirDrawerFeedback(true, currentChallenge);
         } else {
             session.feedbackStatus = 'erro';
+            session.comboStreak = 0;
             session.vidas = Math.max(0, session.vidas - 1);
+            this.playSound('wrong');
             // REGRA CRÍTICA: Errou = a questão atual é clonada e empurrada para o final da fila
             session.questionQueue.push({ ...currentChallenge });
             this.exibirDrawerFeedback(false, currentChallenge);
@@ -27353,15 +29302,17 @@ app.duolingo = {
         drawer.id = 'duo-feedback-drawer';
         drawer.className = `fixed bottom-0 left-0 right-0 z-[9995] p-5 md:p-6 transition-all animate-slide-up shadow-2xl ${acertou ? 'bg-[#d7ffb8] dark:bg-[#1a3809] border-t-2 border-[#58CC02]' : 'bg-[#ffdfe0] dark:bg-[#3d0e11] border-t-2 border-rose-500'}`;
 
+        const mascoteReacao = this.escolherMascoteFeedback(acertou, challenge);
         if (acertou) {
             drawer.innerHTML = `
-                <div class="max-w-2xl w-full mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="max-w-4xl w-full mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-[#58CC02] text-white flex items-center justify-center text-2xl shadow-md shrink-0">
-                            <i class="fa-solid fa-check"></i>
-                        </div>
+                        ${this.renderMascoteAvatar(mascoteReacao, 'w-16 h-16 md:w-20 md:h-20 rounded-2xl', 'border-2 border-[#58CC02]')}
                         <div>
-                            <h4 class="font-black text-lg text-emerald-900 dark:text-emerald-200">Muito bem! Conceito correto.</h4>
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 h-6 rounded-full bg-[#58CC02] text-white flex items-center justify-center text-xs shadow-xs shrink-0"><i class="fa-solid fa-check"></i></span>
+                                <h4 class="font-black text-lg text-emerald-900 dark:text-emerald-200">Muito bem! Conceito correto.</h4>
+                            </div>
                             <p class="text-xs md:text-sm font-semibold text-emerald-950 dark:text-emerald-100 mt-1 leading-snug">${challenge.feedbackAcerto || 'Conceito aplicado com perfeição!'}</p>
                         </div>
                     </div>
@@ -27372,13 +29323,14 @@ app.duolingo = {
             `;
         } else {
             drawer.innerHTML = `
-                <div class="max-w-2xl w-full mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="max-w-4xl w-full mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-rose-500 text-white flex items-center justify-center text-2xl shadow-md shrink-0">
-                            <i class="fa-solid fa-xmark"></i>
-                        </div>
+                        ${this.renderMascoteAvatar(mascoteReacao, 'w-16 h-16 md:w-20 md:h-20 rounded-2xl', 'border-2 border-rose-500')}
                         <div>
-                            <h4 class="font-black text-lg text-rose-900 dark:text-rose-200">Atenção à Regra de Monitoria:</h4>
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs shadow-xs shrink-0"><i class="fa-solid fa-xmark"></i></span>
+                                <h4 class="font-black text-lg text-rose-900 dark:text-rose-200">Atenção à Regra de Monitoria:</h4>
+                            </div>
                             <p class="text-xs md:text-sm font-semibold text-rose-950 dark:text-rose-100 mt-1 leading-snug">${challenge.feedbackErro || 'Atenção aos critérios técnicos de atendimento.'}</p>
                         </div>
                     </div>
@@ -27420,6 +29372,8 @@ app.duolingo = {
             return;
         }
 
+        this.playSound('next');
+
         // Prepara próximo desafio
         const nextChallenge = session.questionQueue[0];
         session.selectedOption = null;
@@ -27432,13 +29386,14 @@ app.duolingo = {
     },
 
     exibirModalGameOver() {
+        this.playSound('gameover');
         const modal = document.createElement('div');
         modal.id = 'duo-gameover-modal';
         modal.className = 'fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-800 dark:text-slate-100';
         modal.innerHTML = `
             <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-8 text-center shadow-2xl">
-                <div class="w-20 h-20 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-500 flex items-center justify-center text-4xl mx-auto mb-4 animate-bounce">
-                    <i class="fa-solid fa-heart-crack"></i>
+                <div class="flex justify-center mb-4">
+                    ${this.renderMascoteAvatar('chorando.png', 'w-28 h-28 rounded-3xl', 'border-b-4 border-rose-500')}
                 </div>
                 <h3 class="text-2xl font-black text-slate-800 dark:text-white">Vidas Esgotadas!</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
@@ -27458,6 +29413,7 @@ app.duolingo = {
     },
 
     concluirLicao() {
+        this.playSound('victory');
         const session = this.activeSession;
         const xpGanho = session.licao.xp || 10;
         this.addXP(xpGanho);
@@ -27468,8 +29424,8 @@ app.duolingo = {
         modal.className = 'fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-slate-800 dark:text-slate-100';
         modal.innerHTML = `
             <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-8 text-center shadow-2xl">
-                <div class="w-20 h-20 rounded-full bg-[#58CC02] text-white flex items-center justify-center text-4xl mx-auto mb-4 shadow-lg animate-bounce">
-                    <i class="fa-solid fa-trophy"></i>
+                <div class="flex justify-center mb-4">
+                    ${this.renderMascoteAvatar('euforico.png', 'w-28 h-28 rounded-3xl', 'border-b-4 border-[#58CC02]')}
                 </div>
                 <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                     Lição Concluída com Sucesso!
@@ -27494,9 +29450,12 @@ app.duolingo = {
     },
 
     sairDaLicao() {
-        if (!confirm("Deseja realmente sair da lição? O progresso desta aula será perdido.")) return;
+        const isSimulacao = this.activeSession && this.activeSession.lessonId === 'simulacao_cms';
+        if (!isSimulacao && !confirm("Deseja realmente sair da lição? O progresso desta aula será perdido.")) return;
         const oldDrawer = document.getElementById('duo-feedback-drawer');
         if (oldDrawer) oldDrawer.remove();
+        const oldOverlay = document.getElementById('duo-lesson-overlay');
+        if (oldOverlay) oldOverlay.remove();
         this.activeSession = null;
         this.render();
     },
@@ -27556,6 +29515,44 @@ app.duolingo = {
                 }
                 if (e.key === 'Escape') {
                     app.ui.closeCommandPalette();
+                }
+            });
+
+            // Suporte nativo para Ctrl+P (beforeprint / afterprint) em Analítico Operação e demais abas
+            window.addEventListener('beforeprint', () => {
+                if (document.getElementById('diploma-modal')) return;
+                window._wasDarkBeforePrint = document.documentElement.classList.contains('dark');
+                if (window._wasDarkBeforePrint) {
+                    document.documentElement.classList.remove('dark');
+                }
+                window._detailsOpenedBeforePrint = [];
+                document.querySelectorAll('#content-container details:not([open])').forEach(d => {
+                    d.setAttribute('open', 'open');
+                    window._detailsOpenedBeforePrint.push(d);
+                });
+                document.querySelectorAll('#content-container .scroll-reveal-card, #content-container .reveal-item').forEach(el => {
+                    el.classList.add('is-visible', 'show-item');
+                });
+                const analiseContainer = document.getElementById('view-container-analise_csv_dinamico');
+                if (analiseContainer && !analiseContainer.classList.contains('pdf-clean-mode')) {
+                    analiseContainer.classList.add('pdf-clean-mode');
+                    window._addedPdfCleanModeOnPrint = true;
+                }
+            });
+
+            window.addEventListener('afterprint', () => {
+                if (window._wasDarkBeforePrint) {
+                    document.documentElement.classList.add('dark');
+                    window._wasDarkBeforePrint = false;
+                }
+                if (Array.isArray(window._detailsOpenedBeforePrint)) {
+                    window._detailsOpenedBeforePrint.forEach(d => d.removeAttribute('open'));
+                    window._detailsOpenedBeforePrint = [];
+                }
+                if (window._addedPdfCleanModeOnPrint) {
+                    const analiseContainer = document.getElementById('view-container-analise_csv_dinamico');
+                    if (analiseContainer) analiseContainer.classList.remove('pdf-clean-mode');
+                    window._addedPdfCleanModeOnPrint = false;
                 }
             });
 

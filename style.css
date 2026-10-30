@@ -271,14 +271,11 @@
 
 
 /* ========================================================
-   CERTIFICADO OFICIAL EM FORMATO A4 HORIZONTAL (1 PÁGINA)
+   IMPRESSÃO GERAL (CTRL+P) & CERTIFICADO OFICIAL A4
    ======================================================== */
 @media print {
-    @page {
-        size: A4 landscape;
-        margin: 0;
-    }
-    html, body {
+    /* 1. Quando o modal de certificado (#diploma-modal) estiver aberto na tela */
+    body:has(#diploma-modal) {
         width: 297mm !important;
         height: 210mm !important;
         max-width: 297mm !important;
@@ -290,10 +287,10 @@
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
-    body > *:not(#diploma-modal) {
+    body:has(#diploma-modal) > *:not(#diploma-modal) {
         display: none !important;
     }
-    #diploma-modal {
+    body:has(#diploma-modal) #diploma-modal {
         position: fixed !important;
         inset: 0 !important;
         width: 297mm !important;
@@ -310,12 +307,12 @@
         border: none !important;
         box-shadow: none !important;
     }
-    #diploma-modal .print\\:hidden, 
-    #diploma-modal button,
-    #diploma-modal .modal-header-controls {
+    body:has(#diploma-modal) #diploma-modal .print\:hidden, 
+    body:has(#diploma-modal) #diploma-modal button,
+    body:has(#diploma-modal) #diploma-modal .modal-header-controls {
         display: none !important;
     }
-    #diploma-modal > div {
+    body:has(#diploma-modal) #diploma-modal > div {
         width: 297mm !important;
         height: 210mm !important;
         max-width: 297mm !important;
@@ -323,7 +320,7 @@
         margin: 0 !important;
         padding: 0 !important;
     }
-    #certificado-imprimivel {
+    body:has(#diploma-modal) #certificado-imprimivel {
         width: 297mm !important;
         height: 210mm !important;
         max-width: 297mm !important;
@@ -342,6 +339,84 @@
         background: #fcfbf9 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+    }
+
+    /* 2. Impressão Nativa (Ctrl+P) do Portal e da Aba Analítico Operação */
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
+    }
+    html,
+    body:not(:has(#diploma-modal)) {
+        width: 100% !important;
+        height: auto !important;
+        max-width: none !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        overflow: visible !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    body:not(:has(#diploma-modal)) header,
+    body:not(:has(#diploma-modal)) nav,
+    body:not(:has(#diploma-modal)) #legendary-overlay,
+    body:not(:has(#diploma-modal)) #error-boundary-screen,
+    body:not(:has(#diploma-modal)) #sync-loader-screen,
+    body:not(:has(#diploma-modal)) #global-modal,
+    body:not(:has(#diploma-modal)) #command-palette-modal,
+    body:not(:has(#diploma-modal)) #import-tripla-modal,
+    body:not(:has(#diploma-modal)) .parallax-layer,
+    body:not(:has(#diploma-modal)) #particles-js,
+    body:not(:has(#diploma-modal)) #btn-sair-apresentacao,
+    body:not(:has(#diploma-modal)) .hideable-box,
+    body:not(:has(#diploma-modal)) .hidden-in-print {
+        display: none !important;
+    }
+    body:not(:has(#diploma-modal)) #view-app,
+    body:not(:has(#diploma-modal)) main,
+    body:not(:has(#diploma-modal)) #content-container,
+    body:not(:has(#diploma-modal)) #view-container-analise_csv_dinamico {
+        display: block !important;
+        visibility: visible !important;
+        position: static !important;
+        width: 100% !important;
+        max-width: none !important;
+        height: auto !important;
+        max-height: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: visible !important;
+    }
+    /* Garante que cards com animação de scroll (.scroll-reveal-card e .reveal-item) apareçam 100% no Ctrl+P */
+    body:not(:has(#diploma-modal)) .scroll-reveal-card,
+    body:not(:has(#diploma-modal)) .reveal-item {
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        transition: none !important;
+        animation: none !important;
+    }
+    body:not(:has(#diploma-modal)) .overflow-x-auto,
+    body:not(:has(#diploma-modal)) .overflow-y-auto,
+    body:not(:has(#diploma-modal)) .custom-scrollbar,
+    body:not(:has(#diploma-modal)) [class*="max-h-"] {
+        overflow: visible !important;
+        max-height: none !important;
+    }
+    body:not(:has(#diploma-modal)) .glass-card,
+    body:not(:has(#diploma-modal)) details {
+        box-shadow: none !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+    body:not(:has(#diploma-modal)) canvas {
+        max-width: 100% !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
 }
 
