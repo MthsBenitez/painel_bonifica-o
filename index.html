@@ -68,7 +68,9 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 	<!-- LZ-String (Compressor de Dados para burlar o limite de 10MB do Firebase) -->
         <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
-        <link rel="stylesheet" href="style.css?v=20261030_v2">
+        <!-- Supabase Client JS (Autenticação e Envio de Código por E-mail) -->
+        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+        <link rel="stylesheet" href="style.css?v=20261103_v2">
 </head>
     
 <body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
@@ -772,6 +774,19 @@
                         <h1 class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
                     </div>
                     
+                    <!-- Barrinha de Pesquisa no Topo (Ctrl+K) -->
+                    <div class="flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-2 sm:mx-4">
+                        <div onclick="app.ui.openCommandPalette()" class="w-full flex items-center justify-between gap-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer transition-all shadow-inner group" title="Buscar página ou atalho rápido (Ctrl + K)">
+                            <div class="flex items-center gap-2.5 text-slate-400 group-hover:text-blue-500 transition-colors truncate">
+                                <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                                <span class="text-xs font-medium text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 truncate">Buscar página ou direcionar...</span>
+                            </div>
+                            <kbd class="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+                                <span>Ctrl</span><span>K</span>
+                            </kbd>
+                        </div>
+                    </div>
+                    
                     <div class="flex items-center gap-3 sm:gap-4">
                         
                         <!-- Mês Global -->
@@ -828,6 +843,11 @@
                                 <i class="fa-solid fa-bullhorn text-lg"></i>
                             </button>
 
+                            <!-- Botao Central de Ajuda & Guia (Help) -->
+                            <button onclick="app.ui.abrirModalHelp()" class="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Central de Ajuda e Guias do Sistema">
+                                <i class="fa-solid fa-circle-question text-lg"></i>
+                            </button>
+
                             <!-- Botão Tema (Dark/Light) -->
                             <label class="switch ml-1 scale-[0.65] sm:scale-75 origin-right" title="Trocar Tema Escuro/Claro">
                                 <input id="theme-checkbox" type="checkbox" onchange="app.ui.toggleTheme()" />
@@ -868,7 +888,7 @@
         </main>
     </div>
 
-    <script src="script.js?v=20261103_v1"></script>
+    <script src="script.js?v=20261103_v2"></script>
 </body>
 </html>
 

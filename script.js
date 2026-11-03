@@ -160,7 +160,7 @@ window.AntiColaSecurityEngine = {
 
 const app = {
             dataLoaded: false, // <--- ADICIONADO: Trava de segurança do Firebase
-            config: { baseValue: 400, goals: [] }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
+            config: { baseValue: 400, goals: [], supabaseKey: 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl', supabaseUrl: '' }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
 
             // Helpers de Perfil (Bonificação exclusiva para Qualidade)
             isUserQualidade(u) {
@@ -546,7 +546,15 @@ storage: {
                                             if (!app.config.presetsGruposAcesso && localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = localCfg.presetsGruposAcesso;
                                             if (!app.config.regraFeedback && localCfg.regraFeedback) app.config.regraFeedback = localCfg.regraFeedback;
                                             if (!app.config.regrasFeedbackPorMes && localCfg.regrasFeedbackPorMes) app.config.regrasFeedbackPorMes = localCfg.regrasFeedbackPorMes;
+                                            if (!app.config.supabaseKey && localCfg.supabaseKey) app.config.supabaseKey = localCfg.supabaseKey;
+                                            if (!app.config.supabaseUrl && localCfg.supabaseUrl) app.config.supabaseUrl = localCfg.supabaseUrl;
                                         }
+                                    }
+                                    if (!app.config.supabaseKey) {
+                                        app.config.supabaseKey = localStorage.getItem('soft_supabase_key') || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
+                                    }
+                                    if (!app.config.supabaseUrl) {
+                                        app.config.supabaseUrl = localStorage.getItem('soft_supabase_url') || '';
                                     }
                                     localStorage.setItem('soft_config_backup', JSON.stringify(app.config));
                                 } catch (e) { console.warn("Aviso ao ler backup local de config:", e); }
@@ -1414,6 +1422,7 @@ storage: {
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
                 this.currentMonth = newMonthStr;
+                try { localStorage.setItem('soft_current_month', newMonthStr); } catch (e) {}
                 if (this.currentTab === 'controle_estoque') { this.ui.renderTab('controle_estoque', true); }
                 
                 // MÁGICA DE ISOLAMENTO: Troca as planilhas exibidas para o mês selecionado
@@ -2523,6 +2532,71 @@ storage: {
                         app.ui.renderTab('gestao_atas', true);
                     });
                 },
+                promptRemoverBonus(id) {
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-eraser text-amber-500"></i> Remover Bônus da Ata`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-3 text-slate-600 dark:text-slate-300 text-sm">
+                            <p>Tem certeza de que deseja <b>remover o bônus de calibração</b> atribuído a esta ata?</p>
+                            <div class="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs text-amber-900 dark:text-amber-200">
+                                <i class="fa-solid fa-circle-info mr-1 text-amber-500"></i>
+                                <strong>Ata:</strong> "${ata.tema || 'Sem tema'}"<br>
+                                • O ponto concedido aos líderes de Qualidade será <strong>estornado (-1)</strong> dos indicadores deste mês.<br>
+                                • A ata continuará <strong>aprovada no sistema como documento institucional</strong> (sem bônus).
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs">Cancelar</button>
+                        <button onclick="app.ata.executeRemoverBonus('${id}')" class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-md"><i class="fa-solid fa-eraser mr-1"></i> Confirmar e Tirar Bônus</button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+                executeRemoverBonus(id) {
+                    const ata = app.atasList[id];
+                    if(!ata) return;
+
+                    let updates = {};
+                    let nomesAlvo = [];
+                    if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
+                    if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
+
+                    let usersEncontrados = app.users.filter(u => 
+                        nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
+                        u.matricula === ata.matricula
+                    );
+
+                    const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+                    const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
+                    const gId = goalCalib ? goalCalib.id : 'g3';
+
+                    let atualizouAlguem = false;
+                    usersEncontrados.forEach(userEncontrado => {
+                        if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef][gId]) {
+                            let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
+                            userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
+                            
+                            if (app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
+                                app.currentUser = userEncontrado;
+                            }
+                            atualizouAlguem = true;
+                        }
+                    });
+
+                    ata.status = 'aprovado_sem_bonus';
+                    updates[`atas/${id}`] = ata;
+                    if (atualizouAlguem) updates['users'] = app.users;
+
+                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        app.ui.showAlert("Bônus Removido", "O bônus de calibração foi retirado dos indicadores e a ata agora está validada como documento institucional (sem bônus).", "success");
+                        app.ui.renderTab('gestao_atas', true);
+                    }).catch(err => {
+                        console.error("Erro ao remover bônus:", err);
+                        app.ui.showAlert("Erro", "Falha ao atualizar dados: " + (err.message || err), "error");
+                    });
+                },
                 editAta(id) {
                     const ata = app.atasList[id];
                     if(!ata) return;
@@ -2577,7 +2651,7 @@ storage: {
                     }, 500);
                 },
                 excluirAta(id) {
-                    if(app.isAdmin) {
+                    if(app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente') {
                         app.ui.showConfirm("Atenção", "Excluir definitivamente esta ata?", `delete app.atasList['${id}']; app.storage.saveAtas().then(()=>app.ui.renderTab('gestao_atas', true))`, true);
                     } else {
                         app.ui.showAlert("Permissão Negada", "Apenas a administração pode excluir atas.", "error");
@@ -2941,8 +3015,8 @@ storage: {
                         id, 
                         data: document.getElementById('cal-data').value, 
                         tipo, 
-                        autor: app.isAdmin ? 'ADM' : app.currentUser.nome, 
-                        matricula: app.isAdmin ? document.getElementById('cal-adm-alvo').value : app.currentUser.matricula,
+                        autor: (app.isAdmin || app.currentUser?.tipoAcesso === 'Dev') ? (app.isAdmin ? 'ADM' : app.currentUser.nome) : app.currentUser.nome, 
+                        matricula: (app.isAdmin || app.currentUser?.tipoAcesso === 'Dev') ? (document.getElementById('cal-adm-alvo')?.value || app.currentUser?.matricula || 'ADM') : app.currentUser.matricula,
                         timestamp: Date.now() 
                     };
 
@@ -3026,7 +3100,7 @@ storage: {
                         opSelect.innerHTML = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('') + '<option value="Outros">Outros</option>';
                     }
 
-                    if(app.isAdmin) {
+                    if(app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente') {
                         const sel = document.getElementById('cal-adm-alvo');
                         sel.innerHTML = `<option value="TODOS">Todos os Colaboradores</option>`;
                         app.users.forEach(u => sel.innerHTML += `<option value="${u.matricula}">${u.nome}</option>`);
@@ -3428,18 +3502,20 @@ storage: {
                             </form>
                         `;
                     } else if (step === 2) {
+                        const isSupa = Boolean(app.auth._regState.sentViaSupabase);
                         container.innerHTML = `
                             <form onsubmit="event.preventDefault(); app.auth.validarCodigoCadastro();" class="space-y-4">
                                 <div class="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-2">
                                     <div class="flex items-center gap-3">
                                         <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shrink-0">
-                                            <i class="fa-solid fa-envelope-circle-check"></i>
+                                            <i class="fa-solid ${isSupa ? 'fa-paper-plane' : 'fa-envelope-circle-check'}"></i>
                                         </div>
                                         <div>
-                                            <div>Código de autenticação gerado para <strong>${app.auth._regState.email}</strong></div>
-                                            <div class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">Utilize o código oficial abaixo para validar sua solicitação:</div>
+                                            <div>Código de autenticação para <strong>${app.auth._regState.email}</strong></div>
+                                            <div class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">${isSupa ? 'Enviamos o código oficial de 6 dígitos via Supabase. Verifique sua caixa de entrada e spam:' : 'Utilize o código oficial abaixo para validar sua solicitação:'}</div>
                                         </div>
                                     </div>
+                                    ${!isSupa ? `
                                     <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-300 dark:border-emerald-700 flex items-center justify-between">
                                         <div>
                                             <span class="text-[10px] font-bold text-slate-400 block uppercase">Código de 6 Dígitos:</span>
@@ -3449,9 +3525,10 @@ storage: {
                                             <i class="fa-solid fa-clone"></i> Inserir Código
                                         </button>
                                     </div>
+                                    ` : ''}
                                     <div class="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-circle-info text-blue-500"></i>
-                                        Ambiente corporativo direto: o código de segurança foi gerado com sucesso.
+                                        <i class="fa-solid fa-shield-halved text-emerald-500"></i>
+                                        Autenticação institucional segura: ${isSupa ? 'Disparo via Supabase' : 'Código gerado com sucesso'}.
                                     </div>
                                 </div>
                                 <div>
@@ -3501,7 +3578,30 @@ storage: {
                     }
                 },
 
-                enviarCodigoCadastro() {
+                getSupabaseKey() {
+                    return (app.config && app.config.supabaseKey) || localStorage.getItem('soft_supabase_key') || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
+                },
+
+                getSupabaseUrl() {
+                    return (app.config && app.config.supabaseUrl) || localStorage.getItem('soft_supabase_url') || '';
+                },
+
+                getSupabaseClient() {
+                    if (this._supabaseClient) return this._supabaseClient;
+                    const key = this.getSupabaseKey();
+                    const url = this.getSupabaseUrl();
+                    if (typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function' && url && key) {
+                        try {
+                            this._supabaseClient = window.supabase.createClient(url, key);
+                            return this._supabaseClient;
+                        } catch (e) {
+                            console.warn("Falha ao instanciar Supabase Client:", e);
+                        }
+                    }
+                    return null;
+                },
+
+                async enviarCodigoCadastro() {
                     try {
                         const nomeInput = document.getElementById('reg-nome');
                         const emailInput = document.getElementById('reg-email');
@@ -3524,11 +3624,46 @@ storage: {
                             return;
                         }
 
-                        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+                        const btnSubmit = document.querySelector('#reg-step-container button[type="submit"]');
+                        if (btnSubmit) {
+                            btnSubmit.disabled = true;
+                            btnSubmit.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Enviando código...`;
+                        }
+
                         app.auth._regState.nome = nome;
                         app.auth._regState.email = email;
                         app.auth._regState.tipoAcesso = 'Operador';
-                        app.auth._regState.codigoEnviado = codigo;
+                        app.auth._regState.sentViaSupabase = false;
+
+                        const supa = this.getSupabaseClient();
+                        let sentWithSupa = false;
+
+                        if (supa) {
+                            try {
+                                const { data, error } = await supa.auth.signInWithOtp({
+                                    email: email,
+                                    options: {
+                                        shouldCreateUser: true
+                                    }
+                                });
+                                if (error) {
+                                    console.warn("Supabase signInWithOtp retornou erro:", error);
+                                } else {
+                                    sentWithSupa = true;
+                                    app.auth._regState.sentViaSupabase = true;
+                                    app.auth._regState.codigoEnviado = null;
+                                }
+                            } catch (supaErr) {
+                                console.warn("Exceção ao chamar Supabase signInWithOtp:", supaErr);
+                            }
+                        }
+
+                        if (!sentWithSupa) {
+                            // Se Supabase URL não foi informada ou houve falha de envio, gera código local institucional de segurança
+                            const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+                            app.auth._regState.codigoEnviado = codigo;
+                            app.auth._regState.sentViaSupabase = false;
+                        }
 
                         this.renderCadastroStep(2);
                     } catch (err) {
@@ -3537,12 +3672,53 @@ storage: {
                     }
                 },
 
-                validarCodigoCadastro() {
+                async validarCodigoCadastro() {
                     const codDigitado = (document.getElementById('reg-codigo')?.value || '').trim();
-                    if (codDigitado !== app.auth._regState.codigoEnviado) {
-                        app.ui.showAlert("Código Inválido", "O código digitado não confere com o código gerado para seu e-mail.", "error");
+                    if (!codDigitado || codDigitado.length < 6) {
+                        app.ui.showAlert("Código Incompleto", "Por favor, digite o código de 6 dígitos recebido.", "warning");
                         return;
                     }
+
+                    if (app.auth._regState.sentViaSupabase) {
+                        const supa = this.getSupabaseClient();
+                        if (supa) {
+                            const btnSubmit = document.querySelector('#reg-step-container button[type="submit"]');
+                            if (btnSubmit) {
+                                btnSubmit.disabled = true;
+                                btnSubmit.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Validando código...`;
+                            }
+
+                            try {
+                                const { data, error } = await supa.auth.verifyOtp({
+                                    email: app.auth._regState.email,
+                                    token: codDigitado,
+                                    type: 'email'
+                                });
+
+                                if (error) {
+                                    if (btnSubmit) {
+                                        btnSubmit.disabled = false;
+                                        btnSubmit.innerHTML = `<i class="fa-solid fa-shield-halved"></i> Validar Código`;
+                                    }
+                                    app.ui.showAlert("Código Inválido", "O código digitado não confere ou expirou. Verifique o e-mail " + app.auth._regState.email, "error");
+                                    return;
+                                }
+                            } catch (e) {
+                                if (btnSubmit) {
+                                    btnSubmit.disabled = false;
+                                    btnSubmit.innerHTML = `<i class="fa-solid fa-shield-halved"></i> Validar Código`;
+                                }
+                                app.ui.showAlert("Erro de Validação", "Falha de comunicação com o servidor de autenticação.", "error");
+                                return;
+                            }
+                        }
+                    } else {
+                        if (codDigitado !== app.auth._regState.codigoEnviado) {
+                            app.ui.showAlert("Código Inválido", "O código digitado não confere com o código gerado para seu e-mail.", "error");
+                            return;
+                        }
+                    }
+
                     app.auth._regState.codigoValido = true;
                     this.renderCadastroStep(3);
                 },
@@ -5089,11 +5265,16 @@ storage: {
                         document.getElementById('login-remember').checked = true;
                     }
                     
-                    // --- O CÓDIGO ABAIXO TINHA SIDO APAGADO SEM QUERER ---
-                    const today = new Date();
-                    const mm = String(today.getMonth() + 1).padStart(2, '0');
-                    const yyyy = today.getFullYear();
-                    app.currentMonth = `${yyyy}-${mm}`;
+                    // Recupera o mês previamente selecionado para não perder o período no F5
+                    const savedMonth = localStorage.getItem('soft_current_month');
+                    if (savedMonth && /^\d{4}-\d{2}$/.test(savedMonth)) {
+                        app.currentMonth = savedMonth;
+                    } else {
+                        const today = new Date();
+                        const mm = String(today.getMonth() + 1).padStart(2, '0');
+                        const yyyy = today.getFullYear();
+                        app.currentMonth = `${yyyy}-${mm}`;
+                    }
                     const gmEl = document.getElementById('global-month'); if (gmEl) gmEl.value = app.currentMonth;
                     
                     // Resgata backups locais apenas de Visão Geral Setorial (usuários e permissões vêm sempre do Firebase para manter todos sincronizados no mesmo ambiente)
@@ -6306,7 +6487,7 @@ storage: {
                         </div>
                     ` : '';
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
-                    const todayIso = new Date().toISOString().split('T')[0];
+                    const todayIso = localStorage.getItem('soft_acao_data_draft') || new Date().toISOString().split('T')[0];
 
                     let html = `
                         <div class="mb-8">
@@ -6317,7 +6498,7 @@ storage: {
                             <input type="hidden" id="act-edit-id" value="">
                             <form onsubmit="event.preventDefault(); app.actions.submitAction();" class="space-y-6">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label><input type="date" id="act-data" value="${todayIso}" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none"></div>
+                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label><input type="date" id="act-data" value="${todayIso}" onchange="try{localStorage.setItem('soft_acao_data_draft', this.value)}catch(e){}" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none"></div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Operação *</label>
                                         <select id="act-codigo" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none">
@@ -6465,7 +6646,8 @@ storage: {
                 calFiltroNome: '', calFiltroOp: '', calFiltroStatus: '', calFiltroTema: '', estudosFiltroOp: '',
 
                 renderView_Calendario(container) {
-                    const mat = (app.isAdmin || !app.currentUser) ? 'ADM' : app.currentUser.matricula;
+                    const isGlobalCalendar = app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente';
+                    const mat = (isGlobalCalendar || !app.currentUser) ? 'ADM' : app.currentUser.matricula;
                     const [year, month] = (app.currentMonth || new Date().toISOString().substring(0, 7)).split('-');
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.calFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
@@ -6489,7 +6671,7 @@ storage: {
 
                     let allEvtsMonth = Object.values(app.eventsList).filter(e => e.data.startsWith(`${year}-${month}`));
                     let myEvts = allEvtsMonth;
-                    if(!app.isAdmin) {
+                    if(!isGlobalCalendar) {
                         myEvts = allEvtsMonth.filter(e => e.matricula === mat || e.matricula === 'TODOS');
                     } else if (this.calFiltroNome) {
                         myEvts = allEvtsMonth.filter(e => {
@@ -6511,11 +6693,11 @@ storage: {
                     let html = `
                         <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Painel de Operação (Calendário)</h2>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${isGlobalCalendar ? 'Calendário Global da Operação' : 'Meu Calendário'}</h2>
                             </div>
                             <div class="flex gap-2">
                                 <button onclick="app.calendar.openModal(new Date().toISOString().split('T')[0])" class="bg-blue-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Novo Evento</button>
-                                ${app.isAdmin ? `<button onclick="app.admin.exportCalendarXLSX()" class="bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm"><i class="fa-solid fa-file-excel"></i> Exportar XLSX</button>` : ''}
+                                ${isGlobalCalendar ? `<button onclick="app.admin.exportCalendarXLSX()" class="bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm"><i class="fa-solid fa-file-excel"></i> Exportar XLSX</button>` : ''}
                             </div>
                         </div>
 
@@ -6529,7 +6711,7 @@ storage: {
 
                         <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
                             <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros Ativos</div>
-                            ${app.isAdmin ? `<input type="text" placeholder="Nome do Colaborador (Aperte Enter)" value="${this.calFiltroNome}" onchange="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" onkeydown="if(event.key==='Enter') this.blur()" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-56">` : ''}
+                            ${isGlobalCalendar ? `<input type="text" placeholder="Nome do Colaborador (Aperte Enter)" value="${this.calFiltroNome}" onchange="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" onkeydown="if(event.key==='Enter') this.blur()" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-56">` : ''}
                             <select onchange="app.ui.calFiltroOp=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white">
                                 <option value="">Todas Operações</option>${operacoes}
                             </select>
@@ -6595,7 +6777,7 @@ storage: {
                 },
 
                 renderView_AtaReuniao(container) {
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = localStorage.getItem('soft_ata_data_draft') || new Date().toISOString().split('T')[0];
                     // NOVO: Puxando a lista de operações dinamicamente
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     
@@ -6633,7 +6815,7 @@ storage: {
                                 </button>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 dark:border-slate-700 pb-8">
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ata *</label><input type="date" id="ata-data" value="${today}" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"></div>
+                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ata *</label><input type="date" id="ata-data" value="${today}" onchange="try{localStorage.setItem('soft_ata_data_draft', this.value)}catch(e){}" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"></div>
                                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Início *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
                                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Fim *</label><input type="time" id="ata-hora-fim" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
                                 
@@ -10443,6 +10625,33 @@ storage: {
                         </div>
                     </div>
 
+                    <!-- Autenticação e E-mails (Supabase) -->
+                    <div class="mt-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-emerald-100 dark:border-slate-700">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-envelope-circle-check text-emerald-500"></i> Autenticação e E-mails (Supabase)
+                                </h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    Disparo de códigos de verificação por e-mail para cadastro de usuários corporativos com a chave pública do Supabase.
+                                </p>
+                            </div>
+                            <button type="button" onclick="app.admin.testarSupabase()" id="btn-test-supabase" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2 whitespace-nowrap self-start sm:self-auto">
+                                <i class="fa-solid fa-plug-circle-check"></i> Testar Conexão Supabase
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Publishable Key (Chave Pública)</label>
+                                <input type="text" id="cfg-supabase-key" value="${app.config.supabaseKey || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl'}" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm" placeholder="sb_publishable_...">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">URL do Projeto Supabase</label>
+                                <input type="url" id="cfg-supabase-url" value="${app.config.supabaseUrl || localStorage.getItem('soft_supabase_url') || ''}" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm" placeholder="https://<seu-projeto>.supabase.co">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mt-8 flex justify-end gap-4">
                                         <button type="button" onclick="app.admin.reprocessarPontuacoes()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center gap-2"><i class="fa-solid fa-rotate"></i> Reprocessar Calibrações e Ações</button>
                                         <button onclick="app.admin.saveConfig()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5">Salvar Nova Estrutura</button>
@@ -11363,7 +11572,7 @@ storage: {
                             </div>
                     `;
                     
-                    if(app.isAdmin) {
+                    if(app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente') {
                         html += `
                             <div>
                                 <button onclick="app.admin.generateLegalPDF()" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all flex items-center gap-2 text-sm uppercase tracking-widest">
@@ -11610,6 +11819,8 @@ storage: {
                                             ${!isAprovadoSemBonus && !isAprovadoBonus ? `<button type="button" onclick="app.ata.aprovarSemBonus('${ata.id}')" class="flex-1 min-w-[120px] bg-teal-50 text-teal-600 hover:bg-teal-100 dark:bg-teal-900/20 dark:text-teal-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-check"></i> Aprovar (S/ Bônus)</button>` : ''}
                                             
                                             ${!isAprovadoBonus ? `<button type="button" onclick="app.ata.validarComoCalibragem('${ata.id}', this)" class="flex-1 min-w-[120px] bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Aprovar e Contabilizar Calibração"><i class="fa-solid fa-sack-dollar"></i> Aprovar (+ Bônus)</button>` : ''}
+                                            
+                                            ${isAprovadoBonus ? `<button type="button" onclick="app.ata.promptRemoverBonus('${ata.id}')" class="flex-1 min-w-[120px] bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm" title="Revogar bônus de calibração mantendo a ata aprovada sem bônus"><i class="fa-solid fa-eraser"></i> Tirar Bônus</button>` : ''}
                                         </div>
                                         <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="col-span-1 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-pdf"></i> Baixar PDF</button>
                                         <button type="button" onclick="app.ata.gerarWordById('${ata.id}')" class="col-span-1 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"><i class="fa-solid fa-file-word"></i> Baixar DOC</button>
@@ -17151,7 +17362,7 @@ storage: {
                     `;
 
                     // Painel Exclusivo ADM
-                    if(app.isAdmin) {
+                    if(app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente') {
                         html += `
                             <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 w-full xl:w-auto">
                                 <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl shadow-sm">
@@ -21560,6 +21771,47 @@ storage: {
                 }
             },
 
+            async testarSupabase() {
+                const keyInput = document.getElementById('cfg-supabase-key');
+                const urlInput = document.getElementById('cfg-supabase-url');
+                const btnTest = document.getElementById('btn-test-supabase');
+                const key = (keyInput ? keyInput.value : '').trim() || app.config.supabaseKey || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
+                const url = (urlInput ? urlInput.value : '').trim() || app.config.supabaseUrl || '';
+
+                if (!url) {
+                    return app.ui.showAlert("URL Pendente", "Informe a URL do seu projeto Supabase (ex: https://seu-projeto.supabase.co) para testar a comunicação.", "warning");
+                }
+                if (!key) {
+                    return app.ui.showAlert("Chave Ausente", "Informe a Publishable Key do Supabase.", "warning");
+                }
+                if (typeof window.supabase === 'undefined' || !window.supabase.createClient) {
+                    return app.ui.showAlert("Biblioteca Ausente", "A biblioteca Supabase JS não foi carregada no navegador.", "error");
+                }
+
+                if (btnTest) {
+                    btnTest.disabled = true;
+                    btnTest.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testando...';
+                }
+
+                try {
+                    const supa = window.supabase.createClient(url, key);
+                    const { data, error } = await supa.auth.getSession();
+                    if (error && error.status && error.status >= 500) {
+                        app.ui.showAlert("Erro no Supabase", "O servidor Supabase respondeu com erro: " + error.message, "error");
+                    } else {
+                        app.ui.showAlert("Conexão Bem-Sucedida!", "Comunicação com o Supabase estabelecida com sucesso. Lembre-se de clicar em <b>Salvar Nova Estrutura</b> para persistir as alterações.", "success");
+                    }
+                } catch (err) {
+                    console.error("Erro no teste Supabase:", err);
+                    app.ui.showAlert("Falha na Conexão", "Não foi possível conectar ao Supabase: " + (err.message || err), "error");
+                } finally {
+                    if (btnTest) {
+                        btnTest.disabled = false;
+                        btnTest.innerHTML = '<i class="fa-solid fa-plug-circle-check"></i> Testar Conexão Supabase';
+                    }
+                }
+            },
+
                 saveSoftlingoModulos() {
                     try { localStorage.setItem('softlingo_modulos_backup', JSON.stringify(app.softlingoModulos || {})); } catch (e) {}
                     if (typeof firebase !== 'undefined' && firebase.database) {
@@ -21610,6 +21862,19 @@ storage: {
                     const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
                     if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
                     if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
+
+                    // Salvar Autenticação e E-mails (Supabase)
+                    const supaKeyEl = document.getElementById('cfg-supabase-key');
+                    const supaUrlEl = document.getElementById('cfg-supabase-url');
+                    if(supaKeyEl) {
+                        app.config.supabaseKey = supaKeyEl.value.trim() || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
+                        try { localStorage.setItem('soft_supabase_key', app.config.supabaseKey); } catch (e) {}
+                    }
+                    if(supaUrlEl) {
+                        app.config.supabaseUrl = supaUrlEl.value.trim();
+                        try { localStorage.setItem('soft_supabase_url', app.config.supabaseUrl); } catch (e) {}
+                    }
+                    if (app.auth) app.auth._supabaseClient = null;
 
                     app.storage.saveConfig().then(() => {
                         app.ui.showAlert("Configurações Salvas", "Nova arquitetura, regras de feedback e integrações aplicadas ao sistema com sucesso.", "success");
@@ -23905,6 +24170,344 @@ Object.assign(app.ui, {
                         app.storage.saveReportes().then(() => {
                             this.abrirModalGestaoReportesDev('todos');
                         });
+                    }
+                },
+
+                // =========================================================================
+                // CENTRAL DE AJUDA & GUIA OPERACIONAL (HELP MODAL)
+                // =========================================================================
+                abrirModalHelp(abaInicial = 'geral') {
+                    const modalExist = document.getElementById('help-modal');
+                    if (modalExist) modalExist.remove();
+
+                    const modal = document.createElement('div');
+                    modal.id = 'help-modal';
+                    modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-5 sm:p-8 shadow-2xl relative my-6 flex flex-col max-h-[92vh]">
+                            <!-- Topo do Modal -->
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl shrink-0">
+                                        <i class="fa-solid fa-circle-question"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Central de Ajuda & Guia do Sistema</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Instruções essenciais, fluxos operacionais e atalhos rápidos do portal.</p>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('help-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center transition">
+                                    <i class="fa-solid fa-xmark text-lg"></i>
+                                </button>
+                            </div>
+
+                            <!-- Navegação de Subabas -->
+                            <div class="flex items-center gap-2 overflow-x-auto py-3 border-b border-slate-100 dark:border-slate-800 shrink-0 custom-scrollbar">
+                                <button onclick="app.ui.setHelpTab('geral')" data-tab="geral" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white shadow-sm transition">
+                                    <i class="fa-solid fa-house"></i> Visão Geral
+                                </button>
+                                <button onclick="app.ui.setHelpTab('monitorias')" data-tab="monitorias" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    <i class="fa-solid fa-chart-pie"></i> Monitorias
+                                </button>
+                                <button onclick="app.ui.setHelpTab('atas')" data-tab="atas" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    <i class="fa-solid fa-file-signature"></i> Atas & Calibração
+                                </button>
+                                <button onclick="app.ui.setHelpTab('softlingo')" data-tab="softlingo" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    <i class="fa-solid fa-graduation-cap"></i> Softlingo
+                                </button>
+                                <button onclick="app.ui.setHelpTab('atalhos')" data-tab="atalhos" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    <i class="fa-solid fa-keyboard"></i> Atalhos
+                                </button>
+                            </div>
+
+                            <!-- Conteúdo da Aba Ativa -->
+                            <div id="help-modal-tab-content" class="flex-1 overflow-y-auto py-5 custom-scrollbar pr-1">
+                                <!-- Preenchido dinamicamente por setHelpTab -->
+                            </div>
+
+                            <!-- Rodapé Informativo -->
+                            <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 shrink-0">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-circle-info text-blue-500"></i>
+                                    <span>Precisa de suporte técnico adicional? Use o ícone de megafone no topo para reportar.</span>
+                                </div>
+                                <button onclick="document.getElementById('help-modal').remove()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold transition">
+                                    Fechar Guia
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    document.body.appendChild(modal);
+                    this.setHelpTab(abaInicial);
+                },
+
+                setHelpTab(tabKey) {
+                    const contentEl = document.getElementById('help-modal-tab-content');
+                    if (!contentEl) return;
+
+                    // Atualiza estilos das abas
+                    document.querySelectorAll('.help-tab-btn').forEach(btn => {
+                        const isCurrent = btn.getAttribute('data-tab') === tabKey;
+                        btn.className = isCurrent
+                            ? 'help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white shadow-sm transition'
+                            : 'help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+                    });
+
+                    if (tabKey === 'geral') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-compass text-blue-600 dark:text-blue-400"></i> Bem-vindo ao Softmarketing Resultados
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        O portal foi concebido para centralizar a governança da Qualidade e Treinamento, consolidando monitorias operacionais, gestão de atas de calibração com inteligência artificial, campanhas motivacionais e capacitação contínua dos colaboradores.
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-calendar-days"></i>
+                                            </div>
+                                            Período e Persistência (F5)
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            O mês de apuração selecionado no topo do cabeçalho é salvo automaticamente no seu navegador. Ao atualizar a página com <b>F5</b>, o sistema mantém o mesmo mês que você estava visualizando.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-magnifying-glass"></i>
+                                            </div>
+                                            Busca Rápida de Páginas (Ctrl + K)
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            A barra de pesquisa no topo permite encontrar qualquer tela, relatório ou módulo do sistema e direcionar você com apenas um clique. Você também pode pressionar <b>Ctrl + K</b> em qualquer lugar.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-shield-halved"></i>
+                                            </div>
+                                            Níveis de Acesso
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Os recursos do sistema se adaptam ao seu cargo: <b>Dev</b> e <b>Gerente</b> possuem acesso global irrestrito, enquanto <b>Monitores</b>, <b>Supervisores</b> e <b>Operadores</b> contam com visões personalizadas para suas funções.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-moon"></i>
+                                            </div>
+                                            Tema Claro e Escuro
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Alterne a qualquer momento entre o tema claro e o modo escuro no switch localizado no cabeçalho superior. A sua preferência é memorizada para seus próximos acessos.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'monitorias') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-emerald-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-chart-pie text-emerald-600 dark:text-emerald-400"></i> Gestão e Importação de Monitorias
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        O módulo de monitorias processa as avaliações de atendimento da operação, consolidando notas, desvios e metas de feedback com segurança matemática.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-file-excel text-emerald-500"></i> Relatório Oficial da Amil (Avaliador Invertido)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            No relatório da Amil, o sistema identifica automaticamente a aba <b>Avaliador</b> e inverte a nomenclatura que vem no formato <i>"Sobrenome, Nome"</i> (o primeiro nome vem depois da vírgula). O sistema normaliza e vincula o registro diretamente ao colaborador correspondente na base de usuários.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-shield-virus text-blue-500"></i> Monitorias Manuais Blindadas
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            As monitorias adicionadas manualmente para operadores possuem <b>blindagem permanente</b>. Ao importar um novo relatório ou atualizar o mês, as monitorias manuais não são apagadas nem perdidas; o sistema mescla os novos dados preservando os lançamentos manuais.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-sliders text-amber-500"></i> Meta de Feedback Obrigatório (G2)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            A pontuação da meta de feedback obedece à regra configurada (por exemplo, nota <b>menor ou igual a 90.0</b> exige feedback obrigatório). Você pode customizar o operador (≤ ou &lt;) e a nota de corte nas configurações do sistema ou no painel do mês atual.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-print text-indigo-500"></i> Impressão do Analítico da Operação (Ctrl + P)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            A aba de <b>Analítico Operação</b> conta com folhas de estilo otimizadas para impressão. Ao pressionar <b>Ctrl + P</b>, os botões e elementos de navegação são ocultados automaticamente, gerando uma visualização profissional para exportação em PDF.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'atas') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-purple-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-purple-900 dark:text-purple-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-file-signature text-purple-600 dark:text-purple-400"></i> Gestão de Atas & Calibração
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Formalize alinhamentos, reuniões de calibração e planos de ação da Qualidade com auxílio de inteligência artificial e controle de pontuação.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-wand-magic-sparkles text-purple-500"></i> Redação com Inteligência Artificial
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Ao preencher os tópicos da reunião, utilize o botão <b>Gerar Resumo Inteligente (IA)</b>. A inteligência artificial estrutura a ata no padrão corporativo da Softmarketing, detalhando objetivos, discussões e próximos passos.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-sack-dollar text-emerald-500"></i> Aprovação com Bônus (+1 Ponto)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Ao aprovar uma ata como calibração oficial, os líderes de qualidade indicados recebem <b>+1 ponto</b> na meta de calibração (G3) do mês de referência.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-eraser text-amber-500"></i> Reversão de Ponto com "Tirar Bônus"
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Se uma ata foi aprovada com bônus por engano, a gestão pode clicar no botão <b>Tirar Bônus</b> nas Atas Validadas. O sistema estorna (-1) o ponto dos colaboradores com segurança atômica no banco de dados e mantém a ata salva no status institucional <i>"Aprovado (Sem Bônus)"</i>.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'softlingo') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-sky-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-graduation-cap text-blue-600 dark:text-blue-400"></i> Softlingo - Treinamento Gamificado
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        O Softlingo transforma o aprendizado de procedimentos de call center e qualidade em uma experiência interativa inspirada no formato Duolingo, guiada pelo mascote oficial.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-rotate-right text-blue-500"></i> Fila Contínua de Fixação (Errou = Vai pro Fim)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Se você errar uma pergunta durante a lição, a regra de monitoria é explicada na tela e a mesma pergunta é clonada e enviada para o <b>final da fila de execução</b>. A lição só é concluída quando todas as perguntas forem respondidas corretamente, garantindo fixação real.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-heart text-rose-500"></i> Vidas e Efeitos Sonoros
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Cada lição inicia com <b>5 vidas</b>. Respostas certas geram recompensas sonoras e avanço na barra de progresso superior; respostas incorretas diminuem uma vida. Se as vidas se esgotarem, a lição pode ser reiniciada.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-award text-amber-500"></i> Mascote Oficial e Certificações
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            O mascote acompanha suas reações a cada acerto ou erro. Ao concluir módulos oficiais com proficiência, certificados executivos são emitidos e registrados no seu histórico.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'atalhos') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-keyboard text-slate-700 dark:text-slate-300"></i> Atalhos de Produtividade no Teclado
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Agilize sua navegação diária utilizando os principais atalhos do sistema.
+                                    </p>
+                                </div>
+
+                                <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                                    <table class="w-full text-left text-xs border-collapse">
+                                        <thead class="bg-slate-50 dark:bg-slate-800/80 text-[11px] uppercase tracking-wider text-slate-500">
+                                            <tr>
+                                                <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Atalho</th>
+                                                <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Ação no Sistema</th>
+                                                <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Onde Funciona</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="py-3 px-4">
+                                                    <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">Ctrl + K</kbd>
+                                                </td>
+                                                <td class="py-3 px-4 font-bold text-blue-600 dark:text-blue-400">Busca Rápida e Direcionamento</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Em qualquer página do portal</td>
+                                            </tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="py-3 px-4">
+                                                    <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">Ctrl + P</kbd>
+                                                </td>
+                                                <td class="py-3 px-4 font-bold text-emerald-600 dark:text-emerald-400">Imprimir / Salvar em PDF</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Analítico Operação, Atas e Relatórios</td>
+                                            </tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="py-3 px-4">
+                                                    <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">F5</kbd>
+                                                </td>
+                                                <td class="py-3 px-4 font-bold text-purple-600 dark:text-purple-400">Recarregar Página com Mês Salvo</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Preserva o período selecionado</td>
+                                            </tr>
+                                            <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                <td class="py-3 px-4">
+                                                    <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">Esc</kbd>
+                                                </td>
+                                                <td class="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">Fechar Janela ou Modal</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Modais de ajuda, atas, reporte e busca</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
                     }
                 },
 
