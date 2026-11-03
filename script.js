@@ -249,13 +249,62 @@ const app = {
             },
 
             // Regra de Feedback: até setembro/2026 → nota < 85 | a partir de outubro/2026 → nota <= 89 (ou seja, < 90)
-            getLimiteFeedback(month) {
+            // Regra de Feedback Configurável:
+            // Permite configurar a nota de corte e o operador (<= ou <) globalmente ou por mês.
+            // Padrão histórico: até setembro/2026 → nota < 85 | a partir de outubro/2026 → nota <= 89 (ou seja, < 90)
+            getRegraFeedback(month) {
                 const m = String(month || this.currentMonth || '');
-                return m >= '2026-10' ? 90 : 85;
+                // 1. Regra específica para o mês selecionado
+                if (this.config?.regrasFeedbackPorMes && this.config.regrasFeedbackPorMes[m]) {
+                    const r = this.config.regrasFeedbackPorMes[m];
+                    if (r && typeof r === 'object' && r.nota !== undefined && r.nota !== null && r.nota !== '') {
+                        const parsedNota = parseFloat(r.nota);
+                        if (!isNaN(parsedNota)) {
+                            return {
+                                operador: (r.operador === '<=' || r.operador === '=<') ? '<=' : '<',
+                                nota: parsedNota
+                            };
+                        }
+                    }
+                }
+                // 2. Regra global padrão configurada
+                if (this.config?.regraFeedback && typeof this.config.regraFeedback === 'object' && this.config.regraFeedback.nota !== undefined && this.config.regraFeedback.nota !== null && this.config.regraFeedback.nota !== '') {
+                    const r = this.config.regraFeedback;
+                    const parsedNota = parseFloat(r.nota);
+                    if (!isNaN(parsedNota)) {
+                        return {
+                            operador: (r.operador === '<=' || r.operador === '=<') ? '<=' : '<',
+                            nota: parsedNota
+                        };
+                    }
+                }
+                // 3. Fallback histórico do sistema
+                return m >= '2026-10' 
+                    ? { operador: '<=', nota: 89 } 
+                    : { operador: '<', nota: 85 };
+            },
+            getLimiteFeedback(month) {
+                return this.getRegraFeedback(month).nota;
+            },
+            getDescricaoRegraFeedback(month) {
+                const r = this.getRegraFeedback(month);
+                const opSym = (r.operador === '<=' || r.operador === '=<') ? '≤' : '<';
+                return `${opSym} ${r.nota}`;
+            },
+            getTextoDispensadoFeedback(month) {
+                const r = this.getRegraFeedback(month);
+                if (r.operador === '<=' || r.operador === '=<') {
+                    return `Dispensado (Nota > ${r.nota})`;
+                }
+                return `Dispensado (Nota ≥ ${r.nota})`;
             },
             isNotaFeedback(nota, month) {
                 if (typeof nota !== 'number' || isNaN(nota)) return false;
-                return nota < this.getLimiteFeedback(month);
+                const r = this.getRegraFeedback(month);
+                if (r.operador === '<=' || r.operador === '=<') {
+                    return nota <= r.nota;
+                }
+                return nota < r.nota;
             },
 
             getHeadcountOperacao(opNome) {
@@ -495,6 +544,8 @@ storage: {
                                             if (localCfg.aliases) app.config.aliases = { ...(app.config.aliases || {}), ...localCfg.aliases };
                                             if (localCfg.headcountRH && (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0)) app.config.headcountRH = localCfg.headcountRH;
                                             if (!app.config.presetsGruposAcesso && localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = localCfg.presetsGruposAcesso;
+                                            if (!app.config.regraFeedback && localCfg.regraFeedback) app.config.regraFeedback = localCfg.regraFeedback;
+                                            if (!app.config.regrasFeedbackPorMes && localCfg.regrasFeedbackPorMes) app.config.regrasFeedbackPorMes = localCfg.regrasFeedbackPorMes;
                                         }
                                     }
                                     localStorage.setItem('soft_config_backup', JSON.stringify(app.config));
@@ -10341,6 +10392,36 @@ storage: {
                         </table>
                     </div>
 
+                    <!-- Meta de Feedback Obrigatório (Controle de Monitorias) -->
+                    <div class="mt-8 p-6 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-amber-200/60 dark:border-slate-700">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-sliders text-amber-500"></i> Meta de Feedback Obrigatório (Regra Padrão)
+                                </h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    Define a nota de corte para que uma monitoria exija feedback obrigatório dos monitores (Meta G2 de Feedback).
+                                </p>
+                            </div>
+                            <button type="button" onclick="app.admin.abrirModalRegraFeedback()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-1.5 whitespace-nowrap self-start sm:self-auto">
+                                <i class="fa-solid fa-gear"></i> Painel do Mês Atual (${app.getDescricaoRegraFeedback()})
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operador Condicional Padrão</label>
+                                <select id="cfg-fb-op" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold dark:text-white outline-none focus:ring-2 focus:ring-amber-500 transition-all shadow-sm">
+                                    <option value="<=" ${(app.getRegraFeedback().operador === '<=' || app.getRegraFeedback().operador === '=<') ? 'selected' : ''}>Menor ou Igual a (≤) - Exige feedback se nota for ≤ corte</option>
+                                    <option value="<" ${app.getRegraFeedback().operador === '<' ? 'selected' : ''}>Menor que (&lt;) - Exige feedback se nota for &lt; corte</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nota de Corte Padrão</label>
+                                <input type="number" step="0.1" min="0" max="100" id="cfg-fb-nota" value="${app.getRegraFeedback().nota}" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 transition-all shadow-sm tabular-nums" placeholder="Ex: 89 ou 90">
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Integração Inteligência Artificial (Gemini) -->
                     <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-purple-100 dark:border-slate-700">
                         <h3 class="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-robot text-purple-500"></i> Integração Inteligência Artificial (Gemini)</h3>
@@ -13261,6 +13342,10 @@ storage: {
                             <button onclick="app.admin.openAliasModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Vincular nomes da planilha aos colaboradores">
                                 <i class="fa-solid fa-link"></i> Vincular Nomes
                             </button>
+
+                            <button onclick="app.admin.abrirModalRegraFeedback()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Configurar a regra/nota de corte para feedback obrigatório">
+                                <i class="fa-solid fa-sliders"></i> Regra de Feedback (${app.getDescricaoRegraFeedback()})
+                            </button>
                         </div>
                         `;
                     }
@@ -13510,7 +13595,7 @@ storage: {
                                             <button id="fb-btn-linha-bruta-all" onclick="app.ui.filterPendingRows('linha-bruta', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${todasLinhasBrutas.length})</button>
                                             <button id="fb-btn-linha-bruta-pendente" onclick="app.ui.filterPendingRows('linha-bruta', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countBrutoPend})</button>
                                             <button id="fb-btn-linha-bruta-aplicado" onclick="app.ui.filterPendingRows('linha-bruta', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countBrutoAplic})</button>
-                                            <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Elegíveis &lt;${app.getLimiteFeedback()} (${countBrutoEleg})</button>
+                                            <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Elegíveis (${app.getDescricaoRegraFeedback()}) (${countBrutoEleg})</button>
                                         </div>
                                     </div>
                                     <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
@@ -13536,7 +13621,7 @@ storage: {
                                                         isAplicado ? 'fb-aplicado' : '',
                                                         isElegivel ? 'fb-elegivel' : ''
                                                     ].filter(Boolean).join(' ');
-                                                    let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">Dispensado (Nota ≥ ${app.getLimiteFeedback()})</span>`;
+                                                    let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">${app.getTextoDispensadoFeedback()}</span>`;
                                                     if (isAplicado) {
                                                         statusBadge = `<span class="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 font-black"><i class="fa-solid fa-circle-check mr-1"></i> Feedback Aplicado</span>`;
                                                     } else if (isPendente) {
@@ -13717,8 +13802,8 @@ storage: {
 
                                 <!-- Painel Funcional de Controle de Feedbacks do Monitor -->
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="cursor-pointer bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para filtrar todas as avaliações que exigem feedback (<85)">
-                                        <div class="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-1"><i class="fa-solid fa-clipboard-check mr-1"></i> Exigem Feedback (&lt;${app.getLimiteFeedback()})</div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="cursor-pointer bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para filtrar todas as avaliações que exigem feedback (${app.getDescricaoRegraFeedback()})">
+                                        <div class="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-1"><i class="fa-solid fa-clipboard-check mr-1"></i> Exigem Feedback (${app.getDescricaoRegraFeedback()})</div>
                                         <div class="text-2xl font-black text-slate-800 dark:text-white">${countUserEleg}</div>
                                     </div>
                                     <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="cursor-pointer bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para ver apenas os feedbacks já aplicados">
@@ -13791,7 +13876,7 @@ storage: {
                                                 <button id="fb-btn-linha-bruta-user-all" onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${minhasLinhas.length})</button>
                                                 <button id="fb-btn-linha-bruta-user-pendente" onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countUserPend})</button>
                                                 <button id="fb-btn-linha-bruta-user-aplicado" onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countUserAplic})</button>
-                                                <button id="fb-btn-linha-bruta-user-elegivel" onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Só Elegíveis &lt;${app.getLimiteFeedback()} (${countUserEleg})</button>
+                                                <button id="fb-btn-linha-bruta-user-elegivel" onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Só Elegíveis (${app.getDescricaoRegraFeedback()}) (${countUserEleg})</button>
                                             </div>
                                         </div>
                                         <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[450px]'}">
@@ -13816,7 +13901,7 @@ storage: {
                                                             isAplicado ? 'fb-aplicado' : '',
                                                             isElegivel ? 'fb-elegivel' : ''
                                                         ].filter(Boolean).join(' ');
-                                                        let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">Dispensado (Nota ≥ ${app.getLimiteFeedback()})</span>`;
+                                                        let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">${app.getTextoDispensadoFeedback()}</span>`;
                                                         if (isAplicado) {
                                                             statusBadge = `<span class="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 font-black"><i class="fa-solid fa-circle-check mr-1"></i> Feedback Aplicado</span>`;
                                                         } else if (isPendente) {
@@ -18076,6 +18161,142 @@ storage: {
                     document.getElementById('global-modal').classList.add('hidden');
                     this.recalcularPainelMonitorias(false, "Lançamento manual removido com sucesso.");
                 },
+
+                abrirModalRegraFeedback(mesAlvo = null) {
+                    const mes = String(mesAlvo || app.currentMonth || new Date().toISOString().substring(0, 7));
+                    const regraAtual = app.getRegraFeedback(mes);
+                    const regraEspecificaMes = app.config?.regrasFeedbackPorMes?.[mes];
+                    const temRegraMes = Boolean(regraEspecificaMes && regraEspecificaMes.nota !== undefined);
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-amber-500"></i> Configurar Meta de Feedback Obrigatório`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-4 text-left">
+                            <div class="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-3">
+                                <i class="fa-solid fa-circle-info text-amber-500 text-lg mt-0.5"></i>
+                                <div class="space-y-1">
+                                    <span class="font-black block text-sm">Regra de Corte de Feedback (G2)</span>
+                                    <p class="leading-relaxed">
+                                        Configure a condição de nota para que uma monitoria gere <b>Feedback Obrigatório</b> (Meta de Feedback da monitora). Todas as avaliações com nota dentro deste critério exigem aplicação de feedback; notas fora dele são marcadas como <b>Dispensadas</b>.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operador Condicional</label>
+                                    <select id="cfg-modal-fb-op" onchange="app.admin.atualizarPreviewRegraFeedback()" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm font-bold dark:text-white cursor-pointer shadow-sm focus:border-amber-500">
+                                        <option value="<=" ${(regraAtual.operador === '<=' || regraAtual.operador === '=<') ? 'selected' : ''}>Menor ou Igual a (≤)</option>
+                                        <option value="<" ${regraAtual.operador === '<' ? 'selected' : ''}>Menor que (&lt;)</option>
+                                    </select>
+                                    <span class="text-[10px] text-slate-400 mt-1 block">Ex: ≤ inclui a nota digitada; &lt; exclui a nota digitada.</span>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nota de Corte</label>
+                                    <input type="number" step="0.1" min="0" max="100" id="cfg-modal-fb-nota" value="${regraAtual.nota}" oninput="app.admin.atualizarPreviewRegraFeedback()" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm font-black text-slate-800 dark:text-white tabular-nums shadow-sm focus:border-amber-500" placeholder="Ex: 89 ou 90">
+                                    <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase mr-1">Atalhos:</span>
+                                        <button type="button" onclick="document.getElementById('cfg-modal-fb-nota').value=89; document.getElementById('cfg-modal-fb-op').value='<='; app.admin.atualizarPreviewRegraFeedback();" class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors">≤ 89</button>
+                                        <button type="button" onclick="document.getElementById('cfg-modal-fb-nota').value=90; document.getElementById('cfg-modal-fb-op').value='<'; app.admin.atualizarPreviewRegraFeedback();" class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors">&lt; 90</button>
+                                        <button type="button" onclick="document.getElementById('cfg-modal-fb-nota').value=85; document.getElementById('cfg-modal-fb-op').value='<'; app.admin.atualizarPreviewRegraFeedback();" class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors">&lt; 85</button>
+                                        <button type="button" onclick="document.getElementById('cfg-modal-fb-nota').value=80; document.getElementById('cfg-modal-fb-op').value='<='; app.admin.atualizarPreviewRegraFeedback();" class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-colors">≤ 80</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Escopo de Aplicação -->
+                            <div class="space-y-2">
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase">Escopo de Aplicação da Regra</label>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <label class="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-amber-400 transition-colors">
+                                        <input type="radio" name="cfg-modal-fb-escopo" value="mes" checked class="w-4 h-4 accent-amber-600 mt-0.5">
+                                        <div class="text-xs">
+                                            <span class="font-bold text-slate-800 dark:text-white block">Apenas Mês Atual (${mes})</span>
+                                            <span class="text-[11px] text-slate-500 dark:text-slate-400">Aplica a regra exclusivamente para as avaliações deste mês.</span>
+                                        </div>
+                                    </label>
+
+                                    <label class="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-amber-400 transition-colors">
+                                        <input type="radio" name="cfg-modal-fb-escopo" value="global" class="w-4 h-4 accent-amber-600 mt-0.5">
+                                        <div class="text-xs">
+                                            <span class="font-bold text-slate-800 dark:text-white block">Regra Geral Padrão</span>
+                                            <span class="text-[11px] text-slate-500 dark:text-slate-400">Torna esta regra padrão para todos os meses do sistema.</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Live Preview -->
+                            <div id="cfg-modal-fb-preview" class="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 text-xs text-indigo-900 dark:text-indigo-200">
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs transition-colors">Cancelar</button>
+                        <button onclick="app.admin.salvarRegraFeedback('${mes}')" class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors flex items-center gap-2">
+                            <i class="fa-solid fa-floppy-disk"></i> Salvar e Recalcular Monitorias
+                        </button>
+                    `;
+
+                    document.getElementById('global-modal').classList.remove('hidden');
+                    this.atualizarPreviewRegraFeedback();
+                },
+
+                atualizarPreviewRegraFeedback() {
+                    const op = document.getElementById('cfg-modal-fb-op')?.value || '<=';
+                    const nota = parseFloat(document.getElementById('cfg-modal-fb-nota')?.value) || 0;
+                    const opSym = (op === '<=' || op === '=<') ? '≤' : '<';
+                    const opDisp = (op === '<=' || op === '=<') ? '>' : '≥';
+                    const previewEl = document.getElementById('cfg-modal-fb-preview');
+                    if (previewEl) {
+                        previewEl.innerHTML = `
+                            <div class="flex items-center gap-2 font-bold mb-1">
+                                <i class="fa-solid fa-eye text-indigo-500"></i> Simulação do corte:
+                            </div>
+                            <div class="text-[11px] leading-relaxed">
+                                • Avaliações com Nota <b>${opSym} ${nota}</b>: <span class="text-amber-600 dark:text-amber-400 font-black">EXIGEM FEEDBACK</span> (+1 na Meta de Feedback da monitora; geram pendência até aplicação).<br>
+                                • Avaliações com Nota <b>${opDisp} ${nota}</b>: <span class="text-emerald-600 dark:text-emerald-400 font-bold">DISPENSADAS</span> (não geram obrigação de feedback nem contam na meta G2).
+                            </div>
+                        `;
+                    }
+                },
+
+                salvarRegraFeedback(mesAlvo = null) {
+                    const mes = String(mesAlvo || app.currentMonth || new Date().toISOString().substring(0, 7));
+                    const opEl = document.getElementById('cfg-modal-fb-op');
+                    const notaEl = document.getElementById('cfg-modal-fb-nota');
+                    const escopoEl = document.querySelector('input[name="cfg-modal-fb-escopo"]:checked');
+                    
+                    if (!notaEl || !opEl) return;
+                    const nota = parseFloat(notaEl.value);
+                    if (isNaN(nota) || nota < 0 || nota > 100) {
+                        return app.ui.showAlert("Nota Inválida", "Por favor informe uma nota válida entre 0 e 100.", "error");
+                    }
+
+                    const op = (opEl.value === '<=' || opEl.value === '=<') ? '<=' : '<';
+                    const escopo = escopoEl ? escopoEl.value : 'mes';
+
+                    if (!app.config) app.config = {};
+
+                    if (escopo === 'global') {
+                        app.config.regraFeedback = { operador: op, nota: nota };
+                        if (!app.config.regrasFeedbackPorMes) app.config.regrasFeedbackPorMes = {};
+                        app.config.regrasFeedbackPorMes[mes] = { operador: op, nota: nota };
+                    } else {
+                        if (!app.config.regrasFeedbackPorMes) app.config.regrasFeedbackPorMes = {};
+                        app.config.regrasFeedbackPorMes[mes] = { operador: op, nota: nota };
+                    }
+
+                    app.storage.saveConfig().then(() => {
+                        document.getElementById('global-modal').classList.add('hidden');
+                        const opSym = op === '<=' ? '≤' : '<';
+                        this.recalcularPainelMonitorias(false, `Regra de feedback salva com sucesso! (Corte: ${opSym} ${nota}). As monitorias e metas foram recalculadas.`);
+                    }).catch(err => {
+                        console.error("Erro ao salvar regra de feedback:", err);
+                        app.ui.showAlert("Erro ao Salvar", "Não foi possível gravar a configuração: " + (err.message || err), "error");
+                    });
+                },
             
             // ==========================================
                 // 1. LÓGICA DO BOTÃO RESET
@@ -21371,13 +21592,31 @@ storage: {
 
                     if (wTotal > 1.01 || wTotal < 0.99) return app.ui.showAlert("Erro Matemático", "A soma das frações deve resultar exatamente em 1.00 (100%). Ajuste os pesos e tente novamente.", "error");
 
+                    // Salvar Regra Padrão de Feedback
+                    const fbOpEl = document.getElementById('cfg-fb-op');
+                    const fbNotaEl = document.getElementById('cfg-fb-nota');
+                    if (fbOpEl && fbNotaEl) {
+                        const notaVal = parseFloat(fbNotaEl.value);
+                        if (!isNaN(notaVal) && notaVal >= 0 && notaVal <= 100) {
+                            app.config.regraFeedback = {
+                                operador: (fbOpEl.value === '<=' || fbOpEl.value === '=<') ? '<=' : '<',
+                                nota: notaVal
+                            };
+                        }
+                    }
+
                     // Salvar Integração Gemini
                     const geminiKeyEl = document.getElementById('cfg-gemini-key');
                     const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
                     if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
                     if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
 
-                    app.storage.saveConfig().then(() => app.ui.showAlert("Configurações Salvas", "Nova arquitetura e integrações aplicadas ao sistema com sucesso.", "success"));
+                    app.storage.saveConfig().then(() => {
+                        app.ui.showAlert("Configurações Salvas", "Nova arquitetura, regras de feedback e integrações aplicadas ao sistema com sucesso.", "success");
+                        if (typeof app.admin.recalcularPainelMonitorias === 'function' && app.monitoriasData?.detalhes?.linhas?.length) {
+                            app.admin.recalcularPainelMonitorias(false, null);
+                        }
+                    });
                 },
 
                 getUserMonthValidationInfo(u, month = app.currentMonth) {
