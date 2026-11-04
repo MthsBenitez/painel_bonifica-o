@@ -474,11 +474,16 @@ storage: {
                         });
                     } catch(e) {}
 
-                    // Pré-carrega ações salvas no cache IndexedDB (localforage) com 0 bytes de consumo de rede
+                    // Pré-carrega ações e atas salvas no cache IndexedDB (localforage) com 0 bytes de consumo de rede
                     if (typeof localforage !== 'undefined') {
                         localforage.getItem('soft_actions_hd').then(cachedActs => {
                             if (cachedActs && typeof cachedActs === 'object') {
                                 app.actionsList = { ...cachedActs, ...(app.actionsList || {}) };
+                            }
+                        }).catch(() => {});
+                        localforage.getItem('soft_atas_hd').then(cachedAtas => {
+                            if (cachedAtas && typeof cachedAtas === 'object') {
+                                app.atasList = { ...cachedAtas, ...(app.atasList || {}) };
                             }
                         }).catch(() => {});
                     }
@@ -642,7 +647,32 @@ storage: {
                             } catch (e) {}
                             if (data.notifications) app.notificationsList = data.notifications; else app.notificationsList = {};
                             if (data.events) app.eventsList = data.events; else app.eventsList = {};
-                            if (data.atas) app.atasList = data.atas; else app.atasList = {};
+                            if (data.atas) {
+                                if (Array.isArray(data.atas)) {
+                                    app.atasList = {};
+                                    data.atas.forEach((a, idx) => { if (a) app.atasList[a.id || ('ata_' + idx)] = a; });
+                                } else if (typeof data.atas === 'object') {
+                                    app.atasList = data.atas;
+                                } else {
+                                    app.atasList = {};
+                                }
+                                try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+                                if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
+                            } else {
+                                try {
+                                    const localAtasRaw = localStorage.getItem('soft_atas_backup');
+                                    if (localAtasRaw) {
+                                        const localAtas = JSON.parse(localAtasRaw);
+                                        if (localAtas && typeof localAtas === 'object') {
+                                            app.atasList = localAtas;
+                                        } else {
+                                            app.atasList = {};
+                                        }
+                                    } else {
+                                        app.atasList = {};
+                                    }
+                                } catch (e) { app.atasList = {}; }
+                            }
                             if (data.laudos) app.laudos.list = Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean); else app.laudos.list = [];
                             if (data.apresentacoes) app.apresentacoesList = data.apresentacoes; else app.apresentacoesList = {};
                             if (data.estoque) app.estoqueItems = data.estoque; else app.estoqueItems = {};
@@ -1068,6 +1098,44 @@ storage: {
                         return app.actionsList;
                     });
                 },
+                ensureAtasLoaded(callback) {
+                    if (app.atasList && Object.keys(app.atasList).length > 0) {
+                        if (typeof callback === 'function') callback();
+                        return Promise.resolve(app.atasList);
+                    }
+                    try {
+                        const localAtas = localStorage.getItem('soft_atas_backup');
+                        if (localAtas) {
+                            const parsed = JSON.parse(localAtas);
+                            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+                                app.atasList = { ...parsed, ...(app.atasList || {}) };
+                            }
+                        }
+                    } catch(e) {}
+                    
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        return firebase.database().ref('sistema_bonificacao/atas').once('value').then(snap => {
+                            const val = snap.val();
+                            if (val) {
+                                if (Array.isArray(val)) {
+                                    val.forEach((a, idx) => { if (a) app.atasList[a.id || ('ata_' + idx)] = a; });
+                                } else if (typeof val === 'object') {
+                                    app.atasList = { ...(app.atasList || {}), ...val };
+                                }
+                                try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch(e) {}
+                                if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
+                            }
+                            if (typeof callback === 'function') callback();
+                            return app.atasList;
+                        }).catch(err => {
+                            console.warn("Falha ao carregar atas sob demanda:", err);
+                            if (typeof callback === 'function') callback();
+                            return app.atasList || {};
+                        });
+                    }
+                    if (typeof callback === 'function') callback();
+                    return Promise.resolve(app.atasList || {});
+                },
                 saveSoftlingoModulos() {
                     try { localStorage.setItem('softlingo_modulos_backup', JSON.stringify(app.softlingoModulos || {})); } catch (e) {}
                     if (typeof firebase !== 'undefined' && firebase.database) {
@@ -1124,7 +1192,30 @@ storage: {
                 },
                 saveEvents() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
                 saveOperacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
-                saveAtas() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/atas').set(app.atasList || {}); },
+                saveAtas(singleId = null) {
+                    this.invalidateCoreCache();
+                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
+                    
+                    // Backup local imediato de segurança
+                    try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList || {})); } catch (e) {}
+                    if (typeof localforage !== 'undefined' && app.atasList) {
+                        localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
+                    }
+
+                    if (singleId && app.atasList && app.atasList[singleId]) {
+                        const sanitizedItem = this.sanitizeFirebaseObject(app.atasList[singleId]);
+                        return firebase.database().ref('sistema_bonificacao/atas/' + singleId).set(sanitizedItem);
+                    }
+                    
+                    // Trava de integridade: nunca apagar o banco se app.atasList estiver vazio
+                    if (!app.atasList || Object.keys(app.atasList).length === 0) {
+                        console.warn("Segurança de Integridade: saveAtas abortado pois atasList está vazia.");
+                        return Promise.resolve();
+                    }
+                    
+                    const sanitizedObj = this.sanitizeFirebaseObject(app.atasList || {});
+                    return firebase.database().ref('sistema_bonificacao/atas').set(sanitizedObj);
+                },
                 saveLaudos() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
                 saveApresentacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
                 saveEstoque() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
@@ -2159,6 +2250,82 @@ storage: {
             },
 
             ata: {
+                getAtaMonth(ata) {
+                    if (!ata) return '';
+                    if (ata.month && /^\d{4}-\d{2}$/.test(String(ata.month).trim())) return String(ata.month).trim();
+                    if (ata.mes && /^\d{4}-\d{2}$/.test(String(ata.mes).trim())) return String(ata.mes).trim();
+                    if (ata.mesRef && /^\d{4}-\d{2}$/.test(String(ata.mesRef).trim())) return String(ata.mesRef).trim();
+                    if (ata.data) {
+                        const dStr = String(ata.data).trim();
+                        // Caso ISO YYYY-MM-DD ou YYYY-MM ou YYYY/MM/DD
+                        const matchIso = dStr.match(/^(\d{4})[-/](\d{2})/);
+                        if (matchIso) return `${matchIso[1]}-${matchIso[2]}`;
+                        // Caso brasileiro DD/MM/YYYY ou DD-MM-YYYY
+                        const matchBr = dStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+                        if (matchBr) return `${matchBr[3]}-${matchBr[2].padStart(2, '0')}`;
+                    }
+                    if (ata.timestamp && typeof ata.timestamp === 'number') {
+                        const dt = new Date(ata.timestamp);
+                        if (!isNaN(dt.getTime())) {
+                            const y = dt.getFullYear();
+                            const m = String(dt.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
+                        }
+                    }
+                    return app.currentMonth || '';
+                },
+
+                formatAtaData(d) {
+                    if (!d) return '--/--/----';
+                    const s = String(d).trim();
+                    if (s.includes('-')) {
+                        const parts = s.split('-');
+                        if (parts.length === 3 && parts[0].length === 4) {
+                            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                        }
+                    }
+                    return s;
+                },
+
+                findQualidadeUsersForAta(ata) {
+                    if (!ata) return [];
+                    const sanitize = (s) => String(s || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                    
+                    let rawTargets = [];
+                    if (ata.qualidade) rawTargets.push(...String(ata.qualidade).split(/[/,e&+-]/));
+                    if (ata.qualidade2) rawTargets.push(...String(ata.qualidade2).split(/[/,e&+-]/));
+                    
+                    const cleanTargets = rawTargets.map(t => sanitize(t)).filter(t => t.length >= 3);
+                    const ataMat = String(ata.matricula || '').trim();
+
+                    return (app.users || []).filter(u => {
+                        if (!u) return false;
+                        const uMat = String(u.matricula || '').trim();
+                        const isQualidadeUser = app.isUserQualidade(u) || (u.results && Object.values(u.results).some(r => r && r.g3));
+                        
+                        // Match por matrícula do criador
+                        if (ataMat && uMat === ataMat && isQualidadeUser) return true;
+                        
+                        // Match por nome (exato, parcial inteligente ou primeiro/último)
+                        const uNome = sanitize(u.nome);
+                        if (!uNome) return false;
+
+                        for (const target of cleanTargets) {
+                            if (uNome === target) return true;
+                            if (uNome.includes(target) || target.includes(uNome)) return true;
+                            
+                            const uTokens = uNome.split(/\s+/).filter(t => t.length > 2);
+                            const targetTokens = target.split(/\s+/).filter(t => t.length > 2);
+                            if (uTokens.length > 0 && targetTokens.length > 0 && uTokens[0] === targetTokens[0]) {
+                                if (targetTokens.length === 1 || uTokens.some(ut => targetTokens.includes(ut))) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    });
+                },
+
                 initForm() {
                     document.getElementById('ata-dynamic-actions').innerHTML = '';
                     document.getElementById('ata-dynamic-participants').innerHTML = '';
@@ -2280,9 +2447,13 @@ storage: {
                     const editIdEl = document.getElementById('ata-edit-id');
                     const editId = editIdEl ? editIdEl.value : '';
 
+                    const prevStatus = (editId && app.atasList[editId] && app.atasList[editId].status) ? app.atasList[editId].status : 'concluido';
+                    const targetMonth = this.getAtaMonth({ data: d, timestamp: Date.now() }) || app.currentMonth;
+
                     const payload = {
                         id: editId || ('ata_' + Date.now()),
                         data: d, hora: h, horaFim: document.getElementById('ata-hora-fim').value || '',
+                        month: targetMonth,
                         tema: t, op: o, qualidade: q, 
                         qualidade2: document.getElementById('ata-qualidade2').value || '',
                         sup: document.getElementById('ata-sup1').value || '',
@@ -2294,12 +2465,12 @@ storage: {
                         autor: app.currentUser ? app.currentUser.nome : 'ADM',
                         matricula: app.currentUser ? app.currentUser.matricula : 'ADM',
                         timestamp: editId && app.atasList[editId] ? app.atasList[editId].timestamp : Date.now(),
-                        status: 'concluido',
-                        comentario: ''
+                        status: prevStatus,
+                        comentario: (editId && app.atasList[editId]) ? (app.atasList[editId].comentario || '') : ''
                     };
 
                     app.atasList[payload.id] = payload;
-                    app.storage.saveAtas().then(() => {
+                    app.storage.saveAtas(payload.id).then(() => {
                         if(!isAuto) app.ui.showAlert("Sucesso", "Ata registrada com sucesso no banco de dados.", "success");
                     });
 
@@ -2482,19 +2653,13 @@ storage: {
                     const ata = app.atasList[id];
                     let updates = {};
 
-                    if (ata.status === 'aprovado') {
-                        const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+                    const st = String(ata.status || '').toLowerCase().trim();
+                    if (st === 'aprovado' || st === 'aprovada' || st === 'aprovados') {
+                        const mesRef = this.getAtaMonth(ata) || app.currentMonth;
                         const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                         const gId = goalCalib ? goalCalib.id : 'g3';
 
-                        let nomesAlvo = [];
-                        if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
-                        if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
-                        
-                        let usersEncontrados = app.users.filter(u => 
-                            nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
-                            u.matricula === ata.matricula
-                        );
+                        let usersEncontrados = this.findQualidadeUsersForAta(ata);
 
                         let atualizouAlguem = false;
                         usersEncontrados.forEach(userEncontrado => {
@@ -2517,6 +2682,8 @@ storage: {
                     updates[`atas/${id}`] = ata;
                     
                     firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+                        try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
                         app.notifications.notify(ata.matricula, 'Ata Devolvida / Reprovada', `A ata "${ata.tema}" foi reprovada/devolvida. Motivo: ${reason}`, 'error');
                         app.ui.renderTab('gestao_atas', true);
@@ -2558,16 +2725,9 @@ storage: {
                     if(!ata) return;
 
                     let updates = {};
-                    let nomesAlvo = [];
-                    if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
-                    if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
+                    let usersEncontrados = this.findQualidadeUsersForAta(ata);
 
-                    let usersEncontrados = app.users.filter(u => 
-                        nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
-                        u.matricula === ata.matricula
-                    );
-
-                    const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+                    const mesRef = this.getAtaMonth(ata) || app.currentMonth;
                     const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gId = goalCalib ? goalCalib.id : 'g3';
 
@@ -2589,6 +2749,8 @@ storage: {
                     if (atualizouAlguem) updates['users'] = app.users;
 
                     firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+                        try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.showAlert("Bônus Removido", "O bônus de calibração foi retirado dos indicadores e a ata agora está validada como documento institucional (sem bônus).", "success");
                         app.ui.renderTab('gestao_atas', true);
@@ -2754,18 +2916,11 @@ storage: {
                         return app.ui.showAlert("Aprovação Pendente", "Esta calibração não possui um Supervisor Operacional vinculado ou aprovando a ata. Por favor, edite a ata antes de contabilizar.", "error");
                     }
                     
-                    let nomesAlvo = [];
-                    if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
-                    if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
-                    
-                    let usersEncontrados = app.users.filter(u => 
-                        nomesAlvo.includes(u.nome.toUpperCase().trim()) || 
-                        u.matricula === ata.matricula
-                    );
+                    let usersEncontrados = this.findQualidadeUsersForAta(ata);
                     
                     if (usersEncontrados.length === 0) return app.ui.showAlert("Erro", "Nenhum colaborador da qualidade encontrado para creditar a calibragem. Verifique os nomes cadastrados na ata.", "error");
 
-                    const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
+                    const mesRef = this.getAtaMonth(ata) || app.currentMonth;
                     const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gId = goalCalib ? goalCalib.id : 'g3';
                     
@@ -2773,7 +2928,6 @@ storage: {
                     let atualizouAlguem = false;
                     
                     usersEncontrados.forEach(userEncontrado => {
-                        if (!app.isUserQualidade(userEncontrado)) return; // Apenas perfil Qualidade possui bonificação
                         if(!userEncontrado.results) userEncontrado.results = {};
                         if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
                         if(!userEncontrado.results[mesRef][gId]) userEncontrado.results[mesRef][gId] = { val: 0 };
@@ -2788,13 +2942,16 @@ storage: {
                     });
                     
                     ata.status = 'aprovado';
+                    ata.month = mesRef;
                     updates[`atas/${id}`] = ata;
                     if(atualizouAlguem) updates['users'] = app.users;
 
                     // Multi-path update previne tela de piscar e bugs de aba
                     firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                        try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+                        try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         const nomesGanhadores = usersEncontrados.map(u => u.nome.split(' ')[0]).join(', ');
-                        app.ui.showAlert("Aprovado!", `Ata foi aprovada pelo Gestor e contabilizada com sucesso!<br><strong>${nomesGanhadores}</strong> receberam +1 Calibração nos indicadores deste mês.`, "success");
+                        app.ui.showAlert("Aprovado!", `Ata foi aprovada pelo Gestor e contabilizada com sucesso no mês <b>${app.ui.formatMonthLabel(mesRef)}</b>!<br><strong>${nomesGanhadores}</strong> receberam +1 Calibração nos indicadores.`, "success");
                         app.ui.renderTab('gestao_atas', true);
                         
                         if(btnElement) {
@@ -2808,6 +2965,7 @@ storage: {
                             btnElement.disabled = true;
                         }
                     });
+                },
                 },
             
                 exportAtasXLSX() {
@@ -2829,8 +2987,9 @@ storage: {
                         }
 
                         return {
-                            "Status": a.status === 'devolvido' ? 'Devolvida' : 'Concluída',
-                            "Data Reunião": a.data, 
+                            "Status": a.status === 'devolvido' ? 'Devolvida' : (a.status === 'aprovado' || a.status === 'aprovada' ? 'Aprovada (Com Bônus)' : (a.status === 'aprovado_sem_bonus' ? 'Aprovada (Sem Bônus)' : 'Aguardando Avaliação')),
+                            "Mês Referência": app.ata.getAtaMonth(a),
+                            "Data Reunião": app.ata.formatAtaData(a.data), 
                             "Hora Inicio": a.hora, 
                             "Hora Fim": a.horaFim, 
                             "Operação": a.op, 
@@ -11671,31 +11830,45 @@ storage: {
                     container.innerHTML = html;
                 },
 
-                atasFiltroOp: '', atasFiltroTema: '', atasFiltroAutor: '',
+                atasFiltroMes: '', atasFiltroOp: '', atasFiltroTema: '', atasFiltroAutor: '',
                 
                 renderView_GestaoAtas(container) {
                     if(!app.hasAdminAccess('gestao_atas')) return;
-                    let atas = Object.values(app.atasList).filter(a => a.data && a.data.substring(0, 7) === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
+                    
+                    const mesFiltro = this.atasFiltroMes !== undefined && this.atasFiltroMes !== '' ? this.atasFiltroMes : app.currentMonth;
+                    const allAtas = Object.values(app.atasList || {}).filter(Boolean);
+                    
+                    let atas = mesFiltro === 'todos' 
+                        ? [...allAtas].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0))
+                        : allAtas.filter(a => app.ata.getAtaMonth(a) === mesFiltro).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
                     
                     if(this.atasFiltroOp) atas = atas.filter(a => a.op === this.atasFiltroOp);
                     if(this.atasFiltroTema) atas = atas.filter(a => a.tema === this.atasFiltroTema);
                     if(this.atasFiltroAutor) atas = atas.filter(a => (a.autor||'').toLowerCase().includes(this.atasFiltroAutor.toLowerCase()));
 
                     const pendentes = atas.filter(a => a.status === 'concluido' || !a.status).length;
-                    const aprovadas = atas.filter(a => a.status === 'aprovado' || a.status === 'aprovado_sem_bonus').length;
+                    const aprovadas = atas.filter(a => a.status === 'aprovado' || a.status === 'aprovada' || a.status === 'aprovado_sem_bonus').length;
                     const reprovadas = atas.filter(a => a.status === 'devolvido' || a.status === 'reprovado').length;
 
                     // Aplica o filtro da aba selecionada
                     if (this.atasAbaAtiva === 'pendentes') {
                         atas = atas.filter(a => a.status === 'concluido' || !a.status);
                     } else if (this.atasAbaAtiva === 'aprovados') {
-                        atas = atas.filter(a => a.status === 'aprovado' || a.status === 'aprovado_sem_bonus');
+                        atas = atas.filter(a => a.status === 'aprovado' || a.status === 'aprovada' || a.status === 'aprovado_sem_bonus');
                     } else if (this.atasAbaAtiva === 'reprovados') {
                         atas = atas.filter(a => a.status === 'devolvido' || a.status === 'reprovado');
                     }
                     
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.atasFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
+                    const mesesPresentes = [...new Set(allAtas.map(a => app.ata.getAtaMonth(a)).filter(Boolean))].sort().reverse();
+                    const atasOutrosMeses = (mesFiltro !== 'todos') ? allAtas.filter(a => app.ata.getAtaMonth(a) !== mesFiltro) : [];
+                    let mesesOpts = `<option value="${app.currentMonth}" ${(mesFiltro === app.currentMonth) ? 'selected' : ''}>Mês do Cabeçalho (${app.ui.formatMonthLabel(app.currentMonth)})</option>`;
+                    ['2026-10', '2026-11', ...mesesPresentes].filter((v, i, a) => a.indexOf(v) === i && v !== app.currentMonth).sort().reverse().forEach(m => {
+                        mesesOpts += `<option value="${m}" ${mesFiltro === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`;
+                    });
+                    mesesOpts += `<option value="todos" ${mesFiltro === 'todos' ? 'selected' : ''}>Todas as Atas (Sem Filtro de Mês)</option>`;
+
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
@@ -11707,6 +11880,16 @@ storage: {
                             </button>
                         </div>
                         
+                        ${(atasOutrosMeses.length > 0 && mesFiltro === app.currentMonth) ? `
+                            <div class="mb-6 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <span class="font-bold text-amber-800 dark:text-amber-300"><i class="fa-solid fa-bell mr-1.5"></i> Existem <strong>${atasOutrosMeses.length}</strong> ata(s) em outro(s) mês(es) (${[...new Set(atasOutrosMeses.map(a => app.ui.formatMonthLabel(app.ata.getAtaMonth(a))))].join(', ')}).</span>
+                                <div class="flex gap-2">
+                                    <button onclick="app.ui.atasFiltroMes='2026-10'; app.ui.renderTab('gestao_atas', true)" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-black transition-colors"><i class="fa-solid fa-calendar mr-1"></i> Ir para Outubro/2026</button>
+                                    <button onclick="app.ui.atasFiltroMes='todos'; app.ui.renderTab('gestao_atas', true)" class="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold transition-colors"><i class="fa-solid fa-layer-group mr-1"></i> Ver Todas</button>
+                                </div>
+                            </div>
+                        ` : ''}
+
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                             <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
                                 <div class="text-3xl text-orange-500"><i class="fa-solid fa-clock-rotate-left"></i></div>
@@ -11730,11 +11913,19 @@ storage: {
 
                         <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
                             <div class="text-xs font-bold text-slate-500 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros de Pesquisa</div>
-                            <input type="text" placeholder="Nome do Autor" value="${this.atasFiltroAutor}" onchange="app.ui.atasFiltroAutor=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
-                            <select onchange="app.ui.atasFiltroOp=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
+                            
+                            <!-- Seletor de Mês das Atas -->
+                            <select onchange="app.ui.atasFiltroMes=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white font-bold w-full md:w-56 shadow-sm">
+                                ${mesesOpts}
+                            </select>
+
+                            <input type="text" placeholder="Nome do Autor" value="${this.atasFiltroAutor}" onchange="app.ui.atasFiltroAutor=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-44">
+                            
+                            <select onchange="app.ui.atasFiltroOp=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-44">
                                 <option value="">Todas Operações</option>${operacoes}
                             </select>
-                            <select onchange="app.ui.atasFiltroTema=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-48">
+                            
+                            <select onchange="app.ui.atasFiltroTema=this.value; app.ui.renderTab('gestao_atas', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-full md:w-44">
                                 <option value="">Todos Temas</option><option value="Quality Day" ${this.atasFiltroTema==='Quality Day'?'selected':''}>Quality Day</option><option value="Aplicação de Ação" ${this.atasFiltroTema==='Aplicação de Ação'?'selected':''}>Aplicação Ação</option><option value="Reunião" ${this.atasFiltroTema==='Reunião'?'selected':''}>Reunião</option><option value="Calibração" ${this.atasFiltroTema==='Calibração'?'selected':''}>Calibração</option>
                             </select>
                         </div>
@@ -11743,11 +11934,20 @@ storage: {
                     `;
 
                     if(atas.length === 0) {
-                        html += `<div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Sem atas encontradas nesta aba.</div>`;
+                        html += `
+                            <div class="col-span-1 lg:col-span-2 p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2 flex flex-col items-center justify-center gap-3">
+                                <div class="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-2xl text-slate-400"><i class="fa-solid fa-folder-open"></i></div>
+                                <p class="text-sm font-bold text-slate-600 dark:text-slate-300">Sem atas encontradas nesta aba para o filtro ${mesFiltro === 'todos' ? 'Geral' : app.ui.formatMonthLabel(mesFiltro)}.</p>
+                                <div class="flex flex-wrap gap-2 pt-2">
+                                    <button type="button" onclick="app.ui.atasFiltroMes='2026-10'; app.ui.renderTab('gestao_atas', true)" class="px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-xl text-xs font-bold hover:bg-blue-100 transition"><i class="fa-solid fa-calendar mr-1"></i> Ver Outubro/2026</button>
+                                    <button type="button" onclick="app.ui.atasFiltroMes='todos'; app.ui.renderTab('gestao_atas', true)" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 transition"><i class="fa-solid fa-layer-group mr-1"></i> Ver Todas as Atas</button>
+                                </div>
+                            </div>
+                        `;
                     } else {
                         atas.forEach(ata => {
                             const isDevolvido = ata.status === 'devolvido' || ata.status === 'reprovado';
-                            const isAprovadoBonus = ata.status === 'aprovado';
+                            const isAprovadoBonus = ata.status === 'aprovado' || ata.status === 'aprovada';
                             const isAprovadoSemBonus = ata.status === 'aprovado_sem_bonus';
                             
                             let badgeStatus = '';
@@ -11771,7 +11971,7 @@ storage: {
                                             <div class="text-[11px] text-amber-900 dark:text-amber-100 line-clamp-2 mb-3 leading-tight" title="${a.texto}">${a.texto || '-'}</div>
                                             <div class="flex justify-between text-[9px] text-amber-700 dark:text-amber-400 font-bold border-t border-amber-200 dark:border-amber-700/50 pt-2">
                                                 <span class="truncate pr-2"><i class="fa-solid fa-user"></i> ${a.resp || '-'}</span>
-                                                <span class="shrink-0"><i class="fa-regular fa-calendar"></i> ${a.prev ? a.prev.split('-').reverse().join('/') : '-'}</span>
+                                                <span class="shrink-0"><i class="fa-regular fa-calendar"></i> ${app.ata.formatAtaData(a.prev)}</span>
                                             </div>
                                         </div>
                                     `;
@@ -11781,12 +11981,14 @@ storage: {
                                 acoesCardsHtml = `<div class="mt-2 text-slate-600 dark:text-slate-400">${(ata.acoes || '-').replace(/\n/g, '<br/>')}</div>`;
                             }
 
+                            const mesAtaLabel = app.ui.formatMonthLabel(app.ata.getAtaMonth(ata));
+
                             html += `
                                 <div class="glass-card rounded-2xl p-6 border-t-4 ${isDevolvido ? 'border-t-red-500' : (isAprovadoBonus || isAprovadoSemBonus ? 'border-t-emerald-500' : 'border-t-blue-500')} shadow-sm flex flex-col relative group">
                                     <button type="button" onclick="app.ata.excluirAta('${ata.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors z-10"><i class="fa-solid fa-trash"></i></button>
                                     
                                     <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 flex flex-wrap items-center gap-2">
-                                        <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora} - ${ata.horaFim || '--:--'}) ${badgeStatus}
+                                        <i class="fa-regular fa-calendar"></i> ${app.ata.formatAtaData(ata.data)} (${ata.hora || '--:--'} - ${ata.horaFim || '--:--'}) <span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-bold">${mesAtaLabel}</span> ${badgeStatus}
                                     </div>
                                     <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-4 pr-6">${ata.tema}</h3>
                                     
@@ -11835,34 +12037,86 @@ storage: {
 
                 renderView_MinhasAtas(container) {
                     if(app.isAdmin) return;
-                    const atas = Object.values(app.atasList).filter(a => a.matricula === app.currentUser.matricula && a.data && a.data.substring(0, 7) === app.currentMonth).sort((a,b) => b.timestamp - a.timestamp);
+                    const curMat = String(app.currentUser?.matricula || '').trim();
+                    const curNome = String(app.currentUser?.nome || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+                    const mesFiltro = this.minhasAtasFiltroMes || app.currentMonth;
+                    const allAtas = Object.values(app.atasList || {}).filter(a => {
+                        if (!a) return false;
+                        const aMat = String(a.matricula || '').trim();
+                        if (curMat && aMat === curMat) return true;
+                        
+                        const aQual = String(a.qualidade || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                        const aQual2 = String(a.qualidade2 || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                        if (curNome && (aQual.includes(curNome) || curNome.includes(aQual) || aQual2.includes(curNome) || curNome.includes(aQual2))) return true;
+                        
+                        if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
+                            const matchedUsers = app.ata.findQualidadeUsersForAta(a);
+                            if (matchedUsers.some(u => String(u.matricula).trim() === curMat)) return true;
+                        }
+                        return false;
+                    });
+
+                    const atas = mesFiltro === 'todos' 
+                        ? [...allAtas].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0))
+                        : allAtas.filter(a => app.ata.getAtaMonth(a) === mesFiltro).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
                     
+                    const mesesPresentes = [...new Set(allAtas.map(a => app.ata.getAtaMonth(a)).filter(Boolean))].sort().reverse();
+                    const atasOutrosMeses = (mesFiltro !== 'todos') ? allAtas.filter(a => app.ata.getAtaMonth(a) !== mesFiltro) : [];
+                    let mesesOpts = `<option value="${app.currentMonth}" ${(mesFiltro === app.currentMonth) ? 'selected' : ''}>Mês Atual (${app.ui.formatMonthLabel(app.currentMonth)})</option>`;
+                    ['2026-10', '2026-11', ...mesesPresentes].filter((v, i, a) => a.indexOf(v) === i && v !== app.currentMonth).sort().reverse().forEach(m => {
+                        mesesOpts += `<option value="${m}" ${mesFiltro === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`;
+                    });
+                    mesesOpts += `<option value="todos" ${mesFiltro === 'todos' ? 'selected' : ''}>Todas as Minhas Atas</option>`;
+
                     let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Atas Abertas / Histórico</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acervo detalhado de reuniões e calibrações geradas por você.</p>
+                        <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Atas Abertas / Histórico</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acervo detalhado de reuniões e calibrações vinculadas a você.</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <select onchange="app.ui.minhasAtasFiltroMes=this.value; app.ui.renderTab('minhas_atas', true)" class="p-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white font-bold shadow-sm">
+                                    ${mesesOpts}
+                                </select>
+                            </div>
                         </div>
+
+                        ${(atasOutrosMeses.length > 0 && mesFiltro === app.currentMonth) ? `
+                            <div class="mb-6 p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <span class="font-bold text-blue-800 dark:text-blue-300"><i class="fa-solid fa-bell mr-1.5"></i> Você tem <strong>${atasOutrosMeses.length}</strong> ata(s) em outro(s) mês(es) (${[...new Set(atasOutrosMeses.map(a => app.ui.formatMonthLabel(app.ata.getAtaMonth(a))))].join(', ')}).</span>
+                                <div class="flex gap-2">
+                                    <button onclick="app.ui.minhasAtasFiltroMes='2026-10'; app.ui.renderTab('minhas_atas', true)" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors"><i class="fa-solid fa-calendar mr-1"></i> Ir para Outubro/2026</button>
+                                    <button onclick="app.ui.minhasAtasFiltroMes='todos'; app.ui.renderTab('minhas_atas', true)" class="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold transition-colors"><i class="fa-solid fa-layer-group mr-1"></i> Ver Todas</button>
+                                </div>
+                            </div>
+                        ` : ''}
+
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     `;
 
                     if(atas.length === 0) {
                         html += `
                             <div class="col-span-1 lg:col-span-2 p-12 text-center glass-card rounded-3xl border-dashed border-2 border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center min-h-[350px]">
-                                <div class="w-24 h-24 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-6 shadow-inner relative">
+                                <div class="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4 shadow-inner relative">
                                     <div class="absolute inset-0 rounded-full border-4 border-blue-100 dark:border-blue-800 animate-ping opacity-20"></div>
-                                    <i class="fa-solid fa-folder-open text-4xl text-blue-400 dark:text-blue-500 animate-bounce"></i>
+                                    <i class="fa-solid fa-folder-open text-3xl text-blue-500"></i>
                                 </div>
-                                <h3 class="text-xl font-extrabold text-slate-700 dark:text-slate-200 mb-2">Sua mesa está limpa!</h3>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mb-6 leading-relaxed">Você ainda não possui nenhum registro. Que tal começar documentando sua próxima reunião ou calibração?</p>
-                                <button onclick="app.ui.renderTab('ata_reuniao', true)" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-transform hover:-translate-y-1 flex items-center gap-2">
-                                    <i class="fa-solid fa-plus"></i> Criar Minha Primeira Ata
-                                </button>
+                                <h3 class="text-xl font-extrabold text-slate-700 dark:text-slate-200 mb-1">Nenhuma ata encontrada neste período</h3>
+                                <p class="text-slate-500 dark:text-slate-400 text-xs max-w-md mb-6 leading-relaxed">Não há atas vinculadas a você para ${mesFiltro === 'todos' ? 'o histórico geral' : app.ui.formatMonthLabel(mesFiltro)}.</p>
+                                <div class="flex flex-wrap gap-2 justify-center">
+                                    <button type="button" onclick="app.ui.minhasAtasFiltroMes='2026-10'; app.ui.renderTab('minhas_atas', true)" class="px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-xl text-xs font-bold hover:bg-blue-100 transition"><i class="fa-solid fa-calendar mr-1"></i> Ver Outubro/2026</button>
+                                    <button type="button" onclick="app.ui.minhasAtasFiltroMes='todos'; app.ui.renderTab('minhas_atas', true)" class="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 transition"><i class="fa-solid fa-layer-group mr-1"></i> Ver Todas as Minhas Atas</button>
+                                    <button onclick="app.ui.renderTab('ata_reuniao', true)" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition text-xs flex items-center gap-1.5">
+                                        <i class="fa-solid fa-plus"></i> Nova Ata
+                                    </button>
+                                </div>
                             </div>
                         `;
                     } else {
                         atas.forEach(ata => {
                             const isDevolvido = ata.status === 'devolvido';
-                            const isAprovado = ata.status === 'aprovado';
+                            const isAprovado = ata.status === 'aprovado' || ata.status === 'aprovada';
                             
                             let badgeStatus = '';
                             if (isDevolvido) badgeStatus = `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-bold">Devolvida (Correção)</span>`;
@@ -11882,7 +12136,7 @@ storage: {
                                             <div class="text-[11px] text-amber-900 dark:text-amber-100 line-clamp-2 mb-3 leading-tight" title="${a.texto}">${a.texto || '-'}</div>
                                             <div class="flex justify-between text-[9px] text-amber-700 dark:text-amber-400 font-bold border-t border-amber-200 dark:border-amber-700/50 pt-2">
                                                 <span class="truncate pr-2"><i class="fa-solid fa-user"></i> ${a.resp || '-'}</span>
-                                                <span class="shrink-0"><i class="fa-regular fa-calendar"></i> ${a.prev ? a.prev.split('-').reverse().join('/') : '-'}</span>
+                                                <span class="shrink-0"><i class="fa-regular fa-calendar"></i> ${app.ata.formatAtaData(a.prev)}</span>
                                             </div>
                                         </div>
                                     `;
@@ -11895,7 +12149,7 @@ storage: {
                             html += `
                                 <div class="glass-card rounded-2xl p-6 shadow-sm border-t-4 ${isDevolvido ? 'border-t-red-500' : 'border-t-green-500'} flex flex-col h-full relative group">
                                     <div class="text-[10px] font-black uppercase tracking-widest mb-2 flex flex-wrap items-center gap-2">
-                                        <i class="fa-regular fa-calendar"></i> ${ata.data.split('-').reverse().join('/')} (${ata.hora}) ${badgeStatus}
+                                        <i class="fa-regular fa-calendar"></i> ${app.ata.formatAtaData(ata.data)} (${ata.hora || '--:--'}) <span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-bold">${app.ui.formatMonthLabel(app.ata.getAtaMonth(ata))}</span> ${badgeStatus}
                                     </div>
                                     <h3 class="font-extrabold text-xl text-slate-800 dark:text-white leading-tight mb-2">${ata.tema}</h3>
                                     <div class="text-xs font-bold text-slate-500 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">Operação: ${ata.op}</div>
@@ -23360,72 +23614,157 @@ storage: {
                 },
 
                 execReprocessarPontuacoes() {
+                    if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
+                        app.storage.ensureAtasLoaded(() => this.execReprocessarPontuacoes());
+                        return;
+                    }
                     if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
                         app.storage.ensureActionsLoaded(() => this.execReprocessarPontuacoes());
                         return;
                     }
+
+                    // Se app.atasList estiver vazio na memória, tenta recuperar de backup local
+                    if (!app.atasList || Object.keys(app.atasList).length === 0) {
+                        try {
+                            const local = localStorage.getItem('soft_atas_backup');
+                            if (local) {
+                                const parsed = JSON.parse(local);
+                                if (parsed && typeof parsed === 'object') {
+                                    if (Array.isArray(parsed)) {
+                                        app.atasList = {};
+                                        parsed.forEach(a => { if (a && a.id) app.atasList[a.id] = a; });
+                                    } else {
+                                        app.atasList = parsed;
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn("Recuperação local de atas:", e);
+                        }
+                    }
+
+                    // Se app.actionsList estiver vazio na memória, tenta recuperar de backup local
+                    if (!app.actionsList || Object.keys(app.actionsList).length === 0) {
+                        try {
+                            const local = localStorage.getItem('soft_actions_backup');
+                            if (local) {
+                                const parsed = JSON.parse(local);
+                                if (parsed && typeof parsed === 'object') {
+                                    if (Array.isArray(parsed)) {
+                                        app.actionsList = {};
+                                        parsed.forEach(a => { if (a && a.id) app.actionsList[a.id] = a; });
+                                    } else {
+                                        app.actionsList = parsed;
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn("Recuperação local de ações:", e);
+                        }
+                    }
+
                     // 1. Identifica os IDs das metas no banco
-                    const gCalib = app.config.goals.find(g => g.type === 'calibracao');
-                    const gAcoes = app.config.goals.find(g => g.type === 'actions');
+                    const gCalib = app.config && app.config.goals ? app.config.goals.find(g => g.type === 'calibracao') : null;
+                    const gAcoes = app.config && app.config.goals ? app.config.goals.find(g => g.type === 'actions') : null;
                     const g3Id = gCalib ? gCalib.id : 'g3';
                     const g4Id = gAcoes ? gAcoes.id : 'g4';
 
                     // 2. Zera todas as Atas e Ações na memória dos usuários para evitar sobra de duplicados
                     app.users.forEach(u => {
-                        if(u.results) {
+                        if (u.results) {
                             Object.keys(u.results).forEach(mes => {
-                                if(u.results[mes][g3Id]) u.results[mes][g3Id].val = 0;
-                                if(u.results[mes][g4Id]) u.results[mes][g4Id].val = 0;
+                                if (u.results[mes]) {
+                                    if (u.results[mes][g3Id]) u.results[mes][g3Id].val = '0';
+                                    if (u.results[mes][g4Id]) u.results[mes][g4Id].val = '0';
+                                }
                             });
                         }
                     });
 
-                    // 3. Reconstrói Calibrações (Atas Aprovadas)
-                    Object.values(app.atasList).forEach(ata => {
-                        if(ata.status === 'aprovado') {
-                            const mesRef = ata.data ? ata.data.substring(0, 7) : app.currentMonth;
-                            let nomesAlvo = [];
-                            if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
-                            if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
-                            
-                            let usersEncontrados = app.users.filter(u => app.isUserQualidade(u) && (nomesAlvo.includes(u.nome.toUpperCase().trim()) || u.matricula === ata.matricula));
+                    // 3. Reconstrói Calibrações (Atas Aprovadas) com inteligência de mês e colaboradores
+                    let countAtasAprovadas = 0;
+                    let countPontosCalib = 0;
+                    let atasMeses = {};
 
-                            usersEncontrados.forEach(userEncontrado => {
-                                if(!userEncontrado.results) userEncontrado.results = {};
-                                if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
-                                if(!userEncontrado.results[mesRef][g3Id]) userEncontrado.results[mesRef][g3Id] = { val: 0 };
-                                
-                                let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
-                                userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
-                            });
-                        }
-                    });
+                    Object.values(app.atasList || {}).forEach(ata => {
+                        if (!ata) return;
+                        const st = String(ata.status || '').toLowerCase().trim();
+                        const isAprovada = (st === 'aprovado' || st === 'aprovada' || st === 'aprovados' || ata.validadoCalibragem === true) && !st.includes('sem_bonus');
 
-                    // 4. Reconstrói Ações Presenciais Aprovadas
-                    Object.values(app.actionsList).forEach(act => {
-                        if(act.status === 'aprovado') {
-                            const mesRef = act.month || app.currentMonth;
-                            const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
-                            if(userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
-                                const u = app.users[userIdx];
-                                if(!u.results) u.results = {};
-                                if(!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
-                                if(!u.results[mesRef][g4Id]) u.results[mesRef][g4Id] = { val: 0 };
-                                
-                                let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
-                                u.results[mesRef][g4Id].val = (atual + 1).toString();
+                        if (isAprovada) {
+                            const mesRef = (app.ata && typeof app.ata.getAtaMonth === 'function' ? app.ata.getAtaMonth(ata) : null) || (ata.data ? ata.data.substring(0, 7) : app.currentMonth);
+
+                            let usersEncontrados = [];
+                            if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
+                                usersEncontrados = app.ata.findQualidadeUsersForAta(ata);
+                            } else {
+                                let nomesAlvo = [];
+                                if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
+                                if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
+                                usersEncontrados = app.users.filter(u => app.isUserQualidade(u) && (nomesAlvo.includes(u.nome.toUpperCase().trim()) || String(u.matricula).trim() === String(ata.matricula || '').trim()));
+                            }
+
+                            if (usersEncontrados.length > 0) {
+                                countAtasAprovadas++;
+                                atasMeses[mesRef] = (atasMeses[mesRef] || 0) + 1;
+                                usersEncontrados.forEach(userEncontrado => {
+                                    if (!userEncontrado.results) userEncontrado.results = {};
+                                    if (!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                                    if (!userEncontrado.results[mesRef][g3Id]) userEncontrado.results[mesRef][g3Id] = { val: '0' };
+
+                                    let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
+                                    userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
+                                    countPontosCalib++;
+                                });
                             }
                         }
                     });
 
-                    // 5. Salva base limpa e avisa o admin
-                    firebase.database().ref('sistema_bonificacao/users').set(app.users).then(() => {
-                        if(app.currentUser) {
-                            const atualizado = app.users.find(u => u.matricula === app.currentUser.matricula);
-                            if(atualizado) app.currentUser = atualizado;
+                    // 4. Reconstrói Ações Presenciais Aprovadas
+                    let countAcoesAprovadas = 0;
+                    let countPontosAcoes = 0;
+                    Object.values(app.actionsList || {}).forEach(act => {
+                        if (!act) return;
+                        const stAct = String(act.status || '').toLowerCase().trim();
+                        if (stAct === 'aprovado' || stAct === 'aprovada') {
+                            const mesRef = act.month || (act.data ? act.data.substring(0, 7) : app.currentMonth);
+                            const userIdx = app.users.findIndex(x => String(x.matricula).trim() === String(act.matricula || '').trim());
+                            if (userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
+                                const u = app.users[userIdx];
+                                if (!u.results) u.results = {};
+                                if (!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
+                                if (!u.results[mesRef][g4Id]) u.results[mesRef][g4Id] = { val: '0' };
+
+                                let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
+                                u.results[mesRef][g4Id].val = (atual + 1).toString();
+                                countAcoesAprovadas++;
+                                countPontosAcoes++;
+                            }
                         }
-                        app.ui.showAlert("Reprocessamento Concluído", "Os indicadores foram reconstruídos com sucesso baseados unicamente no que está 100% aprovado. As duplicidades sumiram.", "success");
+                    });
+
+                    // 5. Salva backups locais e sincroniza com Firebase
+                    try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
+                    try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+
+                    firebase.database().ref('sistema_bonificacao/users').set(app.users).then(() => {
+                        if (app.currentUser) {
+                            const atualizado = app.users.find(u => u.matricula === app.currentUser.matricula);
+                            if (atualizado) app.currentUser = atualizado;
+                        }
+                        const mesesStr = Object.keys(atasMeses).map(m => `${m}: ${atasMeses[m]} ata(s)`).join(', ') || 'Nenhum mês com atas';
+                        app.ui.showAlert(
+                            "Reprocessamento Concluído",
+                            `Os indicadores foram auditados e reconstruídos com sucesso!<br/><br/>` +
+                            `<i class="fa-solid fa-file-signature text-blue-500 mr-1"></i> <b>${countAtasAprovadas}</b> ata(s) aprovada(s) (${countPontosCalib} bônus creditados)<br/>` +
+                            `<i class="fa-solid fa-calendar-check text-purple-500 mr-1"></i> Distribuição por mês: <b>${mesesStr}</b><br/>` +
+                            `<i class="fa-solid fa-user-check text-emerald-500 mr-1"></i> <b>${countAcoesAprovadas}</b> ação(ões) presencial(is) validada(s) (${countPontosAcoes} bônus creditados).`,
+                            "success"
+                        );
                         app.ui.renderTab(app.currentTab, true);
+                    }).catch(err => {
+                        console.error("Erro ao salvar usuários reprocessados:", err);
+                        app.ui.showAlert("Erro", "Falha ao salvar no banco de dados: " + (err.message || err), "error");
                     });
                 },
 
