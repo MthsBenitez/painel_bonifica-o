@@ -1099,7 +1099,8 @@ storage: {
                     });
                 },
                 ensureAtasLoaded(callback) {
-                    if (app.atasList && Object.keys(app.atasList).length > 0) {
+                    if (app._atasLoadedFromCloud || (app.atasList && Object.keys(app.atasList).length > 0)) {
+                        app._atasLoadedFromCloud = true;
                         if (typeof callback === 'function') callback();
                         return Promise.resolve(app.atasList);
                     }
@@ -1109,6 +1110,7 @@ storage: {
                             const parsed = JSON.parse(localAtas);
                             if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
                                 app.atasList = { ...parsed, ...(app.atasList || {}) };
+                                app._atasLoadedFromCloud = true;
                             }
                         }
                     } catch(e) {}
@@ -1125,14 +1127,17 @@ storage: {
                                 try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch(e) {}
                                 if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
                             }
+                            app._atasLoadedFromCloud = true;
                             if (typeof callback === 'function') callback();
                             return app.atasList;
                         }).catch(err => {
                             console.warn("Falha ao carregar atas sob demanda:", err);
+                            app._atasLoadedFromCloud = true;
                             if (typeof callback === 'function') callback();
                             return app.atasList || {};
                         });
                     }
+                    app._atasLoadedFromCloud = true;
                     if (typeof callback === 'function') callback();
                     return Promise.resolve(app.atasList || {});
                 },
@@ -1217,7 +1222,18 @@ storage: {
                     return firebase.database().ref('sistema_bonificacao/atas').set(sanitizedObj);
                 },
                 saveLaudos() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
-                saveApresentacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {}); },
+                saveApresentacoes(singleId = null) {
+                    this.invalidateCoreCache();
+                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
+                    if (singleId) {
+                        const item = (app.apresentacoesList || {})[singleId];
+                        if (!item) {
+                            return firebase.database().ref('sistema_bonificacao/apresentacoes/' + singleId).remove();
+                        }
+                        return firebase.database().ref('sistema_bonificacao/apresentacoes/' + singleId).set(item);
+                    }
+                    return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {});
+                },
                 saveEstoque() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
                 saveEstoqueLogs() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
                 saveImpressoes(singleId = null) {
@@ -1296,11 +1312,34 @@ storage: {
                     : (Array.isArray(this.currentUser.abasLiberadas) ? this.currentUser.abasLiberadas : []);
                 if (tabId === 'config') tabId = 'configuracoes';
                 if (tabId && userAbas.includes(tabId)) return true;
+                if (tabId === 'implantacao_ia') {
+                    if (tipo === 'Dev' || tipo === 'Gerente' || tipo === 'Gestor') return true;
+                    const uMat = String(this.currentUser.matricula || '').trim();
+                    const uNomeNorm = String(this.currentUser.nome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const deploys = this.harmonyDeployList || {};
+                    const isResp = Object.values(deploys).some(p => {
+                        if (!p) return false;
+                        const mMat = String(p.monitorMatricula || '').trim();
+                        const tMat = String(p.treinadorMatricula || '').trim();
+                        const mNome = String(p.monitorNome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        const tNome = String(p.treinadorNome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        if (uMat && (mMat === uMat || tMat === uMat)) return true;
+                        if (uNomeNorm && (mNome === uNomeNorm || tNome === uNomeNorm)) return true;
+                        if (Array.isArray(p.etapas)) {
+                            return p.etapas.some(e => {
+                                const rNome = String(e.responsavelNome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                                return (uNomeNorm && rNome === uNomeNorm);
+                            });
+                        }
+                        return false;
+                    });
+                    if (isResp) return true;
+                }
                 if (tabId === 'teste_duolingo') {
                     return tipo === 'Dev';
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
-                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
+                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
                 if (tabId) return userAbas.includes(tabId);
                 return isPerfilGestao;
@@ -3011,97 +3050,7 @@ storage: {
                   const workbook = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(workbook, worksheet, "Gestao_Atas");
                   XLSX.writeFile(workbook, `Gestao_Atas_${new Date().toISOString().split('T')[0]}.xlsx`);
-              },
-
-              async gerarComIA() {
-              const campoFortes = document.getElementById('ata-fortes');
-              const btn = document.getElementById('btn-ia-gerar');
-              
-              /* CORREÇÃO: Declarando de onde vem o texto da IA */
-              const inputEl = document.getElementById('ata-ia-input');
-              const textoBruto = inputEl ? inputEl.value.trim() : '';
-
-              if (!textoBruto) {
-                  return app.ui.showAlert("Aviso", "Cole o texto descritivo da reunião no campo da IA antes de gerar.", "error");
               }
-
-              btn.disabled = true;
-              btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando com IA...';
-
-              // Valida e remove espaços em branco da chave API
-              const apiKey = (app.config.geminiApiKey || '').trim();
-
-              // Escudo Protetor Básico
-              if (!apiKey || apiKey === '') {
-                  btn.disabled = false;
-                  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
-                  return app.ui.showAlert("Chave da API Ausente", "Por favor, vá até a aba 'Arquitetura de Metas' (Painel ADM), cole a sua Chave do Gemini e clique em 'Salvar Nova Estrutura'.", "error");
-              }
-
-              // CORREÇÃO: Montando o texto final que será enviado para a IA ler!
-              const promptFinal = (app.config.geminiPrompt || '') + "\n\nTexto Bruto da Reunião:\n" + textoBruto;
-
-              // Voltamos para o modelo oficial atualizado
-              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-              try {
-                  const response = await fetch(endpoint, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                          contents: [{ parts: [{ text: promptFinal }] }],
-                          // Relaxando os filtros de segurança para evitar falsos positivos em contextos de negócios
-                          safetySettings: [
-                              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                          ]
-                      })
-                  });
-
-                  const data = await response.json();
-
-                  // Se o Google recusar, extraímos a mensagem exata do erro
-                  if (!response.ok) {
-                      throw new Error(data.error ? data.error.message : `Erro HTTP: ${response.status}`);
-                  }
-
-                  // Se o Google bloqueou por segurança mesmo com os filtros relaxados
-                  if (data.promptFeedback && data.promptFeedback.blockReason) {
-                      throw new Error(`O texto foi bloqueado pelas políticas do Google. Motivo: ${data.promptFeedback.blockReason}`);
-                  }
-
-                  // Extraindo a resposta com segurança
-                  if (data.candidates && data.candidates.length > 0) {
-                      const candidate = data.candidates[0];
-
-                      if (candidate.finishReason !== 'STOP') {
-                           throw new Error(`Geração incompleta. Motivo da interrupção: ${candidate.finishReason}`);
-                      }
-
-                      if (candidate.content && candidate.content.parts && candidate.content.parts[0].text) {
-                          campoFortes.value = candidate.content.parts[0].text;
-
-                          if (typeof autosize !== 'undefined') autosize.update(campoFortes);
-                          campoFortes.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-                          app.ui.showAlert("Ata Gerada com Sucesso!", "A Inteligência Artificial processou o texto e preencheu o campo de Pontos Discutidos. Verifique os dados, preencha o cabeçalho e salve!", "success");
-                      } else {
-                          throw new Error("A API retornou sucesso, mas o texto veio vazio.");
-                      }
-                  } else {
-                      throw new Error("Formato de resposta inesperado da API.");
-                  }
-              } catch (error) {
-                  console.error("Erro API Gemini:", error);
-                  // Agora o alerta exibe o erro REAL para ajudar no diagnóstico
-                  app.ui.showAlert("Falha na Comunicação", `Não foi possível gerar a ata.<br><br><b>Motivo:</b> ${error.message}<br><br>Verifique se a Chave da API nas configurações está correta e válida.`, "error");
-              } finally {
-                  btn.disabled = false;
-                  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada';
-              }
-          }
         }, // <--- CORREÇÃO: Fechando a gaveta 'ata' e separando com vírgula!
 
         calendar: {
@@ -5034,7 +4983,7 @@ storage: {
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
-                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -5090,7 +5039,34 @@ storage: {
                     const presets = this.getPresetsGruposAcesso();
                     const tipo = user.tipoAcesso || 'Qualidade';
                     const presetTabs = presets[tipo] || presets['Qualidade'] || [];
-                    let savedTabs = (Array.isArray(user.abasLiberadas) ? [...user.abasLiberadas] : []).filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
+                    let savedTabs = (Array.isArray(user.abasLiberadas) && user.abasLiberadas.length > 0)
+                        ? [...user.abasLiberadas].filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev')
+                        : [...presetTabs];
+                    
+                    // Liberação automática da aba 'implantacao_ia' para o monitor e treinador responsáveis vinculados no plano
+                    const uMat = String(user.matricula || '').trim();
+                    const uNomeNorm = String(user.nome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const deploys = app.harmonyDeployList || {};
+                    const isRespPlano = Object.values(deploys).some(p => {
+                        if (!p) return false;
+                        const mMat = String(p.monitorMatricula || '').trim();
+                        const tMat = String(p.treinadorMatricula || '').trim();
+                        const mNome = String(p.monitorNome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        const tNome = String(p.treinadorNome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        if (uMat && (mMat === uMat || tMat === uMat)) return true;
+                        if (uNomeNorm && (mNome === uNomeNorm || tNome === uNomeNorm)) return true;
+                        if (Array.isArray(p.etapas)) {
+                            return p.etapas.some(e => {
+                                const rNome = String(e.responsavelNome || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                                return (uNomeNorm && rNome === uNomeNorm);
+                            });
+                        }
+                        return false;
+                    });
+                    if (isRespPlano && !savedTabs.includes('implantacao_ia')) {
+                        savedTabs.push('implantacao_ia');
+                    }
+
                     if (savedTabs.includes('treinamento_capacitacao') || savedTabs.includes('csat_nps')) {
                         const i1 = savedTabs.indexOf('treinamento_capacitacao'); if (i1 !== -1) savedTabs.splice(i1, 1);
                         const i2 = savedTabs.indexOf('csat_nps'); if (i2 !== -1) savedTabs.splice(i2, 1);
@@ -5100,10 +5076,19 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('gestao_equipe')) savedTabs.push('gestao_equipe');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
+
+                    // Se o usuário teve suas abas sobrescritas apenas com 'implantacao_ia', restaura os presets do perfil
+                    if (savedTabs.length <= 2 && savedTabs.includes('implantacao_ia')) {
+                        savedTabs = [...new Set([...savedTabs, ...presetTabs])];
+                    }
+                    if (!['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('meu_painel')) {
+                        savedTabs = [...new Set([...savedTabs, ...presetTabs])];
+                    }
+
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
-                        if (!hasAnyAdminSaved) return [...new Set([...savedTabs, ...presetTabs])];
+                        if (!hasAnyAdminSaved || savedTabs.length <= 2) return [...new Set([...savedTabs, ...presetTabs])];
                         if (['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
@@ -5573,9 +5558,13 @@ storage: {
                     document.getElementById('modal-title').innerHTML = title;
                     document.getElementById('modal-content').innerHTML = message;
                     const btnClass = danger ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700';
+                    app.ui._activeConfirmCallback = (typeof confirmCallbackStr === 'function') ? confirmCallbackStr : null;
+                    const clickAction = (typeof confirmCallbackStr === 'function')
+                        ? "document.getElementById('global-modal').classList.add('hidden'); if(typeof app.ui._activeConfirmCallback === 'function'){ const fn = app.ui._activeConfirmCallback; app.ui._activeConfirmCallback = null; fn(); }"
+                        : `document.getElementById('global-modal').classList.add('hidden'); ${confirmCallbackStr}`;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden'); ${confirmCallbackStr}" class="px-5 py-2 ${btnClass} text-white rounded-lg font-bold text-sm shadow-md transition-colors">Confirmar</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden'); app.ui._activeConfirmCallback = null;" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="${clickAction}" class="px-5 py-2 ${btnClass} text-white rounded-lg font-bold text-sm shadow-md transition-colors">Confirmar</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
@@ -5623,15 +5612,28 @@ storage: {
                     return { vals, vars };
                 },
 
+                buildLineChart(ctx, labels, values) {
+                    const isDark = document.documentElement.classList.contains('dark');
+                    const color = '#6366f1';
+                    const nums = values.filter(v => v > 0);
+                    return new Chart(ctx, {
+                        type: 'line',
+                        data: { labels, datasets: [{ label: 'Média', data: values, borderColor: color, backgroundColor: color + '1A', borderWidth: 4, pointBackgroundColor: isDark ? '#1e293b' : '#ffffff', pointBorderColor: color, pointRadius: 6, pointHoverRadius: 8, pointBorderWidth: 3, fill: true, tension: 0.4 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: { size: 14 }, bodyFont: { size: 14, weight: 'bold' } } }, scales: { y: { min: Math.max(0, (nums.length ? Math.min(...nums) : 0) - 10), max: 100, ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { weight: 'bold' }, callback: v => v + '%' }, grid: { color: isDark ? '#334155' : '#e2e8f0' } }, x: { ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { weight: 'bold' } }, grid: { display: false } } } }
+                    });
+                },
+
                 _corVariacao(cardId, v) {
                     if (v === 0) return '#94a3b8';
                     const up = v > 0;
+                    if (cardId === 'mediaTotal_var') return up ? '#10b981' : '#ef4444';
                     if (cardId === 'totalLinhas') return up ? '#3b82f6' : '#94a3b8';
                     const inverso = (cardId === 'desviosTotais' || cardId === 'falhasCriticas');
                     return (up !== inverso) ? '#10b981' : '#ef4444';
                 },
 
                 buildVarChart(ctx, labels, serie, cardId) {
+                    if (cardId === 'mediaTotal') return this.buildLineChart(ctx, labels, serie.vals);
                     const isDark = document.documentElement.classList.contains('dark');
                     const txt = isDark ? '#94a3b8' : '#64748b';
                     const grid = isDark ? '#334155' : '#e2e8f0';
@@ -5691,22 +5693,12 @@ storage: {
                     const pctTick = v => v + '%';
                     const tt = { padding: 10, cornerRadius: 8 };
 
-                    // 1) Evolucao da media: variacao % vs mes anterior
+                    // 1) Evolucao historica da media (linha padrao)
                     safe(() => {
-                        const vals = (data.evolutivoChartData || []).map(v => parseFloat(v) || 0);
-                        const vars = vals.map((v, i) => (i === 0 || !(vals[i - 1] > 0)) ? 0 : parseFloat((((v - vals[i - 1]) / vals[i - 1]) * 100).toFixed(2)));
-                        mk('myChartAnaliseEvol', 'chart-analise-evolutivo', {
-                            type: 'bar',
-                            data: { labels: data.evolutivoChartLabels, datasets: [{ data: vars, backgroundColor: vars.map(v => app.ui._corVariacao('mediaTotal', v)), borderRadius: 10, borderSkipped: false, maxBarThickness: 64 }] },
-                            options: {
-                                responsive: true, maintainAspectRatio: false,
-                                plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { label: x => x.dataIndex === 0 ? ' Mês base' : ' ' + (x.parsed.y > 0 ? '+' : '') + x.parsed.y + '% vs mês anterior', afterLabel: x => ' Média do mês: ' + vals[x.dataIndex].toFixed(1) + '%' } } },
-                                scales: {
-                                    y: { ticks: { color: textColor, callback: pctTick, font: { weight: 'bold' } }, grid: { color: cx => cx.tick && cx.tick.value === 0 ? (isDark ? '#94a3b8' : '#475569') : gridColor } },
-                                    x: { ticks: { color: textColor, font: { weight: 'bold' } }, grid: { display: false } }
-                                }
-                            }
-                        });
+                        const el = document.getElementById('chart-analise-evolutivo');
+                        if (!el) return;
+                        if (window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
+                        window.myChartAnaliseEvol = app.ui.buildLineChart(el, data.evolutivoChartLabels, (data.evolutivoChartData || []).map(v => parseFloat(v) || 0));
                     }, 'evolutivo');
 
                     // 2) Matriz de desempenho: distribuicao % + evolucao % por quadrante
@@ -5958,7 +5950,7 @@ storage: {
                     const labels = activeMonthsForEvol.map(m => this.formatMonthLabel(m));
                     const serieCard = app.ui.cardSerieMensal(cardId, activeMonthsForEvol, data);
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-line text-blue-500"></i> Variação % vs mês anterior: ${title}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-line text-blue-500"></i> ${cardId === 'mediaTotal' ? 'Evolução' : 'Variação % vs mês anterior'}: ${title}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="w-full h-64 relative mt-4">
                             <canvas id="card-chart-canvas"></canvas>
@@ -6069,7 +6061,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -7230,12 +7222,6 @@ storage: {
                     const today = localStorage.getItem('soft_ata_data_draft') || new Date().toISOString().split('T')[0];
                     // NOVO: Puxando a lista de operações dinamicamente
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
-                    
-                    // Check de Inteligência Artificial
-                    const isIAConnected = !!(app.config && app.config.geminiApiKey);
-                    const iaBadge = isIAConnected 
-                        ? '<span class="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded text-[9px] font-bold ml-auto flex items-center gap-1 border border-green-200 dark:border-green-800/50 shadow-sm"><i class="fa-solid fa-link"></i> IA Conectada</span>' 
-                        : '<span class="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-1 rounded text-[9px] font-bold ml-auto flex items-center gap-1 border border-red-200 dark:border-red-800/50 shadow-sm"><i class="fa-solid fa-link-slash"></i> IA Desconectada</span>';
 
                     const html = `
                         <div class="mb-8 flex justify-between items-center">
@@ -7247,23 +7233,6 @@ storage: {
                         <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-blue-600 shadow-xl">
                             <input type="hidden" id="ata-edit-id" value="">
 
-                            <!-- Bloco Assistente IA Gemini -->
-                            <div class="mb-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/10 dark:to-indigo-900/10 rounded-3xl border border-purple-200 dark:border-purple-800/30 relative overflow-hidden shadow-inner">
-                                <div class="absolute -right-4 -top-4 text-9xl text-purple-500/10 pointer-events-none"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-                                <div class="flex justify-between items-center mb-2 relative z-10">
-                                    <h4 class="font-black text-purple-700 dark:text-purple-400 text-sm uppercase tracking-wider flex items-center gap-2">
-                                        <i class="fa-solid fa-robot"></i> Assistente IA (Gemini)
-                                    </h4>
-                                    ${iaBadge}
-                                </div>
-                                <p class="text-xs text-slate-600 dark:text-slate-400 mb-4 relative z-10 leading-relaxed">
-                                    Cole a transcrição ou anotações brutas do áudio da reunião abaixo. A inteligência artificial irá estruturar a ata conforme os padrões corporativos.
-                                </p>
-                                <textarea id="ata-ia-input" rows="4" class="w-full p-4 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700/50 outline-none focus:ring-2 focus:ring-purple-500 text-sm mb-4 shadow-sm resize-y relative z-10" placeholder="Cole o texto bruto da reunião aqui..."></textarea>
-                                <button type="button" id="btn-ia-gerar" onclick="app.ata.gerarComIA()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm w-full md:w-auto relative z-10">
-                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Ata Estruturada
-                                </button>
-                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 dark:border-slate-700 pb-8">
                                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ata *</label><input type="date" id="ata-data" value="${today}" onchange="try{localStorage.setItem('soft_ata_data_draft', this.value)}catch(e){}" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"></div>
                                 <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Início *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
@@ -11054,27 +11023,6 @@ storage: {
                         </div>
                     </div>
 
-                    <!-- Integração Inteligência Artificial (Gemini) -->
-                    <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-purple-100 dark:border-slate-700">
-                        <h3 class="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-robot text-purple-500"></i> Integração Inteligência Artificial (Gemini)</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-5">Configure a API Key e o comportamento padrão da IA. Ao preencher a chave, o Assistente será ativado automaticamente para que todos os usuários possam gerar atas automatizadas.</p>
-                        <div class="grid grid-cols-1 gap-5">
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Chave da API (Google AI Studio)</label>
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <input type="password" id="cfg-gemini-key" value="${app.config.geminiApiKey || ''}" class="flex-1 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm tabular-nums" placeholder="Cole sua chave de API aqui...">
-                                    <button type="button" onclick="app.admin.testarChaveGemini()" id="btn-test-gemini" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold py-3 px-5 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm whitespace-nowrap">
-                                        <i class="fa-solid fa-plug-circle-check"></i> Testar Conexão
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Prompt de Comando (Instrução Base)</label>
-                                <textarea id="cfg-gemini-prompt" rows="8" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all shadow-sm resize-y" placeholder="Digite como a IA deve se comportar. O texto da reunião será enviado logo abaixo desta instrução.">${app.config.geminiPrompt || 'Você é um assistente especializado exclusivamente em redigir atas de reunião profissionais, claras e objetivas.\\n\\nREGRAS OBRIGATÓRIAS:\\n1. Fonte única de informação: Use APENAS os dados fornecidos no texto.\\n2. Linguagem: Use um tom profissional e direto.\\n3. Escopo estrito: Não dê conselhos, entregue apenas o modelo preenchido.\\n\\nESTRUTURA DA ATA:\\n**Data e Horário:**\\n**Participantes:**\\n**Objetivo da Reunião:**\\n\\n**Principais Pontos Discutidos:**\\n- Ponto 1\\n- Ponto 2\\n\\n**Decisões e Próximos Passos:**\\n- Ação | Responsável | Prazo'}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Autenticação e E-mails (Supabase) -->
                     <div class="mt-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 rounded-2xl border border-emerald-100 dark:border-slate-700">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -12897,45 +12845,294 @@ storage: {
                     `;
                 },
 
+                _iaViewMode: 'gantt',
+                _iaFiltroStatus: 'todos',
+                _iaBusca: '',
+
+                _parseDateToISO(dStr) {
+                    if (!dStr) return '';
+                    let s = String(dStr).trim();
+                    if (s.includes('T')) s = s.split('T')[0];
+                    if (s.includes('/')) {
+                        const p = s.split('/');
+                        if (p.length === 3) {
+                            if (p[0].length === 4) return `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+                            return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+                        }
+                    }
+                    const p = s.split('-');
+                    if (p.length === 3) {
+                        return `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+                    }
+                    return '';
+                },
+
+                _parseDateMs(dStr, fallbackMs = Date.now()) {
+                    const iso = this._parseDateToISO(dStr);
+                    if (!iso) return fallbackMs;
+                    const p = iso.split('-');
+                    const t = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)).getTime();
+                    return isNaN(t) ? fallbackMs : t;
+                },
+
+                _formatarDataBR(dataStr) {
+                    if (!dataStr) return '';
+                    const iso = this._parseDateToISO(dataStr);
+                    if (!iso) return String(dataStr);
+                    const partes = iso.split('-');
+                    if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
+                    return String(dataStr);
+                },
+
+                _formatarDiaMes(dataStr) {
+                    if (!dataStr) return '';
+                    const iso = this._parseDateToISO(dataStr);
+                    if (!iso) return String(dataStr);
+                    const partes = iso.split('-');
+                    if (partes.length === 3) return `${partes[2]}/${partes[1]}`;
+                    return String(dataStr);
+                },
+
+                _somarDias(dataStr, dias) {
+                    if (!dataStr) return '';
+                    const iso = this._parseDateToISO(dataStr);
+                    if (!iso) return String(dataStr);
+                    const partes = iso.split('-');
+                    if (partes.length !== 3) return String(dataStr);
+                    const dt = new Date(parseInt(partes[0], 10), parseInt(partes[1], 10) - 1, parseInt(partes[2], 10));
+                    dt.setDate(dt.getDate() + (parseInt(dias, 10) || 0));
+                    const y = dt.getFullYear();
+                    const m = String(dt.getMonth() + 1).padStart(2, '0');
+                    const d = String(dt.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${d}`;
+                },
+
+                _diferencaDias(dataIniStr, dataFimStr) {
+                    const ms1 = this._parseDateMs(dataIniStr, 0);
+                    const ms2 = this._parseDateMs(dataFimStr, ms1);
+                    const diff = Math.round((ms2 - ms1) / 86400000);
+                    return Math.max(1, diff + 1);
+                },
+
+                _aoMudarDataEtapaIA() {
+                    const iniEl = document.getElementById('etp-form-dataini');
+                    const fimEl = document.getElementById('etp-form-datafim');
+                    const diasEl = document.getElementById('etp-form-dias');
+                    if (iniEl && fimEl && diasEl && iniEl.value && fimEl.value) {
+                        diasEl.value = this._diferencaDias(iniEl.value, fimEl.value);
+                    }
+                },
+
+                _aoMudarDiasEtapaIA() {
+                    const iniEl = document.getElementById('etp-form-dataini');
+                    const fimEl = document.getElementById('etp-form-datafim');
+                    const diasEl = document.getElementById('etp-form-dias');
+                    if (iniEl && fimEl && diasEl && iniEl.value && diasEl.value) {
+                        const dias = parseInt(diasEl.value, 10) || 1;
+                        fimEl.value = this._somarDias(iniEl.value, dias - 1);
+                    }
+                },
+
+                getDefaultEtapasHarmony(nomeMonitor = '', nomeTreinador = '', dataBase = '') {
+                    const agora = Date.now();
+                    const hoje = dataBase || new Date().toISOString().split('T')[0];
+                    return [
+                        {
+                            id: 'etp_' + agora + '_1',
+                            nome: '1. Mapeamento & Calibração de Prompts',
+                            descricao: 'Revisão das regras operacionais e diretrizes técnicas. Criação e teste de prompts customizados do Harmony com lote piloto de chamadas gravadas.',
+                            cor: '#4f46e5',
+                            dataInicio: hoje,
+                            dataFim: this._somarDias(hoje, 4),
+                            diasEstimados: 5,
+                            qtdEstimada: '30 chamadas calibradas',
+                            responsavelTipo: 'Monitor',
+                            responsavelNome: nomeMonitor || 'Monitor de Qualidade',
+                            concluido: false,
+                            dataConclusao: '',
+                            atualizacoes: [],
+                            planosAcao: []
+                        },
+                        {
+                            id: 'etp_' + agora + '_2',
+                            nome: '2. Capacitação da Supervisão & Multiplicadores',
+                            descricao: 'Treinamento prático da liderança sobre leitura dos relatórios do Harmony, identificação de ofensores gerados por IA e fluxo de contestações.',
+                            cor: '#059669',
+                            dataInicio: this._somarDias(hoje, 3), // Sobreposição com Etapa 1
+                            dataFim: this._somarDias(hoje, 6),
+                            diasEstimados: 4,
+                            qtdEstimada: '100% supervisores treinados',
+                            responsavelTipo: 'Treinador',
+                            responsavelNome: nomeTreinador || 'Treinador da Operação',
+                            concluido: false,
+                            dataConclusao: '',
+                            atualizacoes: [],
+                            planosAcao: []
+                        },
+                        {
+                            id: 'etp_' + agora + '_3',
+                            nome: '3. Piloto Operacional Assistido',
+                            descricao: 'Auditoria simultânea entre IA e monitoria humana, confrontando notas e critérios para garantir conformidade e assertividade antes da virada.',
+                            cor: '#0891b2',
+                            dataInicio: this._somarDias(hoje, 6),
+                            dataFim: this._somarDias(hoje, 15),
+                            diasEstimados: 10,
+                            qtdEstimada: '150 chamadas auditadas',
+                            responsavelTipo: 'Monitor',
+                            responsavelNome: nomeMonitor || 'Monitor de Qualidade',
+                            concluido: false,
+                            dataConclusao: '',
+                            atualizacoes: [],
+                            planosAcao: []
+                        },
+                        {
+                            id: 'etp_' + agora + '_4',
+                            nome: '4. Alinhamento de Critérios aos Operadores',
+                            descricao: 'Workshops com os operadores da operação, apresentando o Harmony como copiloto de qualidade e esclarecendo regras avaliativas de feedback.',
+                            cor: '#d97706',
+                            dataInicio: this._somarDias(hoje, 11), // Sobreposição com Etapa 3
+                            dataFim: this._somarDias(hoje, 15),
+                            diasEstimados: 5,
+                            qtdEstimada: '100% operadores alinhados',
+                            responsavelTipo: 'Treinador',
+                            responsavelNome: nomeTreinador || 'Treinador da Operação',
+                            concluido: false,
+                            dataConclusao: '',
+                            atualizacoes: [],
+                            planosAcao: []
+                        },
+                        {
+                            id: 'etp_' + agora + '_5',
+                            nome: '5. Go-Live & Cobertura Total Harmony',
+                            descricao: 'Ativação oficial da IA Harmony em 100% da volumetria da operação, emissão dos primeiros dashboards analíticos e rotinas de feedback automatizado.',
+                            cor: '#7c3aed',
+                            dataInicio: this._somarDias(hoje, 16),
+                            dataFim: this._somarDias(hoje, 22),
+                            diasEstimados: 7,
+                            qtdEstimada: '100% volumetria ativa',
+                            responsavelTipo: 'Ambos',
+                            responsavelNome: (nomeMonitor && nomeTreinador) ? `${nomeMonitor} & ${nomeTreinador}` : 'Monitor & Treinador',
+                            concluido: false,
+                            dataConclusao: '',
+                            atualizacoes: [],
+                            planosAcao: []
+                        }
+                    ];
+                },
+
+                _getHarmonyKey(opNome) {
+                    if (!opNome) return 'PLANO_GERAL';
+                    return String(opNome).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_').replace(/_+/g, '_');
+                },
+
+                _findPlanoIA(opKey) {
+                    const deploys = app.harmonyDeployList || {};
+                    if (!opKey) return null;
+                    if (deploys[opKey]) return deploys[opKey];
+                    const cleanKey = this._getHarmonyKey(opKey);
+                    if (deploys[cleanKey]) return deploys[cleanKey];
+                    return Object.values(deploys).find(p => p && (
+                        p.id === opKey || 
+                        p.id === cleanKey || 
+                        this._getHarmonyKey(p.operacao) === cleanKey ||
+                        this._getHarmonyKey(p.operacaoRaw) === cleanKey
+                    )) || null;
+                },
 
                 renderView_ImplantacaoIA(container) {
-                    if (!app.hasAdminAccess('implantacao_ia') && !app.hasAdminAccess('hierarquia')) return;
-                    app.syncOperacoesFromSetorial();
-                    const opsSetoriais = app.getOperacoesSetoriais() || [];
                     const esc = (s) => app.utils.escapeHtml(s);
+                    const normStr = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const currentMat = String(app.currentUser?.matricula || '').trim();
+                    const currentNome = String(app.currentUser?.nome || '').trim().toLowerCase();
+                    const normCurrentNome = currentNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const isSuperOrDev = app.isSuperAdmin() || ['Dev', 'Gerente', 'Gestor'].includes(app.currentUser?.tipoAcesso);
                     const deploys = app.harmonyDeployList || {};
 
-                    const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u) || (u.tipoAcesso || '') === 'Qualidade');
-                    const treinadores = app.users.filter(u => (u.tipoAcesso || '') === 'Treinamento' || (u.cargo || '').toLowerCase().includes('treina'));
+                    // Helper universal para verificar se a conta atual tem vínculo com o plano
+                    const isUserVinculadoAoPlano = (p) => {
+                        if (!p) return false;
+                        const monMat = String(p.monitorMatricula || '').trim();
+                        const treMat = String(p.treinadorMatricula || '').trim();
+                        const monNome = normStr(p.monitorNome);
+                        const treNome = normStr(p.treinadorNome);
+
+                        if (currentMat && (monMat === currentMat || treMat === currentMat)) return true;
+                        if (normCurrentNome && (monNome === normCurrentNome || treNome === normCurrentNome)) return true;
+                        
+                        // Também verifica vínculo direto pelas etapas cadastradas
+                        if (Array.isArray(p.etapas)) {
+                            const respEtapa = p.etapas.some(e => {
+                                const rNome = normStr(e.responsavelNome);
+                                return (normCurrentNome && rNome === normCurrentNome);
+                            });
+                            if (respEtapa) return true;
+                        }
+                        return false;
+                    };
+
+                    const isResponsavelPlano = Object.values(deploys).some(p => isUserVinculadoAoPlano(p));
+
+                    if (!app.hasAdminAccess('implantacao_ia') && !app.hasAdminAccess('hierarquia') && !isResponsavelPlano) {
+                        container.innerHTML = `
+                            <div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 my-8">
+                                <i class="fa-solid fa-lock text-4xl mb-3 text-amber-500 opacity-60"></i>
+                                <h4 class="text-base font-bold text-slate-700 dark:text-slate-200">Acesso Restrito</h4>
+                                <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">Você não possui permissão para visualizar este painel. O acesso ao cronograma Gantt é liberado automaticamente para Administradores, Gestores e para as contas dos <strong>Monitores e Treinadores Responsáveis</strong> alocados nas operações.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    app.syncOperacoesFromSetorial();
+                    const opsSetoriais = app.getOperacoesSetoriais() || [];
 
                     // Consolidação dos dados de cada operação
                     const mapaDeploys = {};
                     Object.entries(deploys).forEach(([k, d]) => {
-                        if (d && d.operacao) {
-                            const key = this._getHarmonyKey(d.operacao);
+                        if (d) {
+                            const opNome = d.operacao || d.id || k;
+                            const key = this._getHarmonyKey(opNome);
                             mapaDeploys[key] = d;
+                            mapaDeploys[k] = d;
+                            if (!d.operacao) d.operacao = opNome;
                         }
                     });
 
-                    // Lista de todas as operações com seus planos (se houver)
                     const totalOpsGlobal = opsSetoriais.length;
-                    const totalHcGlobal = opsSetoriais.reduce((acc, o) => acc + (parseInt(o.headcount) || 0), 0);
+                    const totalHcGlobal = opsSetoriais.reduce((acc, o) => acc + (parseInt(o.headcount, 10) || 0), 0);
 
                     const planosAtivos = [];
                     const opsSemPlano = [];
                     const chavesProcessadas = new Set();
+                    const CORES_DEFAULT = ['#4f46e5', '#059669', '#0891b2', '#d97706', '#7c3aed', '#e11d48', '#2563eb', '#0d9488', '#ea580c', '#475569'];
 
                     opsSetoriais.forEach(op => {
+                        if (!op || !op.nome) return;
                         const opKey = this._getHarmonyKey(op.nome);
                         chavesProcessadas.add(opKey);
                         const p = mapaDeploys[opKey] || deploys[opKey];
-                        const hc = parseInt(op.headcount) || parseInt(op.hc) || 0;
+                        const hc = parseInt(op.headcount, 10) || parseInt(op.hc, 10) || 0;
                         if (p) {
-                            const etapas = Array.isArray(p.etapas) ? p.etapas : [];
+                            const etapasRaw = Array.isArray(p.etapas) ? p.etapas : [];
+                            const etapas = etapasRaw.map((e, idx) => {
+                                const cor = e.cor || CORES_DEFAULT[idx % CORES_DEFAULT.length];
+                                const dataIni = e.dataInicio || p.dataInicio || new Date().toISOString().split('T')[0];
+                                const dias = parseInt(e.diasEstimados, 10) || 5;
+                                const dataFim = e.dataFim || this._somarDias(dataIni, dias - 1);
+                                return {
+                                    ...e,
+                                    cor,
+                                    dataInicio: dataIni,
+                                    dataFim,
+                                    diasEstimados: dias,
+                                    atualizacoes: Array.isArray(e.atualizacoes) ? e.atualizacoes : [],
+                                    planosAcao: Array.isArray(e.planosAcao) ? e.planosAcao : []
+                                };
+                            });
+
                             const concluidas = etapas.filter(e => e.concluido).length;
                             const totalEtapas = etapas.length;
                             const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
-                            const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados) || 0), 0);
+                            const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados, 10) || 0), 0);
                             let statusCalculado = 'pendente';
                             if (pct === 100) statusCalculado = 'implantado';
                             else if (concluidas > 0 || pct > 0) statusCalculado = 'em_andamento';
@@ -12945,12 +13142,14 @@ storage: {
                                 operacao: app.utils.fixEncoding(op.nome),
                                 operacaoRaw: op.nome,
                                 hc,
+                                icone: p.icone || 'fa-robot',
                                 monitorNome: p.monitorNome || 'Não definido',
                                 monitorMatricula: p.monitorMatricula || '',
                                 treinadorNome: p.treinadorNome || 'Não definido',
                                 treinadorMatricula: p.treinadorMatricula || '',
                                 dataInicio: p.dataInicio || '',
                                 observacoes: p.observacoes || '',
+                                comentarios: Array.isArray(p.comentarios) ? p.comentarios : [],
                                 etapas,
                                 concluidas,
                                 totalEtapas,
@@ -12968,29 +13167,50 @@ storage: {
                         }
                     });
 
-                    // Se houver algum plano cadastrado em deploys cuja operação não conste no setorial atual
+                    // Caso haja algum plano salvo sem operação na lista atual
                     Object.entries(mapaDeploys).forEach(([k, p]) => {
-                        if (!chavesProcessadas.has(k) && p && p.operacao) {
-                            const etapas = Array.isArray(p.etapas) ? p.etapas : [];
+                        const cleanK = this._getHarmonyKey(k);
+                        if (!chavesProcessadas.has(k) && !chavesProcessadas.has(cleanK) && p && p.operacao) {
+                            chavesProcessadas.add(k);
+                            chavesProcessadas.add(cleanK);
+                            const etapasRaw = Array.isArray(p.etapas) ? p.etapas : [];
+                            const etapas = etapasRaw.map((e, idx) => {
+                                const cor = e.cor || CORES_DEFAULT[idx % CORES_DEFAULT.length];
+                                const dataIni = e.dataInicio || p.dataInicio || new Date().toISOString().split('T')[0];
+                                const dias = parseInt(e.diasEstimados, 10) || 5;
+                                const dataFim = e.dataFim || this._somarDias(dataIni, dias - 1);
+                                return {
+                                    ...e,
+                                    cor,
+                                    dataInicio: dataIni,
+                                    dataFim,
+                                    diasEstimados: dias,
+                                    atualizacoes: Array.isArray(e.atualizacoes) ? e.atualizacoes : [],
+                                    planosAcao: Array.isArray(e.planosAcao) ? e.planosAcao : []
+                                };
+                            });
+
                             const concluidas = etapas.filter(e => e.concluido).length;
                             const totalEtapas = etapas.length;
                             const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
-                            const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados) || 0), 0);
+                            const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados, 10) || 0), 0);
                             let statusCalculado = 'pendente';
                             if (pct === 100) statusCalculado = 'implantado';
                             else if (concluidas > 0 || pct > 0) statusCalculado = 'em_andamento';
 
                             planosAtivos.push({
-                                key: k,
+                                key: cleanK,
                                 operacao: app.utils.fixEncoding(p.operacao),
                                 operacaoRaw: p.operacao,
                                 hc: 0,
+                                icone: p.icone || 'fa-robot',
                                 monitorNome: p.monitorNome || 'Não definido',
                                 monitorMatricula: p.monitorMatricula || '',
                                 treinadorNome: p.treinadorNome || 'Não definido',
                                 treinadorMatricula: p.treinadorMatricula || '',
                                 dataInicio: p.dataInicio || '',
                                 observacoes: p.observacoes || '',
+                                comentarios: Array.isArray(p.comentarios) ? p.comentarios : [],
                                 etapas,
                                 concluidas,
                                 totalEtapas,
@@ -13008,22 +13228,25 @@ storage: {
                         return b.hc - a.hc;
                     });
 
-                    // Estatísticas de Cobertura HARMONY
-                    const opsImplantadas = planosAtivos.filter(p => p.status === 'implantado');
-                    const opsEmAndamento = planosAtivos.filter(p => p.status === 'em_andamento');
-                    const opsPendentes = planosAtivos.filter(p => p.status === 'pendente');
+                    // REGRA DE VISUALIZAÇÃO: Se não for SuperAdmin/Gestor/Dev/Gerente, exibe APENAS os planos da conta responsável
+                    const planosExibicao = isSuperOrDev
+                        ? planosAtivos
+                        : planosAtivos.filter(p => isUserVinculadoAoPlano(p));
 
-                    const totalOpsComPlano = planosAtivos.length;
+                    // Estatísticas de Cobertura
+                    const opsImplantadas = planosExibicao.filter(p => p.status === 'implantado');
+                    const opsEmAndamento = planosExibicao.filter(p => p.status === 'em_andamento');
+                    const opsPendentes = planosExibicao.filter(p => p.status === 'pendente');
+
+                    const totalOpsVisualizadas = planosExibicao.length;
                     const pctCoberturaOps = totalOpsGlobal > 0 ? ((opsImplantadas.length / totalOpsGlobal) * 100).toFixed(1) : '0.0';
-                    const pctAndamentoOps = totalOpsGlobal > 0 ? ((opsEmAndamento.length / totalOpsGlobal) * 100).toFixed(1) : '0.0';
 
                     const hcImplantado = opsImplantadas.reduce((acc, p) => acc + p.hc, 0);
                     const hcEmAndamento = opsEmAndamento.reduce((acc, p) => acc + p.hc, 0);
-                    const hcTotalComHarmony = hcImplantado + hcEmAndamento;
                     const pctHcImplantado = totalHcGlobal > 0 ? ((hcImplantado / totalHcGlobal) * 100).toFixed(1) : '0.0';
 
-                    const totalEtapasGeral = planosAtivos.reduce((acc, p) => acc + p.totalEtapas, 0);
-                    const totalEtapasConcluidas = planosAtivos.reduce((acc, p) => acc + p.concluidas, 0);
+                    const totalEtapasGeral = planosExibicao.reduce((acc, p) => acc + p.totalEtapas, 0);
+                    const totalEtapasConcluidas = planosExibicao.reduce((acc, p) => acc + p.concluidas, 0);
                     const pctEtapasGeral = totalEtapasGeral > 0 ? Math.round((totalEtapasConcluidas / totalEtapasGeral) * 100) : 0;
 
                     // Componente KPI
@@ -13044,98 +13267,253 @@ storage: {
                                 ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 shadow-sm"><i class="fa-solid fa-spinner animate-spin text-indigo-600"></i> Em Implantação (${p.pct}%)</span>`
                                 : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 shadow-sm"><i class="fa-regular fa-clock text-slate-400"></i> Planejado (0%)</span>`);
 
-                        // Construção das barras e marcos do Gráfico Gantt
-                        const totalDiasGantt = Math.max(1, p.diasTotais);
-                        let acumuladoDias = 0;
+                        // Cálculo do calendário do projeto para a régua do Gantt
+                        const hojeISO = new Date().toISOString().split('T')[0];
+                        const dtProjIniStr = p.dataInicio || hojeISO;
+                        let minMs = this._parseDateMs(dtProjIniStr, Date.now());
+                        let maxMs = minMs + (86400000 * 7);
 
-                        const ganttSegments = p.etapas.map((etp, idx) => {
-                            const dur = Math.max(1, parseInt(etp.diasEstimados) || 1);
-                            const wPct = ((dur / totalDiasGantt) * 100).toFixed(2);
-                            const diaInicio = acumuladoDias;
-                            acumuladoDias += dur;
-                            const diaFim = acumuladoDias;
-
-                            let corSegmento = 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200';
-                            let statusTxt = 'Pendente';
-                            let iconeSeg = 'fa-regular fa-clock';
-
-                            if (etp.concluido) {
-                                corSegmento = 'bg-emerald-500 text-white shadow-sm';
-                                statusTxt = etp.dataConclusao ? `Concluído em ${app.ui._formatarDataBR(etp.dataConclusao)}` : 'Concluído';
-                                iconeSeg = 'fa-solid fa-check';
-                            } else if (idx === 0 || (idx > 0 && p.etapas[idx - 1].concluido)) {
-                                corSegmento = 'bg-indigo-600 text-white ring-2 ring-indigo-400/80 shadow-md';
-                                statusTxt = 'Em Execução';
-                                iconeSeg = 'fa-solid fa-play';
+                        p.etapas.forEach(e => {
+                            if (e.dataInicio) {
+                                const t = this._parseDateMs(e.dataInicio, minMs);
+                                if (!isNaN(t) && t < minMs) minMs = t;
                             }
+                            if (e.dataFim) {
+                                const t = this._parseDateMs(e.dataFim, maxMs);
+                                if (!isNaN(t) && t > maxMs) maxMs = t;
+                            }
+                        });
 
-                            const tooltip = `${etp.nome}&#10;• Duração: ${dur} dias (Dia ${diaInicio} a ${diaFim})&#10;• Meta/Qtd: ${etp.qtdEstimada || 'Não informada'}&#10;• Responsável: ${etp.responsavelNome || etp.responsavelTipo}&#10;• O que é feito: ${etp.descricao}&#10;• Status: ${statusTxt}`;
+                        if (isNaN(minMs)) minMs = Date.now();
+                        if (isNaN(maxMs) || maxMs <= minMs) maxMs = minMs + (86400000 * 7);
+
+                        const totalSpanDias = Math.max(1, Math.round((maxMs - minMs) / 86400000) + 1);
+                        const minDateISO = new Date(minMs).toISOString().split('T')[0];
+                        const maxDateISO = new Date(maxMs).toISOString().split('T')[0];
+                        const dtInicioFmt = this._formatarDataBR(minDateISO);
+                        const dtFimFmt = this._formatarDataBR(maxDateISO);
+
+                        // Marcadores da régua de calendário (5 a 7 marcos reais de data DD/MM)
+                        const numTicks = Math.min(6, Math.max(3, Math.round(totalSpanDias / 6)));
+                        let ticksHtml = '';
+                        for (let i = 0; i < numTicks; i++) {
+                            const fraction = numTicks > 1 ? (i / (numTicks - 1)) : 0;
+                            const tickMs = minMs + (fraction * (maxMs - minMs));
+                            const tickIso = new Date(tickMs).toISOString().split('T')[0];
+                            const leftPct = (fraction * 100).toFixed(1);
+                            ticksHtml += `
+                                <div class="absolute -top-1 transform -translate-x-1/2 flex flex-col items-center pointer-events-none" style="left: ${leftPct}%">
+                                    <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">${this._formatarDiaMes(tickIso)}</span>
+                                    <div class="w-px h-1.5 bg-slate-300 dark:bg-slate-700 mt-0.5"></div>
+                                </div>
+                            `;
+                        }
+
+                        // Marcador do dia de "Hoje"
+                        const hojeMs = this._parseDateMs(hojeISO, Date.now());
+                        let hojeMarkerHtml = '';
+                        if (hojeMs >= minMs && hojeMs <= maxMs && (maxMs > minMs)) {
+                            const hojePct = Math.min(100, Math.max(0, ((hojeMs - minMs) / (maxMs - minMs)) * 100)).toFixed(1);
+                            hojeMarkerHtml = `
+                                <div class="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-10 pointer-events-none" style="left: ${hojePct}%">
+                                    <span class="absolute -top-3.5 -translate-x-1/2 bg-rose-500 text-white text-[8px] font-black uppercase px-1 rounded shadow-xs">Hoje</span>
+                                </div>
+                            `;
+                        }
+
+                        // Construção das faixas sobrepostas do Gráfico Gantt
+                        const ganttLanes = p.etapas.map((etp, idx) => {
+                            const eStartMs = this._parseDateMs(etp.dataInicio, minMs);
+                            const eEndMs = this._parseDateMs(etp.dataFim, eStartMs + (parseInt(etp.diasEstimados, 10) || 5) * 86400000);
+                            
+                            const offsetMs = Math.max(0, eStartMs - minMs);
+                            const spanMs = Math.max(86400000, maxMs - minMs);
+                            const leftPct = Math.min(100, Math.max(0, (offsetMs / spanMs) * 100)).toFixed(2);
+                            
+                            const durMs = Math.max(86400000, eEndMs - eStartMs + 86400000);
+                            const widthPct = Math.min(100 - parseFloat(leftPct), Math.max(3, (durMs / spanMs) * 100)).toFixed(2);
+
+                            const cor = etp.cor || '#4f46e5';
+                            const numAtts = (etp.atualizacoes || []).length;
+                            const numPlanos = (etp.planosAcao || []).length;
+
+                            const tooltip = `${esc(etp.nome)}&#10;• Calendário: ${this._formatarDataBR(etp.dataInicio)} até ${this._formatarDataBR(etp.dataFim)} (${etp.diasEstimados} dias)&#10;• Responsável: ${esc(etp.responsavelNome || etp.responsavelTipo)}&#10;• Atualizações: ${numAtts}&#10;• Planos de Ação: ${numPlanos}&#10;• Status: ${etp.concluido ? 'Concluído' : 'Pendente'}&#10;(Clique para editar esta etapa)`;
 
                             return `
-                                <div onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" title="${tooltip}" class="h-10 rounded-xl ${corSegmento} flex items-center justify-between px-2.5 cursor-pointer transition-all hover:scale-[1.01] hover:brightness-105 min-w-[70px] select-none" style="width: ${wPct}%">
-                                    <div class="flex items-center gap-1.5 truncate text-[11px] font-bold">
-                                        <i class="${iconeSeg} text-[10px]"></i>
-                                        <span class="truncate">Etp ${idx + 1}</span>
+                                <div class="flex items-center gap-2 sm:gap-3 py-1">
+                                    <div class="w-36 sm:w-48 shrink-0 truncate text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5" title="${esc(etp.nome)}">
+                                        <span class="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
+                                        <span class="truncate">${idx + 1}. ${esc(etp.nome)}</span>
                                     </div>
-                                    <span class="text-[10px] font-extrabold opacity-90 tabular-nums shrink-0 ml-1">${dur}d</span>
-                                </div>`;
-                        }).join('');
-
-                        // Construção da lista detalhada de etapas
-                        const etapasHtml = p.etapas.map((etp, idx) => {
-                            const isDone = etp.concluido;
-                            const dataFmt = etp.dataConclusao ? app.ui._formatarDataBR(etp.dataConclusao) : '';
-
-                            return `
-                                <div class="p-3.5 rounded-2xl border ${isDone ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
-                                    <div class="flex items-start gap-3 flex-1 min-w-0">
-                                        <label class="mt-0.5 relative flex items-center justify-center cursor-pointer shrink-0" title="Marcar/Desmarcar como concluído">
-                                            <input type="checkbox" ${isDone ? 'checked' : ''} onchange="app.ui.toggleEtapaConcluidaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" class="w-5 h-5 accent-emerald-600 rounded cursor-pointer">
-                                        </label>
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex flex-wrap items-center gap-2">
-                                                <span class="font-bold text-sm text-slate-800 dark:text-white">${esc(etp.nome)}</span>
-                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 tabular-nums">
-                                                    <i class="fa-regular fa-calendar-days text-slate-400"></i> ${etp.diasEstimados} dias
-                                                </span>
-                                                ${etp.qtdEstimada ? `
-                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
-                                                        <i class="fa-solid fa-bullseye text-indigo-500"></i> ${esc(etp.qtdEstimada)}
-                                                    </span>` : ''}
-                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300">
-                                                    <i class="fa-solid fa-user-check text-amber-500"></i> ${esc(etp.responsavelNome || etp.responsavelTipo || 'Responsável')}
-                                                </span>
-                                                ${isDone ? `
-                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
-                                                        <i class="fa-solid fa-circle-check text-emerald-600"></i> Concluído ${dataFmt ? 'em ' + dataFmt : ''}
-                                                    </span>` : `
-                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                                                        <i class="fa-regular fa-clock"></i> Pendente
-                                                    </span>`}
+                                    <div class="flex-1 relative h-9 bg-slate-100 dark:bg-slate-800/80 rounded-xl overflow-hidden p-0.5 border border-slate-200/60 dark:border-slate-700/60">
+                                        ${hojeMarkerHtml}
+                                        <div onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" 
+                                             data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}"
+                                             style="left: ${leftPct}%; width: ${widthPct}%; background-color: ${cor};" 
+                                             class="absolute top-0.5 bottom-0.5 rounded-lg text-white shadow-sm flex items-center justify-between px-2 cursor-pointer transition-all hover:scale-[1.01] hover:brightness-110 select-none group"
+                                             title="${tooltip}">
+                                            <div class="flex items-center gap-1.5 truncate text-[11px] font-bold">
+                                                <i class="${etp.concluido ? 'fa-solid fa-circle-check text-emerald-200' : 'fa-regular fa-clock text-white/80'} text-[10px]"></i>
+                                                <span class="truncate text-[10px] hidden sm:inline">${this._formatarDiaMes(etp.dataInicio)} - ${this._formatarDiaMes(etp.dataFim)}</span>
                                             </div>
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                                                <strong class="text-slate-600 dark:text-slate-300">O que é feito:</strong> ${esc(etp.descricao)}
-                                            </p>
+                                            <span class="text-[10px] font-black tabular-nums shrink-0 ml-1 bg-black/25 px-1.5 py-0.5 rounded">${etp.diasEstimados || 1}d</span>
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-1.5 self-end md:self-center shrink-0">
-                                        <button type="button" onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Editar Etapa">
-                                            <i class="fa-solid fa-pen-to-square"></i>
-                                        </button>
-                                        <button type="button" onclick="app.ui.excluirEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'))" data-opkey="${esc(p.key)}" data-etpid="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Etapa">
-                                            <i class="fa-solid fa-trash"></i>
-                                        </button>
+                                </div>
+                            `;
+                        }).join('');
+
+                        // Coleta de todos os Planos de Ação do Projeto
+                        const todosPlanosAcao = [];
+                        p.etapas.forEach((etp, eIdx) => {
+                            (etp.planosAcao || []).forEach(pa => {
+                                todosPlanosAcao.push({
+                                    ...pa,
+                                    etapaId: etp.id,
+                                    etapaNome: etp.nome,
+                                    etapaIdx: eIdx + 1,
+                                    etapaCor: etp.cor || '#4f46e5'
+                                });
+                            });
+                        });
+
+                        // Construção da lista detalhada de etapas (com diário de bordo e planos de ação)
+                        const etapasHtml = p.etapas.map((etp, idx) => {
+                            const isDone = etp.concluido;
+                            const dataFmt = etp.dataConclusao ? this._formatarDataBR(etp.dataConclusao) : '';
+                            const cor = etp.cor || '#4f46e5';
+                            const planosEtapa = etp.planosAcao || [];
+                            const attsEtapa = etp.atualizacoes || [];
+
+                            return `
+                                <div class="p-4 rounded-2xl border ${isDone ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} shadow-sm">
+                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+                                        <div class="flex items-start gap-3 flex-1 min-w-0">
+                                            <label class="mt-1 cursor-pointer shrink-0" title="Marcar/Desmarcar como concluído">
+                                                <input type="checkbox" ${isDone ? 'checked' : ''} onchange="app.ui.toggleEtapaConcluidaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="w-5 h-5 accent-emerald-600 rounded cursor-pointer">
+                                            </label>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <span class="w-3 h-3 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
+                                                    <span class="font-extrabold text-sm text-slate-800 dark:text-white">${esc(etp.nome)}</span>
+                                                    
+                                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 tabular-nums">
+                                                        <i class="fa-regular fa-calendar-days text-slate-400"></i> ${etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : 'A definir'} até ${etp.dataFim ? this._formatarDataBR(etp.dataFim) : 'A definir'} (${etp.diasEstimados || 1} dias)
+                                                    </span>
+
+                                                    ${etp.qtdEstimada ? `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
+                                                            <i class="fa-solid fa-bullseye text-indigo-500"></i> ${esc(etp.qtdEstimada)}
+                                                        </span>` : ''}
+
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300">
+                                                        <i class="fa-solid fa-user-check text-amber-500"></i> ${esc(etp.responsavelNome || etp.responsavelTipo || 'Responsável')}
+                                                    </span>
+
+                                                    ${isDone ? `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                                                            <i class="fa-solid fa-circle-check text-emerald-600"></i> Concluído ${dataFmt ? 'em ' + dataFmt : ''}
+                                                        </span>` : `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                            <i class="fa-regular fa-clock"></i> Pendente
+                                                        </span>`}
+                                                </div>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                                                    <strong class="text-slate-600 dark:text-slate-300">O que é feito:</strong> ${esc(etp.descricao)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 self-end md:self-center shrink-0">
+                                            <button type="button" onclick="app.ui.abrirModalNovoPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 transition flex items-center gap-1" title="Adicionar Plano de Ação a esta etapa">
+                                                <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> + Plano de Ação
+                                            </button>
+                                            <button type="button" onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Editar Etapa">
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+                                            <button type="button" onclick="app.ui.excluirEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Etapa">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Planos de Ação Desta Etapa -->
+                                    ${planosEtapa.length > 0 ? `
+                                        <div class="mb-3 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40">
+                                            <div class="text-[11px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-1.5">
+                                                <i class="fa-solid fa-list-check"></i> Planos de Ação desta Etapa (${planosEtapa.length})
+                                            </div>
+                                            <div class="space-y-1.5">
+                                                ${planosEtapa.map(pa => `
+                                                    <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 text-xs">
+                                                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                                                            <input type="checkbox" ${pa.concluido ? 'checked' : ''} onchange="app.ui.togglePlanoAcaoConcluidoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(pa.id)}" class="w-4 h-4 accent-emerald-600 rounded cursor-pointer">
+                                                            <span class="${pa.concluido ? 'line-through text-slate-400' : 'font-bold text-slate-700 dark:text-slate-200'} truncate">${esc(pa.titulo)}</span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2 shrink-0">
+                                                            <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                                                                <i class="fa-solid fa-user text-slate-400 mr-1"></i>${esc(pa.responsavel || 'Não definido')}
+                                                            </span>
+                                                            <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                                                                <i class="fa-regular fa-calendar-check text-slate-400 mr-1"></i>Prazo: ${this._formatarDataBR(pa.prazo)}
+                                                            </span>
+                                                            <button type="button" onclick="app.ui.excluirPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(pa.id)}" class="text-slate-400 hover:text-rose-500 p-1" title="Excluir Plano de Ação"><i class="fa-solid fa-times"></i></button>
+                                                        </div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
+                                    <!-- Atualizações e Diário de Bordo da Etapa -->
+                                    <div class="pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i> Atualizações e Diário da Etapa (${attsEtapa.length})
+                                            </span>
+                                        </div>
+                                        
+                                        <!-- Envio de Atualização -->
+                                        <div class="flex items-center gap-2 mb-2.5">
+                                            <input type="text" id="att-input-${esc(p.key)}-${esc(etp.id)}" placeholder="O que você realizou nesta etapa hoje? (Ex: Fiz calibração de 15 chamadas)..." 
+                                                   data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}"
+                                                   onkeydown="if(event.key==='Enter') app.ui.adicionarAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))"
+                                                   class="flex-1 p-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <button type="button" onclick="app.ui.adicionarAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 shrink-0 transition">
+                                                <i class="fa-solid fa-paper-plane"></i> Salvar
+                                            </button>
+                                        </div>
+
+                                        <!-- Histórico de Atualizações com Data, Hora e Autor -->
+                                        ${attsEtapa.length > 0 ? `
+                                            <div class="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                                ${attsEtapa.slice().reverse().map(att => `
+                                                    <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs flex items-start justify-between gap-2">
+                                                        <div class="flex-1 min-w-0">
+                                                            <div class="flex items-center gap-2 text-[10px] text-slate-400 mb-0.5">
+                                                                <span class="font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-pen mr-1 text-indigo-500"></i>${esc(att.autorNome || 'Colaborador')}</span>
+                                                                <span>·</span>
+                                                                <span class="tabular-nums"><i class="fa-regular fa-clock mr-1"></i>${esc(att.dataHora)}</span>
+                                                            </div>
+                                                            <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${esc(att.texto)}</p>
+                                                        </div>
+                                                        <button type="button" onclick="app.ui.excluirAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(att.id)}" class="text-slate-400 hover:text-rose-500 text-xs p-1" title="Excluir"><i class="fa-solid fa-times"></i></button>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        ` : `
+                                            <div class="text-[11px] text-slate-400 italic">Nenhum registro de andamento ainda. Digite no campo acima para acompanhar o progresso diário.</div>
+                                        `}
                                     </div>
                                 </div>`;
                         }).join('');
 
                         return `
                             <div class="ia-plano-card glass-card rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 mb-6 shadow-sm" data-status="${p.status}" data-search="${esc(p.operacao)} ${esc(p.monitorNome)} ${esc(p.treinadorNome)}">
-                                <!-- Topo do Plano: Operação, Headcount e Status -->
+                                <!-- Topo do Plano: Operação, Ícone Customizado, Headcount e Status -->
                                 <div class="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                                     <div class="flex items-center gap-3 min-w-0">
                                         <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white flex items-center justify-center text-xl shrink-0 shadow-md">
-                                            <i class="fa-solid fa-robot"></i>
+                                            <i class="fa-solid ${esc(p.icone || 'fa-robot')}"></i>
                                         </div>
                                         <div class="min-w-0">
                                             <div class="flex items-center gap-2.5">
@@ -13145,19 +13523,21 @@ storage: {
                                                 </span>
                                             </div>
                                             <div class="text-xs text-slate-400 mt-0.5">
-                                                Cronograma estimado: <strong class="text-slate-600 dark:text-slate-300 tabular-nums">${p.diasTotais} dias úteis</strong> · Início: ${p.dataInicio ? app.ui._formatarDataBR(p.dataInicio) : 'Imediato'}
+                                                Início: <strong class="text-slate-600 dark:text-slate-300">${p.dataInicio ? this._formatarDataBR(p.dataInicio) : 'Imediato'}</strong> · Calendário: <strong class="text-slate-600 dark:text-slate-300 tabular-nums">${totalSpanDias} dias corridos</strong>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3">
                                         ${statusBadge}
                                         <div class="flex items-center gap-1">
-                                            <button type="button" onclick="app.ui.abrirModalNovaImplantacaoIA(this.getAttribute('data-op'))" data-op="${esc(p.operacaoRaw)}" class="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Configurar Operação e Responsáveis">
-                                                <i class="fa-solid fa-sliders"></i>
-                                            </button>
-                                            <button type="button" onclick="app.ui.excluirImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Plano Desta Operação">
-                                                <i class="fa-solid fa-trash"></i>
-                                            </button>
+                                            ${isSuperOrDev ? `
+                                                <button type="button" onclick="app.ui.abrirModalNovaImplantacaoIA(this.getAttribute('data-op'))" data-op="${esc(p.operacaoRaw)}" class="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Configurar Ícone, Operação e Responsáveis">
+                                                    <i class="fa-solid fa-sliders"></i>
+                                                </button>
+                                                <button type="button" onclick="app.ui.excluirImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Plano Desta Operação">
+                                                    <i class="fa-solid fa-trash"></i>
+                                                </button>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -13170,7 +13550,7 @@ storage: {
                                         </div>
                                         <div class="min-w-0">
                                             <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Monitor Responsável (Qualidade)</span>
-                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">${esc(p.monitorNome)}</span>
+                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">${esc(p.monitorNome)} ${p.monitorMatricula ? `<span class="text-[10px] font-normal text-slate-400">(#${esc(p.monitorMatricula)})</span>` : ''}</span>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3">
@@ -13179,7 +13559,7 @@ storage: {
                                         </div>
                                         <div class="min-w-0">
                                             <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Treinador Responsável</span>
-                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">${esc(p.treinadorNome)}</span>
+                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate block">${esc(p.treinadorNome)} ${p.treinadorMatricula ? `<span class="text-[10px] font-normal text-slate-400">(#${esc(p.treinadorMatricula)})</span>` : ''}</span>
                                         </div>
                                     </div>
                                     <div class="sm:col-span-2 lg:col-span-1 flex flex-col justify-center">
@@ -13193,40 +13573,136 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- Gráfico Gantt (Linha do Tempo Visual das Etapas) -->
-                                <div class="mb-5 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
-                                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+                                <!-- Gráfico Gantt com Noção de Calendário e Faixas Sobrepostas -->
+                                <div class="mb-5 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
+                                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 mb-3">
                                         <span class="flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-                                            <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Cronograma Gantt das Etapas
+                                            <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Cronograma Gantt das Etapas (Sobreposição e Prazos Reais)
                                         </span>
-                                        <span class="text-[11px] tabular-nums">Régua Total: ${p.diasTotais} dias</span>
+                                        <span class="text-[11px] tabular-nums bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg">
+                                            <i class="fa-regular fa-calendar text-slate-400 mr-1"></i>${dtInicioFmt} até ${dtFimFmt} (${totalSpanDias} dias)
+                                        </span>
                                     </div>
 
-                                    <!-- Régua de Dias -->
-                                    <div class="flex justify-between text-[10px] font-bold text-slate-400 px-1 mb-1.5 tabular-nums">
-                                        <span>Início (0d)</span>
-                                        <span>Meio (${Math.round(p.diasTotais / 2)}d)</span>
-                                        <span>Conclusão (${p.diasTotais}d)</span>
-                                    </div>
+                                    <!-- Régua de Calendário com Datas Reais -->
+                                    <div class="space-y-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
+                                        <div class="relative h-6 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-3 border border-slate-200/50 dark:border-slate-700/50">
+                                            ${ticksHtml}
+                                            ${hojeMarkerHtml}
+                                        </div>
 
-                                    <!-- Barra Horizontal Gantt com Fatias Proporcionais -->
-                                    <div class="w-full flex items-center gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 overflow-x-auto custom-scrollbar">
-                                        ${ganttSegments || '<div class="p-3 text-center text-xs text-slate-400 italic w-full">Nenhuma etapa cadastrada no cronograma.</div>'}
+                                        <!-- Linhas das Etapas -->
+                                        ${ganttLanes || '<div class="p-3 text-center text-xs text-slate-400 italic">Nenhuma etapa cadastrada no cronograma.</div>'}
                                     </div>
                                 </div>
 
-                                <!-- Checklist Detalhado das Etapas -->
-                                <div class="space-y-2 mb-4">
-                                    ${etapasHtml || '<div class="p-4 text-center text-xs text-slate-400 italic">Clique no botão abaixo para adicionar as etapas deste plano.</div>'}
+                                <!-- Quadro Consolidado de Planos de Ação do Projeto -->
+                                <details class="group mb-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 overflow-hidden" ${todosPlanosAcao.length > 0 ? 'open' : ''}>
+                                    <summary class="cursor-pointer p-3.5 flex items-center justify-between font-bold text-xs text-amber-900 dark:text-amber-200 select-none">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                                            <span>Planos de Ação Desta Operação (${todosPlanosAcao.length})</span>
+                                        </div>
+                                        <span class="text-slate-400 group-open:rotate-180 transition-transform"><i class="fa-solid fa-chevron-down"></i></span>
+                                    </summary>
+                                    <div class="p-4 pt-1 border-t border-amber-200/40 dark:border-amber-800/40">
+                                        ${todosPlanosAcao.length > 0 ? `
+                                            <div class="overflow-x-auto">
+                                                <table class="w-full text-left text-xs border-collapse">
+                                                    <thead>
+                                                        <tr class="text-[10px] uppercase font-bold text-slate-400 border-b border-amber-200/60 dark:border-slate-800">
+                                                            <th class="py-2 px-2">Status</th>
+                                                            <th class="py-2 px-2">Etapa</th>
+                                                            <th class="py-2 px-2">Ação / O que precisa ser feito</th>
+                                                            <th class="py-2 px-2">Quem ficou responsável</th>
+                                                            <th class="py-2 px-2">Prazo</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-amber-100/60 dark:divide-slate-800">
+                                                        ${todosPlanosAcao.map(pa => `
+                                                            <tr class="hover:bg-amber-50/60 dark:hover:bg-slate-800/40 transition">
+                                                                <td class="py-2.5 px-2">
+                                                                    <input type="checkbox" ${pa.concluido ? 'checked' : ''} onchange="app.ui.togglePlanoAcaoConcluidoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(pa.etapaId)}" data-id="${esc(pa.id)}" class="w-4 h-4 accent-emerald-600 rounded cursor-pointer">
+                                                                </td>
+                                                                <td class="py-2.5 px-2 font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                                                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px]" style="background-color: ${pa.etapaCor}20; color: ${pa.etapaCor}; border: 1px solid ${pa.etapaCor}40">
+                                                                        Etp ${pa.etapaIdx}
+                                                                    </span>
+                                                                </td>
+                                                                <td class="py-2.5 px-2 font-medium ${pa.concluido ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}">
+                                                                    ${esc(pa.titulo)}
+                                                                </td>
+                                                                <td class="py-2.5 px-2 whitespace-nowrap font-bold text-slate-700 dark:text-slate-300">
+                                                                    <i class="fa-solid fa-user-check text-amber-500 mr-1"></i>${esc(pa.responsavel || 'Não definido')}
+                                                                </td>
+                                                                <td class="py-2.5 px-2 whitespace-nowrap tabular-nums font-semibold ${pa.concluido ? 'text-slate-400' : 'text-amber-700 dark:text-amber-300'}">
+                                                                    <i class="fa-regular fa-calendar-check text-slate-400 mr-1"></i>${this._formatarDataBR(pa.prazo)}
+                                                                </td>
+                                                            </tr>
+                                                        `).join('')}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ` : `
+                                            <div class="text-xs text-slate-400 italic py-2">Nenhum plano de ação registrado nesta operação. Você pode adicionar planos de ação diretamente no box de cada etapa abaixo.</div>
+                                        `}
+                                    </div>
+                                </details>
+
+                                <!-- Alinhamentos & Comentários do Projeto (Todas as Partes) -->
+                                <details class="group mb-5 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/40 overflow-hidden" ${(p.comentarios || []).length > 0 ? 'open' : ''}>
+                                    <summary class="cursor-pointer p-3.5 flex items-center justify-between font-bold text-xs text-indigo-900 dark:text-indigo-200 select-none">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-comments text-indigo-600"></i>
+                                            <span>Alinhamentos & Comentários do Projeto (${(p.comentarios || []).length})</span>
+                                        </div>
+                                        <span class="text-slate-400 group-open:rotate-180 transition-transform"><i class="fa-solid fa-chevron-down"></i></span>
+                                    </summary>
+                                    <div class="p-4 pt-1 border-t border-indigo-200/40 dark:border-indigo-800/40">
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <input type="text" id="coment-input-${esc(p.key)}" placeholder="Adicionar alinhamento geral, observação ou comentário para toda a equipe do projeto..." 
+                                                   data-opkey="${esc(p.key)}"
+                                                   onkeydown="if(event.key==='Enter') app.ui.adicionarComentarioProjetoIA(this.getAttribute('data-opkey'))"
+                                                   class="flex-1 p-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <button type="button" onclick="app.ui.adicionarComentarioProjetoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 shrink-0 transition">
+                                                <i class="fa-solid fa-paper-plane"></i> Comentar
+                                            </button>
+                                        </div>
+                                        ${(p.comentarios && p.comentarios.length > 0) ? `
+                                            <div class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                                                ${p.comentarios.slice().reverse().map(com => `
+                                                    <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-slate-800 text-xs flex items-start justify-between gap-2 shadow-xs">
+                                                        <div class="flex-1 min-w-0">
+                                                            <div class="flex items-center gap-2 text-[10px] text-slate-400 mb-1">
+                                                                <span class="font-extrabold text-slate-700 dark:text-slate-200"><i class="fa-solid fa-circle-user mr-1 text-indigo-500"></i>${esc(com.autorNome || 'Colaborador')}</span>
+                                                                <span class="px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold">${esc(com.autorCargo || 'Equipe')}</span>
+                                                                <span>·</span>
+                                                                <span class="tabular-nums"><i class="fa-regular fa-clock mr-1"></i>${esc(com.dataHora)}</span>
+                                                            </div>
+                                                            <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${esc(com.texto)}</p>
+                                                        </div>
+                                                        <button type="button" onclick="app.ui.excluirComentarioProjetoIA(this.getAttribute('data-opkey'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-id="${esc(com.id)}" class="text-slate-400 hover:text-rose-500 text-xs p-1" title="Excluir"><i class="fa-solid fa-times"></i></button>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        ` : `
+                                            <div class="text-[11px] text-slate-400 italic">Nenhum comentário registrado ainda. Utilize este espaço para alinhamentos entre Monitores, Treinadores e Liderança.</div>
+                                        `}
+                                    </div>
+                                </details>
+
+                                <!-- Checklist Detalhado das Etapas (Boxes Individuais) -->
+                                <div class="space-y-3 mb-4">
+                                    ${etapasHtml || '<div class="p-4 text-center text-xs text-slate-400 italic">Nenhuma etapa cadastrada neste cronograma.</div>'}
                                 </div>
 
-                                <!-- Ações de Rodapé do Card -->
+                                <!-- Ações de Rodapé do Card: Adicionar Etapa (Sem limite de 5) -->
                                 <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
-                                    <button type="button" onclick="app.ui.abrirModalNovaEtapaIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3.5 py-2 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 font-bold transition flex items-center gap-1.5">
-                                        <i class="fa-solid fa-plus"></i> Adicionar Nova Etapa
+                                    <button type="button" onclick="app.ui.abrirModalNovaEtapaIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1.5 shadow-xs">
+                                        <i class="fa-solid fa-plus"></i> Adicionar Nova Etapa (Sem Limite)
                                     </button>
                                     <span class="text-slate-400 text-[11px]">
-                                        <i class="fa-solid fa-circle-info mr-1"></i>Clique no checkbox para marcar a conclusão da etapa em tempo real.
+                                        <i class="fa-solid fa-circle-info mr-1"></i>Etapas com datas sobrepostas são calculadas automaticamente no Gantt.
                                     </span>
                                 </div>
                             </div>`;
@@ -13242,26 +13718,42 @@ storage: {
                                     </div>
                                     <div>
                                         <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Implantação IA — HARMONY</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Gestão de cronograma Gantt, etapas editáveis, atribuição de Monitor & Treinador e cobertura de operações com IA.</p>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Gestão de cronograma Gantt com régua de calendário, etapas sobrepostas, planos de ação e diário de bordo.</p>
                                     </div>
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-2.5">
-                                <button type="button" onclick="app.ui.abrirModalNovaImplantacaoIA()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-transform hover:-translate-y-0.5 flex items-center gap-2">
-                                    <i class="fa-solid fa-plus"></i> Nova Implantação
-                                </button>
-                                <button type="button" onclick="app.ui.renderTab('span_operacoes', true)" class="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
-                                    <i class="fa-solid fa-scale-balanced text-slate-400"></i> Ver Span
-                                </button>
+                                ${isSuperOrDev ? `
+                                    <button type="button" onclick="app.ui.abrirModalNovaImplantacaoIA()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-transform hover:-translate-y-0.5 flex items-center gap-2">
+                                        <i class="fa-solid fa-plus"></i> Nova Implantação
+                                    </button>
+                                    <button type="button" onclick="app.ui.renderTab('span_operacoes', true)" class="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-scale-balanced text-slate-400"></i> Ver Span
+                                    </button>
+                                ` : ''}
                             </div>
                         </div>
+
+                        ${!isSuperOrDev ? `
+                            <div class="p-4 mb-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 border border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-900 dark:text-indigo-200 flex items-center justify-between gap-3 shadow-xs">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 text-sm">
+                                        <i class="fa-solid fa-user-check"></i>
+                                    </div>
+                                    <div>
+                                        <span class="font-extrabold block">Visualização Restrita à Conta Responsável</span>
+                                        <span class="text-slate-600 dark:text-slate-400 text-[11px]">Você está visualizando apenas as operações em que foi selecionado como <strong>Monitor ou Treinador Responsável</strong>.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
 
                         <!-- KPIs de Cobertura HARMONY -->
                         <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-6">
                             ${kpiBox('fa-shield-halved', 'Cobertura Operações', `${opsImplantadas.length} / ${totalOpsGlobal}`, `${pctCoberturaOps}% das operações com IA 100%`, opsImplantadas.length === 0, 'text-emerald-500')}
                             ${kpiBox('fa-users', 'Operadores Cobertos', `${hcImplantado} op.`, `${pctHcImplantado}% do headcount setorial coberto`, false, 'text-blue-500')}
-                            ${kpiBox('fa-spinner', 'Em Implantação', `${opsEmAndamento.length} ops`, `${hcEmAndamento} operadores em fase de transição`, opsEmAndamento.length > 0, 'text-indigo-500')}
-                            ${kpiBox('fa-clock', 'Aguardando Início', `${opsPendentes.length + opsSemPlano.length} ops`, `${totalOpsGlobal - (opsImplantadas.length + opsEmAndamento.length)} operações pendentes`, (opsPendentes.length + opsSemPlano.length) > 0, 'text-amber-500')}
+                            ${kpiBox('fa-spinner', 'Em Implantação', `${opsEmAndamento.length} ops`, `${hcEmAndamento} operadores em transição`, opsEmAndamento.length > 0, 'text-indigo-500')}
+                            ${kpiBox('fa-clock', 'Aguardando Início', `${opsPendentes.length} ops`, `${opsPendentes.length} operações em planejamento`, opsPendentes.length > 0, 'text-amber-500')}
                             ${kpiBox('fa-list-check', 'Etapas Globais', `${totalEtapasConcluidas} / ${totalEtapasGeral}`, `${pctEtapasGeral}% das etapas concluídas`, false, 'text-purple-500')}
                         </div>
 
@@ -13273,7 +13765,7 @@ storage: {
                             </div>
                             <div class="flex flex-wrap items-center gap-1.5" id="ia-filtros-status">
                                 ${[
-                                    ['todos', 'Todas', planosAtivos.length],
+                                    ['todos', 'Todas', planosExibicao.length],
                                     ['implantado', 'Implantadas', opsImplantadas.length],
                                     ['em_andamento', 'Em Implantação', opsEmAndamento.length],
                                     ['pendente', 'Pendentes', opsPendentes.length]
@@ -13287,25 +13779,25 @@ storage: {
 
                         <!-- Lista de Planos e Gráficos de Gantt -->
                         <div id="ia-planos-container">
-                            ${planosAtivos.length > 0 
-                                ? planosAtivos.map(renderPlanoCard).join('') 
+                            ${planosExibicao.length > 0 
+                                ? planosExibicao.map(renderPlanoCard).join('') 
                                 : `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 my-4">
                                     <i class="fa-solid fa-robot text-4xl mb-3 text-indigo-400 opacity-60"></i>
-                                    <h4 class="text-base font-bold text-slate-700 dark:text-slate-200">Nenhum plano de implantação cadastrado</h4>
-                                    <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">Inicie uma nova implantação do Harmony para as operações do setorial usando o botão acima.</p>
+                                    <h4 class="text-base font-bold text-slate-700 dark:text-slate-200">${isSuperOrDev ? 'Nenhum plano de implantação cadastrado' : 'Nenhuma operação atribuída à sua conta'}</h4>
+                                    <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">${isSuperOrDev ? 'Inicie uma nova implantação do Harmony para as operações do setorial usando o botão acima.' : 'Assim que sua conta for selecionada como Monitor ou Treinador Responsável em uma operação, o cronograma Gantt será liberado aqui automaticamente.'}</p>
                                    </div>`
                             }
                         </div>
 
-                        <!-- Painel de Operações Setoriais sem Harmony (Descobertas) -->
-                        ${opsSemPlano.length > 0 ? `
+                        <!-- Painel de Operações Setoriais sem Harmony (Exclusivo ADM/Gestão) -->
+                        ${(isSuperOrDev && opsSemPlano.length > 0) ? `
                             <div class="mt-8 p-6 rounded-3xl border border-amber-300/80 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20">
                                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                                     <div>
                                         <h3 class="font-extrabold text-base text-amber-900 dark:text-amber-200 flex items-center gap-2">
                                             <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Operações Setoriais sem Implantação Harmony (${opsSemPlano.length})
                                         </h3>
-                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">As operações abaixo foram identificadas no relatório Setorial, mas ainda não possuem cronograma do Harmony cadastrado.</p>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">As operações abaixo constam no Setorial, mas ainda não possuem cronograma do Harmony configurado.</p>
                                     </div>
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -13348,8 +13840,7 @@ storage: {
 
                 toggleEtapaConcluidaIA(opKey, etapaId) {
                     try {
-                        const deploys = app.harmonyDeployList || {};
-                        const plano = deploys[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano || !Array.isArray(plano.etapas)) return;
 
                         const etapa = plano.etapas.find(e => e.id === etapaId);
@@ -13389,7 +13880,6 @@ storage: {
                         const monitores = (app.users || []).filter(u => app.isUserQualidade(u) || (u.tipoAcesso || '') === 'Qualidade');
                         const treinadores = (app.users || []).filter(u => (u.tipoAcesso || '') === 'Treinamento' || (u.cargo || '').toLowerCase().includes('treina'));
 
-                        // Localiza a operação de forma resiliente
                         let selOp = '';
                         if (opNomePre) {
                             const opPreClean = String(opNomePre).trim().toUpperCase();
@@ -13400,9 +13890,8 @@ storage: {
                         }
 
                         const opKey = selOp ? this._getHarmonyKey(selOp) : '';
-                        const planoExistente = opKey ? (app.harmonyDeployList && app.harmonyDeployList[opKey]) : null;
+                        const planoExistente = opKey ? this._findPlanoIA(opKey) : null;
 
-                        // Auto-sugestão de monitor responsável baseado em u.operacoes
                         let autoMonitor = planoExistente ? (planoExistente.monitorMatricula || '') : '';
                         if (!autoMonitor && selOp) {
                             const mFound = monitores.find(u => (u.operacoes || []).some(o => String(o || '').trim().toUpperCase() === selOp.toUpperCase()));
@@ -13412,6 +13901,21 @@ storage: {
                         let autoTreinador = planoExistente ? (planoExistente.treinadorMatricula || '') : (treinadores[0] ? treinadores[0].matricula : '');
                         let dataIni = planoExistente ? (planoExistente.dataInicio || '') : new Date().toISOString().split('T')[0];
                         let obs = planoExistente ? (planoExistente.observacoes || '') : '';
+                        let iconeAtual = planoExistente ? (planoExistente.icone || 'fa-robot') : 'fa-robot';
+
+                        const ICONES_PRESET = [
+                            { id: 'fa-robot', nome: 'Robô Harmony' },
+                            { id: 'fa-brain', nome: 'Inteligência Artificial' },
+                            { id: 'fa-wand-magic-sparkles', nome: 'IA Generativa' },
+                            { id: 'fa-microchip', nome: 'Tecnologia / Inovação' },
+                            { id: 'fa-rocket', nome: 'Foguete / Lançamento' },
+                            { id: 'fa-headset', nome: 'Atendimento & Qualidade' },
+                            { id: 'fa-chart-line', nome: 'Performance & Métricas' },
+                            { id: 'fa-shield-halved', nome: 'Compliance & Segurança' },
+                            { id: 'fa-bolt', nome: 'Agilidade & Automação' },
+                            { id: 'fa-bullseye', nome: 'Foco em Metas' },
+                            { id: 'fa-star', nome: 'Destaque Setorial' }
+                        ];
 
                         const gm = document.getElementById('global-modal');
                         if (!gm) return;
@@ -13430,7 +13934,6 @@ storage: {
                             <i class="fa-solid fa-robot text-indigo-600 mr-2"></i> ${planoExistente ? 'Configurar Implantação Harmony' : 'Nova Implantação de IA — HARMONY'}
                         `;
 
-                        // Garante que a operação selecionada esteja listada nas opções
                         let listaOps = [...opsSetoriais];
                         if (selOp && !listaOps.some(o => String(o.nome || '').toUpperCase() === selOp.toUpperCase())) {
                             listaOps.unshift({ nome: selOp, headcount: 0 });
@@ -13449,38 +13952,45 @@ storage: {
                                     </select>
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Monitor Responsável (Qualidade)</label>
-                                        <select id="ia-form-monitor" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                            <option value="">Selecione o monitor...</option>
-                                            ${monitores.map(m => `<option value="${esc(m.matricula)}" ${m.matricula === autoMonitor ? 'selected' : ''}>${esc(app.utils.fixEncoding(m.nome))} (#${esc(m.matricula)})</option>`).join('')}
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Ícone da Implantação</label>
+                                        <select id="ia-form-icone" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            ${ICONES_PRESET.map(ico => `<option value="${ico.id}" ${ico.id === iconeAtual ? 'selected' : ''}>${ico.nome}</option>`).join('')}
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Treinador Responsável</label>
-                                        <select id="ia-form-treinador" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                            <option value="">Selecione o treinador...</option>
-                                            ${treinadores.map(t => `<option value="${esc(t.matricula)}" ${t.matricula === autoTreinador ? 'selected' : ''}>${esc(app.utils.fixEncoding(t.nome))} (#${esc(t.matricula)})</option>`).join('')}
-                                            ${(app.users || []).filter(u => !treinadores.includes(u)).map(u => `<option value="${esc(u.matricula)}" ${u.matricula === autoTreinador ? 'selected' : ''}>${esc(app.utils.fixEncoding(u.nome))} (${esc(u.tipoAcesso || 'Colaborador')})</option>`).join('')}
-                                        </select>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data de Início Prevista</label>
+                                        <input type="date" id="ia-form-dataini" value="${esc(dataIni)}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
                                     </div>
                                 </div>
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data de Início Prevista</label>
-                                        <input type="date" id="ia-form-dataini" value="${esc(dataIni)}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Status Geral</label>
-                                        <select id="ia-form-status" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                            <option value="auto">Automático (conforme etapas)</option>
-                                            <option value="em_andamento" ${planoExistente && planoExistente.status === 'em_andamento' ? 'selected' : ''}>Em Implantação</option>
-                                            <option value="implantado" ${planoExistente && planoExistente.status === 'implantado' ? 'selected' : ''}>Harmony Implantado</option>
-                                            <option value="pendente" ${planoExistente && planoExistente.status === 'pendente' ? 'selected' : ''}>Pendente / Planejado</option>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Monitor Responsável (Qualidade) *</label>
+                                        <select id="ia-form-monitor" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="">Selecione o monitor...</option>
+                                            ${monitores.map(m => `<option value="${esc(m.matricula)}" ${String(m.matricula) === String(autoMonitor) ? 'selected' : ''}>${esc(app.utils.fixEncoding(m.nome))} (#${esc(m.matricula)})</option>`).join('')}
                                         </select>
                                     </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Treinador Responsável *</label>
+                                        <select id="ia-form-treinador" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="">Selecione o treinador...</option>
+                                            ${treinadores.map(t => `<option value="${esc(t.matricula)}" ${String(t.matricula) === String(autoTreinador) ? 'selected' : ''}>${esc(app.utils.fixEncoding(t.nome))} (#${esc(t.matricula)})</option>`).join('')}
+                                            ${(app.users || []).filter(u => !treinadores.includes(u)).map(u => `<option value="${esc(u.matricula)}" ${String(u.matricula) === String(autoTreinador) ? 'selected' : ''}>${esc(app.utils.fixEncoding(u.nome))} (${esc(u.tipoAcesso || 'Colaborador')})</option>`).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Status Geral</label>
+                                    <select id="ia-form-status" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                        <option value="auto">Automático (conforme etapas do Gantt)</option>
+                                        <option value="em_andamento" ${planoExistente && planoExistente.status === 'em_andamento' ? 'selected' : ''}>Em Implantação</option>
+                                        <option value="implantado" ${planoExistente && planoExistente.status === 'implantado' ? 'selected' : ''}>Harmony Implantado</option>
+                                        <option value="pendente" ${planoExistente && planoExistente.status === 'pendente' ? 'selected' : ''}>Pendente / Planejado</option>
+                                    </select>
                                 </div>
 
                                 <div>
@@ -13488,10 +13998,9 @@ storage: {
                                     <textarea id="ia-form-obs" rows="2" placeholder="Descreva os objetivos, volumetria esperada ou acordos específicos com o cliente/operação..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none focus:border-indigo-500">${esc(obs)}</textarea>
                                 </div>
 
-                                ${!planoExistente ? `
-                                    <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-900 dark:text-indigo-300">
-                                        <i class="fa-solid fa-circle-check text-indigo-600 mr-1.5"></i> Este plano será inicializado com as <strong>5 etapas padrão do Harmony</strong> (calibração de prompts, workshop de líderes, piloto assistido, alinhamento de operadores e go-live). Você poderá editar e adicionar novas etapas a qualquer momento.
-                                    </div>` : ''}
+                                <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-900 dark:text-indigo-300">
+                                    <i class="fa-solid fa-unlock-keyhole text-indigo-600 mr-1.5"></i> Ao selecionar o <strong>Monitor e Treinador</strong>, a página do Gantt e cronograma será <strong>liberada automaticamente</strong> para a visualização das contas responsáveis no sistema.
+                                </div>
                             </form>
                         `;
 
@@ -13517,14 +14026,15 @@ storage: {
                             return;
                         }
 
+                        const icone = document.getElementById('ia-form-icone')?.value || 'fa-robot';
                         const monMat = (document.getElementById('ia-form-monitor')?.value || '').trim();
                         const treMat = (document.getElementById('ia-form-treinador')?.value || '').trim();
                         const dataIni = document.getElementById('ia-form-dataini')?.value || '';
                         const statusOpt = document.getElementById('ia-form-status')?.value || 'auto';
                         const obs = (document.getElementById('ia-form-obs')?.value || '').trim();
 
-                        const monUser = (app.users || []).find(u => u.matricula === monMat);
-                        const treUser = (app.users || []).find(u => u.matricula === treMat);
+                        const monUser = (app.users || []).find(u => String(u.matricula).trim() === String(monMat).trim());
+                        const treUser = (app.users || []).find(u => String(u.matricula).trim() === String(treMat).trim());
 
                         const monNome = monUser ? app.utils.fixEncoding(monUser.nome) : '';
                         const treNome = treUser ? app.utils.fixEncoding(treUser.nome) : '';
@@ -13532,16 +14042,20 @@ storage: {
                         const opKey = this._getHarmonyKey(selOp);
                         if (!app.harmonyDeployList) app.harmonyDeployList = {};
 
-                        const planoExistente = app.harmonyDeployList[opKey] || null;
+                        const planoExistente = this._findPlanoIA(opKey);
+                        const storageKey = (planoExistente && planoExistente.id) ? planoExistente.id : opKey;
+
                         let etapas = planoExistente && Array.isArray(planoExistente.etapas) && planoExistente.etapas.length > 0
                             ? planoExistente.etapas
-                            : this.getDefaultEtapasHarmony(monNome, treNome);
+                            : this.getDefaultEtapasHarmony(monNome, treNome, dataIni);
 
                         // Atualiza responsáveis nas etapas caso ainda estivessem genéricos
                         etapas.forEach(e => {
                             if (e.responsavelTipo === 'Monitor' && monNome) e.responsavelNome = monNome;
                             if (e.responsavelTipo === 'Treinador' && treNome) e.responsavelNome = treNome;
                             if (e.responsavelTipo === 'Ambos' && monNome && treNome) e.responsavelNome = `${monNome} & ${treNome}`;
+                            if (!e.dataInicio) e.dataInicio = dataIni || new Date().toISOString().split('T')[0];
+                            if (!e.dataFim) e.dataFim = this._somarDias(e.dataInicio, (parseInt(e.diasEstimados, 10) || 5) - 1);
                         });
 
                         let statusFinal = statusOpt;
@@ -13553,9 +14067,10 @@ storage: {
                             else statusFinal = 'pendente';
                         }
 
-                        app.harmonyDeployList[opKey] = {
-                            id: opKey,
+                        app.harmonyDeployList[storageKey] = {
+                            id: storageKey,
                             operacao: selOp,
+                            icone,
                             monitorMatricula: monMat,
                             monitorNome: monNome,
                             treinadorMatricula: treMat,
@@ -13563,15 +14078,43 @@ storage: {
                             dataInicio: dataIni,
                             status: statusFinal,
                             observacoes: obs,
+                            comentarios: planoExistente && Array.isArray(planoExistente.comentarios) ? planoExistente.comentarios : [],
                             etapas,
                             atualizadoEm: new Date().toISOString()
                         };
+
+                        // LIBERAÇÃO AUTOMÁTICA DA ABA GANTT (implantacao_ia) PARA AS CONTAS RESPONSÁVEIS
+                        // Preserva todas as abas padrão/preset do perfil do usuário sem sobrescrever nem apagar as outras abas
+                        let usersModificados = false;
+                        const liberarAbaUsuario = (mat) => {
+                            if (!mat) return;
+                            const idx = (app.users || []).findIndex(u => String(u.matricula).trim() === String(mat).trim());
+                            if (idx === -1) return;
+                            const u = app.users[idx];
+                            const presets = (app.ui && typeof app.ui.getPresetsGruposAcesso === 'function')
+                                ? app.ui.getPresetsGruposAcesso()
+                                : {};
+                            const presetTabs = presets[u.tipoAcesso || 'Qualidade'] || presets['Qualidade'] || [];
+                            let currentTabs = Array.isArray(u.abasLiberadas) && u.abasLiberadas.length > 0
+                                ? [...u.abasLiberadas]
+                                : [...presetTabs];
+                            if (!currentTabs.includes('implantacao_ia')) {
+                                currentTabs.push('implantacao_ia');
+                            }
+                            u.abasLiberadas = [...new Set([...presetTabs, ...currentTabs])];
+                            usersModificados = true;
+                        };
+                        liberarAbaUsuario(monMat);
+                        liberarAbaUsuario(treMat);
+                        if (usersModificados && app.storage && typeof app.storage.saveUsers === 'function') {
+                            app.storage.saveUsers();
+                        }
 
                         app.storage.saveHarmony().then(() => {
                             const gm = document.getElementById('global-modal');
                             if (gm) gm.classList.add('hidden');
                             app.ui.renderTab('implantacao_ia', true);
-                            app.ui.showAlert("Plano Salvo", `Implantação do Harmony para <strong>${app.utils.escapeHtml(selOp)}</strong> foi configurada com sucesso.`, "success");
+                            app.ui.showAlert("Plano Salvo", `Implantação do Harmony para <strong>${app.utils.escapeHtml(selOp)}</strong> configurada. Acesso liberado para os responsáveis.`, "success");
                         }).catch(err => {
                             console.error("Erro ao salvar Harmony:", err);
                             app.ui.showAlert("Erro ao Salvar", "Ocorreu um erro ao gravar o plano.", "error");
@@ -13602,7 +14145,7 @@ storage: {
                         const box = gm.firstElementChild;
                         if (box) {
                             box.classList.remove('max-w-lg');
-                            box.classList.add('max-w-2xl');
+                            box.classList.add('max-w-3xl');
                         }
 
                         const nomeEtapa = etapa ? etapa.nome : '';
@@ -13613,6 +14156,13 @@ storage: {
                         const respNome = etapa ? (etapa.responsavelNome || '') : '';
                         const concluido = etapa ? !!etapa.concluido : false;
                         const dataConc = etapa ? (etapa.dataConclusao || '') : '';
+                        const cor = etapa ? (etapa.cor || '#4f46e5') : '#4f46e5';
+
+                        const hojeISO = new Date().toISOString().split('T')[0];
+                        const dataIni = etapa ? (etapa.dataInicio || plano.dataInicio || hojeISO) : (plano.dataInicio || hojeISO);
+                        const dataFim = etapa ? (etapa.dataFim || this._somarDias(dataIni, dias - 1)) : this._somarDias(dataIni, dias - 1);
+
+                        const CORES_PRESET = ['#4f46e5', '#059669', '#0891b2', '#d97706', '#7c3aed', '#e11d48', '#2563eb', '#0d9488', '#ea580c', '#475569'];
 
                         const titleEl = document.getElementById('modal-title');
                         const contentEl = document.getElementById('modal-content');
@@ -13626,7 +14176,7 @@ storage: {
                         contentEl.innerHTML = `
                             <form id="form-etapa-ia" data-opkey="${esc(opKey)}" data-etpid="${esc(etapaId || '')}" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'));">
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome / Título da Etapa</label>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome / Título da Etapa *</label>
                                     <input type="text" id="etp-form-nome" value="${esc(nomeEtapa)}" placeholder="Ex: Calibração dos Prompts e Métricas" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500" required>
                                 </div>
 
@@ -13635,18 +14185,41 @@ storage: {
                                     <textarea id="etp-form-desc" rows="3" placeholder="Descreva os procedimentos executados, objetivos e entregáveis esperados..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none focus:border-indigo-500 leading-relaxed">${esc(desc)}</textarea>
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Dias Estimados (Gantt)</label>
-                                        <input type="number" min="1" max="180" id="etp-form-dias" value="${dias}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-black text-slate-800 dark:text-white outline-none focus:border-indigo-500 tabular-nums">
+                                <!-- Cor da Etapa no Gantt -->
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Cor da Etapa no Gantt</label>
+                                    <div class="flex items-center gap-2">
+                                        <input type="color" id="etp-form-cor" value="${cor}" class="w-10 h-10 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 cursor-pointer">
+                                        <div class="flex flex-wrap gap-1.5" id="preset-cores-etapa">
+                                            ${CORES_PRESET.map(c => `
+                                                <button type="button" onclick="document.getElementById('etp-form-cor').value='${c}'" class="w-7 h-7 rounded-lg transition-transform hover:scale-110 shadow-xs" style="background-color: ${c}"></button>
+                                            `).join('')}
+                                        </div>
                                     </div>
+                                </div>
+
+                                <!-- Calendário com Noção de Datas e Suporte à Sobreposição -->
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data Início da Etapa</label>
+                                        <input type="date" id="etp-form-dataini" value="${esc(dataIni)}" onchange="app.ui._aoMudarDataEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data Término (Prazo)</label>
+                                        <input type="date" id="etp-form-datafim" value="${esc(dataFim)}" onchange="app.ui._aoMudarDataEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Dias Estimados</label>
+                                        <input type="number" min="1" max="180" id="etp-form-dias" value="${dias}" onchange="app.ui._aoMudarDiasEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-black text-slate-800 dark:text-white outline-none focus:border-indigo-500 tabular-nums">
+                                    </div>
+                                </div>
+                                <p class="text-[11px] text-slate-400 -mt-2"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i>As etapas podem se sobrepor livremente no calendário. Não há limite de 5 etapas.</p>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Quantidade Estimada / Meta</label>
                                         <input type="text" id="etp-form-qtd" value="${esc(qtd)}" placeholder="Ex: 50 chamadas, 8 supervisores..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
                                     </div>
-                                </div>
-
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Tipo de Responsável</label>
                                         <select id="etp-form-resptipo" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
@@ -13656,10 +14229,11 @@ storage: {
                                             <option value="Liderança" ${respTipo === 'Liderança' ? 'selected' : ''}>Liderança / Supervisão</option>
                                         </select>
                                     </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome do Responsável (Opcional)</label>
-                                        <input type="text" id="etp-form-respnome" value="${esc(respNome)}" placeholder="${esc(plano.monitorNome || 'Nome do colaborador')}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome do Responsável (Opcional)</label>
+                                    <input type="text" id="etp-form-respnome" value="${esc(respNome)}" placeholder="${esc(plano.monitorNome || 'Nome do colaborador')}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
                                 </div>
 
                                 <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between gap-4">
@@ -13699,7 +14273,16 @@ storage: {
                         }
 
                         const desc = (document.getElementById('etp-form-desc')?.value || '').trim();
-                        const dias = parseInt(document.getElementById('etp-form-dias')?.value) || 1;
+                        const cor = document.getElementById('etp-form-cor')?.value || '#4f46e5';
+                        const dataIni = document.getElementById('etp-form-dataini')?.value || plano.dataInicio || new Date().toISOString().split('T')[0];
+                        let dataFim = document.getElementById('etp-form-datafim')?.value || '';
+                        let dias = parseInt(document.getElementById('etp-form-dias')?.value, 10) || 1;
+                        if (!dataFim) {
+                            dataFim = this._somarDias(dataIni, dias - 1);
+                        } else {
+                            dias = this._diferencaDias(dataIni, dataFim);
+                        }
+
                         const qtd = (document.getElementById('etp-form-qtd')?.value || '').trim();
                         const respTipo = document.getElementById('etp-form-resptipo')?.value || 'Monitor';
                         const respNome = (document.getElementById('etp-form-respnome')?.value || '').trim() || (respTipo === 'Monitor' ? plano.monitorNome : (respTipo === 'Treinador' ? plano.treinadorNome : ''));
@@ -13710,32 +14293,43 @@ storage: {
 
                         if (!Array.isArray(plano.etapas)) plano.etapas = [];
 
-                        if (etapaId) {
-                            const idx = plano.etapas.findIndex(e => e.id === etapaId);
-                            if (idx !== -1) {
-                                plano.etapas[idx] = {
-                                    ...plano.etapas[idx],
-                                    nome,
-                                    descricao: desc,
-                                    diasEstimados: dias,
-                                    qtdEstimada: qtd,
-                                    responsavelTipo: respTipo,
-                                    responsavelNome: respNome,
-                                    concluido,
-                                    dataConclusao: dataConc
-                                };
-                            }
-                        } else {
-                            plano.etapas.push({
-                                id: 'etp_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                        const cleanEtapaId = (etapaId && String(etapaId).trim() !== '') ? String(etapaId).trim() : null;
+                        const editIdx = cleanEtapaId ? plano.etapas.findIndex(e => e && e.id === cleanEtapaId) : -1;
+
+                        if (editIdx !== -1) {
+                            const eAtual = plano.etapas[editIdx];
+                            plano.etapas[editIdx] = {
+                                ...eAtual,
                                 nome,
                                 descricao: desc,
+                                cor,
+                                dataInicio: dataIni,
+                                dataFim,
                                 diasEstimados: dias,
                                 qtdEstimada: qtd,
                                 responsavelTipo: respTipo,
                                 responsavelNome: respNome,
                                 concluido,
-                                dataConclusao: dataConc
+                                dataConclusao: dataConc,
+                                atualizacoes: Array.isArray(eAtual.atualizacoes) ? eAtual.atualizacoes : [],
+                                planosAcao: Array.isArray(eAtual.planosAcao) ? eAtual.planosAcao : []
+                            };
+                        } else {
+                            plano.etapas.push({
+                                id: 'etp_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                                nome,
+                                descricao: desc,
+                                cor,
+                                dataInicio: dataIni,
+                                dataFim,
+                                diasEstimados: dias,
+                                qtdEstimada: qtd,
+                                responsavelTipo: respTipo,
+                                responsavelNome: respNome,
+                                concluido,
+                                dataConclusao: dataConc,
+                                atualizacoes: [],
+                                planosAcao: []
                             });
                         }
 
@@ -13798,7 +14392,263 @@ storage: {
                     );
                 },
 
-                                renderView_Hierarquia(container) {
+                adicionarAtualizacaoEtapaIA(opKey, etapaId) {
+                    try {
+                        const inputEl = document.getElementById(`att-input-${opKey}-${etapaId}`);
+                        if (!inputEl) return;
+                        const texto = (inputEl.value || '').trim();
+                        if (!texto) {
+                            app.ui.showAlert("Atenção", "Digite uma atualização para registrar o andamento.", "warning");
+                            return;
+                        }
+
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano || !Array.isArray(plano.etapas)) return;
+                        const etapa = plano.etapas.find(e => e.id === etapaId);
+                        if (!etapa) return;
+
+                        if (!Array.isArray(etapa.atualizacoes)) etapa.atualizacoes = [];
+
+                        const agora = new Date();
+                        const dataHoraBR = agora.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+                        etapa.atualizacoes.push({
+                            id: 'att_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                            texto,
+                            autorNome: app.currentUser ? app.utils.fixEncoding(app.currentUser.nome) : 'Colaborador',
+                            autorMatricula: app.currentUser?.matricula || '',
+                            autorCargo: app.currentUser?.tipoAcesso || 'Equipe',
+                            dataHora: dataHoraBR,
+                            timestamp: Date.now()
+                        });
+
+                        inputEl.value = '';
+
+                        app.storage.saveHarmony().then(() => {
+                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui.showAlert("Atualização Registrada", "Registro de andamento adicionado com sucesso.", "success");
+                        });
+                    } catch (err) {
+                        console.error("Erro em adicionarAtualizacaoEtapaIA:", err);
+                        app.ui.showAlert("Erro", "Não foi possível registrar a atualização.", "error");
+                    }
+                },
+
+                excluirAtualizacaoEtapaIA(opKey, etapaId, attId) {
+                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    if (!plano || !Array.isArray(plano.etapas)) return;
+                    const etapa = plano.etapas.find(e => e.id === etapaId);
+                    if (!etapa || !Array.isArray(etapa.atualizacoes)) return;
+
+                    app.ui.showConfirm(
+                        "Remover Atualização",
+                        "Deseja excluir este registro de andamento?",
+                        () => {
+                            etapa.atualizacoes = etapa.atualizacoes.filter(a => a.id !== attId);
+                            app.storage.saveHarmony().then(() => {
+                                app.ui.renderTab('implantacao_ia', true);
+                            });
+                        }
+                    );
+                },
+
+                abrirModalNovoPlanoAcaoIA(opKey, etapaId) {
+                    try {
+                        const esc = (s) => app.utils.escapeHtml(s);
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano) return;
+                        const etapa = (plano.etapas || []).find(e => e.id === etapaId);
+                        if (!etapa) return;
+
+                        const gm = document.getElementById('global-modal');
+                        if (!gm) return;
+                        const box = gm.firstElementChild;
+                        if (box) {
+                            box.classList.remove('max-w-3xl');
+                            box.classList.add('max-w-lg');
+                        }
+
+                        const titleEl = document.getElementById('modal-title');
+                        const contentEl = document.getElementById('modal-content');
+                        const actionsEl = document.getElementById('modal-actions');
+                        if (!titleEl || !contentEl || !actionsEl) return;
+
+                        titleEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i> Novo Plano de Ação — ${esc(etapa.nome)}`;
+
+                        const dataPadrao = etapa.dataFim || new Date().toISOString().split('T')[0];
+                        const respSugerido = etapa.responsavelNome || plano.monitorNome || plano.treinadorNome || '';
+
+                        contentEl.innerHTML = `
+                            <form id="form-pa-ia" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarPlanoAcaoIA('${esc(opKey)}', '${esc(etapaId)}');">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Ação / O que precisa ser feito *</label>
+                                    <textarea id="pa-form-titulo" rows="3" placeholder="Descreva a ação corretiva, ajuste de prompt, reforço de treinamento ou alinhamento necessário..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none focus:border-amber-500" required></textarea>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Quem ficou responsável *</label>
+                                        <input type="text" id="pa-form-resp" value="${esc(respSugerido)}" placeholder="Nome do responsável" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-amber-500" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Prazo Limite *</label>
+                                        <input type="date" id="pa-form-prazo" value="${esc(dataPadrao)}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-amber-500" required>
+                                    </div>
+                                </div>
+                            </form>
+                        `;
+
+                        actionsEl.innerHTML = `
+                            <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
+                            <button type="button" onclick="app.ui.salvarPlanoAcaoIA('${esc(opKey)}', '${esc(etapaId)}')" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm shadow-md">Salvar Plano de Ação</button>
+                        `;
+
+                        gm.classList.remove('hidden');
+                    } catch (err) {
+                        console.error("Erro em abrirModalNovoPlanoAcaoIA:", err);
+                    }
+                },
+
+                salvarPlanoAcaoIA(opKey, etapaId) {
+                    try {
+                        const titulo = (document.getElementById('pa-form-titulo')?.value || '').trim();
+                        const resp = (document.getElementById('pa-form-resp')?.value || '').trim();
+                        const prazo = document.getElementById('pa-form-prazo')?.value || '';
+
+                        if (!titulo || !resp || !prazo) {
+                            app.ui.showAlert("Atenção", "Preencha a descrição da ação, o responsável e o prazo.", "warning");
+                            return;
+                        }
+
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano || !Array.isArray(plano.etapas)) return;
+                        const etapa = plano.etapas.find(e => e.id === etapaId);
+                        if (!etapa) return;
+
+                        if (!Array.isArray(etapa.planosAcao)) etapa.planosAcao = [];
+
+                        etapa.planosAcao.push({
+                            id: 'pa_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                            titulo,
+                            responsavel: resp,
+                            prazo,
+                            concluido: false,
+                            criadoEm: new Date().toISOString(),
+                            criadoPor: app.currentUser ? app.utils.fixEncoding(app.currentUser.nome) : 'Usuário'
+                        });
+
+                        app.storage.saveHarmony().then(() => {
+                            const gm = document.getElementById('global-modal');
+                            if (gm) gm.classList.add('hidden');
+                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui.showAlert("Plano de Ação Registrado", "Ação vinculada com responsável e prazo definidos.", "success");
+                        });
+                    } catch (err) {
+                        console.error("Erro em salvarPlanoAcaoIA:", err);
+                        app.ui.showAlert("Erro", "Não foi possível gravar o plano de ação.", "error");
+                    }
+                },
+
+                togglePlanoAcaoConcluidoIA(opKey, etapaId, paId) {
+                    try {
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano || !Array.isArray(plano.etapas)) return;
+                        const etapa = plano.etapas.find(e => e.id === etapaId);
+                        if (!etapa || !Array.isArray(etapa.planosAcao)) return;
+                        const pa = etapa.planosAcao.find(p => p.id === paId);
+                        if (!pa) return;
+
+                        pa.concluido = !pa.concluido;
+                        if (pa.concluido) {
+                            pa.concluidoEm = new Date().toISOString();
+                            pa.concluidoPor = app.currentUser ? app.utils.fixEncoding(app.currentUser.nome) : '';
+                        } else {
+                            delete pa.concluidoEm;
+                            delete pa.concluidoPor;
+                        }
+
+                        app.storage.saveHarmony().then(() => {
+                            app.ui.renderTab('implantacao_ia', true);
+                        });
+                    } catch (err) {
+                        console.error("Erro em togglePlanoAcaoConcluidoIA:", err);
+                    }
+                },
+
+                excluirPlanoAcaoIA(opKey, etapaId, paId) {
+                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    if (!plano || !Array.isArray(plano.etapas)) return;
+                    const etapa = plano.etapas.find(e => e.id === etapaId);
+                    if (!etapa || !Array.isArray(etapa.planosAcao)) return;
+
+                    app.ui.showConfirm(
+                        "Excluir Plano de Ação",
+                        "Deseja remover esta ação da etapa?",
+                        () => {
+                            etapa.planosAcao = etapa.planosAcao.filter(p => p.id !== paId);
+                            app.storage.saveHarmony().then(() => {
+                                app.ui.renderTab('implantacao_ia', true);
+                            });
+                        }
+                    );
+                },
+
+                adicionarComentarioProjetoIA(opKey) {
+                    try {
+                        const inputEl = document.getElementById(`coment-input-${opKey}`);
+                        if (!inputEl) return;
+                        const texto = (inputEl.value || '').trim();
+                        if (!texto) {
+                            app.ui.showAlert("Atenção", "Digite um comentário ou alinhamento para enviar.", "warning");
+                            return;
+                        }
+
+                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        if (!plano) return;
+                        if (!Array.isArray(plano.comentarios)) plano.comentarios = [];
+
+                        const agora = new Date();
+                        const dataHoraBR = agora.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+                        plano.comentarios.push({
+                            id: 'com_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                            texto,
+                            autorNome: app.currentUser ? app.utils.fixEncoding(app.currentUser.nome) : 'Colaborador',
+                            autorMatricula: app.currentUser?.matricula || '',
+                            autorCargo: app.currentUser?.tipoAcesso || 'Equipe',
+                            dataHora: dataHoraBR,
+                            timestamp: Date.now()
+                        });
+
+                        inputEl.value = '';
+
+                        app.storage.saveHarmony().then(() => {
+                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui.showAlert("Comentário Enviado", "Alinhamento registrado para a equipe do projeto.", "success");
+                        });
+                    } catch (err) {
+                        console.error("Erro em adicionarComentarioProjetoIA:", err);
+                        app.ui.showAlert("Erro", "Não foi possível salvar o comentário.", "error");
+                    }
+                },
+
+                excluirComentarioProjetoIA(opKey, comId) {
+                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    if (!plano || !Array.isArray(plano.comentarios)) return;
+
+                    app.ui.showConfirm(
+                        "Excluir Comentário",
+                        "Deseja remover este comentário do projeto?",
+                        () => {
+                            plano.comentarios = plano.comentarios.filter(c => c.id !== comId);
+                            app.storage.saveHarmony().then(() => {
+                                app.ui.renderTab('implantacao_ia', true);
+                            });
+                        }
+                    );
+                },
+
+
+                renderView_Hierarquia(container) {
                     if (!app.hasAdminAccess('hierarquia') && !app.hasAdminAccess('gestao_equipe') && !app.isGestor() && !app.isSuperAdmin()) return;
                     app.syncOperacoesFromSetorial();
                     const opsSetoriais = app.getOperacoesSetoriais();
@@ -15522,7 +16372,7 @@ storage: {
                             <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Global da Falha:</h2>
                             <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4 mb-4" title="${decodedNome}">"${decodedNome}"</div>
                             
-                            <div class="w-full h-72 relative bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm mt-4">
+                            <div class="text-[10px] uppercase font-bold tracking-widest text-slate-400 mt-4 mb-2 text-left">Variação % vs mês anterior (taxa por ligação monitorada)</div><div class="w-full h-64 relative bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
                                 <canvas id="${uniqueCanvasId}"></canvas>
                             </div>
                         </div>
@@ -15541,26 +16391,12 @@ storage: {
                         if (ctxGlobal) {
                             if (window.chartFalhaGlobal) window.chartFalhaGlobal.destroy();
                             let cColor = type === 'critica' ? '#ef4444' : '#f97316';
-                            window.chartFalhaGlobal = new Chart(ctxGlobal, {
-                                type: 'line',
-                                data: {
-                                    labels: labelsMeses,
-                                    datasets: [{
-                                        data: chartDataValuesGlobal, 
-                                        borderColor: cColor, 
-                                        backgroundColor: cColor + '1A', 
-                                        fill: true, borderWidth: 3, tension: 0.4, pointRadius: 5, pointBackgroundColor: '#fff', pointBorderColor: cColor
-                                    }]
-                                },
-                                options: { 
-                                    responsive: true, maintainAspectRatio: false, 
-                                    plugins: { legend: { display: false }, tooltip: {titleFont:{size:11}, bodyFont:{size:12, weight:'bold'}, padding: 8} }, 
-                                    scales: { 
-                                        x: { display: true, grid: { display: false }, ticks: { font: { size: 10, weight: 'bold' } } }, 
-                                        y: { display: true, min: 0, suggestedMax: Math.max(...chartDataValuesGlobal) + 1, grid: { color: document.documentElement.classList.contains('dark') ? '#334155' : '#e2e8f0' } } 
-                                    } 
-                                }
-                            });
+                            let valsF = chartDataValuesGlobal.slice();
+                            if (!usarModoDiario && valsF.length === buckets.length && somaTotalGrafico > 0) {
+                                valsF = buckets.map((m, i) => { const L = ((data.mesesEvolutivo || {})[m] || {}).totalLinhas || 0; return L > 0 ? (chartDataValuesGlobal[i] / L) * 100 : 0; });
+                            }
+                            const varsF = valsF.map((v, i) => (i === 0 || !(valsF[i - 1] > 0)) ? 0 : parseFloat((((v - valsF[i - 1]) / valsF[i - 1]) * 100).toFixed(1)));
+                            window.chartFalhaGlobal = app.ui.buildVarChart(ctxGlobal, labelsMeses, { vals: valsF, vars: varsF }, type === 'critica' ? 'falhasCriticas' : 'desviosTotais');
                         }
                     }, 300);
                 },
@@ -15589,8 +16425,8 @@ storage: {
                     let criticosOpCount = {};
                     opData.avaliacoes.forEach(aval => {
                         aval.perguntas.forEach(p => {
-                            const isSim = p.a.toUpperCase().includes('SIM') || p.a.toUpperCase() === 'S';
-                            const isNao = p.a.toUpperCase().includes('NÃO') || p.a.toUpperCase() === 'NAO' || p.a.toUpperCase() === 'N';
+                            const aU = String(p.a || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim(); const isSim = aU === 'SIM' || aU === 'S' || aU.startsWith('SIM ');
+                            const isNao = aU === 'NAO' || aU === 'N' || aU.startsWith('NAO');
                             
                             if ((p.p === 100 || p.p === 0) && isSim) { 
                                 criticosOpCount[p.q] = (criticosOpCount[p.q] || 0) + 1;
@@ -15999,14 +16835,14 @@ storage: {
                     if(chartData.length > 1) {
                         chartHtml = `
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-4">
-                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução Histórica da Nota ${notaKey}</h4>
-                                <div class="w-full h-32 relative"><canvas id="nota-chart-canvas"></canvas></div>
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Variação % vs mês anterior: participação da nota ${notaKey}</h4>
+                                <div class="w-full h-44 relative"><canvas id="nota-chart-canvas"></canvas></div>
                             </div>
                         `;
                     }
 
                     // Detetive de Falhas Específicas dessa nota
-                    const linhasDestaNota = data.linhas ? data.linhas.filter(l => l.nota === notaNum) : [];
+                    const linhasDestaNota = Object.keys(data.operadores || {}).map(n => ({ operador: n }));
                     let errosEspecificos = {};
                     let criticosEspecificos = {};
 
@@ -16016,8 +16852,8 @@ storage: {
                             opDataFull.avaliacoes.forEach(aval => {
                                 if(aval.nota === notaNum) {
                                     aval.perguntas.forEach(p => {
-                                        const isSim = p.a.toUpperCase().includes('SIM') || p.a.toUpperCase() === 'S';
-                                        const isNao = p.a.toUpperCase().includes('NÃO') || p.a.toUpperCase() === 'NAO' || p.a.toUpperCase() === 'N';
+                                        const aU = String(p.a || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim(); const isSim = aU === 'SIM' || aU === 'S' || aU.startsWith('SIM ');
+                                        const isNao = aU === 'NAO' || aU === 'N' || aU.startsWith('NAO');
                                         if ((p.p === 100 || p.p === 0) && isSim) {
                                             criticosEspecificos[p.q] = (criticosEspecificos[p.q] || 0) + 1;
                                         } else if (p.p !== 100 && p.p !== 0 && isNao) {
@@ -16029,8 +16865,8 @@ storage: {
                         }
                     });
 
-                    const topErrNota = Object.entries(errosEspecificos).sort((a,b)=>b[1]-a[1]).slice(0,3);
-                    const topCritNota = Object.entries(criticosEspecificos).sort((a,b)=>b[1]-a[1]).slice(0,3);
+                    const topErrNota = Object.entries(errosEspecificos).sort((a,b)=>b[1]-a[1]).slice(0,5);
+                    const topCritNota = Object.entries(criticosEspecificos).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
                     let resumoErrosHtml = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div class="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-200 dark:border-orange-800/50 shadow-sm">
@@ -16090,11 +16926,9 @@ storage: {
                             if(window.notaChartModal) window.notaChartModal.destroy();
                             const ctx = document.getElementById('nota-chart-canvas');
                             if(ctx) {
-                                window.notaChartModal = new Chart(ctx, {
-                                    type: 'bar',
-                                    data: { labels: chartLabels, datasets: [{ data: chartData, backgroundColor: corHex, borderRadius: 4 }] },
-                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, ticks: {stepSize: 1} }, x: { grid: {display: false} } } }
-                                });
+                                const valsN = mesesOrd.map(mes => { const o = (data.mesesEvolutivo[mes] || {}); const L = o.totalLinhas || 0; const c = (o.notas && o.notas[notaKey]) || 0; return L > 0 ? (c / L) * 100 : 0; });
+                                const varsN = valsN.map((v, i) => (i === 0 || !(valsN[i - 1] > 0)) ? 0 : parseFloat((((v - valsN[i - 1]) / valsN[i - 1]) * 100).toFixed(1)));
+                                window.notaChartModal = app.ui.buildVarChart(ctx, chartLabels, { vals: valsN, vars: varsN }, notaNum >= 95 ? 'mediaTotal_var' : (notaNum < 80 ? 'desviosTotais' : 'totalLinhas'));
                             }
                         }, 300);
                     }
@@ -17011,7 +17845,7 @@ storage: {
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
                                 <div class="flex justify-between items-center mb-6">
-                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Variação % da Média vs Mês Anterior</h3>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média & Destaques</h3>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                     <div class="lg:col-span-2 w-full h-full min-h-[320px] relative">
@@ -17104,13 +17938,13 @@ storage: {
                             </div>`}
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${quadCards}</div>
                             <div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
                                     <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Distribuição (%) <span class="normal-case font-medium">- clique na fatia</span></div>
-                                    <div class="relative w-full h-72"><canvas id="chart-quad-dist"></canvas></div>
+                                    <div class="relative w-full h-64"><canvas id="chart-quad-dist"></canvas></div>
                                 </div>
-                                <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
                                     <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Evolução mensal (% de operadores por quadrante)</div>
-                                    <div class="relative w-full h-72"><canvas id="chart-quad-evol"></canvas></div>
+                                    <div class="relative w-full h-64"><canvas id="chart-quad-evol"></canvas></div>
                                 </div>
                             </div>
                         </div>
@@ -17267,13 +18101,13 @@ storage: {
                                 </div>`}
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${matCards}</div>
                                 <div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
                                         <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Distribuição (%) <span class="normal-case font-medium">- clique na fatia</span></div>
-                                        <div class="relative w-full h-72"><canvas id="chart-mat-dist"></canvas></div>
+                                        <div class="relative w-full h-64"><canvas id="chart-mat-dist"></canvas></div>
                                     </div>
-                                    <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                    <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
                                         <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Desempenho x Tempo de Casa (média por nível)</div>
-                                        <div class="relative w-full h-72"><canvas id="chart-curva-aprendizado"></canvas></div>
+                                        <div class="relative w-full h-64"><canvas id="chart-curva-aprendizado"></canvas></div>
                                     </div>
                                 </div>
                             </div>`;
@@ -17347,11 +18181,11 @@ storage: {
                             <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 animate-fade-in">
                                 <div class="lg:col-span-2 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm">
                                     <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Frequência de cada nota (% das avaliações) <span class="normal-case font-medium">- clique na barra</span></div>
-                                    <div class="relative w-full h-72"><canvas id="chart-notas-pct"></canvas></div>
+                                    <div class="relative w-full h-64"><canvas id="chart-notas-pct"></canvas></div>
                                 </div>
                                 <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm">
                                     <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Por faixa de desempenho (%)</div>
-                                    <div class="relative w-full h-72"><canvas id="chart-notas-faixas"></canvas></div>
+                                    <div class="relative w-full h-64"><canvas id="chart-notas-faixas"></canvas></div>
                                 </div>
                             </div>`;
                         const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(b) - parseFloat(a));
@@ -17383,7 +18217,7 @@ storage: {
                             `;
                         });
                         notasCards += `</div>`;
-                        html += notasCards;
+                        /* blocos de cards removidos: o grafico e clicavel */
                     }
 
                     // TABELA DETALHADA COM COLUNA QUADRANTE (TAMBÉM RETRÁTIL NO MODO APRESENTAÇÃO)
@@ -17583,6 +18417,25 @@ storage: {
                                         <div class="text-center mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><i class="fa-solid fa-pause"></i> Passe o mouse na área para pausar</div>
                                     </div>
                                     ` : '<div class="text-center text-slate-400 py-10 border-dashed border-2 rounded-2xl bg-slate-50 dark:bg-slate-900/50">Nenhuma imagem cadastrada nestas ações.</div>'}
+                                </div>
+                            `;
+                        }
+
+                        if (!this.analiseEditMode) {
+                            html += `
+                                <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700/80">
+                                    <div class="mb-4 flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                            <i class="fa-solid fa-folder-tree text-2xl text-blue-500"></i>
+                                            <div>
+                                                <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Apresentações Salvas (Nuvem)</h2>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400">Projetos salvos por você e compartilhados pela equipe/gestão.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="pastas-apresentacoes-grid">
+                                        ${app.admin.renderPastasApresentacoes()}
+                                    </div>
                                 </div>
                             `;
                         }
@@ -21052,9 +21905,38 @@ storage: {
                         try {
                             const dataAtual = new Date();
                             const id = 'apr_' + Date.now();
-                            const nome = `${app.ui.formatMonthLabel(app.currentMonth)} (Salvo)`;
-                            // O nome da pasta será o título customizado da Apresentação
-                            const pasta = app.analiseCSVDinamicoData.consolidado.customTitle || 'Apresentação Salva';
+
+                            // Verifica se veio do modal de arquivamento ou do clique direto
+                            const opInput = document.getElementById('save-apres-op');
+                            const mesInput = document.getElementById('save-apres-mes');
+                            const anoInput = document.getElementById('save-apres-ano');
+                            
+                            const customOp = opInput && opInput.value ? opInput.value.trim() : '';
+                            const customMes = mesInput ? mesInput.value : '';
+                            const customAno = anoInput ? anoInput.value : '';
+
+                            const nome = (customMes && customAno) ? `${customMes}/${customAno} (Salvo)` : `${app.ui.formatMonthLabel(app.currentMonth)} (Salvo)`;
+                            const pasta = customOp || app.analiseCSVDinamicoData.consolidado.customTitle || 'Apresentação Salva';
+
+                            const userMat = String(app.currentUser?.matricula || (app.isAdmin ? 'gestaosoft' : '')).trim();
+                            const userNome = app.currentUser ? (app.utils && app.utils.fixEncoding ? app.utils.fixEncoding(app.currentUser.nome) : app.currentUser.nome) : (app.isAdmin ? 'Administração Dev' : 'Colaborador');
+                            const userCargo = app.currentUser?.tipoAcesso || (app.isAdmin ? 'Dev' : 'Colaborador');
+
+                            // Matrículas com acesso garantido automaticamente:
+                            // 1. O próprio criador do projeto
+                            // 2. O gestor direto do criador (se houver)
+                            // 3. Todos os Gestores, Gerentes e Devs do sistema
+                            const allowedSet = new Set();
+                            if (userMat) allowedSet.add(userMat);
+                            if (app.currentUser?.gestorMatricula) {
+                                allowedSet.add(String(app.currentUser.gestorMatricula).trim());
+                            }
+                            (app.users || []).forEach(u => {
+                                const cargo = String(u.tipoAcesso || '').trim();
+                                if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin) {
+                                    if (u.matricula) allowedSet.add(String(u.matricula).trim());
+                                }
+                            });
 
                             const payload = {
                                 id: id,
@@ -21062,7 +21944,10 @@ storage: {
                                 pasta: pasta,
                                 dataStr: dataAtual.toLocaleDateString('pt-BR') + ' às ' + dataAtual.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
                                 timestamp: Date.now(),
-                                allowedUsers: [], // Array de matriculas permitidas a visualizar (novo sistema de compartilhamento)
+                                criadorMatricula: userMat,
+                                criadorNome: userNome,
+                                criadorCargo: userCargo,
+                                allowedUsers: Array.from(allowedSet),
                                 // MÁGICA: Transforma o texto de 15MB em uma string Base64 encriptada de 1.5MB!
                                 payloadData: LZString.compressToBase64(JSON.stringify(app.analiseCSVDinamicoData))
                             };
@@ -21077,10 +21962,14 @@ storage: {
                             if(!app.apresentacoesList) app.apresentacoesList = {};
                             app.apresentacoesList[id] = payload;
 
-                            app.storage.saveApresentacoes().then(() => {
+                            app.storage.saveApresentacoes(id).then(() => {
+                                const modal = document.getElementById('global-modal');
+                                if (modal && !modal.classList.contains('hidden')) {
+                                    modal.classList.add('hidden');
+                                }
                                 if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
                                 app.ui.renderTab('analise_csv_dinamico', true); 
-                                app.ui.showAlert("Apresentação Salva!", "Ela agora está na nuvem e disponível na tela inicial desta aba. Role para baixo para encontrá-la e usar o botão de 'Compartilhar' se quiser liberar o acesso para sua equipe.", "success");
+                                app.ui.showAlert("Projeto Salvo!", "O projeto foi salvo na nuvem com sucesso e já está disponível para você, seu gestor, gerentes e a equipe Dev.", "success");
                             }).catch(err => {
                                 console.error(err);
                                 if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
@@ -21098,9 +21987,22 @@ storage: {
                 renderPastasApresentacoes() {
                     let lista = Object.values(app.apresentacoesList || {}).sort((a,b) => b.timestamp - a.timestamp);
                     
-                    // SEGURANÇA: Se não for administrador, filtra a lista para mostrar APENAS o que foi liberado para a matrícula dele
-                    if (!app.isAdmin && app.currentUser) {
-                        lista = lista.filter(a => a.allowedUsers && a.allowedUsers.includes(app.currentUser.matricula));
+                    const userMat = String(app.currentUser?.matricula || '').trim();
+                    const userCargo = String(app.currentUser?.tipoAcesso || '').trim();
+                    const isGestaoOuDev = app.isAdmin || 
+                        (app.isSuperAdmin && app.isSuperAdmin()) || 
+                        (app.isGestor && app.isGestor()) || 
+                        ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
+
+                    // SEGURANÇA & ACESSO HIERÁRQUICO:
+                    // Se NÃO for Gestão/Dev, exibe apenas os projetos que foram criados pelo próprio usuário
+                    // ou que tenham sua matrícula explicitamente na lista de liberados (allowedUsers)
+                    if (!isGestaoOuDev && app.currentUser) {
+                        lista = lista.filter(a => {
+                            if (a.criadorMatricula && String(a.criadorMatricula).trim() === userMat) return true;
+                            if (Array.isArray(a.allowedUsers) && a.allowedUsers.some(m => String(m).trim() === userMat)) return true;
+                            return false;
+                        });
                     }
 
                     if(lista.length === 0) {
@@ -21123,20 +22025,28 @@ storage: {
                                     <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2 py-0.5 rounded-full font-black">${pastas[nomePasta].length}</span>
                                 </div>
                                 <div class="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                    ${pastas[nomePasta].map(apr => `
+                                    ${pastas[nomePasta].map(apr => {
+                                        const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim() === userMat);
+                                        const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim() === userMat;
+                                        return `
                                         <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group transition-colors hover:border-blue-300">
                                             <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${apr.id}')">
-                                                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors">${apr.nome}</div>
-                                                <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
-                                                    <span><i class="fa-regular fa-clock"></i> ${apr.dataStr}</span>${app.isAdmin && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 text-teal-700 px-1.5 rounded font-bold border border-teal-200"><i class="fa-solid fa-users"></i> ${apr.allowedUsers.length} liberados</span>` : ''}
+                                                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors flex items-center gap-2">
+                                                    <span class="truncate">${apr.nome}</span>
+                                                    ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide border border-emerald-200 dark:border-emerald-700 shrink-0">MEU PROJETO</span>` : ''}
+                                                </div>
+                                                <div class="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                                                    <span><i class="fa-regular fa-clock"></i> ${apr.dataStr}</span>
+                                                    ${apr.criadorNome ? `<span class="bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-semibold border border-slate-300/50 dark:border-slate-600"><i class="fa-solid fa-user-pen mr-1"></i>${apr.criadorNome}${apr.criadorCargo ? ` <span class="opacity-75 font-normal">(${apr.criadorCargo})</span>` : ''}</span>` : ''}
+                                                    ${canManage && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded font-bold border border-teal-200 dark:border-teal-700"><i class="fa-solid fa-users mr-1"></i>${apr.allowedUsers.length} liberados</span>` : ''}
                                                 </div>
                                             </div>
                                             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                                                ${app.isAdmin ? `<button onclick="app.admin.openShareApresentacaoModal('${apr.id}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Compartilhar / Liberar Acesso"><i class="fa-solid fa-user-plus text-xs"></i></button>` : ''}
-                                                ${app.isAdmin ? `<button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+                                                ${canManage ? `<button onclick="app.admin.openShareApresentacaoModal('${apr.id}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Compartilhar / Liberar Acesso"><i class="fa-solid fa-user-plus text-xs"></i></button>` : ''}
+                                                ${canManage ? `<button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
                                             </div>
                                         </div>
-                                    `).join('')}
+                                    `}).join('')}
                                 </div>
                             </div>
                         `;
@@ -21148,17 +22058,28 @@ storage: {
                     const apr = app.apresentacoesList[id];
                     if(!apr) return;
                     
-                    const allowed = apr.allowedUsers || [];
+                    const allowed = (apr.allowedUsers || []).map(m => String(m).trim());
+                    const criadorMat = String(apr.criadorMatricula || '').trim();
                     
                     // Monta a lista de caixinhas para marcar/desmarcar
-                    let userCheckboxes = app.users.map(u => {
-                        const isChecked = allowed.includes(u.matricula) ? 'checked' : '';
+                    let userCheckboxes = (app.users || []).map(u => {
+                        const uMat = String(u.matricula || '').trim();
+                        const cargo = String(u.tipoAcesso || '').trim();
+                        const isGestao = cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin;
+                        const isCriador = criadorMat && uMat === criadorMat;
+                        const isChecked = isCriador || isGestao || allowed.includes(uMat) ? 'checked' : '';
+                        const isDisabled = isCriador || isGestao ? 'disabled title="Acesso nativo permanente (Gestão/Criador)"' : '';
+
                         return `
-                            <label class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-teal-500 transition-colors">
-                                <input type="checkbox" value="${u.matricula}" class="share-user-check w-5 h-5 accent-teal-600" ${isChecked}>
-                                <div>
-                                    <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${u.nome}</div>
-                                    <div class="text-[10px] text-slate-500 uppercase tracking-widest">${u.matricula}</div>
+                            <label class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 ${isDisabled ? 'opacity-80 bg-slate-100 dark:bg-slate-800/80 cursor-default' : 'cursor-pointer hover:border-teal-500'} transition-colors">
+                                <input type="checkbox" value="${u.matricula}" class="share-user-check w-5 h-5 accent-teal-600" ${isChecked} ${isDisabled}>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm font-bold text-slate-700 dark:text-slate-200 truncate flex items-center gap-2">
+                                        <span class="truncate">${u.nome}</span>
+                                        ${isCriador ? `<span class="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 px-1 rounded font-black shrink-0">CRIADOR</span>` : ''}
+                                        ${isGestao ? `<span class="text-[9px] bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 px-1 rounded font-bold shrink-0">${cargo || 'Admin'}</span>` : ''}
+                                    </div>
+                                    <div class="text-[10px] text-slate-500 uppercase tracking-widest">${u.matricula} ${u.tipoAcesso ? `• ${u.tipoAcesso}` : ''}</div>
                                 </div>
                             </label>
                         `;
@@ -21166,10 +22087,14 @@ storage: {
 
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users text-teal-500"></i> Compartilhar Apresentação`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Selecione os colaboradores que poderão visualizar esta apresentação específica (<strong>${apr.nome}</strong>) na aba Analítica deles. Eles poderão visualizar e interagir com os gráficos, mas não poderão alterar os dados.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-2 leading-relaxed">Selecione os colaboradores que poderão visualizar esta apresentação específica (<strong>${apr.nome}</strong>) na aba Analítica deles. Eles poderão visualizar e interagir com os gráficos, mas não poderão alterar os dados.</p>
+                        <div class="p-2.5 mb-4 rounded-xl bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                            <i class="fa-solid fa-circle-info text-blue-500 text-sm"></i>
+                            <span>O criador, seu gestor, gerentes e devs possuem acesso nativo e permanente a este projeto salvo.</span>
+                        </div>
                         <div class="flex justify-between items-center mb-3">
-                            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Equipe Operacional</span>
-                            <button type="button" onclick="app.ui.toggleAllTabs('share-user-check')" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Todos</button>
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Colaboradores</span>
+                            <button type="button" onclick="const cbs = document.querySelectorAll('.share-user-check:not(:disabled)'); const allC = Array.from(cbs).every(c => c.checked); cbs.forEach(c => c.checked = !allC);" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Outros</button>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-2" id="share-users-container">
                             ${userCheckboxes}
@@ -21188,11 +22113,25 @@ storage: {
 
                 saveShareApresentacao(id) {
                     const checkboxes = document.querySelectorAll('.share-user-check:checked');
-                    const allowedUsers = Array.from(checkboxes).map(cb => cb.value);
+                    const allowedUsers = Array.from(checkboxes).map(cb => String(cb.value).trim());
                     
-                    if (app.apresentacoesList[id]) {
-                        app.apresentacoesList[id].allowedUsers = allowedUsers;
-                        app.storage.saveApresentacoes().then(() => {
+                    if (app.apresentacoesList && app.apresentacoesList[id]) {
+                        const apr = app.apresentacoesList[id];
+                        const allowedSet = new Set(allowedUsers);
+
+                        // Garante que o criador continue com acesso
+                        if (apr.criadorMatricula) allowedSet.add(String(apr.criadorMatricula).trim());
+
+                        // Garante que todos os Gestores, Gerentes e Devs continuem com acesso
+                        (app.users || []).forEach(u => {
+                            const cargo = String(u.tipoAcesso || '').trim();
+                            if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin) {
+                                if (u.matricula) allowedSet.add(String(u.matricula).trim());
+                            }
+                        });
+
+                        apr.allowedUsers = Array.from(allowedSet);
+                        app.storage.saveApresentacoes(id).then(() => {
                             document.getElementById('global-modal').classList.add('hidden');
                             app.ui.renderTab('analise_csv_dinamico', true);
                             app.ui.showAlert("Liberado com Sucesso", "Os usuários marcados agora podem acessar essa apresentação na aba Analítico Operação deles.", "success");
@@ -21240,7 +22179,7 @@ storage: {
 
                 deleteApresentacao(id) {
                     delete app.apresentacoesList[id];
-                    app.storage.saveApresentacoes().then(() => app.ui.renderTab('analise_csv_dinamico', true));
+                    app.storage.saveApresentacoes(id).then(() => app.ui.renderTab('analise_csv_dinamico', true));
                 },
 
                 filtrarGaleriaAcoes() {
@@ -22217,47 +23156,6 @@ storage: {
                     }
                 },
 
-                async testarChaveGemini() {
-                const keyInput = document.getElementById('cfg-gemini-key');
-                const btnTest = document.getElementById('btn-test-gemini');
-
-                if (!keyInput || !keyInput.value.trim()) {
-                    return app.ui.showAlert("Aviso", "Cole uma chave no campo antes de testar.", "error");
-                }
-
-                const apiKey = keyInput.value.trim();
-                // Voltamos para o modelo oficial atualizado
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-                btnTest.disabled = true;
-                btnTest.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testando...';
-
-                try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: "Responda apenas 'OK' se estiver funcionando." }] }]
-                        })
-                    });
-
-                    const data = await response.json();
-
-                    if (!response.ok) {
-                        throw new Error(data.error ? data.error.message : `Erro HTTP: ${response.status}`);
-                    }
-
-                    app.ui.showAlert("Conexão Bem-Sucedida!", "A chave é válida e a Inteligência Artificial respondeu corretamente. Não esqueça de clicar no botão verde <b>Salvar Nova Estrutura</b> lá embaixo!", "success");
-
-                } catch (error) {
-                    console.error("Teste Gemini Erro:", error);
-                    app.ui.showAlert("Falha na Conexão", `A chave informada foi recusada pelo Google.<br><br><b>Motivo:</b> ${error.message}`, "error");
-                } finally {
-                    btnTest.disabled = false;
-                    btnTest.innerHTML = '<i class="fa-solid fa-plug-circle-check"></i> Testar Conexão';
-                }
-            },
-
             async testarSupabase() {
                 const keyInput = document.getElementById('cfg-supabase-key');
                 const urlInput = document.getElementById('cfg-supabase-url');
@@ -22343,12 +23241,6 @@ storage: {
                             };
                         }
                     }
-
-                    // Salvar Integração Gemini
-                    const geminiKeyEl = document.getElementById('cfg-gemini-key');
-                    const geminiPromptEl = document.getElementById('cfg-gemini-prompt');
-                    if(geminiKeyEl) app.config.geminiApiKey = geminiKeyEl.value.trim();
-                    if(geminiPromptEl) app.config.geminiPrompt = geminiPromptEl.value.trim();
 
                     // Salvar Autenticação e E-mails (Supabase)
                     const supaKeyEl = document.getElementById('cfg-supabase-key');
@@ -23847,158 +24739,179 @@ storage: {
                 },
 
                 execReprocessarPontuacoes() {
-                    if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
-                        app.storage.ensureAtasLoaded(() => this.execReprocessarPontuacoes());
-                        return;
-                    }
-                    if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
-                        app.storage.ensureActionsLoaded(() => this.execReprocessarPontuacoes());
-                        return;
-                    }
-
-                    // Se app.atasList estiver vazio na memória, tenta recuperar de backup local
-                    if (!app.atasList || Object.keys(app.atasList).length === 0) {
-                        try {
-                            const local = localStorage.getItem('soft_atas_backup');
-                            if (local) {
-                                const parsed = JSON.parse(local);
-                                if (parsed && typeof parsed === 'object') {
-                                    if (Array.isArray(parsed)) {
-                                        app.atasList = {};
-                                        parsed.forEach(a => { if (a && a.id) app.atasList[a.id] = a; });
-                                    } else {
-                                        app.atasList = parsed;
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            console.warn("Recuperação local de atas:", e);
-                        }
-                    }
-
-                    // Se app.actionsList estiver vazio na memória, tenta recuperar de backup local
-                    if (!app.actionsList || Object.keys(app.actionsList).length === 0) {
-                        try {
-                            const local = localStorage.getItem('soft_actions_backup');
-                            if (local) {
-                                const parsed = JSON.parse(local);
-                                if (parsed && typeof parsed === 'object') {
-                                    if (Array.isArray(parsed)) {
-                                        app.actionsList = {};
-                                        parsed.forEach(a => { if (a && a.id) app.actionsList[a.id] = a; });
-                                    } else {
-                                        app.actionsList = parsed;
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            console.warn("Recuperação local de ações:", e);
-                        }
-                    }
-
-                    // 1. Identifica os IDs das metas no banco
-                    const gCalib = app.config && app.config.goals ? app.config.goals.find(g => g.type === 'calibracao') : null;
-                    const gAcoes = app.config && app.config.goals ? app.config.goals.find(g => g.type === 'actions') : null;
-                    const g3Id = gCalib ? gCalib.id : 'g3';
-                    const g4Id = gAcoes ? gAcoes.id : 'g4';
-
-                    // 2. Zera todas as Atas e Ações na memória dos usuários para evitar sobra de duplicados
-                    app.users.forEach(u => {
-                        if (u.results) {
-                            Object.keys(u.results).forEach(mes => {
-                                if (u.results[mes]) {
-                                    if (u.results[mes][g3Id]) u.results[mes][g3Id].val = '0';
-                                    if (u.results[mes][g4Id]) u.results[mes][g4Id].val = '0';
-                                }
+                    try {
+                        if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
+                            app.storage.ensureAtasLoaded(() => {
+                                app._atasLoadedFromCloud = true;
+                                setTimeout(() => this.execReprocessarPontuacoes(), 0);
                             });
+                            return;
                         }
-                    });
+                        if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                            app.storage.ensureActionsLoaded(() => {
+                                app._actionsLoadedFromCloud = true;
+                                setTimeout(() => this.execReprocessarPontuacoes(), 0);
+                            });
+                            return;
+                        }
 
-                    // 3. Reconstrói Calibrações (Atas Aprovadas) com inteligência de mês e colaboradores
-                    let countAtasAprovadas = 0;
-                    let countPontosCalib = 0;
-                    let atasMeses = {};
-
-                    Object.values(app.atasList || {}).forEach(ata => {
-                        if (!ata) return;
-                        const st = String(ata.status || '').toLowerCase().trim();
-                        const isAprovada = (st === 'aprovado' || st === 'aprovada' || st === 'aprovados' || ata.validadoCalibragem === true) && !st.includes('sem_bonus');
-
-                        if (isAprovada) {
-                            const mesRef = (app.ata && typeof app.ata.getAtaMonth === 'function' ? app.ata.getAtaMonth(ata) : null) || (ata.data ? ata.data.substring(0, 7) : app.currentMonth);
-
-                            let usersEncontrados = [];
-                            if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
-                                usersEncontrados = app.ata.findQualidadeUsersForAta(ata);
-                            } else {
-                                let nomesAlvo = [];
-                                if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
-                                if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
-                                usersEncontrados = app.users.filter(u => app.isUserQualidade(u) && (nomesAlvo.includes(u.nome.toUpperCase().trim()) || String(u.matricula).trim() === String(ata.matricula || '').trim()));
+                        // Se app.atasList estiver vazio na memória, tenta recuperar de backup local
+                        if (!app.atasList || Object.keys(app.atasList).length === 0) {
+                            try {
+                                const local = localStorage.getItem('soft_atas_backup');
+                                if (local) {
+                                    const parsed = JSON.parse(local);
+                                    if (parsed && typeof parsed === 'object') {
+                                        if (Array.isArray(parsed)) {
+                                            app.atasList = {};
+                                            parsed.forEach(a => { if (a && a.id) app.atasList[a.id] = a; });
+                                        } else {
+                                            app.atasList = parsed;
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn("Recuperação local de atas:", e);
                             }
+                        }
 
-                            if (usersEncontrados.length > 0) {
-                                countAtasAprovadas++;
-                                atasMeses[mesRef] = (atasMeses[mesRef] || 0) + 1;
-                                usersEncontrados.forEach(userEncontrado => {
-                                    if (!userEncontrado.results) userEncontrado.results = {};
-                                    if (!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
-                                    if (!userEncontrado.results[mesRef][g3Id]) userEncontrado.results[mesRef][g3Id] = { val: '0' };
+                        // Se app.actionsList estiver vazio na memória, tenta recuperar de backup local
+                        if (!app.actionsList || Object.keys(app.actionsList).length === 0) {
+                            try {
+                                const local = localStorage.getItem('soft_actions_backup');
+                                if (local) {
+                                    const parsed = JSON.parse(local);
+                                    if (parsed && typeof parsed === 'object') {
+                                        if (Array.isArray(parsed)) {
+                                            app.actionsList = {};
+                                            parsed.forEach(a => { if (a && a.id) app.actionsList[a.id] = a; });
+                                        } else {
+                                            app.actionsList = parsed;
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn("Recuperação local de ações:", e);
+                            }
+                        }
 
-                                    let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
-                                    userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
-                                    countPontosCalib++;
+                        // 1. Identifica os IDs das metas no banco
+                        const gCalib = app.config && app.config.goals ? app.config.goals.find(g => g.type === 'calibracao') : null;
+                        const gAcoes = app.config && app.config.goals ? app.config.goals.find(g => g.type === 'actions') : null;
+                        const g3Id = gCalib ? gCalib.id : 'g3';
+                        const g4Id = gAcoes ? gAcoes.id : 'g4';
+
+                        if (!Array.isArray(app.users)) app.users = [];
+
+                        // 2. Zera todas as Atas e Ações na memória dos usuários para evitar sobra de duplicados
+                        app.users.forEach(u => {
+                            if (u && u.results) {
+                                Object.keys(u.results).forEach(mes => {
+                                    if (u.results[mes]) {
+                                        if (u.results[mes][g3Id]) u.results[mes][g3Id].val = '0';
+                                        if (u.results[mes][g4Id]) u.results[mes][g4Id].val = '0';
+                                    }
                                 });
                             }
-                        }
-                    });
+                        });
 
-                    // 4. Reconstrói Ações Presenciais Aprovadas
-                    let countAcoesAprovadas = 0;
-                    let countPontosAcoes = 0;
-                    Object.values(app.actionsList || {}).forEach(act => {
-                        if (!act) return;
-                        const stAct = String(act.status || '').toLowerCase().trim();
-                        if (stAct === 'aprovado' || stAct === 'aprovada') {
-                            const mesRef = act.month || (act.data ? act.data.substring(0, 7) : app.currentMonth);
-                            const userIdx = app.users.findIndex(x => String(x.matricula).trim() === String(act.matricula || '').trim());
-                            if (userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
-                                const u = app.users[userIdx];
-                                if (!u.results) u.results = {};
-                                if (!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
-                                if (!u.results[mesRef][g4Id]) u.results[mesRef][g4Id] = { val: '0' };
+                        // 3. Reconstrói Calibrações (Atas Aprovadas) com inteligência de mês e colaboradores
+                        let countAtasAprovadas = 0;
+                        let countPontosCalib = 0;
+                        let atasMeses = {};
 
-                                let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
-                                u.results[mesRef][g4Id].val = (atual + 1).toString();
-                                countAcoesAprovadas++;
-                                countPontosAcoes++;
+                        Object.values(app.atasList || {}).forEach(ata => {
+                            if (!ata) return;
+                            const st = String(ata.status || '').toLowerCase().trim();
+                            const isAprovada = (st === 'aprovado' || st === 'aprovada' || st === 'aprovados' || ata.validadoCalibragem === true) && !st.includes('sem_bonus');
+
+                            if (isAprovada) {
+                                const mesRef = (app.ata && typeof app.ata.getAtaMonth === 'function' ? app.ata.getAtaMonth(ata) : null) || (ata.data ? ata.data.substring(0, 7) : app.currentMonth);
+
+                                let usersEncontrados = [];
+                                if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
+                                    usersEncontrados = app.ata.findQualidadeUsersForAta(ata);
+                                } else {
+                                    let nomesAlvo = [];
+                                    if (ata.qualidade) nomesAlvo.push(ata.qualidade.toUpperCase().trim());
+                                    if (ata.qualidade2) nomesAlvo.push(ata.qualidade2.toUpperCase().trim());
+                                    usersEncontrados = app.users.filter(u => u && app.isUserQualidade(u) && (nomesAlvo.includes(String(u.nome || '').toUpperCase().trim()) || String(u.matricula).trim() === String(ata.matricula || '').trim()));
+                                }
+
+                                if (usersEncontrados.length > 0) {
+                                    countAtasAprovadas++;
+                                    atasMeses[mesRef] = (atasMeses[mesRef] || 0) + 1;
+                                    usersEncontrados.forEach(userEncontrado => {
+                                        if (!userEncontrado.results) userEncontrado.results = {};
+                                        if (!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                                        if (!userEncontrado.results[mesRef][g3Id]) userEncontrado.results[mesRef][g3Id] = { val: '0' };
+
+                                        let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
+                                        userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
+                                        countPontosCalib++;
+                                    });
+                                }
                             }
-                        }
-                    });
+                        });
 
-                    // 5. Salva backups locais e sincroniza com Firebase
-                    try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
-                    try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+                        // 4. Reconstrói Ações Presenciais Aprovadas
+                        let countAcoesAprovadas = 0;
+                        let countPontosAcoes = 0;
+                        Object.values(app.actionsList || {}).forEach(act => {
+                            if (!act) return;
+                            const stAct = String(act.status || '').toLowerCase().trim();
+                            if (stAct === 'aprovado' || stAct === 'aprovada') {
+                                const mesRef = act.month || (act.data ? act.data.substring(0, 7) : app.currentMonth);
+                                const userIdx = app.users.findIndex(x => x && String(x.matricula).trim() === String(act.matricula || '').trim());
+                                if (userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
+                                    const u = app.users[userIdx];
+                                    if (!u.results) u.results = {};
+                                    if (!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
+                                    if (!u.results[mesRef][g4Id]) u.results[mesRef][g4Id] = { val: '0' };
 
-                    firebase.database().ref('sistema_bonificacao/users').set(app.users).then(() => {
-                        if (app.currentUser) {
-                            const atualizado = app.users.find(u => u.matricula === app.currentUser.matricula);
-                            if (atualizado) app.currentUser = atualizado;
-                        }
-                        const mesesStr = Object.keys(atasMeses).map(m => `${m}: ${atasMeses[m]} ata(s)`).join(', ') || 'Nenhum mês com atas';
-                        app.ui.showAlert(
-                            "Reprocessamento Concluído",
-                            `Os indicadores foram auditados e reconstruídos com sucesso!<br/><br/>` +
-                            `<i class="fa-solid fa-file-signature text-blue-500 mr-1"></i> <b>${countAtasAprovadas}</b> ata(s) aprovada(s) (${countPontosCalib} bônus creditados)<br/>` +
-                            `<i class="fa-solid fa-calendar-check text-purple-500 mr-1"></i> Distribuição por mês: <b>${mesesStr}</b><br/>` +
-                            `<i class="fa-solid fa-user-check text-emerald-500 mr-1"></i> <b>${countAcoesAprovadas}</b> ação(ões) presencial(is) validada(s) (${countPontosAcoes} bônus creditados).`,
-                            "success"
-                        );
-                        app.ui.renderTab(app.currentTab, true);
-                    }).catch(err => {
-                        console.error("Erro ao salvar usuários reprocessados:", err);
-                        app.ui.showAlert("Erro", "Falha ao salvar no banco de dados: " + (err.message || err), "error");
-                    });
+                                    let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
+                                    u.results[mesRef][g4Id].val = (atual + 1).toString();
+                                    countAcoesAprovadas++;
+                                    countPontosAcoes++;
+                                }
+                            }
+                        });
+
+                        // 5. Salva backups locais e sincroniza com Firebase
+                        try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
+                        try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+
+                        const savePromise = (app.storage && typeof app.storage.saveUsers === 'function')
+                            ? app.storage.saveUsers()
+                            : ((typeof firebase !== 'undefined' && firebase.database)
+                                ? firebase.database().ref('sistema_bonificacao/users').set(app.users)
+                                : Promise.resolve());
+
+                        savePromise.then(() => {
+                            if (app.currentUser) {
+                                const atualizado = app.users.find(u => u && u.matricula === app.currentUser.matricula);
+                                if (atualizado) app.currentUser = atualizado;
+                            }
+                            const mesesStr = Object.keys(atasMeses).map(m => `${m}: ${atasMeses[m]} ata(s)`).join(', ') || 'Nenhum mês com atas';
+                            app.ui.showAlert(
+                                "Reprocessamento Concluído",
+                                `Os indicadores foram auditados e reconstruídos com sucesso!<br/><br/>` +
+                                `<i class="fa-solid fa-file-signature text-blue-500 mr-1"></i> <b>${countAtasAprovadas}</b> ata(s) aprovada(s) (${countPontosCalib} bônus creditados)<br/>` +
+                                `<i class="fa-solid fa-calendar-check text-purple-500 mr-1"></i> Distribuição por mês: <b>${mesesStr}</b><br/>` +
+                                `<i class="fa-solid fa-user-check text-emerald-500 mr-1"></i> <b>${countAcoesAprovadas}</b> ação(ões) presencial(is) validada(s) (${countPontosAcoes} bônus creditados).`,
+                                "success"
+                            );
+                            if (app.ui && typeof app.ui.renderTab === 'function') {
+                                app.ui.renderTab(app.currentTab, true);
+                            }
+                        }).catch(err => {
+                            console.error("Erro ao salvar usuários reprocessados:", err);
+                            app.ui.showAlert("Erro", "Falha ao salvar no banco de dados: " + (err.message || err), "error");
+                        });
+                    } catch (globalErr) {
+                        console.error("Erro ao executar reprocessamento de pontuações:", globalErr);
+                        app.ui.showAlert("Erro no Reprocessamento", "Ocorreu uma falha ao reprocessar: " + (globalErr.message || globalErr), "error");
+                    }
                 },
 
                 // --- NOVO GERADOR DE GRÁFICOS (EXPORT PNG) ---
