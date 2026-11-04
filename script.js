@@ -1551,16 +1551,49 @@ storage: {
 
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
+
+                // 1. Salva na gaveta do mês anterior antes da troca
+                if (this.currentMonth && this.allMonitorias && this.monitoriasData) {
+                    this.allMonitorias[this.currentMonth] = this.monitoriasData;
+                }
+                if (this.currentMonth && this.allAnatel && this.anatelData) {
+                    this.allAnatel[this.currentMonth] = this.anatelData;
+                }
+
                 this.currentMonth = newMonthStr;
                 try { localStorage.setItem('soft_current_month', newMonthStr); } catch (e) {}
+
+                const gmEl = document.getElementById('global-month');
+                if (gmEl && gmEl.value !== newMonthStr) gmEl.value = newMonthStr;
+
                 if (this.currentTab === 'controle_estoque') { this.ui.renderTab('controle_estoque', true); }
                 
-                // MÁGICA DE ISOLAMENTO: Troca as planilhas exibidas para o mês selecionado
+                // 2. Isolamento rigoroso: Troca as planilhas para o mês selecionado com estrutura completa e zerada
                 if (this.allMonitorias) {
-                    this.monitoriasData = this.allMonitorias[newMonthStr] || { ranking: [] };
+                    if (!this.allMonitorias[newMonthStr]) {
+                        this.allMonitorias[newMonthStr] = {
+                            periodo: newMonthStr,
+                            ranking: [],
+                            detalhes: { mediaTotal: 0, colaboradores: [], linhas: [] },
+                            lancamentosManuais: {}
+                        };
+                    }
+                    this.monitoriasData = this.allMonitorias[newMonthStr];
+                    if (!this.monitoriasData.detalhes) this.monitoriasData.detalhes = { mediaTotal: 0, colaboradores: [], linhas: [] };
+                    if (!this.monitoriasData.lancamentosManuais) this.monitoriasData.lancamentosManuais = {};
+                    if (!Array.isArray(this.monitoriasData.ranking)) this.monitoriasData.ranking = [];
                 }
                 if (this.allAnatel) {
-                    this.anatelData = this.allAnatel[newMonthStr] || { registros: [], canceladasNovas: [] };
+                    if (!this.allAnatel[newMonthStr]) {
+                        this.allAnatel[newMonthStr] = { registros: [], canceladasNovas: [] };
+                    }
+                    this.anatelData = this.allAnatel[newMonthStr];
+                }
+
+                // 3. Atualiza app.currentUser para manter ponteiros sincronizados com a base
+                if (this.currentUser && Array.isArray(this.users)) {
+                    const freshUser = this.users.find(u => u && u.matricula === this.currentUser.matricula);
+                    if (freshUser) this.currentUser = freshUser;
                 }
 
                 // Cancela qualquer renderização pendente para evitar colisão ao trocar de mês
@@ -2326,39 +2359,65 @@ storage: {
                     return s;
                 },
 
+                isStrictNameMatch(nameA, nameB) {
+                    const sanitize = (s) => String(s || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9\s]/g, " ").trim();
+                    const a = sanitize(nameA);
+                    const b = sanitize(nameB);
+                    if (!a || !b || a.length < 3 || b.length < 3) return false;
+                    if (a === b) return true;
+                    
+                    const tokensA = a.split(/\s+/).filter(t => t.length >= 2);
+                    const tokensB = b.split(/\s+/).filter(t => t.length >= 2);
+                    
+                    // Se um deles tem apenas 1 palavra (ex: "ANA" ou "LUCAS"), exige igualdade exata absoluta para evitar falso positivo entre homônimos
+                    if (tokensA.length === 1 || tokensB.length === 1) {
+                        return a === b;
+                    }
+                    
+                    // Ambos têm 2 ou mais palavras
+                    // O primeiro nome DEVE ser idêntico
+                    if (tokensA[0] !== tokensB[0]) return false;
+                    
+                    // Filtra palavras de ligação comuns (da, de, do, dos, das, e)
+                    const stopwords = ['DE', 'DA', 'DO', 'DOS', 'DAS', 'E'];
+                    const surnamesA = tokensA.slice(1).filter(t => t.length >= 2 && !stopwords.includes(t));
+                    const surnamesB = tokensB.slice(1).filter(t => t.length >= 2 && !stopwords.includes(t));
+                    
+                    if (surnamesA.length === 0 || surnamesB.length === 0) return false;
+                    
+                    // Se o último sobrenome for idêntico, é match
+                    if (surnamesA[surnamesA.length - 1] === surnamesB[surnamesB.length - 1]) return true;
+                    
+                    // Ou se compartilha ao menos um sobrenome significativo com 3 ou mais letras
+                    return surnamesA.some(sA => sA.length >= 3 && surnamesB.includes(sA));
+                },
+
                 findQualidadeUsersForAta(ata) {
                     if (!ata) return [];
-                    const sanitize = (s) => String(s || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                    const ataMat = String(ata.matricula || '').trim();
+                    const ataMatQ1 = String(ata.matriculaQualidade || '').trim();
+                    const ataMatQ2 = String(ata.matriculaQualidade2 || '').trim();
                     
                     let rawTargets = [];
                     if (ata.qualidade) rawTargets.push(...String(ata.qualidade).split(/[/,e&+-]/));
                     if (ata.qualidade2) rawTargets.push(...String(ata.qualidade2).split(/[/,e&+-]/));
-                    
-                    const cleanTargets = rawTargets.map(t => sanitize(t)).filter(t => t.length >= 3);
-                    const ataMat = String(ata.matricula || '').trim();
+                    const cleanTargets = rawTargets.map(t => String(t || '').trim()).filter(t => t.length >= 3);
 
                     return (app.users || []).filter(u => {
                         if (!u) return false;
                         const uMat = String(u.matricula || '').trim();
                         const isQualidadeUser = app.isUserQualidade(u) || (u.results && Object.values(u.results).some(r => r && r.g3));
                         
-                        // Match por matrícula do criador
-                        if (ataMat && uMat === ataMat && isQualidadeUser) return true;
+                        // 1. Match estrito por matrícula (criador ou responsável direto da qualidade)
+                        if (uMat && (uMat === ataMat || uMat === ataMatQ1 || uMat === ataMatQ2) && isQualidadeUser) {
+                            return true;
+                        }
                         
-                        // Match por nome (exato, parcial inteligente ou primeiro/último)
-                        const uNome = sanitize(u.nome);
-                        if (!uNome) return false;
-
+                        // 2. Match estrito por nome
                         for (const target of cleanTargets) {
-                            if (uNome === target) return true;
-                            if (uNome.includes(target) || target.includes(uNome)) return true;
-                            
-                            const uTokens = uNome.split(/\s+/).filter(t => t.length > 2);
-                            const targetTokens = target.split(/\s+/).filter(t => t.length > 2);
-                            if (uTokens.length > 0 && targetTokens.length > 0 && uTokens[0] === targetTokens[0]) {
-                                if (targetTokens.length === 1 || uTokens.some(ut => targetTokens.includes(ut))) {
-                                    return true;
-                                }
+                            if (uMat && target === uMat) return true;
+                            if (u.nome && this.isStrictNameMatch(u.nome, target)) {
+                                return true;
                             }
                         }
                         return false;
@@ -12277,22 +12336,33 @@ storage: {
                 renderView_MinhasAtas(container) {
                     if(app.isAdmin) return;
                     const curMat = String(app.currentUser?.matricula || '').trim();
-                    const curNome = String(app.currentUser?.nome || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                    const curNome = String(app.currentUser?.nome || '').trim();
 
                     const mesFiltro = this.minhasAtasFiltroMes || app.currentMonth;
                     const allAtas = Object.values(app.atasList || {}).filter(a => {
                         if (!a) return false;
                         const aMat = String(a.matricula || '').trim();
+                        // 1. O próprio autor/criador da ata
                         if (curMat && aMat === curMat) return true;
                         
-                        const aQual = String(a.qualidade || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-                        const aQual2 = String(a.qualidade2 || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-                        if (curNome && (aQual.includes(curNome) || curNome.includes(aQual) || aQual2.includes(curNome) || curNome.includes(aQual2))) return true;
-                        
+                        // 2. Vinculação por matrícula direta de qualidade
+                        const aMatQual1 = String(a.matriculaQualidade || '').trim();
+                        const aMatQual2 = String(a.matriculaQualidade2 || '').trim();
+                        if (curMat && (aMatQual1 === curMat || aMatQual2 === curMat)) return true;
+
+                        // 3. Usuários identificados de forma estrita pela função mestre de calibração
                         if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
                             const matchedUsers = app.ata.findQualidadeUsersForAta(a);
                             if (matchedUsers.some(u => String(u.matricula).trim() === curMat)) return true;
                         }
+
+                        // 4. Checagem estrita por nome (primeiro nome + sobrenome significativo idêntico; bloqueia primeiro nome isolado)
+                        const aQual = String(a.qualidade || '').trim();
+                        const aQual2 = String(a.qualidade2 || '').trim();
+                        if (curNome && app.ata && typeof app.ata.isStrictNameMatch === 'function') {
+                            if (app.ata.isStrictNameMatch(curNome, aQual) || app.ata.isStrictNameMatch(curNome, aQual2)) return true;
+                        }
+
                         return false;
                     });
 
@@ -12899,8 +12969,37 @@ storage: {
                     if (!iso) return String(dataStr);
                     const partes = iso.split('-');
                     if (partes.length !== 3) return String(dataStr);
-                    const dt = new Date(parseInt(partes[0], 10), parseInt(partes[1], 10) - 1, parseInt(partes[2], 10));
-                    dt.setDate(dt.getDate() + (parseInt(dias, 10) || 0));
+                    const dt = new Date(parseInt(partes[0], 10), parseInt(partes[1], 10) - 1, parseInt(partes[2], 10), 12, 0, 0);
+                    
+                    let qtd = parseInt(dias, 10) || 0;
+                    if (qtd >= 0) {
+                        // Se a data inicial for sábado ou domingo, avança para a próxima segunda-feira
+                        if (dt.getDay() === 6) dt.setDate(dt.getDate() + 2);
+                        else if (dt.getDay() === 0) dt.setDate(dt.getDate() + 1);
+
+                        // Avança em dias úteis de trabalho (desconsiderando sábado e domingo)
+                        while (qtd > 0) {
+                            dt.setDate(dt.getDate() + 1);
+                            const dow = dt.getDay();
+                            if (dow !== 0 && dow !== 6) {
+                                qtd--;
+                            }
+                        }
+                    } else {
+                        // Se negativo, retrocede em dias úteis
+                        if (dt.getDay() === 6) dt.setDate(dt.getDate() - 1);
+                        else if (dt.getDay() === 0) dt.setDate(dt.getDate() - 2);
+
+                        let retro = Math.abs(qtd);
+                        while (retro > 0) {
+                            dt.setDate(dt.getDate() - 1);
+                            const dow = dt.getDay();
+                            if (dow !== 0 && dow !== 6) {
+                                retro--;
+                            }
+                        }
+                    }
+
                     const y = dt.getFullYear();
                     const m = String(dt.getMonth() + 1).padStart(2, '0');
                     const d = String(dt.getDate()).padStart(2, '0');
@@ -12908,13 +13007,32 @@ storage: {
                 },
 
                 _diferencaDias(dataIniStr, dataFimStr) {
-                    const ms1 = this._parseDateMs(dataIniStr, 0);
-                    const ms2 = this._parseDateMs(dataFimStr, ms1);
-                    const diff = Math.round((ms2 - ms1) / 86400000);
-                    return Math.max(1, diff + 1);
+                    const isoIni = this._parseDateToISO(dataIniStr);
+                    const isoFim = this._parseDateToISO(dataFimStr);
+                    if (!isoIni || !isoFim) return 1;
+
+                    const pIni = isoIni.split('-');
+                    const pFim = isoFim.split('-');
+                    const dtIni = new Date(parseInt(pIni[0], 10), parseInt(pIni[1], 10) - 1, parseInt(pIni[2], 10), 12, 0, 0);
+                    const dtFim = new Date(parseInt(pFim[0], 10), parseInt(pFim[1], 10) - 1, parseInt(pFim[2], 10), 12, 0, 0);
+
+                    if (dtFim.getTime() < dtIni.getTime()) return 1;
+
+                    // Conta apenas dias úteis de trabalho (segunda a sexta, desconsiderando sábado e domingo)
+                    let count = 0;
+                    const curr = new Date(dtIni.getTime());
+                    while (curr.getTime() <= dtFim.getTime()) {
+                        const dow = curr.getDay();
+                        if (dow !== 0 && dow !== 6) {
+                            count++;
+                        }
+                        curr.setDate(curr.getDate() + 1);
+                    }
+                    return Math.max(1, count);
                 },
 
                 _aoMudarDataEtapaIA() {
+                    if (document.getElementById('etp-form-semprevisao')?.checked) return;
                     const iniEl = document.getElementById('etp-form-dataini');
                     const fimEl = document.getElementById('etp-form-datafim');
                     const diasEl = document.getElementById('etp-form-dias');
@@ -12924,12 +13042,63 @@ storage: {
                 },
 
                 _aoMudarDiasEtapaIA() {
+                    if (document.getElementById('etp-form-semprevisao')?.checked) return;
                     const iniEl = document.getElementById('etp-form-dataini');
                     const fimEl = document.getElementById('etp-form-datafim');
                     const diasEl = document.getElementById('etp-form-dias');
                     if (iniEl && fimEl && diasEl && iniEl.value && diasEl.value) {
                         const dias = parseInt(diasEl.value, 10) || 1;
                         fimEl.value = this._somarDias(iniEl.value, dias - 1);
+                    }
+                },
+
+                _aoAlternarSemPrevisaoEtapaIA(semPrev) {
+                    const fimEl = document.getElementById('etp-form-datafim');
+                    const diasEl = document.getElementById('etp-form-dias');
+                    const iniEl = document.getElementById('etp-form-dataini');
+                    if (!fimEl || !diasEl) return;
+                    if (semPrev) {
+                        fimEl.value = '';
+                        fimEl.disabled = true;
+                        fimEl.classList.add('opacity-40', 'bg-slate-100', 'dark:bg-slate-800');
+                        diasEl.value = '';
+                        diasEl.disabled = true;
+                        diasEl.placeholder = 'Sem previsão';
+                        diasEl.classList.add('opacity-40', 'bg-slate-100', 'dark:bg-slate-800');
+                    } else {
+                        fimEl.disabled = false;
+                        fimEl.classList.remove('opacity-40', 'bg-slate-100', 'dark:bg-slate-800');
+                        diasEl.disabled = false;
+                        diasEl.placeholder = '';
+                        diasEl.classList.remove('opacity-40', 'bg-slate-100', 'dark:bg-slate-800');
+                        if (!fimEl.value && iniEl && iniEl.value) {
+                            diasEl.value = 5;
+                            fimEl.value = this._somarDias(iniEl.value, 4);
+                        }
+                    }
+                },
+
+                _aoMudarTipoResponsavelEtapaIA() {
+                    const formEl = document.getElementById('form-etapa-ia');
+                    if (!formEl) return;
+                    const opKey = formEl.getAttribute('data-opkey');
+                    const plano = this._findPlanoIA(opKey);
+                    const tipoEl = document.getElementById('etp-form-resptipo');
+                    const nomeEl = document.getElementById('etp-form-respnome');
+                    if (!tipoEl || !nomeEl || !plano) return;
+
+                    const val = tipoEl.value;
+                    const monNome = (plano.monitorNome || '').trim();
+                    const treNome = (plano.treinadorNome || '').trim();
+
+                    if (val === 'Monitor') {
+                        nomeEl.value = monNome || 'Monitor de Qualidade';
+                    } else if (val === 'Treinador') {
+                        nomeEl.value = treNome || 'Treinador da Operação';
+                    } else if (val === 'Ambos') {
+                        nomeEl.value = (monNome && treNome) ? `${monNome} & ${treNome}` : (monNome || treNome || 'Monitor & Treinador');
+                    } else if (val === 'Liderança') {
+                        nomeEl.value = 'Supervisão / Liderança';
                     }
                 },
 
@@ -13115,11 +13284,20 @@ storage: {
                             const etapasRaw = Array.isArray(p.etapas) ? p.etapas : [];
                             const etapas = etapasRaw.map((e, idx) => {
                                 const cor = e.cor || CORES_DEFAULT[idx % CORES_DEFAULT.length];
+                                const isSemPrev = !!(e.semPrevisao || e.dataFim === 'SEM_PREVISAO' || e.dataFim === 'Sem Previsão' || e.dataFim === 'sem_previsao');
                                 const dataIni = e.dataInicio || p.dataInicio || new Date().toISOString().split('T')[0];
-                                const dias = parseInt(e.diasEstimados, 10) || 5;
-                                const dataFim = e.dataFim || this._somarDias(dataIni, dias - 1);
+                                let dias = 0;
+                                let dataFim = '';
+                                if (isSemPrev) {
+                                    dias = 0;
+                                    dataFim = '';
+                                } else {
+                                    dias = (e.dataInicio && e.dataFim) ? this._diferencaDias(e.dataInicio, e.dataFim) : (parseInt(e.diasEstimados, 10) || 5);
+                                    dataFim = e.dataFim || this._somarDias(dataIni, dias - 1);
+                                }
                                 return {
                                     ...e,
+                                    semPrevisao: isSemPrev,
                                     cor,
                                     dataInicio: dataIni,
                                     dataFim,
@@ -13134,7 +13312,8 @@ storage: {
                             const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
                             const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados, 10) || 0), 0);
                             let statusCalculado = 'pendente';
-                            if (pct === 100) statusCalculado = 'implantado';
+                            if (p.status === 'pausado') statusCalculado = 'pausado';
+                            else if (pct === 100) statusCalculado = 'implantado';
                             else if (concluidas > 0 || pct > 0) statusCalculado = 'em_andamento';
 
                             planosAtivos.push({
@@ -13176,11 +13355,20 @@ storage: {
                             const etapasRaw = Array.isArray(p.etapas) ? p.etapas : [];
                             const etapas = etapasRaw.map((e, idx) => {
                                 const cor = e.cor || CORES_DEFAULT[idx % CORES_DEFAULT.length];
+                                const isSemPrev = !!(e.semPrevisao || e.dataFim === 'SEM_PREVISAO' || e.dataFim === 'Sem Previsão' || e.dataFim === 'sem_previsao');
                                 const dataIni = e.dataInicio || p.dataInicio || new Date().toISOString().split('T')[0];
-                                const dias = parseInt(e.diasEstimados, 10) || 5;
-                                const dataFim = e.dataFim || this._somarDias(dataIni, dias - 1);
+                                let dias = 0;
+                                let dataFim = '';
+                                if (isSemPrev) {
+                                    dias = 0;
+                                    dataFim = '';
+                                } else {
+                                    dias = (e.dataInicio && e.dataFim) ? this._diferencaDias(e.dataInicio, e.dataFim) : (parseInt(e.diasEstimados, 10) || 5);
+                                    dataFim = e.dataFim || this._somarDias(dataIni, dias - 1);
+                                }
                                 return {
                                     ...e,
+                                    semPrevisao: isSemPrev,
                                     cor,
                                     dataInicio: dataIni,
                                     dataFim,
@@ -13195,7 +13383,8 @@ storage: {
                             const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
                             const diasTotais = etapas.reduce((acc, e) => acc + (parseInt(e.diasEstimados, 10) || 0), 0);
                             let statusCalculado = 'pendente';
-                            if (pct === 100) statusCalculado = 'implantado';
+                            if (p.status === 'pausado') statusCalculado = 'pausado';
+                            else if (pct === 100) statusCalculado = 'implantado';
                             else if (concluidas > 0 || pct > 0) statusCalculado = 'em_andamento';
 
                             planosAtivos.push({
@@ -13221,10 +13410,10 @@ storage: {
                         }
                     });
 
-                    // Ordena planos: Em Implantação primeiro, depois Pendentes, depois Concluídos
+                    // Ordena planos: Em Implantação primeiro, depois Pausados, depois Pendentes, depois Concluídos
                     planosAtivos.sort((a, b) => {
-                        if (a.status === 'em_andamento' && b.status !== 'em_andamento') return -1;
-                        if (b.status === 'em_andamento' && a.status !== 'em_andamento') return 1;
+                        const rank = s => s === 'em_andamento' ? 1 : (s === 'pausado' ? 2 : (s === 'pendente' ? 3 : 4));
+                        if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status);
                         return b.hc - a.hc;
                     });
 
@@ -13236,7 +13425,22 @@ storage: {
                     // Estatísticas de Cobertura
                     const opsImplantadas = planosExibicao.filter(p => p.status === 'implantado');
                     const opsEmAndamento = planosExibicao.filter(p => p.status === 'em_andamento');
+                    const opsPausadas = planosExibicao.filter(p => p.status === 'pausado');
                     const opsPendentes = planosExibicao.filter(p => p.status === 'pendente');
+
+                    // Coleta única de todos os responsáveis para filtro de demanda
+                    const respSet = new Set();
+                    planosExibicao.forEach(p => {
+                        if (p.monitorNome && p.monitorNome !== 'Não definido') respSet.add(p.monitorNome);
+                        if (p.treinadorNome && p.treinadorNome !== 'Não definido') respSet.add(p.treinadorNome);
+                        p.etapas.forEach(e => {
+                            if (e.responsavelNome) respSet.add(e.responsavelNome);
+                            (e.planosAcao || []).forEach(pa => {
+                                if (pa.responsavel) respSet.add(pa.responsavel);
+                            });
+                        });
+                    });
+                    const listaResponsaveis = Array.from(respSet).sort((a, b) => a.localeCompare(b));
 
                     const totalOpsVisualizadas = planosExibicao.length;
                     const pctCoberturaOps = totalOpsGlobal > 0 ? ((opsImplantadas.length / totalOpsGlobal) * 100).toFixed(1) : '0.0';
@@ -13261,11 +13465,20 @@ storage: {
 
                     // Renderização de cada Plano e seu Gráfico de Gantt
                     const renderPlanoCard = (p) => {
-                        const statusBadge = p.status === 'implantado'
-                            ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shadow-sm"><i class="fa-solid fa-circle-check text-emerald-600"></i> Harmony Implantado</span>`
-                            : (p.status === 'em_andamento'
-                                ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 shadow-sm"><i class="fa-solid fa-spinner animate-spin text-indigo-600"></i> Em Implantação (${p.pct}%)</span>`
-                                : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 shadow-sm"><i class="fa-regular fa-clock text-slate-400"></i> Planejado (0%)</span>`);
+                        const todosResponsaveisDoPlano = [p.monitorNome, p.treinadorNome];
+                        p.etapas.forEach(e => {
+                            if (e.responsavelNome) todosResponsaveisDoPlano.push(e.responsavelNome);
+                            (e.planosAcao || []).forEach(pa => { if (pa.responsavel) todosResponsaveisDoPlano.push(pa.responsavel); });
+                        });
+                        const isMinhaDemanda = isUserVinculadoAoPlano(p);
+
+                        const statusBadge = p.status === 'pausado'
+                            ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shadow-sm"><i class="fa-solid fa-pause text-amber-600"></i> Em Pausa</span>`
+                            : (p.status === 'implantado'
+                                ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shadow-sm"><i class="fa-solid fa-circle-check text-emerald-600"></i> Harmony Implantado</span>`
+                                : (p.status === 'em_andamento'
+                                    ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 shadow-sm"><i class="fa-solid fa-spinner animate-spin text-indigo-600"></i> Em Implantação (${p.pct}%)</span>`
+                                    : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 shadow-sm"><i class="fa-regular fa-clock text-slate-400"></i> Planejado (0%)</span>`));
 
                         // Cálculo do calendário do projeto para a régua do Gantt
                         const hojeISO = new Date().toISOString().split('T')[0];
@@ -13278,8 +13491,11 @@ storage: {
                                 const t = this._parseDateMs(e.dataInicio, minMs);
                                 if (!isNaN(t) && t < minMs) minMs = t;
                             }
-                            if (e.dataFim) {
+                            if (e.dataFim && !e.semPrevisao) {
                                 const t = this._parseDateMs(e.dataFim, maxMs);
+                                if (!isNaN(t) && t > maxMs) maxMs = t;
+                            } else if (e.semPrevisao && e.dataInicio) {
+                                const t = this._parseDateMs(e.dataInicio, minMs) + (86400000 * 14);
                                 if (!isNaN(t) && t > maxMs) maxMs = t;
                             }
                         });
@@ -13290,6 +13506,7 @@ storage: {
                         const totalSpanDias = Math.max(1, Math.round((maxMs - minMs) / 86400000) + 1);
                         const minDateISO = new Date(minMs).toISOString().split('T')[0];
                         const maxDateISO = new Date(maxMs).toISOString().split('T')[0];
+                        const totalDiasUteis = this._diferencaDias(minDateISO, maxDateISO);
                         const dtInicioFmt = this._formatarDataBR(minDateISO);
                         const dtFimFmt = this._formatarDataBR(maxDateISO);
 
@@ -13323,40 +13540,70 @@ storage: {
 
                         // Construção das faixas sobrepostas do Gráfico Gantt
                         const ganttLanes = p.etapas.map((etp, idx) => {
+                            const isSemPrev = !!etp.semPrevisao;
                             const eStartMs = this._parseDateMs(etp.dataInicio, minMs);
-                            const eEndMs = this._parseDateMs(etp.dataFim, eStartMs + (parseInt(etp.diasEstimados, 10) || 5) * 86400000);
+                            const eEndMs = isSemPrev
+                                ? maxMs
+                                : this._parseDateMs(etp.dataFim, eStartMs + (parseInt(etp.diasEstimados, 10) || 5) * 86400000);
                             
                             const offsetMs = Math.max(0, eStartMs - minMs);
                             const spanMs = Math.max(86400000, maxMs - minMs);
                             const leftPct = Math.min(100, Math.max(0, (offsetMs / spanMs) * 100)).toFixed(2);
                             
-                            const durMs = Math.max(86400000, eEndMs - eStartMs + 86400000);
-                            const widthPct = Math.min(100 - parseFloat(leftPct), Math.max(3, (durMs / spanMs) * 100)).toFixed(2);
+                            let widthPct;
+                            if (isSemPrev) {
+                                widthPct = Math.max(12, (100 - parseFloat(leftPct))).toFixed(2);
+                            } else {
+                                const durMs = Math.max(86400000, eEndMs - eStartMs + 86400000);
+                                widthPct = Math.min(100 - parseFloat(leftPct), Math.max(3, (durMs / spanMs) * 100)).toFixed(2);
+                            }
 
                             const cor = etp.cor || '#4f46e5';
                             const numAtts = (etp.atualizacoes || []).length;
                             const numPlanos = (etp.planosAcao || []).length;
 
-                            const tooltip = `${esc(etp.nome)}&#10;• Calendário: ${this._formatarDataBR(etp.dataInicio)} até ${this._formatarDataBR(etp.dataFim)} (${etp.diasEstimados} dias)&#10;• Responsável: ${esc(etp.responsavelNome || etp.responsavelTipo)}&#10;• Atualizações: ${numAtts}&#10;• Planos de Ação: ${numPlanos}&#10;• Status: ${etp.concluido ? 'Concluído' : 'Pendente'}&#10;(Clique para editar esta etapa)`;
+                            const tooltip = isSemPrev
+                                ? `${esc(etp.nome)}&#10;• Calendário: A partir de ${this._formatarDataBR(etp.dataInicio)} (Sem Previsão de Término)&#10;• Responsável: ${esc(etp.responsavelNome || etp.responsavelTipo)}&#10;• Atualizações: ${numAtts}&#10;• Planos de Ação: ${numPlanos}&#10;• Status: ${etp.concluido ? 'Concluído' : 'Pendente'}&#10;(Clique para editar esta etapa)`
+                                : `${esc(etp.nome)}&#10;• Calendário: ${this._formatarDataBR(etp.dataInicio)} até ${this._formatarDataBR(etp.dataFim)} (${etp.diasEstimados} dias úteis)&#10;• Responsável: ${esc(etp.responsavelNome || etp.responsavelTipo)}&#10;• Atualizações: ${numAtts}&#10;• Planos de Ação: ${numPlanos}&#10;• Status: ${etp.concluido ? 'Concluído' : 'Pendente'}&#10;(Clique para editar esta etapa)`;
+
+                            const barStyle = isSemPrev
+                                ? `left: ${leftPct}%; width: ${widthPct}%; background: linear-gradient(90deg, ${cor} 0%, ${cor}ee 55%, ${cor}40 100%); border-right: 3px dashed #f59e0b;`
+                                : `left: ${leftPct}%; width: ${widthPct}%; background-color: ${cor};`;
 
                             return `
-                                <div class="flex items-center gap-2 sm:gap-3 py-1">
-                                    <div class="w-36 sm:w-48 shrink-0 truncate text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5" title="${esc(etp.nome)}">
-                                        <span class="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
-                                        <span class="truncate">${idx + 1}. ${esc(etp.nome)}</span>
+                                <div class="flex items-center gap-2 sm:gap-3 py-1 group/lane">
+                                    <div class="w-40 sm:w-56 shrink-0 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between gap-1.5" title="${esc(etp.nome)}">
+                                        <div class="flex items-center gap-1.5 truncate">
+                                            <span class="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
+                                            <span class="truncate">${idx + 1}. ${esc(etp.nome)}</span>
+                                        </div>
+                                        <div class="flex items-center gap-0.5 shrink-0 opacity-70 group-hover/lane:opacity-100 transition">
+                                            <button type="button" onclick="app.ui.moverEtapaIA('${esc(p.key)}', '${esc(etp.id)}', -1)" ${idx === 0 ? 'disabled class="p-1 text-slate-300 dark:text-slate-700 cursor-not-allowed"' : 'class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition"'} title="Mover etapa para cima">
+                                                <i class="fa-solid fa-chevron-up text-[10px]"></i>
+                                            </button>
+                                            <button type="button" onclick="app.ui.moverEtapaIA('${esc(p.key)}', '${esc(etp.id)}', 1)" ${idx === p.etapas.length - 1 ? 'disabled class="p-1 text-slate-300 dark:text-slate-700 cursor-not-allowed"' : 'class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition"'} title="Mover etapa para baixo">
+                                                <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div class="flex-1 relative h-9 bg-slate-100 dark:bg-slate-800/80 rounded-xl overflow-hidden p-0.5 border border-slate-200/60 dark:border-slate-700/60">
                                         ${hojeMarkerHtml}
                                         <div onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" 
                                              data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}"
-                                             style="left: ${leftPct}%; width: ${widthPct}%; background-color: ${cor};" 
+                                             style="${barStyle}" 
                                              class="absolute top-0.5 bottom-0.5 rounded-lg text-white shadow-sm flex items-center justify-between px-2 cursor-pointer transition-all hover:scale-[1.01] hover:brightness-110 select-none group"
                                              title="${tooltip}">
                                             <div class="flex items-center gap-1.5 truncate text-[11px] font-bold">
                                                 <i class="${etp.concluido ? 'fa-solid fa-circle-check text-emerald-200' : 'fa-regular fa-clock text-white/80'} text-[10px]"></i>
-                                                <span class="truncate text-[10px] hidden sm:inline">${this._formatarDiaMes(etp.dataInicio)} - ${this._formatarDiaMes(etp.dataFim)}</span>
+                                                <span class="truncate text-[10px] hidden sm:inline">${isSemPrev ? `A partir de ${this._formatarDiaMes(etp.dataInicio)}` : `${this._formatarDiaMes(etp.dataInicio)} - ${this._formatarDiaMes(etp.dataFim)}`}</span>
                                             </div>
-                                            <span class="text-[10px] font-black tabular-nums shrink-0 ml-1 bg-black/25 px-1.5 py-0.5 rounded">${etp.diasEstimados || 1}d</span>
+                                            ${isSemPrev ? `
+                                                <span class="text-[9px] font-black tracking-wider uppercase shrink-0 ml-1 bg-amber-500/90 text-white px-1.5 py-0.5 rounded shadow-xs flex items-center gap-1">
+                                                    <i class="fa-regular fa-calendar-xmark text-[9px]"></i> Sem Previsão
+                                                </span>
+                                            ` : `
+                                                <span class="text-[10px] font-black tabular-nums shrink-0 ml-1 bg-black/25 px-1.5 py-0.5 rounded">${etp.diasEstimados || 1}d úteis</span>
+                                            `}
                                         </div>
                                     </div>
                                 </div>
@@ -13377,138 +13624,159 @@ storage: {
                             });
                         });
 
-                        // Construção da lista detalhada de etapas (com diário de bordo e planos de ação)
+                        // Construção da lista detalhada de etapas (COM DIÁRIO E PLANOS RECOLHÍVEIS / CLEAN)
                         const etapasHtml = p.etapas.map((etp, idx) => {
                             const isDone = etp.concluido;
+                            const isSemPrev = !!etp.semPrevisao;
                             const dataFmt = etp.dataConclusao ? this._formatarDataBR(etp.dataConclusao) : '';
                             const cor = etp.cor || '#4f46e5';
                             const planosEtapa = etp.planosAcao || [];
                             const attsEtapa = etp.atualizacoes || [];
 
                             return `
-                                <div class="p-4 rounded-2xl border ${isDone ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} shadow-sm">
-                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
-                                        <div class="flex items-start gap-3 flex-1 min-w-0">
-                                            <label class="mt-1 cursor-pointer shrink-0" title="Marcar/Desmarcar como concluído">
-                                                <input type="checkbox" ${isDone ? 'checked' : ''} onchange="app.ui.toggleEtapaConcluidaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="w-5 h-5 accent-emerald-600 rounded cursor-pointer">
+                                <div class="p-3.5 rounded-2xl border ${isDone ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} shadow-sm transition hover:border-slate-300 dark:hover:border-slate-700">
+                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+                                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                                            <label class="cursor-pointer shrink-0" title="Marcar/Desmarcar como concluído">
+                                                <input type="checkbox" ${isDone ? 'checked' : ''} onchange="app.ui.toggleEtapaConcluidaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="w-4 h-4 accent-emerald-600 rounded cursor-pointer">
                                             </label>
                                             <div class="flex-1 min-w-0">
                                                 <div class="flex flex-wrap items-center gap-2">
-                                                    <span class="w-3 h-3 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
-                                                    <span class="font-extrabold text-sm text-slate-800 dark:text-white">${esc(etp.nome)}</span>
+                                                    <span class="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
+                                                    <span class="font-extrabold text-xs text-slate-800 dark:text-white truncate">${idx + 1}. ${esc(etp.nome)}</span>
                                                     
-                                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 tabular-nums">
-                                                        <i class="fa-regular fa-calendar-days text-slate-400"></i> ${etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : 'A definir'} até ${etp.dataFim ? this._formatarDataBR(etp.dataFim) : 'A definir'} (${etp.diasEstimados || 1} dias)
-                                                    </span>
+                                                    ${isSemPrev ? `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800/60">
+                                                            <i class="fa-regular fa-calendar-xmark text-amber-600"></i> A partir de ${etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : 'A definir'} · Sem Previsão de Término
+                                                        </span>
+                                                    ` : `
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 tabular-nums">
+                                                            <i class="fa-regular fa-calendar-days text-slate-400"></i> ${etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : 'A definir'} a ${etp.dataFim ? this._formatarDataBR(etp.dataFim) : 'A definir'} (${etp.diasEstimados || 1}d úteis)
+                                                        </span>
+                                                    `}
 
                                                     ${etp.qtdEstimada ? `
                                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300">
                                                             <i class="fa-solid fa-bullseye text-indigo-500"></i> ${esc(etp.qtdEstimada)}
                                                         </span>` : ''}
 
-                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300">
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 truncate max-w-[180px]">
                                                         <i class="fa-solid fa-user-check text-amber-500"></i> ${esc(etp.responsavelNome || etp.responsavelTipo || 'Responsável')}
                                                     </span>
 
                                                     ${isDone ? `
-                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
-                                                            <i class="fa-solid fa-circle-check text-emerald-600"></i> Concluído ${dataFmt ? 'em ' + dataFmt : ''}
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                                            <i class="fa-solid fa-check"></i> Concluído ${dataFmt ? '(' + dataFmt + ')' : ''}
                                                         </span>` : `
                                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                                                             <i class="fa-regular fa-clock"></i> Pendente
                                                         </span>`}
                                                 </div>
-                                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                                                    <strong class="text-slate-600 dark:text-slate-300">O que é feito:</strong> ${esc(etp.descricao)}
-                                                </p>
+                                                ${etp.descricao ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1 truncate" title="${esc(etp.descricao)}">${esc(etp.descricao)}</p>` : ''}
                                             </div>
                                         </div>
                                         <div class="flex items-center gap-1.5 self-end md:self-center shrink-0">
-                                            <button type="button" onclick="app.ui.abrirModalNovoPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 transition flex items-center gap-1" title="Adicionar Plano de Ação a esta etapa">
-                                                <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> + Plano de Ação
+                                            <!-- Botões de troca de posição da etapa -->
+                                            <div class="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-800/80 shadow-2xs">
+                                                <button type="button" onclick="app.ui.moverEtapaIA('${esc(p.key)}', '${esc(etp.id)}', -1)" ${idx === 0 ? 'disabled class="px-2 py-1 text-slate-300 dark:text-slate-700 cursor-not-allowed"' : 'class="px-2 py-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition"'} title="Mover etapa para cima">
+                                                    <i class="fa-solid fa-arrow-up text-xs"></i>
+                                                </button>
+                                                <div class="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>
+                                                <button type="button" onclick="app.ui.moverEtapaIA('${esc(p.key)}', '${esc(etp.id)}', 1)" ${idx === p.etapas.length - 1 ? 'disabled class="px-2 py-1 text-slate-300 dark:text-slate-700 cursor-not-allowed"' : 'class="px-2 py-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition"'} title="Mover etapa para baixo">
+                                                    <i class="fa-solid fa-arrow-down text-xs"></i>
+                                                </button>
+                                            </div>
+
+                                            <button type="button" onclick="app.ui.abrirModalNovoPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 transition flex items-center gap-1" title="Adicionar Plano de Ação a esta etapa">
+                                                <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> + Ação
                                             </button>
-                                            <button type="button" onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Editar Etapa">
-                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            <button type="button" onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition" title="Editar Etapa">
+                                                <i class="fa-solid fa-pen-to-square text-xs"></i>
                                             </button>
-                                            <button type="button" onclick="app.ui.excluirEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Etapa">
-                                                <i class="fa-solid fa-trash"></i>
+                                            <button type="button" onclick="app.ui.excluirEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition" title="Excluir Etapa">
+                                                <i class="fa-solid fa-trash text-xs"></i>
                                             </button>
                                         </div>
                                     </div>
 
-                                    <!-- Planos de Ação Desta Etapa -->
-                                    ${planosEtapa.length > 0 ? `
-                                        <div class="mb-3 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40">
-                                            <div class="text-[11px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-1.5">
-                                                <i class="fa-solid fa-list-check"></i> Planos de Ação desta Etapa (${planosEtapa.length})
+                                    <!-- SEÇÃO RECOLHÍVEL (CLEAN): Diário de Bordo & Planos de Ação Desta Etapa -->
+                                    <details class="group mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                                        <summary class="cursor-pointer flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300 select-none py-1 hover:text-indigo-600 transition">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${attsEtapa.length > 0 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">
+                                                    <i class="fa-solid fa-clock-rotate-left"></i> Diário de Bordo (${attsEtapa.length})
+                                                </span>
+                                                ${planosEtapa.length > 0 ? `
+                                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                                                        <i class="fa-solid fa-list-check"></i> Planos de Ação (${planosEtapa.length})
+                                                    </span>
+                                                ` : ''}
                                             </div>
-                                            <div class="space-y-1.5">
-                                                ${planosEtapa.map(pa => `
-                                                    <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 text-xs">
-                                                        <div class="flex items-center gap-2 flex-1 min-w-0">
-                                                            <input type="checkbox" ${pa.concluido ? 'checked' : ''} onchange="app.ui.togglePlanoAcaoConcluidoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(pa.id)}" class="w-4 h-4 accent-emerald-600 rounded cursor-pointer">
-                                                            <span class="${pa.concluido ? 'line-through text-slate-400' : 'font-bold text-slate-700 dark:text-slate-200'} truncate">${esc(pa.titulo)}</span>
-                                                        </div>
-                                                        <div class="flex items-center gap-2 shrink-0">
-                                                            <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
-                                                                <i class="fa-solid fa-user text-slate-400 mr-1"></i>${esc(pa.responsavel || 'Não definido')}
-                                                            </span>
-                                                            <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
-                                                                <i class="fa-regular fa-calendar-check text-slate-400 mr-1"></i>Prazo: ${this._formatarDataBR(pa.prazo)}
-                                                            </span>
-                                                            <button type="button" onclick="app.ui.excluirPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(pa.id)}" class="text-slate-400 hover:text-rose-500 p-1" title="Excluir Plano de Ação"><i class="fa-solid fa-times"></i></button>
-                                                        </div>
-                                                    </div>
-                                                `).join('')}
-                                            </div>
-                                        </div>
-                                    ` : ''}
-
-                                    <!-- Atualizações e Diário de Bordo da Etapa -->
-                                    <div class="pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i> Atualizações e Diário da Etapa (${attsEtapa.length})
+                                            <span class="text-slate-400 group-open:rotate-180 transition-transform text-xs flex items-center gap-1">
+                                                <span class="text-[10px] font-medium hidden sm:inline">Ver registros</span>
+                                                <i class="fa-solid fa-chevron-down"></i>
                                             </span>
-                                        </div>
-                                        
-                                        <!-- Envio de Atualização -->
-                                        <div class="flex items-center gap-2 mb-2.5">
-                                            <input type="text" id="att-input-${esc(p.key)}-${esc(etp.id)}" placeholder="O que você realizou nesta etapa hoje? (Ex: Fiz calibração de 15 chamadas)..." 
-                                                   data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}"
-                                                   onkeydown="if(event.key==='Enter') app.ui.adicionarAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))"
-                                                   class="flex-1 p-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                            <button type="button" onclick="app.ui.adicionarAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 shrink-0 transition">
-                                                <i class="fa-solid fa-paper-plane"></i> Salvar
-                                            </button>
-                                        </div>
-
-                                        <!-- Histórico de Atualizações com Data, Hora e Autor -->
-                                        ${attsEtapa.length > 0 ? `
-                                            <div class="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                                                ${attsEtapa.slice().reverse().map(att => `
-                                                    <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs flex items-start justify-between gap-2">
-                                                        <div class="flex-1 min-w-0">
-                                                            <div class="flex items-center gap-2 text-[10px] text-slate-400 mb-0.5">
-                                                                <span class="font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-pen mr-1 text-indigo-500"></i>${esc(att.autorNome || 'Colaborador')}</span>
-                                                                <span>·</span>
-                                                                <span class="tabular-nums"><i class="fa-regular fa-clock mr-1"></i>${esc(att.dataHora)}</span>
+                                        </summary>
+                                        <div class="mt-3 space-y-3 pt-2">
+                                            <!-- Planos de Ação Desta Etapa (Se houver) -->
+                                            ${planosEtapa.length > 0 ? `
+                                                <div class="p-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 space-y-1.5">
+                                                    ${planosEtapa.map(pa => `
+                                                        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-100 dark:border-slate-800 text-xs">
+                                                            <div class="flex items-center gap-2 flex-1 min-w-0">
+                                                                <input type="checkbox" ${pa.concluido ? 'checked' : ''} onchange="app.ui.togglePlanoAcaoConcluidoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(pa.id)}" class="w-4 h-4 accent-emerald-600 rounded cursor-pointer">
+                                                                <span class="${pa.concluido ? 'line-through text-slate-400' : 'font-bold text-slate-700 dark:text-slate-200'} truncate">${esc(pa.titulo)}</span>
                                                             </div>
-                                                            <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${esc(att.texto)}</p>
+                                                            <div class="flex items-center gap-2 shrink-0">
+                                                                <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                                                                    <i class="fa-solid fa-user text-slate-400 mr-1"></i>${esc(pa.responsavel || 'Não definido')}
+                                                                </span>
+                                                                <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                                                                    <i class="fa-regular fa-calendar-check text-slate-400 mr-1"></i>Prazo: ${this._formatarDataBR(pa.prazo)}
+                                                                </span>
+                                                                <button type="button" onclick="app.ui.excluirPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(pa.id)}" class="text-slate-400 hover:text-rose-500 p-1" title="Excluir Plano de Ação"><i class="fa-solid fa-times"></i></button>
+                                                            </div>
                                                         </div>
-                                                        <button type="button" onclick="app.ui.excluirAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(att.id)}" class="text-slate-400 hover:text-rose-500 text-xs p-1" title="Excluir"><i class="fa-solid fa-times"></i></button>
-                                                    </div>
-                                                `).join('')}
+                                                    `).join('')}
+                                                </div>
+                                            ` : ''}
+
+                                            <!-- Envio de Atualização no Diário de Bordo -->
+                                            <div class="flex items-center gap-2">
+                                                <input type="text" id="att-input-${esc(p.key)}-${esc(etp.id)}" placeholder="O que você realizou nesta etapa hoje? (Ex: Fiz calibração de 15 chamadas)..." 
+                                                       data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}"
+                                                       onkeydown="if(event.key==='Enter') app.ui.adicionarAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))"
+                                                       class="flex-1 p-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                                <button type="button" onclick="app.ui.adicionarAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 shrink-0 transition">
+                                                    <i class="fa-solid fa-paper-plane"></i> Salvar
+                                                </button>
                                             </div>
-                                        ` : `
-                                            <div class="text-[11px] text-slate-400 italic">Nenhum registro de andamento ainda. Digite no campo acima para acompanhar o progresso diário.</div>
-                                        `}
-                                    </div>
+
+                                            <!-- Histórico de Atualizações da Etapa -->
+                                            ${attsEtapa.length > 0 ? `
+                                                <div class="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                                    ${attsEtapa.slice().reverse().map(att => `
+                                                        <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs flex items-start justify-between gap-2">
+                                                            <div class="flex-1 min-w-0">
+                                                                <div class="flex items-center gap-2 text-[10px] text-slate-400 mb-0.5">
+                                                                    <span class="font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-pen mr-1 text-indigo-500"></i>${esc(att.autorNome || 'Colaborador')}</span>
+                                                                    <span>•</span>
+                                                                    <span class="tabular-nums"><i class="fa-regular fa-clock mr-1"></i>${esc(att.dataHora)}</span>
+                                                                </div>
+                                                                <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${esc(att.texto)}</p>
+                                                            </div>
+                                                            <button type="button" onclick="app.ui.excluirAtualizacaoEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'), this.getAttribute('data-id'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" data-id="${esc(att.id)}" class="text-slate-400 hover:text-rose-500 text-xs p-1" title="Excluir"><i class="fa-solid fa-times"></i></button>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            ` : '<div class="text-[11px] text-slate-400 italic">Nenhum registro no diário de bordo desta etapa ainda.</div>'}
+                                        </div>
+                                    </details>
                                 </div>`;
                         }).join('');
 
                         return `
-                            <div class="ia-plano-card glass-card rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 mb-6 shadow-sm" data-status="${p.status}" data-search="${esc(p.operacao)} ${esc(p.monitorNome)} ${esc(p.treinadorNome)}">
+                            <div class="ia-plano-card glass-card rounded-3xl border border-slate-200/90 dark:border-slate-800 p-6 mb-6 shadow-sm ${p.status === 'pausado' ? 'ring-2 ring-amber-400/30' : ''}" data-status="${p.status}" data-minhas="${isMinhaDemanda}" data-responsaveis="${esc(todosResponsaveisDoPlano.join('|'))}" data-search="${esc(`${p.operacao} ${p.monitorNome} ${p.treinadorNome} ${todosResponsaveisDoPlano.join(' ')}`)}">
                                 <!-- Topo do Plano: Operação, Ícone Customizado, Headcount e Status -->
                                 <div class="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                                     <div class="flex items-center gap-3 min-w-0">
@@ -13523,11 +13791,17 @@ storage: {
                                                 </span>
                                             </div>
                                             <div class="text-xs text-slate-400 mt-0.5">
-                                                Início: <strong class="text-slate-600 dark:text-slate-300">${p.dataInicio ? this._formatarDataBR(p.dataInicio) : 'Imediato'}</strong> · Calendário: <strong class="text-slate-600 dark:text-slate-300 tabular-nums">${totalSpanDias} dias corridos</strong>
+                                                Início: <strong class="text-slate-600 dark:text-slate-300">${p.dataInicio ? this._formatarDataBR(p.dataInicio) : 'Imediato'}</strong> · Duração: <strong class="text-slate-600 dark:text-slate-300 tabular-nums">${totalDiasUteis} dias úteis</strong>
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-3">
+                                    <div class="flex items-center gap-2 sm:gap-3">
+                                        <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition flex items-center gap-1.5 shadow-xs" title="Extrair Relatório Detalhado em PDF para encaminhar aos gestores">
+                                            <i class="fa-solid fa-file-pdf text-rose-600"></i> Extrair PDF
+                                        </button>
+                                        <button type="button" onclick="app.ui.togglePausarImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl font-bold text-xs border transition flex items-center gap-1.5 shadow-xs ${p.status === 'pausado' ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800'}" title="${p.status === 'pausado' ? 'Retomar cronograma do projeto' : 'Colocar projeto temporariamente em pausa'}">
+                                            <i class="fa-solid ${p.status === 'pausado' ? 'fa-play text-emerald-600' : 'fa-pause text-amber-600'}"></i> ${p.status === 'pausado' ? 'Retomar' : 'Pausar'}
+                                        </button>
                                         ${statusBadge}
                                         <div class="flex items-center gap-1">
                                             ${isSuperOrDev ? `
@@ -13577,11 +13851,16 @@ storage: {
                                 <div class="mb-5 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
                                     <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 mb-3">
                                         <span class="flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-                                            <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Cronograma Gantt das Etapas (Sobreposição e Prazos Reais)
+                                            <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Cronograma Gantt das Etapas
                                         </span>
-                                        <span class="text-[11px] tabular-nums bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg">
-                                            <i class="fa-regular fa-calendar text-slate-400 mr-1"></i>${dtInicioFmt} até ${dtFimFmt} (${totalSpanDias} dias)
-                                        </span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[11px] tabular-nums bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg">
+                                                <i class="fa-regular fa-calendar text-slate-400 mr-1"></i>${dtInicioFmt} até ${dtFimFmt} (${totalDiasUteis} dias úteis)
+                                            </span>
+                                            <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-2.5 py-0.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold text-[10px] border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 shadow-xs" title="Extrair Relatório Detalhado do Gantt em PDF">
+                                                <i class="fa-solid fa-file-pdf text-rose-600"></i> Relatório PDF
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <!-- Régua de Calendário com Datas Reais -->
@@ -13597,7 +13876,7 @@ storage: {
                                 </div>
 
                                 <!-- Quadro Consolidado de Planos de Ação do Projeto -->
-                                <details class="group mb-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 overflow-hidden" ${todosPlanosAcao.length > 0 ? 'open' : ''}>
+                                <details class="group mb-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 overflow-hidden">
                                     <summary class="cursor-pointer p-3.5 flex items-center justify-between font-bold text-xs text-amber-900 dark:text-amber-200 select-none">
                                         <div class="flex items-center gap-2">
                                             <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
@@ -13650,7 +13929,7 @@ storage: {
                                 </details>
 
                                 <!-- Alinhamentos & Comentários do Projeto (Todas as Partes) -->
-                                <details class="group mb-5 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/40 overflow-hidden" ${(p.comentarios || []).length > 0 ? 'open' : ''}>
+                                <details class="group mb-5 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/40 overflow-hidden">
                                     <summary class="cursor-pointer p-3.5 flex items-center justify-between font-bold text-xs text-indigo-900 dark:text-indigo-200 select-none">
                                         <div class="flex items-center gap-2">
                                             <i class="fa-solid fa-comments text-indigo-600"></i>
@@ -13696,14 +13975,19 @@ storage: {
                                     ${etapasHtml || '<div class="p-4 text-center text-xs text-slate-400 italic">Nenhuma etapa cadastrada neste cronograma.</div>'}
                                 </div>
 
-                                <!-- Ações de Rodapé do Card: Adicionar Etapa (Sem limite de 5) -->
+                                <!-- Ações de Rodapé do Card: Adicionar Etapa & Exportar Relatório -->
                                 <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
-                                    <button type="button" onclick="app.ui.abrirModalNovaEtapaIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1.5 shadow-xs">
-                                        <i class="fa-solid fa-plus"></i> Adicionar Nova Etapa (Sem Limite)
-                                    </button>
-                                    <span class="text-slate-400 text-[11px]">
-                                        <i class="fa-solid fa-circle-info mr-1"></i>Etapas com datas sobrepostas são calculadas automaticamente no Gantt.
-                                    </span>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button" onclick="app.ui.abrirModalNovaEtapaIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1.5 shadow-xs">
+                                            <i class="fa-solid fa-plus"></i> Adicionar Nova Etapa
+                                        </button>
+                                        <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold border border-rose-200 dark:border-rose-800 transition flex items-center gap-1.5 shadow-xs" title="Extrair Relatório Detalhado em PDF para encaminhar aos gestores">
+                                            <i class="fa-solid fa-file-pdf text-rose-600"></i> Extrair Relatório em PDF
+                                        </button>
+                                        <button type="button" onclick="app.ui.imprimirRelatorioImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs transition flex items-center gap-1.5 shadow-xs" title="Visualizar prévia executiva formatada para impressão">
+                                            <i class="fa-solid fa-print text-slate-400"></i> Imprimir / Prévia
+                                        </button>
+                                    </div>
                                 </div>
                             </div>`;
                     };
@@ -13718,7 +14002,7 @@ storage: {
                                     </div>
                                     <div>
                                         <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Implantação IA — HARMONY</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Gestão de cronograma Gantt com régua de calendário, etapas sobrepostas, planos de ação e diário de bordo.</p>
+                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Gestão de cronograma Gantt com régua de calendário, planos de ação e diário de bordo.</p>
                                     </div>
                                 </div>
                             </div>
@@ -13759,21 +14043,34 @@ storage: {
 
                         <!-- Barra de Filtros e Busca -->
                         <div class="flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
-                            <div class="flex items-center gap-2 flex-1 min-w-[240px]">
+                            <div class="flex items-center gap-2 flex-1 min-w-[220px]">
                                 <i class="fa-solid fa-magnifying-glass text-slate-400 ml-2"></i>
                                 <input type="text" id="ia-search-input" oninput="app.ui.pesquisarImplantacaoIA(this.value)" placeholder="Buscar por operação, monitor ou treinador..." class="w-full bg-transparent text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400">
                             </div>
-                            <div class="flex flex-wrap items-center gap-1.5" id="ia-filtros-status">
-                                ${[
-                                    ['todos', 'Todas', planosExibicao.length],
-                                    ['implantado', 'Implantadas', opsImplantadas.length],
-                                    ['em_andamento', 'Em Implantação', opsEmAndamento.length],
-                                    ['pendente', 'Pendentes', opsPendentes.length]
-                                ].map(([k, lbl, count]) => `
-                                    <button type="button" data-k="${k}" onclick="app.ui.filtrarImplantacaoIA('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition border ${k === 'todos' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
-                                        ${lbl} <span class="tabular-nums opacity-75">(${count})</span>
-                                    </button>
-                                `).join('')}
+                            <div class="flex flex-wrap items-center gap-2">
+                                <div class="flex items-center gap-1.5 border-r border-slate-200 dark:border-slate-700 pr-2">
+                                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                        <i class="fa-solid fa-user-check text-indigo-500"></i> Demanda:
+                                    </span>
+                                    <select id="ia-filtro-resp" onchange="app.ui.filtrarImplantacaoPorResp(this.value)" class="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-indigo-500 cursor-pointer max-w-[200px] truncate">
+                                        <option value="todos">Todos os Responsáveis</option>
+                                        <option value="minhas">Minhas Demandas (onde sou responsável)</option>
+                                        ${listaResponsaveis.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-1.5" id="ia-filtros-status">
+                                    ${[
+                                        ['todos', 'Todas', planosExibicao.length],
+                                        ['implantado', 'Implantadas', opsImplantadas.length],
+                                        ['em_andamento', 'Em Implantação', opsEmAndamento.length],
+                                        ['pausado', 'Em Pausa', opsPausadas.length],
+                                        ['pendente', 'Pendentes', opsPendentes.length]
+                                    ].map(([k, lbl, count]) => `
+                                        <button type="button" data-k="${k}" onclick="app.ui.filtrarImplantacaoIA('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition border ${k === 'todos' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
+                                            ${lbl} <span class="tabular-nums opacity-75">(${count})</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
                             </div>
                         </div>
 
@@ -13817,25 +14114,75 @@ storage: {
                     `;
                 },
 
-                pesquisarImplantacaoIA(term) {
-                    const q = String(term || '').toLowerCase().trim();
+                _filtroStatusIA: 'todos',
+                _filtroRespIA: 'todos',
+
+                aplicarFiltrosImplantacaoIA() {
+                    const q = String(document.getElementById('ia-search-input')?.value || '').toLowerCase().trim();
+                    const status = this._filtroStatusIA || 'todos';
+                    const resp = this._filtroRespIA || 'todos';
+
                     document.querySelectorAll('.ia-plano-card').forEach(card => {
                         const searchMeta = String(card.getAttribute('data-search') || '').toLowerCase();
-                        card.style.display = (!q || searchMeta.includes(q)) ? '' : 'none';
+                        const s = card.getAttribute('data-status');
+                        const isMinhas = card.getAttribute('data-minhas') === 'true';
+                        const resps = String(card.getAttribute('data-responsaveis') || '').toLowerCase();
+
+                        const matchSearch = !q || searchMeta.includes(q);
+                        const matchStatus = (status === 'todos' || s === status);
+                        let matchResp = true;
+                        if (resp === 'minhas') {
+                            matchResp = isMinhas;
+                        } else if (resp !== 'todos') {
+                            matchResp = resps.split('|').some(r => r.trim() === resp.toLowerCase().trim());
+                        }
+
+                        card.style.display = (matchSearch && matchStatus && matchResp) ? '' : 'none';
                     });
                 },
 
+                pesquisarImplantacaoIA(term) {
+                    this.aplicarFiltrosImplantacaoIA();
+                },
+
                 filtrarImplantacaoIA(status) {
-                    document.querySelectorAll('.ia-plano-card').forEach(card => {
-                        const s = card.getAttribute('data-status');
-                        card.style.display = (status === 'todos' || s === status) ? '' : 'none';
-                    });
+                    this._filtroStatusIA = status;
                     document.querySelectorAll('#ia-filtros-status button').forEach(b => {
                         const on = b.getAttribute('data-k') === status;
                         b.classList.toggle('bg-slate-800', on);
                         b.classList.toggle('text-white', on);
                         b.classList.toggle('border-slate-800', on);
+                        b.classList.toggle('dark:bg-white', on);
+                        b.classList.toggle('dark:text-slate-900', on);
                     });
+                    this.aplicarFiltrosImplantacaoIA();
+                },
+
+                filtrarImplantacaoPorResp(resp) {
+                    this._filtroRespIA = resp;
+                    this.aplicarFiltrosImplantacaoIA();
+                },
+
+                togglePausarImplantacaoIA(opKey) {
+                    try {
+                        const plano = this._findPlanoIA(opKey);
+                        if (!plano) return;
+                        if (plano.status === 'pausado') {
+                            const total = (plano.etapas || []).length;
+                            const concluidas = (plano.etapas || []).filter(e => e.concluido).length;
+                            if (concluidas === total && total > 0) plano.status = 'implantado';
+                            else if (concluidas > 0) plano.status = 'em_andamento';
+                            else plano.status = 'pendente';
+                        } else {
+                            plano.status = 'pausado';
+                        }
+                        app.storage.saveHarmony().then(() => {
+                            this.renderView_ImplantacaoIA();
+                            app.ui.showToast(plano.status === 'pausado' ? 'Projeto colocado em PAUSA.' : 'Projeto RETOMADO com sucesso!', 'info');
+                        });
+                    } catch (err) {
+                        console.error('Erro ao alterar status de pausa:', err);
+                    }
                 },
 
                 toggleEtapaConcluidaIA(opKey, etapaId) {
@@ -13865,6 +14212,29 @@ storage: {
                         });
                     } catch (err) {
                         console.error("Erro em toggleEtapaConcluidaIA:", err);
+                    }
+                },
+
+                moverEtapaIA(opKey, etapaId, direcao) {
+                    try {
+                        const plano = this._findPlanoIA(opKey);
+                        if (!plano || !Array.isArray(plano.etapas)) return;
+                        const idx = plano.etapas.findIndex(e => e && e.id === etapaId);
+                        if (idx === -1) return;
+                        const novoIdx = idx + direcao;
+                        if (novoIdx < 0 || novoIdx >= plano.etapas.length) return;
+
+                        const [removida] = plano.etapas.splice(idx, 1);
+                        plano.etapas.splice(novoIdx, 0, removida);
+
+                        app.storage.saveHarmony().then(() => {
+                            this.renderView_ImplantacaoIA();
+                            app.ui.showToast(`Ordem da etapa "${removida.nome}" atualizada!`, 'info');
+                        }).catch(err => {
+                            console.error("Erro ao mover etapa Harmony:", err);
+                        });
+                    } catch (err) {
+                        console.error("Erro em moverEtapaIA:", err);
                     }
                 },
 
@@ -14132,13 +14502,14 @@ storage: {
                 abrirModalEditarEtapaIA(opKey, etapaId = null) {
                     try {
                         const esc = (s) => app.utils.escapeHtml(s);
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano) {
                             app.ui.showAlert("Plano não encontrado", "Não foi possível localizar os registros desta operação.", "warning");
                             return;
                         }
 
                         const etapa = etapaId ? (plano.etapas || []).find(e => e.id === etapaId) : null;
+                        const semPrev = etapa ? !!(etapa.semPrevisao || etapa.dataFim === 'SEM_PREVISAO' || etapa.dataFim === 'Sem Previsão' || etapa.dataFim === 'sem_previsao') : false;
 
                         const gm = document.getElementById('global-modal');
                         if (!gm) return;
@@ -14153,10 +14524,20 @@ storage: {
                         const dias = etapa ? (etapa.diasEstimados || 5) : 5;
                         const qtd = etapa ? (etapa.qtdEstimada || '') : '';
                         const respTipo = etapa ? (etapa.responsavelTipo || 'Monitor') : 'Monitor';
-                        const respNome = etapa ? (etapa.responsavelNome || '') : '';
+                        let respNome = etapa ? (etapa.responsavelNome || '') : '';
+                        if (!respNome) {
+                            if (respTipo === 'Monitor') respNome = plano.monitorNome || 'Monitor de Qualidade';
+                            else if (respTipo === 'Treinador') respNome = plano.treinadorNome || 'Treinador da Operação';
+                            else if (respTipo === 'Ambos') respNome = (plano.monitorNome && plano.treinadorNome) ? `${plano.monitorNome} & ${plano.treinadorNome}` : (plano.monitorNome || plano.treinadorNome || 'Monitor & Treinador');
+                            else if (respTipo === 'Liderança') respNome = 'Supervisão / Liderança';
+                        }
                         const concluido = etapa ? !!etapa.concluido : false;
                         const dataConc = etapa ? (etapa.dataConclusao || '') : '';
                         const cor = etapa ? (etapa.cor || '#4f46e5') : '#4f46e5';
+
+                        const totalEtapasNoPlano = (plano.etapas || []).length;
+                        const currentPos = etapa ? (plano.etapas.findIndex(e => e.id === etapa.id) + 1) : (totalEtapasNoPlano + 1);
+                        const maxPositions = etapa ? totalEtapasNoPlano : (totalEtapasNoPlano + 1);
 
                         const hojeISO = new Date().toISOString().split('T')[0];
                         const dataIni = etapa ? (etapa.dataInicio || plano.dataInicio || hojeISO) : (plano.dataInicio || hojeISO);
@@ -14175,9 +14556,23 @@ storage: {
 
                         contentEl.innerHTML = `
                             <form id="form-etapa-ia" data-opkey="${esc(opKey)}" data-etpid="${esc(etapaId || '')}" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'));">
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome / Título da Etapa *</label>
-                                    <input type="text" id="etp-form-nome" value="${esc(nomeEtapa)}" placeholder="Ex: Calibração dos Prompts e Métricas" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500" required>
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div class="sm:col-span-2">
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome / Título da Etapa *</label>
+                                        <input type="text" id="etp-form-nome" value="${esc(nomeEtapa)}" placeholder="Ex: Calibração dos Prompts e Métricas" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5 flex items-center justify-between">
+                                            <span><i class="fa-solid fa-arrow-down-1-9 text-indigo-600 mr-1"></i> Posição</span>
+                                        </label>
+                                        <select id="etp-form-posicao" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500" title="Altere a ordem desta etapa no cronograma">
+                                            ${Array.from({ length: maxPositions }, (_, i) => i + 1).map(pNum => `
+                                                <option value="${pNum}" ${pNum === currentPos ? 'selected' : ''}>
+                                                    ${pNum}ª Posição ${pNum === 1 ? '(Primeira)' : (pNum === maxPositions ? '(Final)' : '')}
+                                                </option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <div>
@@ -14198,22 +14593,28 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- Calendário com Noção de Datas e Suporte à Sobreposição -->
+                                <!-- Calendário com Noção de Datas e Suporte à Sem Previsão -->
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
                                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data Início da Etapa</label>
                                         <input type="date" id="etp-form-dataini" value="${esc(dataIni)}" onchange="app.ui._aoMudarDataEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Data Término (Prazo)</label>
+                                        <div class="flex items-center justify-between mb-1.5">
+                                            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">Data Término (Prazo)</label>
+                                            <label class="inline-flex items-center gap-1 cursor-pointer text-xs font-bold text-amber-700 dark:text-amber-400 select-none hover:text-amber-600 transition" title="Marque se não houver data de término definida para esta etapa">
+                                                <input type="checkbox" id="etp-form-semprevisao" ${semPrev ? 'checked' : ''} onchange="app.ui._aoAlternarSemPrevisaoEtapaIA(this.checked)" class="w-4 h-4 accent-amber-600 rounded cursor-pointer">
+                                                Sem Previsão
+                                            </label>
+                                        </div>
                                         <input type="date" id="etp-form-datafim" value="${esc(dataFim)}" onchange="app.ui._aoMudarDataEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Dias Estimados</label>
+                                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Dias Úteis Estimados</label>
                                         <input type="number" min="1" max="180" id="etp-form-dias" value="${dias}" onchange="app.ui._aoMudarDiasEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-black text-slate-800 dark:text-white outline-none focus:border-indigo-500 tabular-nums">
                                     </div>
                                 </div>
-                                <p class="text-[11px] text-slate-400 -mt-2"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i>As etapas podem se sobrepor livremente no calendário. Não há limite de 5 etapas.</p>
+                                <p class="text-[11px] text-slate-400 -mt-2"><i class="fa-solid fa-business-time text-indigo-500 mr-1"></i>Prazos e durações calculados em dias úteis de trabalho (desconsiderando sábados e domingos).</p>
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
@@ -14222,9 +14623,9 @@ storage: {
                                     </div>
                                     <div>
                                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Tipo de Responsável</label>
-                                        <select id="etp-form-resptipo" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
-                                            <option value="Monitor" ${respTipo === 'Monitor' ? 'selected' : ''}>Monitor de Qualidade</option>
-                                            <option value="Treinador" ${respTipo === 'Treinador' ? 'selected' : ''}>Treinador</option>
+                                        <select id="etp-form-resptipo" onchange="app.ui._aoMudarTipoResponsavelEtapaIA()" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
+                                            <option value="Monitor" ${respTipo === 'Monitor' ? 'selected' : ''}>Monitor de Qualidade ${plano.monitorNome ? `(${esc(plano.monitorNome)})` : ''}</option>
+                                            <option value="Treinador" ${respTipo === 'Treinador' ? 'selected' : ''}>Treinador ${plano.treinadorNome ? `(${esc(plano.treinadorNome)})` : ''}</option>
                                             <option value="Ambos" ${respTipo === 'Ambos' ? 'selected' : ''}>Ambos (Monitor & Treinador)</option>
                                             <option value="Liderança" ${respTipo === 'Liderança' ? 'selected' : ''}>Liderança / Supervisão</option>
                                         </select>
@@ -14232,7 +14633,7 @@ storage: {
                                 </div>
 
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome do Responsável (Opcional)</label>
+                                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Nome do Responsável</label>
                                     <input type="text" id="etp-form-respnome" value="${esc(respNome)}" placeholder="${esc(plano.monitorNome || 'Nome do colaborador')}" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-800 dark:text-white outline-none focus:border-indigo-500">
                                 </div>
 
@@ -14255,6 +14656,9 @@ storage: {
                         `;
 
                         gm.classList.remove('hidden');
+                        if (semPrev) {
+                            this._aoAlternarSemPrevisaoEtapaIA(true);
+                        }
                     } catch (err) {
                         console.error("Erro em abrirModalEditarEtapaIA:", err);
                         app.ui.showAlert("Erro ao Abrir", "Não foi possível carregar a etapa: " + (err.message || err), "error");
@@ -14263,7 +14667,7 @@ storage: {
 
                 salvarEtapaIA(opKey, etapaId = null) {
                     try {
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano) return;
 
                         const nome = (document.getElementById('etp-form-nome')?.value || '').trim();
@@ -14274,18 +14678,28 @@ storage: {
 
                         const desc = (document.getElementById('etp-form-desc')?.value || '').trim();
                         const cor = document.getElementById('etp-form-cor')?.value || '#4f46e5';
+                        const semPrevisao = !!document.getElementById('etp-form-semprevisao')?.checked;
                         const dataIni = document.getElementById('etp-form-dataini')?.value || plano.dataInicio || new Date().toISOString().split('T')[0];
-                        let dataFim = document.getElementById('etp-form-datafim')?.value || '';
-                        let dias = parseInt(document.getElementById('etp-form-dias')?.value, 10) || 1;
-                        if (!dataFim) {
-                            dataFim = this._somarDias(dataIni, dias - 1);
-                        } else {
-                            dias = this._diferencaDias(dataIni, dataFim);
+                        let dataFim = '';
+                        let dias = 0;
+                        if (!semPrevisao) {
+                            dataFim = document.getElementById('etp-form-datafim')?.value || '';
+                            dias = parseInt(document.getElementById('etp-form-dias')?.value, 10) || 1;
+                            if (!dataFim) {
+                                dataFim = this._somarDias(dataIni, dias - 1);
+                            } else {
+                                dias = this._diferencaDias(dataIni, dataFim);
+                            }
                         }
 
                         const qtd = (document.getElementById('etp-form-qtd')?.value || '').trim();
                         const respTipo = document.getElementById('etp-form-resptipo')?.value || 'Monitor';
-                        const respNome = (document.getElementById('etp-form-respnome')?.value || '').trim() || (respTipo === 'Monitor' ? plano.monitorNome : (respTipo === 'Treinador' ? plano.treinadorNome : ''));
+                        let respNomeAuto = '';
+                        if (respTipo === 'Monitor') respNomeAuto = plano.monitorNome || 'Monitor de Qualidade';
+                        else if (respTipo === 'Treinador') respNomeAuto = plano.treinadorNome || 'Treinador da Operação';
+                        else if (respTipo === 'Ambos') respNomeAuto = (plano.monitorNome && plano.treinadorNome) ? `${plano.monitorNome} & ${plano.treinadorNome}` : (plano.monitorNome || plano.treinadorNome || 'Monitor & Treinador');
+                        else if (respTipo === 'Liderança') respNomeAuto = 'Supervisão / Liderança';
+                        const respNome = (document.getElementById('etp-form-respnome')?.value || '').trim() || respNomeAuto;
                         const concluido = document.getElementById('etp-form-concluido')?.checked || false;
                         let dataConc = document.getElementById('etp-form-data')?.value || '';
                         if (concluido && !dataConc) dataConc = new Date().toISOString().split('T')[0];
@@ -14303,6 +14717,7 @@ storage: {
                                 nome,
                                 descricao: desc,
                                 cor,
+                                semPrevisao,
                                 dataInicio: dataIni,
                                 dataFim,
                                 diasEstimados: dias,
@@ -14320,6 +14735,7 @@ storage: {
                                 nome,
                                 descricao: desc,
                                 cor,
+                                semPrevisao,
                                 dataInicio: dataIni,
                                 dataFim,
                                 diasEstimados: dias,
@@ -14331,6 +14747,22 @@ storage: {
                                 atualizacoes: [],
                                 planosAcao: []
                             });
+                        }
+
+                        // Reordenação de posição selecionada no dropdown
+                        const posSelectEl = document.getElementById('etp-form-posicao');
+                        if (posSelectEl) {
+                            const posEscolhida = parseInt(posSelectEl.value, 10);
+                            if (!isNaN(posEscolhida) && posEscolhida >= 1) {
+                                const targetIdx = Math.max(0, Math.min(plano.etapas.length - 1, posEscolhida - 1));
+                                if (editIdx !== -1 && targetIdx !== editIdx) {
+                                    const [movida] = plano.etapas.splice(editIdx, 1);
+                                    plano.etapas.splice(targetIdx, 0, movida);
+                                } else if (editIdx === -1 && targetIdx < plano.etapas.length - 1) {
+                                    const novaEtp = plano.etapas.pop();
+                                    plano.etapas.splice(targetIdx, 0, novaEtp);
+                                }
+                            }
                         }
 
                         // Recalcula o status geral
@@ -14355,7 +14787,7 @@ storage: {
                 },
 
                 excluirEtapaIA(opKey, etapaId) {
-                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    const plano = this._findPlanoIA(opKey);
                     if (!plano || !Array.isArray(plano.etapas)) return;
 
                     app.ui.showConfirm(
@@ -14381,8 +14813,13 @@ storage: {
                         "Excluir Plano Harmony",
                         "Deseja remover o plano de implantação desta operação? As etapas e registros serão apagados.",
                         () => {
-                            if (app.harmonyDeployList && app.harmonyDeployList[opKey]) {
-                                delete app.harmonyDeployList[opKey];
+                            const plano = this._findPlanoIA(opKey);
+                            if (plano && app.harmonyDeployList) {
+                                for (const k of Object.keys(app.harmonyDeployList)) {
+                                    if (app.harmonyDeployList[k] === plano || k === opKey || k === plano.id) {
+                                        delete app.harmonyDeployList[k];
+                                    }
+                                }
                                 app.storage.saveHarmony().then(() => {
                                     app.ui.renderTab('implantacao_ia', true);
                                     app.ui.showAlert("Plano Removido", "O cronograma desta operação foi excluído.", "info");
@@ -14402,7 +14839,7 @@ storage: {
                             return;
                         }
 
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano || !Array.isArray(plano.etapas)) return;
                         const etapa = plano.etapas.find(e => e.id === etapaId);
                         if (!etapa) return;
@@ -14435,7 +14872,7 @@ storage: {
                 },
 
                 excluirAtualizacaoEtapaIA(opKey, etapaId, attId) {
-                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    const plano = this._findPlanoIA(opKey);
                     if (!plano || !Array.isArray(plano.etapas)) return;
                     const etapa = plano.etapas.find(e => e.id === etapaId);
                     if (!etapa || !Array.isArray(etapa.atualizacoes)) return;
@@ -14455,7 +14892,7 @@ storage: {
                 abrirModalNovoPlanoAcaoIA(opKey, etapaId) {
                     try {
                         const esc = (s) => app.utils.escapeHtml(s);
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano) return;
                         const etapa = (plano.etapas || []).find(e => e.id === etapaId);
                         if (!etapa) return;
@@ -14479,7 +14916,7 @@ storage: {
                         const respSugerido = etapa.responsavelNome || plano.monitorNome || plano.treinadorNome || '';
 
                         contentEl.innerHTML = `
-                            <form id="form-pa-ia" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarPlanoAcaoIA('${esc(opKey)}', '${esc(etapaId)}');">
+                            <form id="form-pa-ia" data-opkey="${esc(opKey)}" data-etpid="${esc(etapaId)}" class="space-y-4 text-left" onsubmit="event.preventDefault(); app.ui.salvarPlanoAcaoIA(this.getAttribute('data-opkey'), this.getAttribute('data-etpid'));">
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1.5">Ação / O que precisa ser feito *</label>
                                     <textarea id="pa-form-titulo" rows="3" placeholder="Descreva a ação corretiva, ajuste de prompt, reforço de treinamento ou alinhamento necessário..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-white outline-none focus:border-amber-500" required></textarea>
@@ -14499,7 +14936,7 @@ storage: {
 
                         actionsEl.innerHTML = `
                             <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
-                            <button type="button" onclick="app.ui.salvarPlanoAcaoIA('${esc(opKey)}', '${esc(etapaId)}')" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm shadow-md">Salvar Plano de Ação</button>
+                            <button type="button" onclick="app.ui.salvarPlanoAcaoIA(document.getElementById('form-pa-ia').getAttribute('data-opkey'), document.getElementById('form-pa-ia').getAttribute('data-etpid'))" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm shadow-md">Salvar Plano de Ação</button>
                         `;
 
                         gm.classList.remove('hidden');
@@ -14519,7 +14956,7 @@ storage: {
                             return;
                         }
 
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano || !Array.isArray(plano.etapas)) return;
                         const etapa = plano.etapas.find(e => e.id === etapaId);
                         if (!etapa) return;
@@ -14550,7 +14987,7 @@ storage: {
 
                 togglePlanoAcaoConcluidoIA(opKey, etapaId, paId) {
                     try {
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano || !Array.isArray(plano.etapas)) return;
                         const etapa = plano.etapas.find(e => e.id === etapaId);
                         if (!etapa || !Array.isArray(etapa.planosAcao)) return;
@@ -14575,7 +15012,7 @@ storage: {
                 },
 
                 excluirPlanoAcaoIA(opKey, etapaId, paId) {
-                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    const plano = this._findPlanoIA(opKey);
                     if (!plano || !Array.isArray(plano.etapas)) return;
                     const etapa = plano.etapas.find(e => e.id === etapaId);
                     if (!etapa || !Array.isArray(etapa.planosAcao)) return;
@@ -14602,7 +15039,7 @@ storage: {
                             return;
                         }
 
-                        const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                        const plano = this._findPlanoIA(opKey);
                         if (!plano) return;
                         if (!Array.isArray(plano.comentarios)) plano.comentarios = [];
 
@@ -14632,7 +15069,7 @@ storage: {
                 },
 
                 excluirComentarioProjetoIA(opKey, comId) {
-                    const plano = app.harmonyDeployList && app.harmonyDeployList[opKey];
+                    const plano = this._findPlanoIA(opKey);
                     if (!plano || !Array.isArray(plano.comentarios)) return;
 
                     app.ui.showConfirm(
@@ -14645,6 +15082,619 @@ storage: {
                             });
                         }
                     );
+                },
+
+                gerarPDFImplantacaoIA(opKey) {
+                    try {
+                        const plano = this._findPlanoIA(opKey);
+                        if (!plano) {
+                            app.ui.showAlert("Plano Não Encontrado", "Não foi possível localizar os dados desta implantação.", "error");
+                            return;
+                        }
+
+                        // Se jsPDF não estiver carregado, utiliza a visualização de impressão nativa
+                        if (!window.jspdf || !window.jspdf.jsPDF) {
+                            this.imprimirRelatorioImplantacaoIA(opKey);
+                            return;
+                        }
+
+                        const cleanText = (s) => {
+                            if (!s) return '';
+                            return String(app.utils && app.utils.fixEncoding ? app.utils.fixEncoding(s) : s).trim();
+                        };
+
+                        const opNome = cleanText(plano.operacao || 'Operação');
+                        const hc = plano.hc || 0;
+                        const hojeISO = new Date().toISOString().split('T')[0];
+                        const hojeBR = new Date().toLocaleDateString('pt-BR');
+                        const horaBR = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                        const emissorNome = app.currentUser ? cleanText(app.currentUser.nome) : 'Usuário do Sistema';
+                        const emissorCargo = app.currentUser?.tipoAcesso || 'Equipe';
+
+                        // Etapas e cálculos
+                        const etapas = Array.isArray(plano.etapas) ? plano.etapas : [];
+                        const totalEtapas = etapas.length;
+                        const concluidas = etapas.filter(e => e.concluido).length;
+                        const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
+                        const statusTxt = plano.status === 'pausado'
+                            ? 'EM PAUSA'
+                            : (plano.status === 'implantado'
+                                ? 'IMPLANTADO (100%)'
+                                : (plano.status === 'em_andamento' ? `EM IMPLANTAÇÃO (${pct}%)` : 'PLANEJADO (0%)'));
+
+                        // Cálculo de datas extremas do projeto e dias úteis
+                        const dtProjIniStr = plano.dataInicio || hojeISO;
+                        let minMs = this._parseDateMs(dtProjIniStr, Date.now());
+                        let maxMs = minMs + (86400000 * 7);
+
+                        etapas.forEach(e => {
+                            if (e.dataInicio) {
+                                const t = this._parseDateMs(e.dataInicio, minMs);
+                                if (!isNaN(t) && t < minMs) minMs = t;
+                            }
+                            if (e.dataFim) {
+                                const t = this._parseDateMs(e.dataFim, maxMs);
+                                if (!isNaN(t) && t > maxMs) maxMs = t;
+                            }
+                        });
+
+                        const minDateISO = new Date(minMs).toISOString().split('T')[0];
+                        const maxDateISO = new Date(maxMs).toISOString().split('T')[0];
+                        const totalDiasUteis = this._diferencaDias(minDateISO, maxDateISO);
+                        const dtInicioFmt = this._formatarDataBR(minDateISO);
+                        const dtFimFmt = this._formatarDataBR(maxDateISO);
+
+                        // Contadores e consolidado de planos de ação
+                        let totalAtts = 0;
+                        const todosPA = [];
+                        etapas.forEach((e, eIdx) => {
+                            totalAtts += (e.atualizacoes || []).length;
+                            (e.planosAcao || []).forEach(pa => {
+                                todosPA.push({
+                                    ...pa,
+                                    etapaIdx: eIdx + 1,
+                                    etapaNome: cleanText(e.nome)
+                                });
+                            });
+                        });
+                        const paConcluidos = todosPA.filter(p => p.concluido).length;
+                        const paPendentes = todosPA.length - paConcluidos;
+
+                        // Diagnóstico executivo imediato: Em que pé estamos?
+                        const etapaAtual = etapas.find(e => !e.concluido) || etapas[etapas.length - 1];
+                        const etapaAtualNome = etapaAtual ? cleanText(etapaAtual.nome) : 'Todas as etapas concluídas';
+                        const etapaAtualResp = etapaAtual ? cleanText(etapaAtual.responsavelNome || etapaAtual.responsavelTipo || 'Monitor Responsável') : '-';
+                        const etapaAtualFim = (etapaAtual && etapaAtual.semPrevisao) ? 'Sem Previsão' : ((etapaAtual && etapaAtual.dataFim) ? this._formatarDataBR(etapaAtual.dataFim) : '-');
+                        const etapaAtualDias = (etapaAtual && etapaAtual.semPrevisao) ? 'Sem prazo fixo' : ((etapaAtual && etapaAtual.diasEstimados) ? `${etapaAtual.diasEstimados} dias úteis` : '-');
+
+                        let ultimaAtualizacaoGeral = null;
+                        etapas.forEach((e, idx) => {
+                            (e.atualizacoes || []).forEach(a => {
+                                if (!ultimaAtualizacaoGeral || (a.timestamp && a.timestamp > (ultimaAtualizacaoGeral.timestamp || 0))) {
+                                    ultimaAtualizacaoGeral = { ...a, etapaIdx: idx + 1, etapaNome: cleanText(e.nome) };
+                                }
+                            });
+                        });
+                        const ultimaAttTexto = ultimaAtualizacaoGeral 
+                            ? `[${cleanText(ultimaAtualizacaoGeral.dataHora)}] Etp ${ultimaAtualizacaoGeral.etapaIdx} (${cleanText(ultimaAtualizacaoGeral.etapaNome)}) | ${cleanText(ultimaAtualizacaoGeral.autorNome)}: "${cleanText(ultimaAtualizacaoGeral.texto)}"`
+                            : 'Nenhum registro de atualização no diário de bordo até o momento.';
+
+                        // Inicialização do jsPDF em A4 Retrato
+                        const doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                        const pageWidth = doc.internal.pageSize.getWidth();
+                        const pageHeight = doc.internal.pageSize.getHeight();
+
+                        // Top Header Banner Executivo
+                        doc.setFillColor(30, 41, 59); // Slate 800
+                        doc.rect(0, 0, pageWidth, 28, 'F');
+
+                        doc.setTextColor(255, 255, 255);
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(13);
+                        doc.text("RELATÓRIO DETALHADO DE IMPLANTAÇÃO — HARMONY IA", 14, 12);
+
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(8.5);
+                        doc.setTextColor(203, 213, 225); // Slate 300
+                        doc.text(`Operação: ${opNome}   |   Emissão: ${hojeBR} às ${horaBR}   |   Status: ${statusTxt}`, 14, 20);
+
+                        const baseStyles = { fontSize: 8.5, cellPadding: 2.2, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.1 };
+                        const baseHeadStyles = { fillColor: [49, 46, 129], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' };
+
+                        // 1. EM QUE PÉ ESTAMOS? — PAINEL EXECUTIVO DO GERENTE
+                        doc.autoTable({
+                            startY: 32,
+                            head: [['1. EM QUE PÉ ESTAMOS? — PAINEL EXECUTIVO', 'DIAGNÓSTICO EM TEMPO REAL']],
+                            body: [
+                                ['Status Geral do Projeto', `${statusTxt} — ${concluidas} de ${totalEtapas} etapas concluídas (${pct}%)`],
+                                ['Foco Atual / Etapa Vigente', etapaAtual ? `Etapa ${etapas.indexOf(etapaAtual) + 1}: ${etapaAtualNome} (Resp: ${etapaAtualResp})` : 'Implantação 100% Concluída'],
+                                ['Prazo Estimado da Etapa', `Término previsto: ${etapaAtualFim} (${etapaAtualDias}) | Cronograma Geral: até ${dtFimFmt}`],
+                                ['Último Registro da Equipe (Diário)', ultimaAttTexto],
+                                ['Atenção aos Planos de Ação', paPendentes > 0 ? `ALERTA: ${paPendentes} plano(s) de ação pendente(s) requerem acompanhamento imediato` : 'Nenhum plano de ação pendente (todas as ações resolvidas)']
+                            ],
+                            theme: 'grid',
+                            headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 9.5, fontStyle: 'bold' },
+                            styles: { fontSize: 8.5, cellPadding: 2.3, textColor: [15, 23, 42], lineColor: [203, 213, 225], lineWidth: 0.15 },
+                            columnStyles: { 0: { fontStyle: 'bold', width: 62, fillColor: [248, 250, 252] }, 1: { width: 120 } }
+                        });
+
+                        // 2. FICHA TÉCNICA DA OPERAÇÃO
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 4,
+                            head: [['2. FICHA TÉCNICA DA OPERAÇÃO', 'INFORMAÇÕES']],
+                            body: [
+                                ['Operação / Projeto', opNome],
+                                ['Headcount Operacional', `${hc} operadores`],
+                                ['Monitor de Qualidade Responsável', `${cleanText(plano.monitorNome || 'Não definido')} ${plano.monitorMatricula ? `(Mat: #${plano.monitorMatricula})` : ''}`],
+                                ['Treinador Responsável (Capacitação)', `${cleanText(plano.treinadorNome || 'Não definido')} ${plano.treinadorMatricula ? `(Mat: #${plano.treinadorMatricula})` : ''}`],
+                                ['Período Geral Estimado', `${dtInicioFmt} até ${dtFimFmt} (${totalDiasUteis} dias úteis de trabalho)`],
+                                ['Diário de Bordo da Equipe', `${totalAtts} atualização(ões) registrada(s)`],
+                                ['Planos de Ação Cadastrados', `${todosPA.length} ação(ões) mapeada(s) (${paConcluidos} resolvida(s), ${paPendentes} pendente(s))`],
+                                ['Relatório Emitido Por', `${emissorNome} (${emissorCargo})`]
+                            ],
+                            theme: 'grid',
+                            headStyles: baseHeadStyles,
+                            styles: baseStyles,
+                            columnStyles: { 0: { fontStyle: 'bold', width: 62 }, 1: { width: 120 } }
+                        });
+
+                        // 3. SÍNTESE DO CRONOGRAMA GANTT
+                        const etapasTableBody = etapas.map((e, idx) => {
+                            const dtIni = e.dataInicio ? this._formatarDataBR(e.dataInicio) : 'A definir';
+                            const dtFim = e.semPrevisao ? 'Sem Previsão' : (e.dataFim ? this._formatarDataBR(e.dataFim) : 'A definir');
+                            const duracaoTexto = e.semPrevisao ? 'Sem previsão' : `(${e.diasEstimados || 1} dias úteis)`;
+                            const st = e.concluido
+                                ? `Concluído (${e.dataConclusao ? this._formatarDataBR(e.dataConclusao) : 'OK'})`
+                                : 'Pendente';
+                            return [
+                                `${idx + 1}. ${cleanText(e.nome)}`,
+                                `${dtIni} a ${dtFim}\n${duracaoTexto}`,
+                                cleanText(e.responsavelNome || e.responsavelTipo || 'Monitor'),
+                                cleanText(e.qtdEstimada || '-'),
+                                st
+                            ];
+                        });
+
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 5,
+                            head: [['3. SÍNTESE DO CRONOGRAMA GANTT', 'PERÍODO', 'RESPONSÁVEL', 'META / QTD', 'STATUS']],
+                            body: etapasTableBody.length > 0 ? etapasTableBody : [['-', '-', '-', '-', 'Nenhuma etapa cadastrada']],
+                            theme: 'grid',
+                            headStyles: { ...baseHeadStyles, fillColor: [30, 41, 59] },
+                            styles: baseStyles,
+                            columnStyles: {
+                                0: { fontStyle: 'bold', width: 60 },
+                                1: { width: 35, halign: 'center' },
+                                2: { width: 40 },
+                                3: { width: 22, halign: 'center' },
+                                4: { width: 25, halign: 'center' }
+                            }
+                        });
+
+                        // 4. DETALHAMENTO DE CADA ETAPA
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 6,
+                            head: [['4. DETALHAMENTO DE CADA ETAPA, DIÁRIO DE BORDO E PLANOS DE AÇÃO']],
+                            body: [['Abaixo constam as entregas acordadas, os procedimentos realizados, os registros de andamento diário da equipe e os planos de ação abertos para cada etapa da implantação.']],
+                            theme: 'plain',
+                            headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontSize: 9.5, fontStyle: 'bold' },
+                            styles: { fontSize: 8, textColor: [100, 116, 139], cellPadding: 2 }
+                        });
+
+                        etapas.forEach((etp, idx) => {
+                            const dtIni = etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : 'A definir';
+                            const dtFim = etp.semPrevisao ? 'Sem Previsão' : (etp.dataFim ? this._formatarDataBR(etp.dataFim) : 'A definir');
+                            const duracaoDet = etp.semPrevisao ? 'Sem prazo fixo' : `(${etp.diasEstimados || 1} dias úteis)`;
+                            const st = etp.concluido
+                                ? `CONCLUÍDO (em ${etp.dataConclusao ? this._formatarDataBR(etp.dataConclusao) : 'OK'})`
+                                : 'EM ANDAMENTO / PENDENTE';
+
+                            let attsStr = 'Nenhuma atualização de andamento registrada nesta etapa.';
+                            if (Array.isArray(etp.atualizacoes) && etp.atualizacoes.length > 0) {
+                                attsStr = etp.atualizacoes.map(a => `• [${cleanText(a.dataHora)}] ${cleanText(a.autorNome)} (${cleanText(a.autorCargo || 'Equipe')}): ${cleanText(a.texto)}`).join('\n');
+                            }
+
+                            let paStr = 'Nenhum plano de ação necessário nesta etapa.';
+                            if (Array.isArray(etp.planosAcao) && etp.planosAcao.length > 0) {
+                                paStr = etp.planosAcao.map(pa => `• [${pa.concluido ? 'RESOLVIDO' : 'EM ABERTO'}] ${cleanText(pa.titulo)} (Resp: ${cleanText(pa.responsavel || '-')}, Prazo: ${pa.prazo ? this._formatarDataBR(pa.prazo) : '-'})`).join('\n');
+                            }
+
+                            doc.autoTable({
+                                startY: doc.lastAutoTable.finalY + 3,
+                                head: [[`Etapa ${idx + 1}: ${cleanText(etp.nome)}`, `Status: ${st}`]],
+                                body: [
+                                    ['Período & Duração', `${dtIni} até ${dtFim} ${duracaoDet} | Meta: ${cleanText(etp.qtdEstimada || 'Não informada')}`],
+                                    ['Responsável Designado', `${cleanText(etp.responsavelNome || etp.responsavelTipo || 'Monitor')} (${cleanText(etp.responsavelTipo || 'Monitor')})`],
+                                    ['O que é feito / Entregáveis', cleanText(etp.descricao || 'Atividades padrão de homologação e implantação da ferramenta.')],
+                                    ['Diário de Bordo & Atualizações', attsStr],
+                                    ['Planos de Ação Desta Etapa', paStr]
+                                ],
+                                theme: 'grid',
+                                headStyles: {
+                                    fillColor: etp.concluido ? [5, 150, 105] : [79, 70, 229],
+                                    textColor: [255, 255, 255],
+                                    fontSize: 8.5,
+                                    fontStyle: 'bold'
+                                },
+                                styles: baseStyles,
+                                columnStyles: { 0: { fontStyle: 'bold', width: 50 }, 1: { width: 132 } }
+                            });
+                        });
+
+                        // 5. CONSOLIDADO DE PLANOS DE AÇÃO DO PROJETO
+                        const planosAcaoRows = todosPA.map(pa => [
+                            pa.concluido ? 'RESOLVIDO' : 'PENDENTE',
+                            `Etp ${pa.etapaIdx}: ${pa.etapaNome}`,
+                            cleanText(pa.titulo),
+                            cleanText(pa.responsavel || 'Não definido'),
+                            pa.prazo ? this._formatarDataBR(pa.prazo) : 'A definir'
+                        ]);
+
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 5,
+                            head: [['5. CONSOLIDADO DE PLANOS DE AÇÃO DO PROJETO', 'ETAPA', 'AÇÃO / O QUE PRECISA SER FEITO', 'RESPONSÁVEL', 'PRAZO']],
+                            body: planosAcaoRows.length > 0 ? planosAcaoRows : [['-', 'Todas as Etapas', 'Nenhum plano de ação pendente ou registrado no projeto.', '-', '-']],
+                            theme: 'grid',
+                            headStyles: { ...baseHeadStyles, fillColor: [180, 83, 9] }, // Amber 700
+                            styles: baseStyles,
+                            columnStyles: {
+                                0: { fontStyle: 'bold', width: 25, halign: 'center' },
+                                1: { width: 45 },
+                                2: { width: 62 },
+                                3: { width: 30 },
+                                4: { width: 20, halign: 'center' }
+                            }
+                        });
+
+                        // 6. ALINHAMENTOS & COMENTÁRIOS DO PROJETO
+                        const coms = Array.isArray(plano.comentarios) ? plano.comentarios : [];
+                        const comsBody = coms.map(c => [
+                            cleanText(c.dataHora || '-'),
+                            `${cleanText(c.autorNome || 'Colaborador')} (${cleanText(c.autorCargo || 'Equipe')})`,
+                            cleanText(c.texto || '')
+                        ]);
+
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 5,
+                            head: [['6. ALINHAMENTOS & COMENTÁRIOS DO PROJETO', 'AUTOR', 'MENSAGEM / ALINHAMENTO']],
+                            body: comsBody.length > 0 ? comsBody : [['-', '-', 'Nenhum comentário geral registrado até o momento.']],
+                            theme: 'grid',
+                            headStyles: { ...baseHeadStyles, fillColor: [67, 56, 202] },
+                            styles: baseStyles,
+                            columnStyles: {
+                                0: { width: 30, halign: 'center' },
+                                1: { fontStyle: 'bold', width: 45 },
+                                2: { width: 107 }
+                            }
+                        });
+
+                        // 7. TERMO DE CIÊNCIA E ALINHAMENTO DA GESTÃO
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 6,
+                            head: [['7. TERMO DE CIÊNCIA E ALINHAMENTO DA GESTÃO']],
+                            body: [
+                                ['Relatório executivo gerado para acompanhamento contínuo da implantação da ferramenta de Inteligência Artificial Harmony. Os responsáveis e gestores abaixo firmam ciência quanto aos prazos, entregáveis e planos de ação acordados.'],
+                                ['\n\n_____________________________________________\nGestor / Coordenador da Operação\n'],
+                                ['\n\n_____________________________________________\nMonitor de Qualidade Responsável\n'],
+                                ['\n\n_____________________________________________\nTreinador / Analista de Capacitação\n'],
+                                ['\n\n_____________________________________________\nCoordenação / Gerência de Qualidade e Treinamento\n']
+                            ],
+                            theme: 'grid',
+                            headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontSize: 8.5, fontStyle: 'bold', halign: 'center' },
+                            styles: { fontSize: 8, textColor: [71, 85, 105], halign: 'center', cellPadding: 2.5 }
+                        });
+
+                        // Numeração de Páginas e Rodapés
+                        const totalPages = doc.internal.getNumberOfPages();
+                        for (let i = 1; i <= totalPages; i++) {
+                            doc.setPage(i);
+                            doc.setFontSize(7.5);
+                            doc.setTextColor(148, 163, 184); // Slate 400
+                            doc.setFont("helvetica", "normal");
+
+                            if (i > 1) {
+                                doc.text(`Relatório Detalhado de Implantação IA — ${opNome}`, 14, 8);
+                                doc.setDrawColor(226, 232, 240);
+                                doc.setLineWidth(0.1);
+                                doc.line(14, 10, pageWidth - 14, 10);
+                            }
+
+                            doc.setDrawColor(226, 232, 240);
+                            doc.setLineWidth(0.1);
+                            doc.line(14, pageHeight - 10, pageWidth - 14, pageHeight - 10);
+                            doc.text(`Portal Qualidade & Treinamento  •  Documento Oficial de Acompanhamento IA  •  Gerado em ${hojeBR} às ${horaBR}`, 14, pageHeight - 6);
+                            doc.text(`Página ${i} de ${totalPages}`, pageWidth - 14, pageHeight - 6, { align: 'right' });
+                        }
+
+                        const safeOp = opNome.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+                        const nomeArquivo = `Relatorio_Implantacao_IA_${safeOp}_${hojeISO}.pdf`;
+                        doc.save(nomeArquivo);
+
+                        app.ui.showAlert(
+                            "Relatório em PDF Gerado",
+                            `O Relatório Detalhado da Implantação (<b>${opNome}</b>) foi gerado com sucesso!<br><br>` +
+                            `<i class="fa-solid fa-file-pdf text-rose-600 mr-1.5"></i> Arquivo <b>${nomeArquivo}</b> pronto para encaminhar aos gestores e diretoria.<br>` +
+                            `<span class="text-xs text-slate-500 mt-2 block">Foram consolidadas todas as etapas, datas de calendário em dias úteis, diário de bordo e planos de ação.</span>`,
+                            "success"
+                        );
+                    } catch (err) {
+                        console.error("Erro ao gerar PDF da Implantação IA:", err);
+                        app.ui.showAlert("Erro ao Gerar PDF", "Ocorreu uma falha na geração do relatório: " + (err.message || err), "error");
+                    }
+                },
+
+                imprimirRelatorioImplantacaoIA(opKey) {
+                    try {
+                        const plano = this._findPlanoIA(opKey);
+                        if (!plano) {
+                            app.ui.showAlert("Plano Não Encontrado", "Não foi possível localizar os dados desta implantação.", "error");
+                            return;
+                        }
+
+                        const cleanText = (s) => app.utils && app.utils.fixEncoding ? app.utils.fixEncoding(s) : (s || '');
+                        const esc = (s) => app.utils && app.utils.escapeHtml ? app.utils.escapeHtml(cleanText(s)) : cleanText(s);
+
+                        const opNome = cleanText(plano.operacao || 'Operação');
+                        const hc = plano.hc || 0;
+                        const hojeBR = new Date().toLocaleDateString('pt-BR');
+                        const horaBR = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                        const emissorNome = app.currentUser ? cleanText(app.currentUser.nome) : 'Usuário do Sistema';
+                        const emissorCargo = app.currentUser?.tipoAcesso || 'Equipe';
+
+                        const etapas = Array.isArray(plano.etapas) ? plano.etapas : [];
+                        const totalEtapas = etapas.length;
+                        const concluidas = etapas.filter(e => e.concluido).length;
+                        const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
+                        const statusTxt = plano.status === 'pausado' ? 'Em Pausa' : (plano.status === 'implantado' ? 'Harmony Implantado' : (plano.status === 'em_andamento' ? `Em Implantação (${pct}%)` : 'Planejado (0%)'));
+
+                        const hojeISO = new Date().toISOString().split('T')[0];
+                        const dtProjIniStr = plano.dataInicio || hojeISO;
+                        let minMs = this._parseDateMs(dtProjIniStr, Date.now());
+                        let maxMs = minMs + (86400000 * 7);
+
+                        etapas.forEach(e => {
+                            if (e.dataInicio) {
+                                const t = this._parseDateMs(e.dataInicio, minMs);
+                                if (!isNaN(t) && t < minMs) minMs = t;
+                            }
+                            if (e.dataFim) {
+                                const t = this._parseDateMs(e.dataFim, maxMs);
+                                if (!isNaN(t) && t > maxMs) maxMs = t;
+                            }
+                        });
+
+                        const minDateISO = new Date(minMs).toISOString().split('T')[0];
+                        const maxDateISO = new Date(maxMs).toISOString().split('T')[0];
+                        const totalDiasUteis = this._diferencaDias(minDateISO, maxDateISO);
+                        const dtInicioFmt = this._formatarDataBR(minDateISO);
+                        const dtFimFmt = this._formatarDataBR(maxDateISO);
+
+                        const todosPA = [];
+                        etapas.forEach((e, eIdx) => {
+                            (e.planosAcao || []).forEach(pa => {
+                                todosPA.push({ ...pa, etapaIdx: eIdx + 1, etapaNome: cleanText(e.nome) });
+                            });
+                        });
+                        const paConcluidos = todosPA.filter(p => p.concluido).length;
+                        const paPendentes = todosPA.length - paConcluidos;
+
+                        const etapaAtual = etapas.find(e => !e.concluido) || etapas[etapas.length - 1];
+                        const etapaAtualNome = etapaAtual ? cleanText(etapaAtual.nome) : 'Todas as etapas concluídas';
+                        const etapaAtualResp = etapaAtual ? cleanText(etapaAtual.responsavelNome || etapaAtual.responsavelTipo || 'Monitor Responsável') : '-';
+                        const etapaAtualFim = (etapaAtual && etapaAtual.semPrevisao) ? 'Sem Previsão' : ((etapaAtual && etapaAtual.dataFim) ? this._formatarDataBR(etapaAtual.dataFim) : '-');
+                        const etapaAtualDias = (etapaAtual && etapaAtual.semPrevisao) ? 'Sem prazo fixo' : ((etapaAtual && etapaAtual.diasEstimados) ? `${etapaAtual.diasEstimados} dias úteis` : '-');
+
+                        let ultimaAtualizacaoGeral = null;
+                        etapas.forEach((e, idx) => {
+                            (e.atualizacoes || []).forEach(a => {
+                                if (!ultimaAtualizacaoGeral || (a.timestamp && a.timestamp > (ultimaAtualizacaoGeral.timestamp || 0))) {
+                                    ultimaAtualizacaoGeral = { ...a, etapaIdx: idx + 1, etapaNome: cleanText(e.nome) };
+                                }
+                            });
+                        });
+                        const ultimaAttTexto = ultimaAtualizacaoGeral 
+                            ? `[${cleanText(ultimaAtualizacaoGeral.dataHora)}] Etp ${ultimaAtualizacaoGeral.etapaIdx} (${cleanText(ultimaAtualizacaoGeral.etapaNome)}) | ${cleanText(ultimaAtualizacaoGeral.autorNome)}: "${cleanText(ultimaAtualizacaoGeral.texto)}"`
+                            : 'Nenhum registro de atualização no diário de bordo até o momento.';
+
+                        const printWin = window.open('', '_blank');
+                        if (!printWin) {
+                            app.ui.showAlert("Aviso", "O navegador bloqueou a abertura da janela. Permita pop-ups para visualizar a impressão.", "warning");
+                            return;
+                        }
+
+                        printWin.document.write(`
+                            <!DOCTYPE html>
+                            <html lang="pt-BR">
+                            <head>
+                                <meta charset="utf-8">
+                                <title>Relatório de Implantação IA - ${esc(opNome)}</title>
+                                <style>
+                                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; padding: 24px; font-size: 13px; line-height: 1.5; background: #fff; }
+                                    .header-box { background: #1e293b; color: #fff; padding: 20px 24px; border-radius: 12px; margin-bottom: 24px; }
+                                    .header-title { font-size: 18px; font-weight: 800; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+                                    .header-sub { font-size: 12px; color: #cbd5e1; margin: 0; }
+                                    .section-card { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 20px; overflow: hidden; page-break-inside: avoid; }
+                                    .section-title { background: #312e81; color: #fff; font-size: 12px; font-weight: 700; padding: 8px 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+                                    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                                    th, td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; text-align: left; vertical-align: top; }
+                                    th { background: #f8fafc; font-weight: 700; color: #475569; font-size: 11px; text-transform: uppercase; }
+                                    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+                                    .badge-green { background: #dcfce7; color: #15803d; }
+                                    .badge-blue { background: #e0e7ff; color: #4338ca; }
+                                    .badge-amber { background: #fef3c7; color: #b45309; }
+                                    .badge-gray { background: #f1f5f9; color: #475569; }
+                                    .stage-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; page-break-inside: avoid; }
+                                    .stage-head { padding: 8px 12px; font-weight: 700; font-size: 12px; display: flex; justify-content: space-between; border-radius: 7px 7px 0 0; }
+                                    .stage-body { padding: 12px; font-size: 12px; }
+                                    .signatures { margin-top: 36px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; page-break-inside: avoid; }
+                                    .sig-line { border-top: 1px solid #94a3b8; text-align: center; padding-top: 6px; font-size: 11px; font-weight: 600; color: #475569; }
+                                    .no-print-bar { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 18px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+                                    @media print {
+                                        .no-print-bar { display: none !important; }
+                                        body { padding: 0; }
+                                    }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="no-print-bar">
+                                    <div><strong>Visualização do Relatório Executivo</strong> — Pronto para envio aos gestores.</div>
+                                    <div>
+                                        <button onclick="window.print()" style="background:#4f46e5;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:bold;cursor:pointer;">Imprimir / Salvar PDF</button>
+                                        <button onclick="window.close()" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;padding:8px 14px;border-radius:8px;font-weight:bold;cursor:pointer;margin-left:8px;">Fechar</button>
+                                    </div>
+                                </div>
+
+                                <div class="header-box">
+                                    <h1 class="header-title">Relatório Detalhado de Implantação — HARMONY IA</h1>
+                                    <p class="header-sub">Operação: <strong>${esc(opNome)}</strong> | Emissão: <strong>${hojeBR} às ${horaBR}</strong> | Status: <strong>${esc(statusTxt)}</strong></p>
+                                </div>
+
+                                <div class="section-card" style="border: 2px solid #0f172a;">
+                                    <div class="section-title" style="background:#0f172a; font-size:13px;">1. Em que pé estamos? — Painel Executivo</div>
+                                    <table style="background:#f8fafc;">
+                                        <tr><td style="width:30%; font-weight:bold;">Status Geral do Projeto</td><td><strong style="font-size:14px;">${esc(statusTxt)}</strong> — ${concluidas} de ${totalEtapas} etapas concluídas (${pct}%)</td></tr>
+                                        <tr><td style="font-weight:bold;">Foco Atual / Etapa Vigente</td><td><strong>${esc(etapaAtualNome)}</strong> (Resp: ${esc(etapaAtualResp)})</td></tr>
+                                        <tr><td style="font-weight:bold;">Prazo Estimado da Etapa</td><td>Término previsto: ${etapaAtualFim} (${etapaAtualDias}) | Cronograma Geral: até ${dtFimFmt}</td></tr>
+                                        <tr><td style="font-weight:bold;">Último Registro da Equipe</td><td>${esc(ultimaAttTexto)}</td></tr>
+                                        <tr><td style="font-weight:bold;">Atenção aos Planos de Ação</td><td>${paPendentes > 0 ? `<span style="color:#b45309; font-weight:bold;">ALERTA: ${paPendentes} plano(s) de ação pendente(s) requerem acompanhamento imediato</span>` : '<span style="color:#15803d; font-weight:bold;">Nenhum plano de ação pendente (todas as ações resolvidas)</span>'}</td></tr>
+                                    </table>
+                                </div>
+
+                                <div class="section-card">
+                                    <div class="section-title">2. Ficha Técnica da Operação</div>
+                                    <table>
+                                        <tr><td style="width:30%; font-weight:bold;">Operação / Projeto</td><td>${esc(opNome)}</td></tr>
+                                        <tr><td style="font-weight:bold;">Headcount Operacional</td><td>${hc} operadores</td></tr>
+                                        <tr><td style="font-weight:bold;">Monitor Responsável</td><td>${esc(plano.monitorNome || 'Não definido')} ${plano.monitorMatricula ? `(Mat: #${esc(plano.monitorMatricula)})` : ''}</td></tr>
+                                        <tr><td style="font-weight:bold;">Treinador Responsável</td><td>${esc(plano.treinadorNome || 'Não definido')} ${plano.treinadorMatricula ? `(Mat: #${esc(plano.treinadorMatricula)})` : ''}</td></tr>
+                                        <tr><td style="font-weight:bold;">Período Geral Estimado</td><td>${dtInicioFmt} até ${dtFimFmt} (${totalDiasUteis} dias úteis)</td></tr>
+                                        <tr><td style="font-weight:bold;">Relatório Emitido Por</td><td>${esc(emissorNome)} (${esc(emissorCargo)})</td></tr>
+                                    </table>
+                                </div>
+
+                                <div class="section-card">
+                                    <div class="section-title" style="background:#1e293b;">3. Síntese do Cronograma Gantt</div>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th># Etapa</th>
+                                                <th>Período (Dias Úteis)</th>
+                                                <th>Responsável</th>
+                                                <th>Meta / Qtd</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${etapas.map((e, idx) => `
+                                                <tr>
+                                                    <td><strong>${idx + 1}. ${esc(e.nome)}</strong></td>
+                                                    <td>${e.dataInicio ? this._formatarDataBR(e.dataInicio) : 'A definir'} até ${e.semPrevisao ? 'Sem Previsão' : (e.dataFim ? this._formatarDataBR(e.dataFim) : 'A definir')} ${e.semPrevisao ? '(Sem prazo fixo)' : `(${e.diasEstimados || 1} dias úteis)`}</td>
+                                                    <td>${esc(e.responsavelNome || e.responsavelTipo || 'Monitor')}</td>
+                                                    <td>${esc(e.qtdEstimada || '-')}</td>
+                                                    <td><span class="badge ${e.concluido ? 'badge-green' : 'badge-gray'}">${e.concluido ? 'Concluído' : 'Pendente'}</span></td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="section-card">
+                                    <div class="section-title" style="background:#4f46e5;">4. Detalhamento de Cada Etapa, Diário de Bordo e Planos de Ação</div>
+                                    <div style="padding:14px;">
+                                        ${etapas.map((etp, idx) => `
+                                            <div class="stage-card">
+                                                <div class="stage-head" style="background:${etp.concluido ? '#059669' : '#4f46e5'}; color:#fff;">
+                                                    <span>Etapa ${idx + 1}: ${esc(etp.nome)}</span>
+                                                    <span>${etp.concluido ? 'CONCLUÍDO' : 'EM ANDAMENTO / PENDENTE'}</span>
+                                                </div>
+                                                <div class="stage-body">
+                                                    <p style="margin:0 0 6px 0;"><strong>Período:</strong> ${etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : 'A definir'} até ${etp.semPrevisao ? 'Sem Previsão' : (etp.dataFim ? this._formatarDataBR(etp.dataFim) : 'A definir')} ${etp.semPrevisao ? '(Sem prazo fixo)' : `(${etp.diasEstimados || 1} dias úteis)`} | <strong>Meta:</strong> ${esc(etp.qtdEstimada || 'Não informada')} | <strong>Responsável:</strong> ${esc(etp.responsavelNome || etp.responsavelTipo || 'Monitor')}</p>
+                                                    <p style="margin:0 0 10px 0; color:#475569;"><strong>O que é feito:</strong> ${esc(etp.descricao || 'Atividades padrão de homologação.')}</p>
+
+                                                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px; margin-bottom:8px;">
+                                                        <strong style="font-size:11px; text-transform:uppercase; color:#64748b;">Diário de Bordo & Atualizações (${(etp.atualizacoes || []).length}):</strong>
+                                                        ${(etp.atualizacoes && etp.atualizacoes.length > 0) ? `
+                                                            <ul style="margin:4px 0 0 0; padding-left:18px; font-size:11px;">
+                                                                ${etp.atualizacoes.map(a => `<li><strong>[${esc(a.dataHora)}] ${esc(a.autorNome)}:</strong> ${esc(a.texto)}</li>`).join('')}
+                                                            </ul>
+                                                        ` : '<div style="font-size:11px; color:#94a3b8; font-style:italic;">Nenhum registro de atualização cadastrado nesta etapa.</div>'}
+                                                    </div>
+
+                                                    <div style="background:#fffbeb; border:1px solid #fef3c7; border-radius:6px; padding:8px 10px;">
+                                                        <strong style="font-size:11px; text-transform:uppercase; color:#b45309;">Planos de Ação Desta Etapa (${(etp.planosAcao || []).length}):</strong>
+                                                        ${(etp.planosAcao && etp.planosAcao.length > 0) ? `
+                                                            <ul style="margin:4px 0 0 0; padding-left:18px; font-size:11px;">
+                                                                ${etp.planosAcao.map(pa => `<li><strong>[${pa.concluido ? 'RESOLVIDO' : 'EM ABERTO'}]</strong> ${esc(pa.titulo)} — Resp: ${esc(pa.responsavel || '-')} | Prazo: ${pa.prazo ? this._formatarDataBR(pa.prazo) : '-'}</li>`).join('')}
+                                                            </ul>
+                                                        ` : '<div style="font-size:11px; color:#94a3b8; font-style:italic;">Nenhum plano de ação necessário nesta etapa.</div>'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+
+                                <div class="section-card">
+                                    <div class="section-title" style="background:#b45309;">5. Consolidado de Planos de Ação da Operação (${todosPA.length})</div>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Status</th>
+                                                <th>Etapa</th>
+                                                <th>Ação / O que precisa ser feito</th>
+                                                <th>Responsável</th>
+                                                <th>Prazo</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${todosPA.length > 0 ? todosPA.map(pa => `
+                                                <tr>
+                                                    <td><span class="badge ${pa.concluido ? 'badge-green' : 'badge-amber'}">${pa.concluido ? 'Resolvido' : 'Pendente'}</span></td>
+                                                    <td><strong>Etp ${pa.etapaIdx}: ${esc(pa.etapaNome)}</strong></td>
+                                                    <td>${esc(pa.titulo)}</td>
+                                                    <td>${esc(pa.responsavel || 'Não definido')}</td>
+                                                    <td>${pa.prazo ? this._formatarDataBR(pa.prazo) : 'A definir'}</td>
+                                                </tr>
+                                            `).join('') : '<tr><td colspan="5" style="text-align:center; color:#94a3b8; font-style:italic;">Nenhum plano de ação registrado nesta operação.</td></tr>'}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="section-card">
+                                    <div class="section-title" style="background:#4338ca;">6. Alinhamentos & Comentários do Projeto (${(plano.comentarios || []).length})</div>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th style="width:18%;">Data / Hora</th>
+                                                <th style="width:25%;">Autor</th>
+                                                <th>Mensagem / Alinhamento</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${(plano.comentarios && plano.comentarios.length > 0) ? plano.comentarios.map(c => `
+                                                <tr>
+                                                    <td>${esc(c.dataHora || '-')}</td>
+                                                    <td><strong>${esc(c.autorNome || 'Colaborador')}</strong> (${esc(c.autorCargo || 'Equipe')})</td>
+                                                    <td>${esc(c.texto || '')}</td>
+                                                </tr>
+                                            `).join('') : '<tr><td colspan="3" style="text-align:center; color:#94a3b8; font-style:italic;">Nenhum comentário geral registrado até o momento.</td></tr>'}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="signatures">
+                                    <div class="sig-line">Gestor / Coordenador da Operação</div>
+                                    <div class="sig-line">Monitor de Qualidade Responsável</div>
+                                    <div class="sig-line">Treinador / Analista de Capacitação</div>
+                                    <div class="sig-line">Coordenação / Gerência de Qualidade e Treinamento</div>
+                                </div>
+                            </body>
+                            </html>
+                        `);
+                        printWin.document.close();
+                    } catch (err) {
+                        console.error("Erro em imprimirRelatorioImplantacaoIA:", err);
+                    }
                 },
 
 
@@ -14916,7 +15966,17 @@ storage: {
                     const rankingArray = state.ranking || []; 
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     
-                    let html = '';
+                    const tsAtt = state.ultimaAtualizacao;
+                    const ultimaAttFmt = tsAtt ? (new Date(tsAtt).toLocaleDateString('pt-BR') + ' às ' + new Date(tsAtt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) : 'Ainda não registrado';
+
+                    let html = `
+                        <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+                            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-xs">
+                                <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i>
+                                <span>Última Atualização da Base: <strong class="text-slate-800 dark:text-white font-bold">${ultimaAttFmt}</strong></span>
+                            </div>
+                        </div>
+                    `;
 
                     // BARRAS DE BOTÕES (APENAS ADMIN / PERFIS COM ACESSO)
                     if(canManageMon) {
@@ -15259,12 +16319,21 @@ storage: {
                     const rankingArray = state.ranking || []; 
                     const userMatricula = app.currentUser ? app.currentUser.matricula : '';
                     
+                    const tsAtt = state.ultimaAtualizacao;
+                    const ultimaAttFmt = tsAtt ? (new Date(tsAtt).toLocaleDateString('pt-BR') + ' às ' + new Date(tsAtt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) : 'Ainda não registrado';
+
                     const myData = rankingArray.find(r => r.matricula === userMatricula);
 
                     let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Performance Operacional (Individual)</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe seus resultados, qualidade de monitorias e projeções para o mês atual.</p>
+                        <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Performance Operacional (Individual)</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe seus resultados, qualidade de monitorias e projeções para o mês atual.</p>
+                            </div>
+                            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-xs">
+                                <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i>
+                                <span>Última Atualização: <strong class="text-slate-800 dark:text-white font-bold">${ultimaAttFmt}</strong></span>
+                            </div>
                         </div>
                     `;
 
@@ -19481,6 +20550,24 @@ storage: {
                     input.value = ''; 
                 },
                 
+                extractRowMonth(dataRaw, defaultMonth = app.currentMonth) {
+                    if (dataRaw === null || dataRaw === undefined || dataRaw === '') return defaultMonth;
+                    if (typeof dataRaw === 'number' && dataRaw > 20000 && dataRaw < 80000) {
+                        const dt = new Date(Math.round((dataRaw - 25569) * 86400 * 1000));
+                        if (!isNaN(dt.getTime())) {
+                            const y = dt.getUTCFullYear();
+                            const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+                            if (y >= 2020 && y <= 2035) return `${y}-${m}`;
+                        }
+                    }
+                    const s = String(dataRaw).trim();
+                    const matchIso = s.match(/\b(20\d{2})[-/](0[1-9]|1[0-2])\b/);
+                    if (matchIso) return `${matchIso[1]}-${matchIso[2]}`;
+                    const matchBr = s.match(/\b(0?[1-9]|[12]\d|3[01])[-/](0?[1-9]|1[0-2])[-/](20\d{2})\b/);
+                    if (matchBr) return `${matchBr[3]}-${matchBr[2].padStart(2, '0')}`;
+                    return defaultMonth;
+                },
+
                 calcularBasePlanilhaPorMatricula(matricula, linhasOverride = null) {
                     const linhas = Array.isArray(linhasOverride)
                         ? linhasOverride
@@ -19515,20 +20602,27 @@ storage: {
                     const rankingAtual = Array.isArray(app.monitoriasData.ranking) ? app.monitoriasData.ranking : [];
                     rankingAtual.forEach(r => {
                         if (!r || !r.matricula) return;
-                        const basePlan = this.calcularBasePlanilhaPorMatricula(r.matricula, linhasReferencia);
-                        const diffTotal = Math.max(0, (parseInt(r.total) || 0) - basePlan.totalPlanilha);
-                        const diffFbs = Math.max(0, (parseInt(r.pendenteFeedback) || 0) - basePlan.pendenteFbPlanilha);
                         const jaTemManual = app.monitoriasData.lancamentosManuais[r.matricula];
 
-                        if (!jaTemManual && (r.totalManual > 0 || r.operacao === 'Manual' || diffTotal > 0 || diffFbs > 0)) {
+                        // Preserva APENAS lançamentos manuais autênticos marcados explicitamente pelo usuário
+                        // Nunca mais cria manuais fantasmas a partir de divergências numéricas entre planilhas
+                        if (!jaTemManual && (parseInt(r.totalManual) > 0 || parseInt(r.pendenteFeedbackManual) > 0)) {
                             app.monitoriasData.lancamentosManuais[r.matricula] = {
                                 matricula: r.matricula,
                                 nome: r.nome,
-                                totalManual: r.totalManual !== undefined ? r.totalManual : diffTotal,
-                                fbsManual: r.pendenteFeedbackManual !== undefined ? r.pendenteFeedbackManual : diffFbs,
+                                totalManual: parseInt(r.totalManual) || 0,
+                                fbsManual: parseInt(r.pendenteFeedbackManual) || 0,
                                 operacao: r.operacao || 'Manual',
                                 atualizadoEm: Date.now()
                             };
+                        }
+                    });
+
+                    // Limpa do objeto qualquer entrada zerada ou fantasma
+                    Object.keys(app.monitoriasData.lancamentosManuais).forEach(matr => {
+                        const item = app.monitoriasData.lancamentosManuais[matr];
+                        if (!item || ((parseInt(item.totalManual) || 0) <= 0 && (parseInt(item.fbsManual) || 0) <= 0)) {
+                            delete app.monitoriasData.lancamentosManuais[matr];
                         }
                     });
                 },
@@ -20199,24 +21293,32 @@ storage: {
                     app.monitoriasData.detalhes.linhas = linhasGlobais; 
                     app.monitoriasData.ultimaAtualizacao = Date.now();
             
-                    novoRanking.forEach(r => {
-                        const usr = app.users.find(u => u.matricula === r.matricula);
-                        if(usr && (app.isUserQualidade(usr) || r.totalManual > 0)) {
+                    const rankingPorMatr = {};
+                    novoRanking.forEach(r => { if(r && r.matricula) rankingPorMatr[r.matricula] = r; });
+
+                    app.users.forEach(usr => {
+                        if (!usr) return;
+                        const isQual = app.isUserQualidade(usr);
+                        const r = rankingPorMatr[usr.matricula];
+
+                        if (isQual || (r && (r.total > 0 || r.totalManual > 0))) {
                             if(!usr.results) usr.results = {};
                             if(!usr.results[app.currentMonth]) usr.results[app.currentMonth] = {status: 'pendente'};
-                            
                             if(!usr.results[app.currentMonth]['g1']) usr.results[app.currentMonth]['g1'] = {meta: 400, real: 0};
-                            usr.results[app.currentMonth]['g1'].real = r.total;
                             
-                            // Automação: Injeta a Meta e o Realizado de Feedback (G2)
-                            if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
-                            
-                            // A Meta é a quantidade de notas < 85. Se a pendência anotada for maior, a meta assume a pendência.
-                            let metaCalculada = Math.max(r.metaFb || 0, r.pendenteFeedback || 0);
-                            usr.results[app.currentMonth]['g2'].meta = metaCalculada;
-                            
-                            // O alcançado é calculado subtraindo os pendentes, exatamente conforme a regra de negócio
-                            usr.results[app.currentMonth]['g2'].real = Math.max(0, metaCalculada - (r.pendenteFeedback || 0));
+                            if (r) {
+                                usr.results[app.currentMonth]['g1'].real = r.total;
+                                if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
+                                let metaCalculada = Math.max(r.metaFb || 0, r.pendenteFeedback || 0);
+                                usr.results[app.currentMonth]['g2'].meta = metaCalculada;
+                                usr.results[app.currentMonth]['g2'].real = Math.max(0, metaCalculada - (r.pendenteFeedback || 0));
+                            } else if (isQual && (!usr.results[app.currentMonth].signedAt && usr.results[app.currentMonth].status !== 'validado')) {
+                                // Isolamento mensal: Colaborador de qualidade sem dados no mês ativo fica com 0 monitorias
+                                usr.results[app.currentMonth]['g1'].real = 0;
+                                if(!usr.results[app.currentMonth]['g2']) usr.results[app.currentMonth]['g2'] = {meta: 0, real: 0};
+                                usr.results[app.currentMonth]['g2'].meta = 0;
+                                usr.results[app.currentMonth]['g2'].real = 0;
+                            }
                         }
                     });
             
@@ -20367,6 +21469,11 @@ storage: {
 
                                 let statusLido = String(getValByKeyword(row, 'STATUS|SITUACAO|FEEDBACK') || 'Importação Amil').trim();
                                 let dataRaw = getValByKeyword(row, 'DATA|GRAVACAO|AVALIACAO');
+                                const rowMonth = this.extractRowMonth(dataRaw, app.currentMonth);
+                                if (rowMonth && rowMonth !== app.currentMonth) {
+                                    return; // Isolamento rigoroso: ignora linhas de outros meses para não somar competências
+                                }
+
                                 let dataFmt = new Date().toLocaleDateString('pt-BR');
                                 if (typeof dataRaw === 'number' && dataRaw > 20000) {
                                     const dt = new Date((dataRaw - 25569) * 86400 * 1000);
@@ -20488,6 +21595,11 @@ storage: {
                                 let opNomeDetalhe = opNomeRaw.includes(',') ? this.inverterNomeVirgula(opNomeRaw) : opNomeRaw;
                                 
                                 let dataRaw = getValByKeyword(row, 'DATA|GRAVACAO|GRAVAÇÃO');
+                                const rowMonth = this.extractRowMonth(dataRaw, app.currentMonth);
+                                if (rowMonth && rowMonth !== app.currentMonth) {
+                                    return; // Isolamento rigoroso: ignora linhas de outros meses para não somar competências
+                                }
+
                                 let dataFmt = periodoAnalisado;
                                 if (typeof dataRaw === 'number') {
                                     const dt = new Date((dataRaw - 25569) * 86400 * 1000);
@@ -25661,9 +26773,102 @@ Object.assign(app.ui, {
                 // =========================================================================
                 // CENTRAL DE AJUDA & GUIA OPERACIONAL (HELP MODAL)
                 // =========================================================================
-                abrirModalHelp(abaInicial = 'geral') {
+                _getHelpProfile() {
+                    const u = app.currentUser;
+                    if (!u) return 'Qualidade';
+                    const tipo = u.tipoAcesso || 'Qualidade';
+                    if (tipo === 'Dev' || app.isAdmin || u.matricula === 'admin') return 'Dev';
+                    if (['Gerente', 'Gestor', 'Supervisor'].includes(tipo)) return 'Gestao';
+                    if (tipo === 'Treinamento') return 'Treinamento';
+                    if (tipo === 'Operador') return 'Operador';
+                    return 'Qualidade';
+                },
+
+                abrirModalHelp(abaInicial = null, profileForced = null) {
                     const modalExist = document.getElementById('help-modal');
                     if (modalExist) modalExist.remove();
+
+                    const userRealProfile = this._getHelpProfile();
+                    const activeProfile = profileForced || this._helpProfile || userRealProfile;
+                    this._helpProfile = activeProfile;
+
+                    const isGestorOrDev = app.isAdmin || ['Dev', 'Gerente', 'Gestor'].includes(app.currentUser?.tipoAcesso);
+
+                    const profileMeta = {
+                        'Qualidade': {
+                            nome: 'Monitoria & Qualidade',
+                            corBadge: 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                            icone: 'fa-solid fa-headphones text-blue-600',
+                            desc: 'Guia exclusivo para Monitores e Líderes de Qualidade: rotina de avaliações, atas de calibração, metas e Harmony IA.',
+                            tabs: [
+                                { id: 'q_inicio', label: 'Meu Dia a Dia', icone: 'fa-solid fa-house' },
+                                { id: 'q_monitorias', label: 'Monitorias & Importação', icone: 'fa-solid fa-chart-pie' },
+                                { id: 'q_atas', label: 'Atas & Calibração', icone: 'fa-solid fa-file-signature' },
+                                { id: 'q_metas', label: 'Minhas Metas & Bônus', icone: 'fa-solid fa-award' },
+                                { id: 'q_harmony', label: 'Implantação Harmony IA', icone: 'fa-solid fa-robot' },
+                                { id: 'atalhos', label: 'Atalhos Rápidos', icone: 'fa-solid fa-keyboard' }
+                            ]
+                        },
+                        'Treinamento': {
+                            nome: 'Treinamento & Capacitação',
+                            corBadge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                            icone: 'fa-solid fa-chalkboard-user text-emerald-600',
+                            desc: 'Guia do Treinador e Capacitação: Softlingo gamificado, dinâmicas presenciais, certificações e Harmony IA.',
+                            tabs: [
+                                { id: 't_inicio', label: 'Visão do Treinador', icone: 'fa-solid fa-house' },
+                                { id: 't_softlingo', label: 'Softlingo Gamificado', icone: 'fa-solid fa-graduation-cap' },
+                                { id: 't_acoes', label: 'Ações Presenciais', icone: 'fa-solid fa-camera' },
+                                { id: 't_certificados', label: 'Certificações Oficiais', icone: 'fa-solid fa-certificate' },
+                                { id: 't_harmony', label: 'Implantação Harmony IA', icone: 'fa-solid fa-robot' },
+                                { id: 'atalhos', label: 'Atalhos Rápidos', icone: 'fa-solid fa-keyboard' }
+                            ]
+                        },
+                        'Gestao': {
+                            nome: 'Gestão & Supervisão',
+                            corBadge: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                            icone: 'fa-solid fa-user-tie text-amber-600',
+                            desc: 'Painel Executivo para Gestores e Gerentes: auditoria de equipe, validação de atas, span e relatórios PDF.',
+                            tabs: [
+                                { id: 'g_inicio', label: 'Visão Executiva', icone: 'fa-solid fa-chart-line' },
+                                { id: 'g_equipe', label: 'Gestão de Equipe', icone: 'fa-solid fa-users-gear' },
+                                { id: 'g_atas', label: 'Validação de Atas & Bônus', icone: 'fa-solid fa-stamp' },
+                                { id: 'g_harmony', label: 'Governança IA & PDF', icone: 'fa-solid fa-file-pdf' },
+                                { id: 'g_span', label: 'Span & Headcount', icone: 'fa-solid fa-scale-balanced' },
+                                { id: 'atalhos', label: 'Atalhos Rápidos', icone: 'fa-solid fa-keyboard' }
+                            ]
+                        },
+                        'Dev': {
+                            nome: 'Desenvolvedor & ADM',
+                            corBadge: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                            icone: 'fa-solid fa-code text-purple-600',
+                            desc: 'Administração global do portal: fórmulas de bonificação, Firebase Realtime, reprocessamento atômico e usuários.',
+                            tabs: [
+                                { id: 'd_inicio', label: 'Arquitetura & Governança', icone: 'fa-solid fa-server' },
+                                { id: 'd_regras', label: 'Regras & Bonificação', icone: 'fa-solid fa-sliders' },
+                                { id: 'd_reprocessamento', label: 'Reprocessamento & Auditoria', icone: 'fa-solid fa-rotate' },
+                                { id: 'd_firebase', label: 'Firebase Realtime', icone: 'fa-solid fa-database' },
+                                { id: 'd_usuarios', label: 'Usuários & Permissões', icone: 'fa-solid fa-shield-halved' },
+                                { id: 'atalhos', label: 'Atalhos Avançados', icone: 'fa-solid fa-keyboard' }
+                            ]
+                        },
+                        'Operador': {
+                            nome: 'Operador / Agente',
+                            corBadge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+                            icone: 'fa-solid fa-user text-slate-600',
+                            desc: 'Meu Espaço Operacional: acompanhe suas notas de atendimento, feedbacks, lições no Softlingo e certificados.',
+                            tabs: [
+                                { id: 'o_inicio', label: 'Meu Espaço', icone: 'fa-solid fa-house' },
+                                { id: 'o_monitorias', label: 'Minhas Monitorias', icone: 'fa-solid fa-clipboard-check' },
+                                { id: 'o_softlingo', label: 'Lições Softlingo', icone: 'fa-solid fa-gamepad' },
+                                { id: 'o_certificados', label: 'Meus Certificados', icone: 'fa-solid fa-award' },
+                                { id: 'atalhos', label: 'Dicas & Atalhos', icone: 'fa-solid fa-keyboard' }
+                            ]
+                        }
+                    };
+
+                    const curMeta = profileMeta[activeProfile] || profileMeta['Qualidade'];
+                    const defaultTab = curMeta.tabs[0].id;
+                    const tabToOpen = (abaInicial && curMeta.tabs.some(t => t.id === abaInicial)) ? abaInicial : defaultTab;
 
                     const modal = document.createElement('div');
                     modal.id = 'help-modal';
@@ -25672,38 +26877,47 @@ Object.assign(app.ui, {
                     modal.innerHTML = `
                         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-5 sm:p-8 shadow-2xl relative my-6 flex flex-col max-h-[92vh]">
                             <!-- Topo do Modal -->
-                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0 gap-3">
                                 <div class="flex items-center gap-3">
                                     <div class="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl shrink-0">
                                         <i class="fa-solid fa-circle-question"></i>
                                     </div>
                                     <div>
-                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Central de Ajuda & Guia do Sistema</h3>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400">Instruções essenciais, fluxos operacionais e atalhos rápidos do portal.</p>
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">Central de Ajuda & Guia</h3>
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold border ${curMeta.corBadge}">
+                                                <i class="${curMeta.icone}"></i> ${curMeta.nome}
+                                            </span>
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${curMeta.desc}</p>
                                     </div>
                                 </div>
-                                <button onclick="document.getElementById('help-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center transition">
-                                    <i class="fa-solid fa-xmark text-lg"></i>
-                                </button>
+                                <div class="flex items-center gap-2 self-end sm:self-center">
+                                    ${isGestorOrDev ? `
+                                        <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold" title="Alternar visão do guia (Recurso exclusivo de Gestão e Dev)">
+                                            <span class="text-[10px] text-slate-400 font-bold uppercase px-1.5 hidden md:inline">Perfil:</span>
+                                            <select onchange="app.ui.abrirModalHelp(null, this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                                <option value="Qualidade" ${activeProfile === 'Qualidade' ? 'selected' : ''}>Qualidade</option>
+                                                <option value="Treinamento" ${activeProfile === 'Treinamento' ? 'selected' : ''}>Treinamento</option>
+                                                <option value="Gestao" ${activeProfile === 'Gestao' ? 'selected' : ''}>Gestão</option>
+                                                <option value="Dev" ${activeProfile === 'Dev' ? 'selected' : ''}>Dev / ADM</option>
+                                                <option value="Operador" ${activeProfile === 'Operador' ? 'selected' : ''}>Operador</option>
+                                            </select>
+                                        </div>
+                                    ` : ''}
+                                    <button onclick="document.getElementById('help-modal').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center transition">
+                                        <i class="fa-solid fa-xmark text-lg"></i>
+                                    </button>
+                                </div>
                             </div>
 
-                            <!-- Navegação de Subabas -->
+                            <!-- Navegação de Subabas Filtradas por Perfil -->
                             <div class="flex items-center gap-2 overflow-x-auto py-3 border-b border-slate-100 dark:border-slate-800 shrink-0 custom-scrollbar">
-                                <button onclick="app.ui.setHelpTab('geral')" data-tab="geral" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white shadow-sm transition">
-                                    <i class="fa-solid fa-house"></i> Visão Geral
-                                </button>
-                                <button onclick="app.ui.setHelpTab('monitorias')" data-tab="monitorias" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                    <i class="fa-solid fa-chart-pie"></i> Monitorias
-                                </button>
-                                <button onclick="app.ui.setHelpTab('atas')" data-tab="atas" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                    <i class="fa-solid fa-file-signature"></i> Atas & Calibração
-                                </button>
-                                <button onclick="app.ui.setHelpTab('softlingo')" data-tab="softlingo" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                    <i class="fa-solid fa-graduation-cap"></i> Softlingo
-                                </button>
-                                <button onclick="app.ui.setHelpTab('atalhos')" data-tab="atalhos" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                    <i class="fa-solid fa-keyboard"></i> Atalhos
-                                </button>
+                                ${curMeta.tabs.map(t => `
+                                    <button onclick="app.ui.setHelpTab('${t.id}')" data-tab="${t.id}" class="help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition whitespace-nowrap">
+                                        <i class="${t.icone}"></i> ${t.label}
+                                    </button>
+                                `).join('')}
                             </div>
 
                             <!-- Conteúdo da Aba Ativa -->
@@ -25715,7 +26929,7 @@ Object.assign(app.ui, {
                             <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 shrink-0">
                                 <div class="flex items-center gap-2">
                                     <i class="fa-solid fa-circle-info text-blue-500"></i>
-                                    <span>Precisa de suporte técnico adicional? Use o ícone de megafone no topo para reportar.</span>
+                                    <span>Conteúdo filtrado especificamente para <b>${curMeta.nome}</b>.</span>
                                 </div>
                                 <button onclick="document.getElementById('help-modal').remove()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold transition">
                                     Fechar Guia
@@ -25725,30 +26939,39 @@ Object.assign(app.ui, {
                     `;
 
                     document.body.appendChild(modal);
-                    this.setHelpTab(abaInicial);
+                    this.setHelpTab(tabToOpen);
                 },
 
                 setHelpTab(tabKey) {
                     const contentEl = document.getElementById('help-modal-tab-content');
                     if (!contentEl) return;
 
+                    // Mapeamento retrocompatível
+                    if (tabKey === 'geral') tabKey = 'q_inicio';
+                    if (tabKey === 'monitorias') tabKey = 'q_monitorias';
+                    if (tabKey === 'atas') tabKey = 'q_atas';
+                    if (tabKey === 'softlingo') tabKey = 't_softlingo';
+
                     // Atualiza estilos das abas
                     document.querySelectorAll('.help-tab-btn').forEach(btn => {
                         const isCurrent = btn.getAttribute('data-tab') === tabKey;
                         btn.className = isCurrent
-                            ? 'help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white shadow-sm transition'
-                            : 'help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+                            ? 'help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white shadow-sm transition whitespace-nowrap'
+                            : 'help-tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition whitespace-nowrap';
                     });
 
-                    if (tabKey === 'geral') {
+                    // -----------------------------------------------------------------
+                    // PERFIL: QUALIDADE
+                    // -----------------------------------------------------------------
+                    if (tabKey === 'q_inicio') {
                         contentEl.innerHTML = `
                             <div class="space-y-4">
                                 <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
                                     <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
-                                        <i class="fa-solid fa-compass text-blue-600 dark:text-blue-400"></i> Bem-vindo ao Softmarketing Resultados
+                                        <i class="fa-solid fa-headphones text-blue-600 dark:text-blue-400"></i> Meu Dia a Dia na Qualidade
                                     </h4>
                                     <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                        O portal foi concebido para centralizar a governança da Qualidade e Treinamento, consolidando monitorias operacionais, gestão de atas de calibração com inteligência artificial, campanhas motivacionais e capacitação contínua dos colaboradores.
+                                        Como monitor ou líder de qualidade, sua missão no portal é garantir a conformidade dos atendimentos, aplicar feedbacks assertivos, formalizar calibrações de nota e acompanhar sua bonificação mensal.
                                     </p>
                                 </div>
 
@@ -25756,72 +26979,72 @@ Object.assign(app.ui, {
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
                                         <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
                                             <div class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
-                                                <i class="fa-solid fa-calendar-days"></i>
+                                                <i class="fa-solid fa-calendar-check"></i>
                                             </div>
-                                            Período e Persistência (F5)
+                                            1. Conferir o Mês Ativo (Persistente com F5)
                                         </div>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            O mês de apuração selecionado no topo do cabeçalho é salvo automaticamente no seu navegador. Ao atualizar a página com <b>F5</b>, o sistema mantém o mesmo mês que você estava visualizando.
-                                        </p>
-                                    </div>
-
-                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
-                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
-                                            <div class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
-                                                <i class="fa-solid fa-magnifying-glass"></i>
-                                            </div>
-                                            Busca Rápida de Páginas (Ctrl + K)
-                                        </div>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            A barra de pesquisa no topo permite encontrar qualquer tela, relatório ou módulo do sistema e direcionar você com apenas um clique. Você também pode pressionar <b>Ctrl + K</b> em qualquer lugar.
+                                            O mês selecionado no topo do portal é salvo automaticamente no seu navegador. Ao atualizar a página com <b>F5</b>, você continua no mesmo mês de apuração sem precisar selecionar novamente.
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
                                         <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
                                             <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
-                                                <i class="fa-solid fa-shield-halved"></i>
+                                                <i class="fa-solid fa-list-check"></i>
                                             </div>
-                                            Níveis de Acesso
+                                            2. Monitorias Pendentes da Carteira
                                         </div>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Os recursos do sistema se adaptam ao seu cargo: <b>Dev</b> e <b>Gerente</b> possuem acesso global irrestrito, enquanto <b>Monitores</b>, <b>Supervisores</b> e <b>Operadores</b> contam com visões personalizadas para suas funções.
+                                            Acesse a aba de monitorias para verificar a volumetria realizada e conferir se algum operador atingiu nota de corte (&le; 90) que necessite de feedback imediato para cumprimento da meta G2.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-file-signature"></i>
+                                            </div>
+                                            3. Atas de Calibração com a Operação
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Realize calibrações periódicas com os supervisores. Utilize a inteligência artificial para estruturar a ata e registre os participantes para garantir seu bônus de calibração (G3).
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
                                         <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
                                             <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs">
-                                                <i class="fa-solid fa-moon"></i>
+                                                <i class="fa-solid fa-chart-simple"></i>
                                             </div>
-                                            Tema Claro e Escuro
+                                            4. Consultar Meu Painel de Bonificação
                                         </div>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Alterne a qualquer momento entre o tema claro e o modo escuro no switch localizado no cabeçalho superior. A sua preferência é memorizada para seus próximos acessos.
+                                            No menu de bonificação, selecione o seu nome em "Meu Painel" para visualizar em tempo real a pontuação dos indicadores (G1, G2, G3 e G4) e o valor final atingido.
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         `;
-                    } else if (tabKey === 'monitorias') {
+                    } else if (tabKey === 'q_monitorias') {
                         contentEl.innerHTML = `
                             <div class="space-y-4">
-                                <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-emerald-100 dark:border-slate-700">
-                                    <h4 class="font-bold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2 mb-1">
-                                        <i class="fa-solid fa-chart-pie text-emerald-600 dark:text-emerald-400"></i> Gestão e Importação de Monitorias
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-chart-pie text-blue-600 dark:text-blue-400"></i> Monitorias, Importação & Conformidade
                                     </h4>
                                     <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                        O módulo de monitorias processa as avaliações de atendimento da operação, consolidando notas, desvios e metas de feedback com segurança matemática.
+                                        Rotinas e regras essenciais de auditoria de atendimento para os avaliadores de qualidade.
                                     </p>
                                 </div>
 
                                 <div class="space-y-3">
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-file-excel text-emerald-500"></i> Relatório Oficial da Amil (Avaliador Invertido)
+                                            <i class="fa-solid fa-file-excel text-emerald-500"></i> Relatório da Amil (Avaliador com Nome Invertido)
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            No relatório da Amil, o sistema identifica automaticamente a aba <b>Avaliador</b> e inverte a nomenclatura que vem no formato <i>"Sobrenome, Nome"</i> (o primeiro nome vem depois da vírgula). O sistema normaliza e vincula o registro diretamente ao colaborador correspondente na base de usuários.
+                                            No relatório oficial da Amil, o sistema identifica a coluna <b>Avaliador</b> e inverte automaticamente a nomenclatura que vem no formato <i>"Sobrenome, Nome"</i>. O nome corrigido é associado à sua matrícula, creditando a monitoria na sua pontuação.
                                         </p>
                                     </div>
 
@@ -25830,81 +27053,255 @@ Object.assign(app.ui, {
                                             <i class="fa-solid fa-shield-virus text-blue-500"></i> Monitorias Manuais Blindadas
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            As monitorias adicionadas manualmente para operadores possuem <b>blindagem permanente</b>. Ao importar um novo relatório ou atualizar o mês, as monitorias manuais não são apagadas nem perdidas; o sistema mescla os novos dados preservando os lançamentos manuais.
+                                            Todas as monitorias lançadas manualmente possuem <b>blindagem permanente</b>. Ao importar um novo arquivo CSV/Excel ou atualizar a página, os lançamentos manuais não são apagados; o sistema mescla os dados preservando todo o seu histórico.
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-sliders text-amber-500"></i> Meta de Feedback Obrigatório (G2)
+                                            <i class="fa-solid fa-triangle-exclamation text-amber-500"></i> Regra de Feedback Obrigatório (Meta G2)
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            A pontuação da meta de feedback obedece à regra configurada (por exemplo, nota <b>menor ou igual a 90.0</b> exige feedback obrigatório). Você pode customizar o operador (≤ ou &lt;) e a nota de corte nas configurações do sistema ou no painel do mês atual.
+                                            Atendimentos com nota <b>menor ou igual a 90.0</b> ou falha crítica geram pendência de feedback obrigatório. Certifique-se de registrar a devolutiva no prazo para manter 100% de conformidade no indicador G2.
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-print text-indigo-500"></i> Impressão do Analítico da Operação (Ctrl + P)
+                                            <i class="fa-solid fa-print text-indigo-500"></i> Exportação e Impressão do Analítico (Ctrl + P)
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            A aba de <b>Analítico Operação</b> conta com folhas de estilo otimizadas para impressão. Ao pressionar <b>Ctrl + P</b>, os botões e elementos de navegação são ocultados automaticamente, gerando uma visualização profissional para exportação em PDF.
+                                            Na aba <b>Analítico Operação</b>, pressione <b>Ctrl + P</b> a qualquer momento. O portal oculta menus e formata a página automaticamente para impressão limpa ou salvamento em PDF.
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         `;
-                    } else if (tabKey === 'atas') {
+                    } else if (tabKey === 'q_atas') {
                         contentEl.innerHTML = `
                             <div class="space-y-4">
                                 <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-purple-100 dark:border-slate-700">
                                     <h4 class="font-bold text-sm text-purple-900 dark:text-purple-300 flex items-center gap-2 mb-1">
-                                        <i class="fa-solid fa-file-signature text-purple-600 dark:text-purple-400"></i> Gestão de Atas & Calibração
+                                        <i class="fa-solid fa-file-signature text-purple-600 dark:text-purple-400"></i> Atas de Reunião, Calibração & Inteligência Artificial
                                     </h4>
                                     <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                        Formalize alinhamentos, reuniões de calibração e planos de ação da Qualidade com auxílio de inteligência artificial e controle de pontuação.
+                                        Formalização das reuniões operacionais e alinhamento de critérios de avaliação com a supervisão.
                                     </p>
                                 </div>
 
                                 <div class="space-y-3">
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-wand-magic-sparkles text-purple-500"></i> Redação com Inteligência Artificial
+                                            <i class="fa-solid fa-wand-magic-sparkles text-purple-500"></i> Redação Automática com IA
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Ao preencher os tópicos da reunião, utilize o botão <b>Gerar Resumo Inteligente (IA)</b>. A inteligência artificial estrutura a ata no padrão corporativo da Softmarketing, detalhando objetivos, discussões e próximos passos.
+                                            Ao preencher os tópicos da calibração, clique em <b>Gerar Resumo Inteligente (IA)</b>. A ferramenta estrutura a ata no padrão corporativo da Softmarketing, detalhando os pontos fortes, pontos de atenção e compromissos firmados.
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-sack-dollar text-emerald-500"></i> Aprovação com Bônus (+1 Ponto)
+                                            <i class="fa-solid fa-stamp text-emerald-500"></i> Como Ganhar o Ponto de Calibração (G3)
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Ao aprovar uma ata como calibração oficial, os líderes de qualidade indicados recebem <b>+1 ponto</b> na meta de calibração (G3) do mês de referência.
+                                            Para que a ata pontue no indicador G3, marque-a como calibração oficial e certifique-se de que seu nome está informado no campo <b>Líderes de Qualidade</b>. Assim que a gestão validar a ata, o bônus de <b>+1 ponto</b> é creditado no mês da reunião.
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-eraser text-amber-500"></i> Reversão de Ponto com "Tirar Bônus"
+                                            <i class="fa-solid fa-list-check text-blue-500"></i> Planos de Ação Acordados
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Se uma ata foi aprovada com bônus por engano, a gestão pode clicar no botão <b>Tirar Bônus</b> nas Atas Validadas. O sistema estorna (-1) o ponto dos colaboradores com segurança atômica no banco de dados e mantém a ata salva no status institucional <i>"Aprovado (Sem Bônus)"</i>.
+                                            Cadastre sempre as ações corretivas acordadas, quem ficou responsável na operação e o prazo limite. Isso garante rastreabilidade e respalda o trabalho da monitoria perante a coordenação.
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         `;
-                    } else if (tabKey === 'softlingo') {
+                    } else if (tabKey === 'q_metas') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-slate-800 dark:to-slate-800/80 border border-amber-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-award text-amber-600 dark:text-amber-400"></i> Minhas Metas & Indicadores de Bonificação
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Entenda como cada indicador compõe sua pontuação mensal e o valor da sua remuneração variável.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1">
+                                            <span class="w-5 h-5 rounded-md bg-blue-100 text-blue-700 font-black flex items-center justify-center text-[10px]">G1</span>
+                                            Volumetria de Monitorias (Peso 1)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Mede a quantidade total de monitorias auditadas no mês em relação à sua meta de carteira. Atingir 100% da volumetria garante a pontuação máxima do G1.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1">
+                                            <span class="w-5 h-5 rounded-md bg-emerald-100 text-emerald-700 font-black flex items-center justify-center text-[10px]">G2</span>
+                                            Eficácia de Feedback Obrigatório (Peso 1)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Mede a taxa de feedbacks realizados para monitorias com notas &le; 90.0 ou desvios críticos. Se todos os desvios receberem devolutiva no prazo, a meta é 100%.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1">
+                                            <span class="w-5 h-5 rounded-md bg-purple-100 text-purple-700 font-black flex items-center justify-center text-[10px]">G3</span>
+                                            Calibrações Oficiais Validadas (Peso 1)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Alinhamento técnico com a liderança operacional. Cada ata de calibração aprovada pela gestão concede bônus até o teto estipulado da meta.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1">
+                                            <span class="w-5 h-5 rounded-md bg-amber-100 text-amber-700 font-black flex items-center justify-center text-[10px]">G4</span>
+                                            Conformidade de Indicadores e Presença (Peso 1)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Indicador complementar de assiduidade, cumprimento de prazos operacionais e ausência de inconformidades cadastrais.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'q_harmony') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-slate-800 dark:to-slate-800/80 border border-indigo-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-indigo-900 dark:text-indigo-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-robot text-indigo-600 dark:text-indigo-400"></i> Implantação Harmony IA (Papel do Monitor)
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Como monitor responsável na implantação da ferramenta de Inteligência Artificial Harmony na sua operação.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Acompanhamento do Cronograma Gantt
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            O gráfico de Gantt exibe todas as etapas da implantação calculadas estritamente em <b>dias úteis de trabalho</b> (segunda a sexta-feira).
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Diário de Bordo & Atualizações Diárias
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            No box de cada etapa, use o campo de atualização para registrar o andamento (ex: <i>"Fiz calibração de 15 chamadas hoje"</i>). O registro é gravado com data, hora e seu nome para acompanhamento conjunto com o treinador e liderança.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-triangle-exclamation text-amber-500"></i> Planos de Ação da Etapa
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Caso encontre divergências ou ajustes necessários (ex: refinar prompt de cordialidade ou ajustar critérios de avaliação), abra um plano de ação dentro da etapa informando a ação, o responsável e o prazo.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-file-pdf text-rose-500"></i> Extração de Relatório em PDF para Gestores
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Clique no botão <b>Extrair PDF</b> no topo do card ou na régua do Gantt para baixar o relatório executivo completo em PDF contendo todas as etapas, atualizações e planos de ação para encaminhar aos gestores.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // -----------------------------------------------------------------
+                    // PERFIL: TREINAMENTO
+                    // -----------------------------------------------------------------
+                    else if (tabKey === 't_inicio') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-emerald-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-chalkboard-user text-emerald-600 dark:text-emerald-400"></i> Visão Geral do Treinamento & Capacitação
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Como treinador ou analista de capacitação, seu foco é o desenvolvimento contínuo de competências operacionais, nivelamento pedagógico através do Softlingo e certificações oficiais.
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-graduation-cap"></i>
+                                            </div>
+                                            Softlingo Gamificado
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Estimule o aprendizado lúdico das regras de monitoria com dinâmicas inspiradas no Duolingo, acompanhadas pelo mascote oficial.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-camera"></i>
+                                            </div>
+                                            Ações Presenciais & Laudos
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Registre evidências de dinâmicas em sala com anexos de fotos, listas de presença e descrição das competências desenvolvidas.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-certificate"></i>
+                                            </div>
+                                            Emissão de Certificados
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Acompanhe a emissão de certificados oficiais de proficiência dos operadores aprovados nos módulos corporativos.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-robot"></i>
+                                            </div>
+                                            Implantação IA (Capacitação)
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Atue em conjunto com o monitor na implantação da ferramenta Harmony, capacitando supervisores e operadores nos relatórios de IA.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 't_softlingo') {
                         contentEl.innerHTML = `
                             <div class="space-y-4">
                                 <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-sky-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
                                     <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
-                                        <i class="fa-solid fa-graduation-cap text-blue-600 dark:text-blue-400"></i> Softlingo - Treinamento Gamificado
+                                        <i class="fa-solid fa-graduation-cap text-blue-600 dark:text-blue-400"></i> Metodologia Softlingo
                                     </h4>
                                     <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                        O Softlingo transforma o aprendizado de procedimentos de call center e qualidade em uma experiência interativa inspirada no formato Duolingo, guiada pelo mascote oficial.
+                                        Mecanismos pedagógicos para fixação definitiva de procedimentos e regras de monitoria.
                                     </p>
                                 </div>
 
@@ -25914,31 +27311,511 @@ Object.assign(app.ui, {
                                             <i class="fa-solid fa-rotate-right text-blue-500"></i> Fila Contínua de Fixação (Errou = Vai pro Fim)
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Se você errar uma pergunta durante a lição, a regra de monitoria é explicada na tela e a mesma pergunta é clonada e enviada para o <b>final da fila de execução</b>. A lição só é concluída quando todas as perguntas forem respondidas corretamente, garantindo fixação real.
+                                            Se o atendente errar uma questão, a regra de monitoria é explicada imediatamente e a mesma pergunta vai para o <b>final da fila</b>. A lição só termina quando todas forem acertadas.
                                         </p>
                                     </div>
 
                                     <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                                         <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-heart text-rose-500"></i> Vidas e Efeitos Sonoros
+                                            <i class="fa-solid fa-heart text-rose-500"></i> Sistema de Vidas e Engajamento
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Cada lição inicia com <b>5 vidas</b>. Respostas certas geram recompensas sonoras e avanço na barra de progresso superior; respostas incorretas diminuem uma vida. Se as vidas se esgotarem, a lição pode ser reiniciada.
-                                        </p>
-                                    </div>
-
-                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
-                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
-                                            <i class="fa-solid fa-award text-amber-500"></i> Mascote Oficial e Certificações
-                                        </h5>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            O mascote acompanha suas reações a cada acerto ou erro. Ao concluir módulos oficiais com proficiência, certificados executivos são emitidos e registrados no seu histórico.
+                                            Cada lição conta com 5 vidas. O feedback imediato com sons e reações do mascote estimula a atenção contínua do operador durante o módulo.
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         `;
-                    } else if (tabKey === 'atalhos') {
+                    } else if (tabKey === 't_acoes') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-emerald-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-camera text-emerald-600 dark:text-emerald-400"></i> Ações Presenciais & Registro de Evidências
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Comprovação de treinamentos operacionais presenciais, nivelamentos e dinâmicas de capacitação.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-image text-emerald-500"></i> Upload de Fotos e Evidências
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Ao registrar uma ação presencial, anexe fotos nítidas da sala de treinamento ou listas assinadas. O sistema gera uma galeria executiva que comprova a realização da capacitação.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-users text-blue-500"></i> Validação de Participantes
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Vincule os operadores participantes da capacitação para que o histórico de treinamentos fique gravado na ficha cadastral de cada profissional.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 't_certificados') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-slate-800 dark:to-slate-800/80 border border-amber-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-certificate text-amber-600 dark:text-amber-400"></i> Certificações Oficiais
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Emissão e auditoria dos certificados corporativos de conclusão de treinamentos.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-award text-amber-500"></i> Critérios de Aprovação
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Os certificados são liberados quando o colaborador atinge a proficiência mínima exigida no módulo, gerando código único de validação institucional.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 't_harmony') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-emerald-50 dark:from-slate-800 dark:to-slate-800/80 border border-indigo-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-indigo-900 dark:text-indigo-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-robot text-indigo-600 dark:text-indigo-400"></i> Papel do Treinador no Harmony IA
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Responsabilidade na etapa de capacitação dos supervisores e multiplicação dos conceitos da Inteligência Artificial.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-chalkboard-user text-emerald-500"></i> Capacitação Operacional & Multiplicadores
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Conduza oficinas práticas com os supervisores sobre como interpretar os relatórios da IA, identificar desvios e criar planos de ação imediatos.
+                                        </p>
+                                    </div>
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Registro de Andamento & Atualizações
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Registre no box da etapa suas ações diárias (ex: <i>"Treinamento de 8 supervisores realizado na sala 2"</i>). O histórico fica visível para o monitor e para os gestores.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // -----------------------------------------------------------------
+                    // PERFIL: GESTÃO
+                    // -----------------------------------------------------------------
+                    else if (tabKey === 'g_inicio') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-slate-800 dark:to-slate-800/80 border border-amber-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-chart-line text-amber-600 dark:text-amber-400"></i> Painel Executivo & Governança da Gestão
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Como gestor ou gerente, você possui visão consolidada dos indicadores operacionais, acompanhamento de equipe, aprovação de calibrações e relatórios executivos.
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-users"></i>
+                                            </div>
+                                            Acompanhamento de Equipe
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Audite o cumprimento de metas de cada monitor e treinador subordinado com filtros de mês e visão individualizada.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-stamp"></i>
+                                            </div>
+                                            Aprovação & Estorno de Atas
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Valide atas oficiais concedendo bônus (+1 ponto) ou utilize o botão "Tirar Bônus" para estorno seguro e sem corrupção de dados.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-file-pdf"></i>
+                                            </div>
+                                            Relatórios de Implantação IA
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Baixe relatórios executivos em PDF completos no módulo Harmony para prestar contas à diretoria.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-scale-balanced"></i>
+                                            </div>
+                                            Span de Operações
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Monitore o headcount ativo por operação e o dimensionamento da equipe de monitores conforme a regra de amostragem.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'g_equipe') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-slate-800 dark:to-slate-800/80 border border-amber-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-users-gear text-amber-600 dark:text-amber-400"></i> Gestão e Auditoria de Subordinados
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Controle hierárquico direto para gestores sobre sua carteira de monitores e treinadores.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-filter text-amber-500"></i> Filtro de Equipe Direta
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            No painel de bonificação e monitorias, o sistema filtra automaticamente os colaboradores vinculados à sua matrícula de gestor, permitindo análise rápida de desempenho individual.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'g_atas') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-emerald-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-stamp text-emerald-600 dark:text-emerald-400"></i> Validação, Bônus e Estornos de Atas
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Governança formal sobre as atas de calibração que impactam a folha de bonificação.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-circle-check text-emerald-500"></i> Aprovação com Bônus Oficial (+1 Ponto)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Ao auditar uma ata de calibração bem conduzida, aprove-a como oficial para creditar +1 ponto na meta de calibração dos monitores envolvidos.
+                                        </p>
+                                    </div>
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-rotate-left text-amber-500"></i> Reversão de Bônus ("Tirar Bônus")
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Caso uma ata tenha sido pontuada por equívoco, clique em <b>Tirar Bônus</b> nas atas validadas. O sistema estorna (-1) o ponto dos colaboradores de forma atômica no banco de dados e mantém a ata como <i>"Aprovado (Sem Bônus)"</i>.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'g_harmony') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-slate-800 dark:to-slate-800/80 border border-indigo-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-indigo-900 dark:text-indigo-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-file-pdf text-indigo-600 dark:text-indigo-400"></i> Governança Harmony IA & Relatórios Executivos
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Acompanhamento do cronograma Gantt de cada operação e prestação de contas aos diretores.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-file-pdf text-rose-500"></i> Botão "Extrair Relatório em PDF"
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            No card de cada implantação, clique em <b>Extrair PDF</b>. O sistema compila automaticamente em um documento executivo oficial: ficha geral, cronograma Gantt em dias úteis, diário de bordo com todas as realizações da equipe, planos de ação e termo formal para assinaturas da gestão.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'g_span') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-scale-balanced text-blue-600 dark:text-blue-400"></i> Span de Operações & Headcount
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Análise de capacidade operacional, proporção de operadores por monitor e metas de amostragem.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-calculator text-blue-500"></i> Dimensionamento Automatizado
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            A aba <b>Span Operações</b> cruza o headcount informado pelo RH com a regra de monitoria de cada setor, apontando se a equipe está superdimensionada ou subdimensionada.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // -----------------------------------------------------------------
+                    // PERFIL: DEV & ADM
+                    // -----------------------------------------------------------------
+                    else if (tabKey === 'd_inicio') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-purple-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-purple-900 dark:text-purple-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-server text-purple-600 dark:text-purple-400"></i> Arquitetura do Sistema & Painel ADM
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Visão técnica da infraestrutura, governança de dados, reprocessamento atômico e integração com Firebase.
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-database"></i>
+                                            </div>
+                                            Camada de Dados em Tempo Real
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Firebase Realtime Database em <code>sistema_bonificacao</code> integrado com caches seletivos em LocalForage (IndexedDB) e LocalStorage.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-sliders"></i>
+                                            </div>
+                                            Pesos e Fórmulas Dinâmicas
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Customização das metas de bonificação (G1 a G4), pontuações de corte e matrizes de auditoria.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'd_regras') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-purple-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-purple-900 dark:text-purple-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-sliders text-purple-600 dark:text-purple-400"></i> Fórmulas & Regras de Bonificação
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Detalhamento matemático da composição da bonificação no motor de cálculo.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-calculator text-purple-500"></i> Motor de Cálculo G1 a G4
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Os cálculos consideram as regras setoriais configuradas em <code>app.config</code>. As metas são calculadas mensalmente preservando o histórico de períodos encerrados.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'd_reprocessamento') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-slate-800 dark:to-slate-800/80 border border-indigo-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-indigo-900 dark:text-indigo-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-rotate text-indigo-600 dark:text-indigo-400"></i> Reprocessamento & Auditoria Atômica
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Reconstrução atômica de atas e pontuações a partir dos dados brutos.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-wrench text-indigo-500"></i> Botão "Reprocessar Pontuações"
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Localizado nas Atas Validadas, o reprocessamento limpa pontos órfãos e reconstrói o saldo mensal de cada monitor lendo apenas as atas aprovadas com bônus e as ações presenciais validadas, salvando em lote com segurança atômica no Firebase.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'd_firebase') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-slate-800 dark:to-slate-800/80 border border-amber-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-database text-amber-600 dark:text-amber-400"></i> Firebase Realtime & Caches
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Gestão de consumo, conexões simultâneas e integridade dos nós da nuvem.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-chart-pie text-amber-500"></i> Monitor de Consumo (Ícone de Banco no Cabeçalho)
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Desenvolvedores contam com o botão de banco de dados no cabeçalho superior que abre métricas de nós sincronizados e tráfego estimado.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'd_usuarios') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-slate-800 dark:to-slate-800/80 border border-purple-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-purple-900 dark:text-purple-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-shield-halved text-purple-600 dark:text-purple-400"></i> Gestão de Usuários & Controle de Abas
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Controle granular de acesso por tipo de cargo e liberação de abas específicas.
+                                    </p>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+                                        <h5 class="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-1.5">
+                                            <i class="fa-solid fa-key text-purple-500"></i> Hierarquia e Abas Liberadas
+                                        </h5>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Cada usuário possui seu <code>tipoAcesso</code> e o array <code>abasLiberadas</code>. Usuários Dev e Gerente possuem bypass global automático.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // -----------------------------------------------------------------
+                    // PERFIL: OPERADOR
+                    // -----------------------------------------------------------------
+                    else if (tabKey === 'o_inicio') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-user text-slate-700 dark:text-slate-300"></i> Bem-vindo ao Seu Espaço no Portal
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Aqui você acompanha a sua evolução profissional, suas notas de atendimento, realiza lições gamificadas no Softlingo e visualiza seus certificados conquistados.
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-clipboard-check"></i>
+                                            </div>
+                                            Minhas Monitorias
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Consulte os apontamentos feitos pelos monitores e os elogios recebidos para continuar melhorando seu atendimento.
+                                        </p>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
+                                        <div class="flex items-center gap-2.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                                            <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
+                                                <i class="fa-solid fa-gamepad"></i>
+                                            </div>
+                                            Softlingo & Gamificação
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                            Realize lições diárias, treine procedimentos reais de call center e ganhe pontos com o mascote do sistema.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'o_monitorias') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 border border-blue-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-clipboard-check text-blue-600 dark:text-blue-400"></i> Como Consultar Minhas Monitorias
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Acompanhe detalhadamente os critérios avaliados pela equipe de qualidade nos seus atendimentos, seus acertos e oportunidades de desenvolvimento.
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'o_softlingo') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-800/80 border border-emerald-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-gamepad text-emerald-600 dark:text-emerald-400"></i> Lições & Vidas no Softlingo
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Pratique questões interativas para memorizar procedimentos. Lembre-se: se errar, a questão volta ao final da fila para você tentar novamente!
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                    } else if (tabKey === 'o_certificados') {
+                        contentEl.innerHTML = `
+                            <div class="space-y-4">
+                                <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-slate-800 dark:to-slate-800/80 border border-amber-100 dark:border-slate-700">
+                                    <h4 class="font-bold text-sm text-amber-900 dark:text-amber-300 flex items-center gap-2 mb-1">
+                                        <i class="fa-solid fa-award text-amber-600 dark:text-amber-400"></i> Meus Certificados
+                                    </h4>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        Ao concluir os módulos de capacitação com aprovação, seus certificados estarão disponíveis para visualização e download em alta resolução.
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // -----------------------------------------------------------------
+                    // ABA DE ATALHOS (COMUM / ADAPTADA)
+                    // -----------------------------------------------------------------
+                    else if (tabKey === 'atalhos') {
                         contentEl.innerHTML = `
                             <div class="space-y-4">
                                 <div class="p-4 rounded-2xl bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-800/80 border border-slate-200 dark:border-slate-700">
@@ -25946,7 +27823,7 @@ Object.assign(app.ui, {
                                         <i class="fa-solid fa-keyboard text-slate-700 dark:text-slate-300"></i> Atalhos de Produtividade no Teclado
                                     </h4>
                                     <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                        Agilize sua navegação diária utilizando os principais atalhos do sistema.
+                                        Atalhos rápidos para agilizar sua navegação diária no sistema.
                                     </p>
                                 </div>
 
@@ -25956,7 +27833,7 @@ Object.assign(app.ui, {
                                             <tr>
                                                 <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Atalho</th>
                                                 <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Ação no Sistema</th>
-                                                <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Onde Funciona</th>
+                                                <th class="py-3 px-4 font-bold border-b border-slate-200 dark:border-slate-800">Finalidade</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -25964,29 +27841,29 @@ Object.assign(app.ui, {
                                                 <td class="py-3 px-4">
                                                     <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">Ctrl + K</kbd>
                                                 </td>
-                                                <td class="py-3 px-4 font-bold text-blue-600 dark:text-blue-400">Busca Rápida e Direcionamento</td>
-                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Em qualquer página do portal</td>
+                                                <td class="py-3 px-4 font-bold text-blue-600 dark:text-blue-400">Busca Rápida de Páginas</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Localiza e abre qualquer módulo instantaneamente</td>
                                             </tr>
                                             <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                                                 <td class="py-3 px-4">
                                                     <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">Ctrl + P</kbd>
                                                 </td>
                                                 <td class="py-3 px-4 font-bold text-emerald-600 dark:text-emerald-400">Imprimir / Salvar em PDF</td>
-                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Analítico Operação, Atas e Relatórios</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Gera visualização limpa do Analítico e relatórios</td>
                                             </tr>
                                             <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                                                 <td class="py-3 px-4">
                                                     <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">F5</kbd>
                                                 </td>
                                                 <td class="py-3 px-4 font-bold text-purple-600 dark:text-purple-400">Recarregar Página com Mês Salvo</td>
-                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Preserva o período selecionado</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Atualiza sem perder o mês que você estava visualizando</td>
                                             </tr>
                                             <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                                                 <td class="py-3 px-4">
                                                     <kbd class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-bold text-[11px] text-slate-800 dark:text-slate-200 shadow-sm">Esc</kbd>
                                                 </td>
                                                 <td class="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">Fechar Janela ou Modal</td>
-                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Modais de ajuda, atas, reporte e busca</td>
+                                                <td class="py-3 px-4 text-slate-500 dark:text-slate-400">Fecha modais de ajuda, atas, reporte e busca</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -28984,7 +30861,11 @@ app.duolingo = {
     // NÍVEL 1: GRADE DE TEMAS (ANTECEDE SEÇÃO E MÓDULO)
     // =========================================================================
     renderGradeTemas() {
-        const temas = this.getTemas();
+        let temas = this.getTemas();
+        if (!this.isGestorOrAdmin()) {
+            const opsPerm = this.getOperacoesPermitidasCMS();
+            temas = temas.filter(t => !t.operacao || opsPerm.some(op => op.toLowerCase() === t.operacao.toLowerCase()));
+        }
         const concluidas = this.getLicoesConcluidas();
 
         let html = `
@@ -29025,9 +30906,14 @@ app.duolingo = {
                             <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center text-2xl shadow-md shrink-0">
                                 <i class="fa-solid ${t.icone || 'fa-chart-pie'}"></i>
                             </div>
-                            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isTemaCompleto ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300'} border border-sky-100 dark:border-sky-900/40">
-                                ${isTemaCompleto ? '<i class=\"fa-solid fa-check mr-1\"></i> Certificado' : `${pctTema}% Concluído`}
-                            </span>
+                            <div class="flex items-center gap-1.5 flex-wrap justify-end">
+                                <span class="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 text-[10px] font-black uppercase border border-purple-200 dark:border-purple-800/40">
+                                    <i class="fa-solid fa-briefcase mr-1"></i>${t.operacao || 'Geral'}
+                                </span>
+                                <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isTemaCompleto ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300'} border border-sky-100 dark:border-sky-900/40">
+                                    ${isTemaCompleto ? '<i class=\"fa-solid fa-check mr-1\"></i> Certificado' : `${pctTema}% Concluído`}
+                                </span>
+                            </div>
                         </div>
 
                         <h4 class="text-lg font-black text-slate-800 dark:text-white leading-tight mb-2 group-hover:text-[#1CB0F6] transition-colors">
@@ -29201,14 +31087,112 @@ app.duolingo = {
     cmsFilterTipo: 'todos',
     cmsSearchQuery: '',
     cmsManterContexto: true,
+    cmsSelectedOperacao: null,
     cmsIconesDisponiveis: [
         'fa-headset', 'fa-graduation-cap', 'fa-book-open', 'fa-bullseye',
         'fa-comments', 'fa-shield-halved', 'fa-award', 'fa-star',
         'fa-bolt', 'fa-chart-line', 'fa-user-check', 'fa-heart-pulse'
     ],
 
-    renderCMS() {
+    isGestorOrAdmin() {
+        if (!app.currentUser) return false;
+        if (app.isAdmin) return true;
+        if (typeof app.isSuperAdmin === 'function' && app.isSuperAdmin()) return true;
+        if (typeof app.isGestor === 'function' && app.isGestor()) return true;
+        const tipo = String(app.currentUser.tipoAcesso || '').trim().toLowerCase();
+        const cargo = String(app.currentUser.cargo || '').trim().toLowerCase();
+        const matricula = String(app.currentUser.matricula || '').trim().toLowerCase();
+        if (matricula === 'admin') return true;
+        if (app.currentUser.isGestor) return true;
+        const permitidos = ['dev', 'gerente', 'gestor', 'administrador', 'admin', 'superadmin'];
+        if (permitidos.includes(tipo)) return true;
+        if (permitidos.some(p => cargo.includes(p))) return true;
+        return false;
+    },
+
+    getTodasOperacoes() {
+        const opsSet = new Set();
+        if (typeof app.syncOperacoesFromSetorial === 'function') {
+            try { app.syncOperacoesFromSetorial(); } catch (e) {}
+        }
+        if (typeof app.getOperacoesSetoriais === 'function') {
+            try {
+                const setoriais = app.getOperacoesSetoriais() || [];
+                setoriais.forEach(o => {
+                    const n = o?.nome || (typeof o === 'string' ? o : '');
+                    if (n) opsSet.add(app.utils ? app.utils.fixEncoding(n) : n);
+                });
+            } catch (e) {}
+        }
+        if (app.operacoesList) {
+            Object.values(app.operacoesList).forEach(o => {
+                const n = o?.nome || (typeof o === 'string' ? o : '');
+                if (n) opsSet.add(app.utils ? app.utils.fixEncoding(n) : n);
+            });
+        }
+        if (Array.isArray(app.operacoes)) {
+            app.operacoes.forEach(o => {
+                const n = o?.nome || (typeof o === 'string' ? o : '');
+                if (n) opsSet.add(app.utils ? app.utils.fixEncoding(n) : n);
+            });
+        }
+        if (app.harmonyDeployList) {
+            Object.values(app.harmonyDeployList).forEach(p => {
+                const n = p?.operacao;
+                if (n) opsSet.add(app.utils ? app.utils.fixEncoding(n) : n);
+            });
+        }
+        (app.users || []).forEach(u => {
+            const uOps = u.operacoesSoftlingo || u.operacoes || [];
+            (Array.isArray(uOps) ? uOps : [uOps]).forEach(o => {
+                const n = o?.nome || (typeof o === 'string' ? o : '');
+                if (n) opsSet.add(app.utils ? app.utils.fixEncoding(n) : n);
+            });
+        });
         const temas = this.getTemas();
+        temas.forEach(t => {
+            if (t.operacao) opsSet.add(app.utils ? app.utils.fixEncoding(t.operacao) : t.operacao);
+        });
+        if (opsSet.size === 0) opsSet.add('Geral');
+        return Array.from(opsSet).sort((a, b) => a.localeCompare(b));
+    },
+
+    getOperacoesPermitidasCMS() {
+        if (this.isGestorOrAdmin()) {
+            return this.getTodasOperacoes();
+        }
+        const u = app.currentUser || {};
+        const raw = u.operacoesSoftlingo || u.operacoes || [];
+        const ops = (Array.isArray(raw) ? raw : [raw]).map(o => {
+            const n = typeof o === 'string' ? o : (o?.nome || '');
+            return app.utils ? app.utils.fixEncoding(n) : n;
+        }).filter(Boolean);
+        return ops.length > 0 ? ops : ['Geral'];
+    },
+
+    selecionarOperacaoCMS(op) {
+        this.cmsSelectedOperacao = op;
+        this.cmsSelectedTemaId = null;
+        this.cmsTargetModuloId = null;
+        this.cmsTargetLicaoId = null;
+        this.render();
+    },
+
+    renderCMS() {
+        const todosTemas = this.getTemas();
+        const operacoesPermitidas = this.getOperacoesPermitidasCMS();
+        const isGestao = this.isGestorOrAdmin();
+
+        if (!this.cmsSelectedOperacao || (!isGestao && !operacoesPermitidas.includes(this.cmsSelectedOperacao))) {
+            this.cmsSelectedOperacao = isGestao ? 'TODAS' : (operacoesPermitidas[0] || 'Geral');
+        }
+
+        const temas = todosTemas.filter(t => {
+            if (isGestao && this.cmsSelectedOperacao === 'TODAS') return true;
+            const opTema = t.operacao || 'Geral';
+            return opTema.toLowerCase() === this.cmsSelectedOperacao.toLowerCase();
+        });
+
         let totalPerguntas = 0;
         let totalRascunho = 0;
         let totalPublicadas = 0;
@@ -29233,7 +31217,7 @@ app.duolingo = {
             this.cmsSelectedTemaId = temas[0] ? temas[0].id : null;
         }
 
-        const currentTema = this.getTemaById(this.cmsSelectedTemaId) || temas[0];
+        const currentTema = temas.find(t => t.id === this.cmsSelectedTemaId) || temas[0] || null;
 
         if (this.cmsTargetModuloId && currentTema) {
             const modExists = (currentTema.modulos || []).some(m => m.id === this.cmsTargetModuloId);
@@ -29316,70 +31300,142 @@ app.duolingo = {
                         </div>
                     </div>
 
-                    <!-- PAINEL SELETOR DE TEMA ATUAL (CLARO, RÁPIDO E FÁCIL DE SELECIONAR) -->
+                    <!-- PAINEL 1: SELETOR DE OPERAÇÃO (HIERARQUIA: OPERAÇÃO -> TEMAS -> MÓDULOS -> LIÇÕES -> QUESTÕES) -->
                     <div class="pt-5 mt-5 border-t border-slate-200 dark:border-slate-700/80 space-y-3">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div class="flex items-center gap-2">
-                                <span class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center font-black text-xs">1</span>
+                                <span class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 flex items-center justify-center font-black text-xs">1</span>
                                 <div>
-                                    <h4 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">Selecione o Tema Atual para Editar ou Criar Questões</h4>
-                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Clique em um dos cards abaixo ou troque rapidamente na caixa de seleção:</p>
+                                    <h4 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                        <i class="fa-solid fa-briefcase text-indigo-500"></i> Operação Atual do Softlingo
+                                    </h4>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                                        ${isGestao ? 'Perfil Gestão / Dev / Gerente: você pode percorrer e gerenciar todas as operações do sistema:' : 'Você está visualizando os temas da sua operação autorizada:'}
+                                    </p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2 w-full sm:w-auto">
-                                <select onchange="app.duolingo.selecionarTemaCMS(this.value)" class="flex-1 sm:w-80 px-3.5 py-2.5 rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-black outline-none focus:border-purple-600 cursor-pointer">
-                                    ${temas.map(t => `<option value="${t.id}" ${currentTema && t.id === currentTema.id ? 'selected' : ''}>TEMA ATIVO: ${t.titulo}</option>`).join('')}
-                                </select>
+                                ${isGestao ? `
+                                    <select onchange="app.duolingo.selecionarOperacaoCMS(this.value)" class="flex-1 sm:w-72 px-3.5 py-2.5 rounded-xl border-2 border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-black outline-none focus:border-indigo-600 cursor-pointer">
+                                        <option value="TODAS" ${this.cmsSelectedOperacao === 'TODAS' ? 'selected' : ''}>TODAS AS OPERAÇÕES (${todosTemas.length} temas)</option>
+                                        ${operacoesPermitidas.map(op => {
+                                            const count = todosTemas.filter(t => (t.operacao || 'Geral').toLowerCase() === op.toLowerCase()).length;
+                                            return `<option value="${app.utils.escapeHtml(op)}" ${this.cmsSelectedOperacao === op ? 'selected' : ''}>OPERAÇÃO: ${app.utils.escapeHtml(op)} (${count})</option>`;
+                                        }).join('')}
+                                    </select>
+                                ` : (operacoesPermitidas.length > 1 ? `
+                                    <select onchange="app.duolingo.selecionarOperacaoCMS(this.value)" class="flex-1 sm:w-72 px-3.5 py-2.5 rounded-xl border-2 border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-black outline-none focus:border-indigo-600 cursor-pointer">
+                                        ${operacoesPermitidas.map(op => `<option value="${app.utils.escapeHtml(op)}" ${this.cmsSelectedOperacao === op ? 'selected' : ''}>OPERAÇÃO: ${app.utils.escapeHtml(op)}</option>`).join('')}
+                                    </select>
+                                ` : `
+                                    <span class="px-4 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 text-xs font-black flex items-center gap-1.5 shadow-xs">
+                                        <i class="fa-solid fa-lock text-indigo-500"></i> Operação: ${app.utils.escapeHtml(this.cmsSelectedOperacao)}
+                                    </span>
+                                `)}
+                            </div>
+                        </div>
+
+                        <!-- Barra de Atalhos Rápidos para Percorrer Todas as Operações com 1 Clique -->
+                        ${(isGestao || operacoesPermitidas.length > 1) ? `
+                            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 text-xs">
+                                ${isGestao ? `
+                                    <button type="button" onclick="app.duolingo.selecionarOperacaoCMS('TODAS')" class="px-3 py-1.5 rounded-xl font-bold shrink-0 transition-all flex items-center gap-1.5 ${this.cmsSelectedOperacao === 'TODAS' ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-500/20 font-black' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}">
+                                        <i class="fa-solid fa-layer-group text-[10px]"></i> Todas as Operações <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold ${this.cmsSelectedOperacao === 'TODAS' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">${todosTemas.length}</span>
+                                    </button>
+                                ` : ''}
+                                ${operacoesPermitidas.map(op => {
+                                    const count = todosTemas.filter(t => (t.operacao || 'Geral').toLowerCase() === op.toLowerCase()).length;
+                                    const isSel = this.cmsSelectedOperacao === op;
+                                    return `
+                                        <button type="button" onclick="app.duolingo.selecionarOperacaoCMS('${app.utils.escapeHtml(op)}')" class="px-3 py-1.5 rounded-xl font-bold shrink-0 transition-all flex items-center gap-1.5 ${isSel ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-500/20 font-black' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}">
+                                            <i class="fa-solid fa-briefcase text-[10px]"></i> ${app.utils.escapeHtml(op)} <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isSel ? 'bg-white/20 text-white' : (count > 0 ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300' : 'bg-slate-200 dark:bg-slate-800 text-slate-400')}">${count}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- PAINEL 2: SELETOR DE TEMAS DA OPERAÇÃO -->
+                    <div class="pt-5 mt-3 border-t border-slate-200 dark:border-slate-700/80 space-y-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center font-black text-xs">2</span>
+                                <div>
+                                    <h4 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">Selecione o Tema da Operação (${temas.length})</h4>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Clique em um dos cards ou troque no menu para editar seus módulos e questões:</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                ${temas.length > 0 ? `
+                                    <select onchange="app.duolingo.selecionarTemaCMS(this.value)" class="flex-1 sm:w-80 px-3.5 py-2.5 rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-black outline-none focus:border-purple-600 cursor-pointer">
+                                        ${temas.map(t => `<option value="${t.id}" ${currentTema && t.id === currentTema.id ? 'selected' : ''}>TEMA ATIVO: ${t.titulo}</option>`).join('')}
+                                    </select>
+                                ` : ''}
                                 <button onclick="app.duolingo.abrirModalNovoTema()" class="px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs shrink-0 transition shadow-xs flex items-center gap-1.5">
                                     <i class="fa-solid fa-plus"></i> Criar Tema
                                 </button>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            ${temas.map(t => {
-                                const isSel = currentTema && t.id === currentTema.id;
-                                const modCount = (t.modulos || []).length;
-                                let licCount = 0;
-                                let qCount = 0;
-                                (t.modulos || []).forEach(m => {
-                                    licCount += (m.licoes || []).length;
-                                    (m.licoes || []).forEach(l => qCount += (l.desafios || []).length);
-                                });
-                                return `
-                                    <div onclick="app.duolingo.selecionarTemaCMS('${t.id}')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${isSel ? 'bg-purple-50/90 dark:bg-purple-950/40 border-purple-600 dark:border-purple-500 ring-2 ring-purple-500/20 shadow-sm' : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 hover:border-purple-400'}">
-                                        <div class="flex items-start gap-3 min-w-0">
-                                            <div class="w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${isSel ? 'bg-purple-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}">
-                                                <i class="fa-solid ${t.icone || 'fa-graduation-cap'}"></i>
-                                            </div>
-                                            <div class="min-w-0">
-                                                <div class="flex items-center gap-1.5 mb-1">
-                                                    <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${isSel ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">
-                                                        ${isSel ? '<i class="fa-solid fa-check mr-0.5"></i> TEMA ATUAL' : 'Clique p/ Selecionar'}
+                        ${temas.length > 0 ? `
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                ${temas.map(t => {
+                                    const isSel = currentTema && t.id === currentTema.id;
+                                    const modCount = (t.modulos || []).length;
+                                    let licCount = 0;
+                                    let qCount = 0;
+                                    (t.modulos || []).forEach(m => {
+                                        licCount += (m.licoes || []).length;
+                                        (m.licoes || []).forEach(l => qCount += (l.desafios || []).length);
+                                    });
+                                    return `
+                                        <div onclick="app.duolingo.selecionarTemaCMS('${t.id}')" class="p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${isSel ? 'bg-purple-50/90 dark:bg-purple-950/40 border-purple-600 dark:border-purple-500 ring-2 ring-purple-500/20 shadow-sm' : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 hover:border-purple-400'}">
+                                            <div class="flex items-start gap-3 min-w-0">
+                                                <div class="w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${isSel ? 'bg-purple-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}">
+                                                    <i class="fa-solid ${t.icone || 'fa-graduation-cap'}"></i>
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                                                        <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${isSel ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">
+                                                            ${isSel ? '<i class="fa-solid fa-check mr-0.5"></i> TEMA ATUAL' : 'Clique p/ Selecionar'}
+                                                        </span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                                                            ${t.operacao || 'Geral'}
+                                                        </span>
+                                                    </div>
+                                                    <h5 class="text-xs md:text-sm font-black text-slate-800 dark:text-white leading-snug line-clamp-2">${t.titulo}</h5>
+                                                    <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1 block">
+                                                        ${modCount} Módulos • ${licCount} Lições • ${qCount} Questões
                                                     </span>
                                                 </div>
-                                                <h5 class="text-xs md:text-sm font-black text-slate-800 dark:text-white leading-snug line-clamp-2">${t.titulo}</h5>
-                                                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1 block">
-                                                    ${modCount} Módulos • ${licCount} Lições • ${qCount} Questões
-                                                </span>
                                             </div>
+                                            <button type="button" onclick="event.stopPropagation(); app.duolingo.abrirModalNovoTema('${t.id}')" class="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-white dark:hover:bg-slate-800 transition shrink-0" title="Editar este Tema">
+                                                <i class="fa-solid fa-pen text-xs"></i>
+                                            </button>
                                         </div>
-                                        <button type="button" onclick="event.stopPropagation(); app.duolingo.abrirModalNovoTema('${t.id}')" class="p-2 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-white dark:hover:bg-slate-800 transition shrink-0" title="Editar este Tema">
-                                            <i class="fa-solid fa-pen text-xs"></i>
-                                        </button>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        ` : `
+                            <div class="p-8 text-center text-slate-400 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 my-2">
+                                <i class="fa-solid fa-folder-open text-3xl mb-2 text-purple-400 opacity-60"></i>
+                                <p class="font-bold text-xs text-slate-600 dark:text-slate-300">Nenhum tema cadastrado para a operação <b>${this.cmsSelectedOperacao}</b>.</p>
+                                <p class="text-[11px] text-slate-400 mt-1">Crie o primeiro tema desta operação para iniciar a trilha de módulos e lições.</p>
+                                <button type="button" onclick="app.duolingo.abrirModalNovoTema()" class="mt-3 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition">
+                                    <i class="fa-solid fa-plus mr-1"></i> Criar Tema Nesta Operação
+                                </button>
+                            </div>
+                        `}
                     </div>
                 </div>
 
                 <!-- LAYOUT SPLIT-SCREEN: ESQUERDA (ÁRVORE DO TEMA) | DIREITA (EDITOR INTELIGENTE DE QUESTÃO) -->
+                ${currentTema ? `
                 <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
                     <!-- COLUNA ESQUERDA (6 COLUNAS): ÁRVORE INTERATIVA DE MÓDULOS, LIÇÕES E QUESTÕES -->
                     <div class="xl:col-span-6 space-y-4">
-                        ${currentTema ? `
-                            <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                                 <!-- Cabeçalho do Tema Ativo com Edição Rápida -->
                                 <div class="p-5 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700">
                                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -29387,6 +31443,9 @@ app.duolingo = {
                                             <div class="flex items-center gap-1.5 flex-wrap mb-1">
                                                 <span class="px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black uppercase">
                                                     <i class="fa-solid ${currentTema.icone || 'fa-graduation-cap'} mr-1"></i> Tema Selecionado
+                                                </span>
+                                                <span class="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                                                    <i class="fa-solid fa-briefcase mr-1"></i>${currentTema.operacao || 'Geral'}
                                                 </span>
                                                 ${(currentTema.indicadores || []).map(ind => `
                                                     <span class="px-2 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold">${ind}</span>
@@ -29405,9 +31464,15 @@ app.duolingo = {
                                             <button onclick="app.duolingo.toggleExpandirTodasLicoesCMS('${currentTema.id}')" class="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-sky-600 text-xs transition" title="Expandir ou Recolher todas as lições">
                                                 <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
                                             </button>
-                                            <button onclick="app.duolingo.excluirTemaCMS('${currentTema.id}')" class="p-2 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs transition" title="Excluir Tema">
-                                                <i class="fa-solid fa-trash-can"></i>
-                                            </button>
+                                            ${isGestao ? `
+                                                <button onclick="app.duolingo.excluirTemaCMS('${currentTema.id}')" class="p-2 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs transition" title="Excluir Tema">
+                                                    <i class="fa-solid fa-trash-can"></i>
+                                                </button>
+                                            ` : `
+                                                <button onclick="app.duolingo.excluirTemaCMS('${currentTema.id}')" class="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-amber-500 text-xs transition" title="Exclusão de tema restrita à gestão">
+                                                    <i class="fa-solid fa-lock"></i>
+                                                </button>
+                                            `}
                                         </div>
                                     </div>
                                 </div>
@@ -29625,7 +31690,6 @@ app.duolingo = {
                                     `).join('')}
                                 </div>
                             </div>
-                        ` : ''}
                     </div>
 
                     <!-- COLUNA DIREITA (6 COLUNAS - STICKY): EDITOR INTELIGENTE DE QUESTÃO COM ASSISTENTE -->
@@ -29827,6 +31891,20 @@ app.duolingo = {
                         </form>
                     </div>
                 </div>
+                ` : `
+                <div class="bg-white dark:bg-slate-800 p-8 rounded-3xl border border-slate-200 dark:border-slate-700 text-center space-y-3 shadow-sm">
+                    <div class="w-14 h-14 rounded-2xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl mx-auto">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <h4 class="text-base font-black text-slate-800 dark:text-white">Nenhum Tema Selecionado para Esta Operação</h4>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                        Para começar a estruturar módulos, lições e desafios interativos nesta operação, cadastre um novo tema clicando no botão abaixo.
+                    </p>
+                    <button onclick="app.duolingo.abrirModalNovoTema()" class="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs transition shadow-sm inline-flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Criar Primeiro Tema Nesta Operação
+                    </button>
+                </div>
+                `}
 
                 <!-- REPOSITÓRIO GERAL DE QUESTÕES COM BUSCA E FILTROS RÁPIDOS -->
                 <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -30106,6 +32184,14 @@ app.duolingo = {
     },
 
     excluirTemaCMS(temaId) {
+        if (!this.isGestorOrAdmin()) {
+            return app.ui.showAlert(
+                "Exclusão Restrita à Gestão",
+                "Você possui permissão para <b>criar e editar conteúdos</b>, mas a <b>exclusão de temas é restrita à gestão</b>.<br><br>" +
+                "Caso precise remover este tema, por favor solicite a liberação diretamente ao seu coordenador ou gestor responsável.",
+                "warning"
+            );
+        }
         const temas = this.getTemas();
         if (temas.length <= 1) {
             return app.ui.showAlert("Operação Não Permitida", "Você deve manter pelo menos um tema cadastrado no Softlingo.", "warning");
@@ -30595,6 +32681,8 @@ app.duolingo = {
     abrirModalNovoTema(editTemaId = null) {
         const temaEdit = editTemaId ? this.getTemaById(editTemaId) : null;
         const iconeInicial = temaEdit ? (temaEdit.icone || 'fa-graduation-cap') : 'fa-graduation-cap';
+        const operacoesPermitidas = this.getOperacoesPermitidasCMS();
+        const opPadrao = temaEdit ? (temaEdit.operacao || 'Geral') : (this.cmsSelectedOperacao && this.cmsSelectedOperacao !== 'TODAS' ? this.cmsSelectedOperacao : operacoesPermitidas[0]);
         const old = document.getElementById('modal-cms-novo-tema');
         if (old) old.remove();
 
@@ -30610,6 +32698,17 @@ app.duolingo = {
                     </button>
                 </div>
                 <form onsubmit="event.preventDefault(); app.duolingo.salvarNovoTema('${editTemaId || ''}');" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-bold mb-1">Operação do Tema</label>
+                        ${operacoesPermitidas.length > 1 ? `
+                            <select id="novo-tema-operacao" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold outline-none focus:border-purple-600 cursor-pointer">
+                                ${operacoesPermitidas.map(op => `<option value="${app.utils.escapeHtml(op)}" ${opPadrao === op ? 'selected' : ''}>${app.utils.escapeHtml(op)}</option>`).join('')}
+                            </select>
+                        ` : `
+                            <input type="text" id="novo-tema-operacao" value="${app.utils.escapeHtml(operacoesPermitidas[0] || 'Geral')}" readonly class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 text-xs font-bold cursor-not-allowed">
+                            <span class="text-[10px] text-slate-400 mt-0.5 block">Vinculado exclusivamente à sua operação autorizada.</span>
+                        `}
+                    </div>
                     <div>
                         <label class="block text-xs font-bold mb-1">Título do Tema</label>
                         <input type="text" id="novo-tema-titulo" value="${temaEdit ? app.utils.escapeHtml(temaEdit.titulo) : ''}" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold" placeholder="Ex: Comunicação Não-Violenta no Call Center">
@@ -30643,6 +32742,7 @@ app.duolingo = {
     },
 
     salvarNovoTema(editTemaId = '') {
+        const operacao = document.getElementById('novo-tema-operacao')?.value.trim() || this.cmsSelectedOperacao || 'Geral';
         const titulo = document.getElementById('novo-tema-titulo').value.trim();
         const icone = document.getElementById('novo-tema-icone').value.trim() || 'fa-graduation-cap';
         const desc = document.getElementById('novo-tema-desc').value.trim();
@@ -30655,6 +32755,7 @@ app.duolingo = {
         if (editTemaId) {
             const tExist = temas.find(t => t.id === editTemaId);
             if (tExist) {
+                tExist.operacao = operacao;
                 tExist.titulo = titulo;
                 tExist.icone = icone;
                 tExist.descricao = desc;
@@ -30664,6 +32765,7 @@ app.duolingo = {
         } else {
             const novoTema = {
                 id: 'tema_' + Date.now(),
+                operacao: operacao,
                 titulo: titulo,
                 icone: icone,
                 descricao: desc,
@@ -30672,6 +32774,7 @@ app.duolingo = {
             };
             temas.push(novoTema);
             this.saveTemas(temas);
+            this.cmsSelectedOperacao = operacao;
             this.cmsSelectedTemaId = novoTema.id;
             this.cmsTargetModuloId = null;
             this.cmsTargetLicaoId = null;
@@ -30952,7 +33055,13 @@ app.duolingo = {
     },
 
     renderLinhasQuestoesCMS() {
-        const temas = this.getTemas();
+        const todosTemas = this.getTemas();
+        const isGestao = this.isGestorOrAdmin();
+        const temas = todosTemas.filter(t => {
+            if (isGestao && (!this.cmsSelectedOperacao || this.cmsSelectedOperacao === 'TODAS')) return true;
+            const opTema = t.operacao || 'Geral';
+            return opTema.toLowerCase() === (this.cmsSelectedOperacao || 'Geral').toLowerCase();
+        });
         const rows = [];
         const qSearch = (this.cmsSearchQuery || '').trim().toLowerCase();
         const fStatus = this.cmsFilterStatus || 'todos';
