@@ -750,13 +750,41 @@ storage: {
                                     else app.fcrProvas = {};
                                 } catch (e) { app.fcrProvas = {}; }
                             }
+                            // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
+                            // Visão Geral Setorial
                             if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
-                                app.visaoGeralData = this.normalizeVisaoGeralKeys(data.visaoGeralData);
+                                const rawVG = data.visaoGeralData;
+                                const isMonthly = Object.keys(rawVG).some(k => /^\d{4}-\d{2}$/.test(k));
+                                if (isMonthly) {
+                                    app.allVisaoGeralData = {};
+                                    Object.entries(rawVG).forEach(([m, mData]) => {
+                                        app.allVisaoGeralData[m] = this.normalizeVisaoGeralKeys(mData);
+                                    });
+                                } else {
+                                    app.allVisaoGeralData = { [app.currentMonth]: this.normalizeVisaoGeralKeys(rawVG) };
+                                }
+                                app.visaoGeralData = app.allVisaoGeralData[app.currentMonth] || {};
                             } else if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
                                 try {
                                     const localVG = localStorage.getItem('soft_visao_geral_backup');
-                                    if (localVG) app.visaoGeralData = this.normalizeVisaoGeralKeys(JSON.parse(localVG));
-                                } catch (e) {}
+                                    if (localVG) {
+                                        const parsed = JSON.parse(localVG);
+                                        const isMonthly = Object.keys(parsed).some(k => /^\d{4}-\d{2}$/.test(k));
+                                        if (isMonthly) {
+                                            app.allVisaoGeralData = parsed;
+                                            app.visaoGeralData = this.normalizeVisaoGeralKeys(app.allVisaoGeralData[app.currentMonth] || {});
+                                        } else {
+                                            app.allVisaoGeralData = { [app.currentMonth]: this.normalizeVisaoGeralKeys(parsed) };
+                                            app.visaoGeralData = app.allVisaoGeralData[app.currentMonth];
+                                        }
+                                    } else {
+                                        app.allVisaoGeralData = {};
+                                        app.visaoGeralData = {};
+                                    }
+                                } catch (e) {
+                                    app.allVisaoGeralData = {};
+                                    app.visaoGeralData = {};
+                                }
                             }
 
                             // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
@@ -1171,9 +1199,14 @@ storage: {
                 saveVisaoGeral() {
                     this.invalidateCoreCache();
                     app.visaoGeralData = this.normalizeVisaoGeralKeys(app.visaoGeralData || {});
-                    try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.visaoGeralData)); } catch (e) {}
-                    try { localforage.setItem('soft_visao_geral', app.visaoGeralData); } catch (e) {}
-                    return firebase.database().ref('sistema_bonificacao/visaoGeralData').set(app.visaoGeralData);
+                    if (!app.allVisaoGeralData || typeof app.allVisaoGeralData !== 'object') app.allVisaoGeralData = {};
+                    app.allVisaoGeralData[app.currentMonth] = app.visaoGeralData;
+                    try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.allVisaoGeralData)); } catch (e) {}
+                    try { localforage.setItem('soft_visao_geral', app.allVisaoGeralData); } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        return firebase.database().ref('sistema_bonificacao/visaoGeralData').set(app.allVisaoGeralData);
+                    }
+                    return Promise.resolve();
                 },
                 saveActions(singleId = null) {
                     if (typeof localforage !== 'undefined' && app.actionsList) {
@@ -1559,6 +1592,13 @@ storage: {
                 if (this.currentMonth && this.allAnatel && this.anatelData) {
                     this.allAnatel[this.currentMonth] = this.anatelData;
                 }
+                if (this.currentMonth && this.allVisaoGeralData && this.visaoGeralData) {
+                    this.allVisaoGeralData[this.currentMonth] = this.visaoGeralData;
+                }
+                if (this.currentMonth && this.config && this.config.headcountRH) {
+                    if (!this.config.headcountRHPorMes) this.config.headcountRHPorMes = {};
+                    this.config.headcountRHPorMes[this.currentMonth] = { ...this.config.headcountRH };
+                }
 
                 this.currentMonth = newMonthStr;
                 try { localStorage.setItem('soft_current_month', newMonthStr); } catch (e) {}
@@ -1588,6 +1628,18 @@ storage: {
                         this.allAnatel[newMonthStr] = { registros: [], canceladasNovas: [] };
                     }
                     this.anatelData = this.allAnatel[newMonthStr];
+                }
+                if (this.allVisaoGeralData) {
+                    if (!this.allVisaoGeralData[newMonthStr]) {
+                        this.allVisaoGeralData[newMonthStr] = {};
+                    }
+                    this.visaoGeralData = this.storage ? this.storage.normalizeVisaoGeralKeys(this.allVisaoGeralData[newMonthStr]) : this.allVisaoGeralData[newMonthStr];
+                }
+                if (this.config) {
+                    if (!this.config.headcountRHPorMes) this.config.headcountRHPorMes = {};
+                    if (this.config.headcountRHPorMes[newMonthStr]) {
+                        this.config.headcountRH = this.config.headcountRHPorMes[newMonthStr];
+                    }
                 }
 
                 // 3. Atualiza app.currentUser para manter ponteiros sincronizados com a base
@@ -3806,10 +3858,12 @@ storage: {
 
                         if (supa) {
                             try {
+                                const redirectUrl = window.location.href.split('#')[0].split('?')[0];
                                 const { data, error } = await supa.auth.signInWithOtp({
                                     email: email,
                                     options: {
-                                        shouldCreateUser: true
+                                        shouldCreateUser: true,
+                                        emailRedirectTo: redirectUrl
                                     }
                                 });
                                 if (error) {
@@ -5044,11 +5098,11 @@ storage: {
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Analítico Operação'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -5483,7 +5537,15 @@ storage: {
                     try {
                         const localVG = localStorage.getItem('soft_visao_geral_backup');
                         if (localVG) {
-                            app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(JSON.parse(localVG));
+                            const parsed = JSON.parse(localVG);
+                            const isMonthly = Object.keys(parsed).some(k => /^\d{4}-\d{2}$/.test(k));
+                            if (isMonthly) {
+                                app.allVisaoGeralData = parsed;
+                                app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.allVisaoGeralData[app.currentMonth] || {});
+                            } else {
+                                app.allVisaoGeralData = { [app.currentMonth]: app.storage.normalizeVisaoGeralKeys(parsed) };
+                                app.visaoGeralData = app.allVisaoGeralData[app.currentMonth];
+                            }
                         }
                         const savedSort = localStorage.getItem('soft_vg_sort');
                         if (savedSort) this.visaoGeralSort = savedSort;
@@ -5498,8 +5560,15 @@ storage: {
                     // Resgata os dados da nova tela do HD e atualiza caso esteja na aba
                     localforage.getItem('soft_visao_geral').then(data => {
                         if (data && Object.keys(data).length > 0) {
-                            app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(data);
-                            try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.visaoGeralData)); } catch (e) {}
+                            const isMonthly = Object.keys(data).some(k => /^\d{4}-\d{2}$/.test(k));
+                            if (isMonthly) {
+                                app.allVisaoGeralData = data;
+                                app.visaoGeralData = app.storage.normalizeVisaoGeralKeys(app.allVisaoGeralData[app.currentMonth] || {});
+                            } else {
+                                app.allVisaoGeralData = { [app.currentMonth]: app.storage.normalizeVisaoGeralKeys(data) };
+                                app.visaoGeralData = app.allVisaoGeralData[app.currentMonth];
+                            }
+                            try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.allVisaoGeralData)); } catch (e) {}
                             if (app.currentTab === 'analitico_visao_geral') {
                                 const viewDiv = document.getElementById('view-container-analitico_visao_geral');
                                 if (viewDiv) app.ui.renderView_AnaliticoVisaoGeral(viewDiv);
@@ -6108,6 +6177,7 @@ storage: {
 
                 renderNav() {
                     const nav = document.getElementById('main-nav');
+                    if (!nav) return;
                     
                     // CORREÇÃO CRÍTICA: Remove a guilhotina (overflow) do elemento pai para que as sombras não sejam cortadas
                     nav.classList.remove('flex', 'space-x-2', 'overflow-x-auto');
@@ -9273,6 +9343,13 @@ storage: {
 
                                 <!-- Barra de Ferramentas de Governança e Importação -->
                                 <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto justify-start xl:justify-end">
+                                    <!-- Seletor Rápido de Mês Isolado (Igual ao Controle de Monitorias) -->
+                                    <div class="flex items-center gap-2 bg-indigo-50/80 dark:bg-slate-900 px-3.5 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80 shadow-xs" title="Mês de Referência dos Arquivos da Visão Geral Setorial">
+                                        <i class="fa-regular fa-calendar-days text-indigo-600 dark:text-indigo-400 text-xs"></i>
+                                        <span class="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-300">Mês:</span>
+                                        <input type="month" value="${app.currentMonth}" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-black text-indigo-700 dark:text-indigo-200 outline-none uppercase cursor-pointer" title="Selecione o mês para alternar entre os arquivos e relatórios de cada período">
+                                    </div>
+
                                     <div class="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/80 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
                                         <button onclick="app.ui.abrirModalDebugMetasVG('todos')" class="h-9 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-slate-200/80 dark:border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs" title="Auditar e Diagnosticar Operações com Progresso em 0%">
                                             <i class="fa-solid fa-bug text-xs"></i>
@@ -9327,7 +9404,7 @@ storage: {
                         html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700">
                             <i class="fa-solid fa-chart-line text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i>
                             <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Aguardando Importação</h3>
-                            <p class="text-slate-400 text-sm max-w-md mx-auto">Para montar o Dashboard, primeiro garanta que você já importou a <b>Base de RH</b> na aba <b>'Analítico Operação'</b> (em Importações &gt; Base de RH), em seguida importe o <b>CSV de Qualidade</b> usando o botão acima.</p>
+                            <p class="text-slate-400 text-sm max-w-md mx-auto">Para montar o Dashboard, primeiro garanta que você já importou a <b>Base de RH</b> na aba <b>'Apresentação de Resultados'</b> (em Importações &gt; Base de RH), em seguida importe o <b>CSV de Qualidade</b> usando o botão acima.</p>
                         </div>`;
                     } else {
                         // Consolida os dados de Qualidade aplicando a tabela DE/PARA permanente
@@ -11106,6 +11183,31 @@ storage: {
                                 <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">URL do Projeto Supabase</label>
                                 <input type="url" id="cfg-supabase-url" value="${app.config.supabaseUrl || localStorage.getItem('soft_supabase_url') || ''}" class="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm" placeholder="https://<seu-projeto>.supabase.co">
                             </div>
+                        </div>
+
+                        <!-- Guia de Conexão com GitHub & Supabase -->
+                        <div class="mt-4 p-4 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-slate-700 text-xs space-y-2.5">
+                            <div class="flex items-center justify-between gap-2 flex-wrap">
+                                <span class="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                    <i class="fa-brands fa-github text-slate-700 dark:text-slate-300"></i> Integração GitHub + Supabase (Autenticação e E-mails)
+                                </span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Configuração de Redirecionamento</span>
+                            </div>
+                            <p class="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                                Como o projeto está hospedado no <strong>GitHub / GitHub Pages</strong> e a autenticação roda no <strong>Supabase</strong>, cadastre a URL do seu GitHub no painel do Supabase para que os links de confirmação e códigos por e-mail redirecionem para o site correto:
+                            </p>
+                            <div class="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 font-mono text-[11px] flex items-center justify-between gap-2">
+                                <span class="truncate text-indigo-600 dark:text-indigo-300" id="supa-site-url-detected">${window.location.origin + window.location.pathname.replace(/\/index\.html$/, '')}</span>
+                                <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('supa-site-url-detected').innerText); app.ui.showToast('URL copiada para a área de transferência!', 'success');" class="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-sans font-bold text-[10px] shrink-0 transition shadow-xs flex items-center gap-1">
+                                    <i class="fa-regular fa-copy"></i> Copiar URL
+                                </button>
+                            </div>
+                            <ol class="list-decimal list-inside text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
+                                <li>No <strong>Supabase Dashboard</strong>, vá em <strong>Authentication &gt; URL Configuration</strong>.</li>
+                                <li>Em <strong>Site URL</strong>, cole a URL acima (seu endereço do GitHub Pages).</li>
+                                <li>Em <strong>Redirect URLs</strong>, adicione <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-indigo-600 font-bold">${window.location.origin}/**</code>.</li>
+                                <li>Em <strong>Email Templates &gt; Magic Link / Confirmation</strong>, certifique-se de incluir a tag <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-emerald-600 font-bold">{{ .Token }}</code> para que o código de 6 dígitos seja enviado no corpo do e-mail.</li>
+                            </ol>
                         </div>
                     </div>
 
@@ -13209,6 +13311,10 @@ storage: {
                 },
 
                 renderView_ImplantacaoIA(container) {
+                    if (!container) {
+                        container = document.getElementById('view-implantacao_ia') || document.getElementById('tab-implantacao_ia') || document.getElementById('admin-content-view') || document.getElementById('main-content') || document.getElementById('content-container');
+                    }
+                    if (!container) return;
                     const esc = (s) => app.utils.escapeHtml(s);
                     const normStr = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                     const currentMat = String(app.currentUser?.matricula || '').trim();
@@ -14177,7 +14283,7 @@ storage: {
                             plano.status = 'pausado';
                         }
                         app.storage.saveHarmony().then(() => {
-                            this.renderView_ImplantacaoIA();
+                            app.ui.renderTab('implantacao_ia', true);
                             app.ui.showToast(plano.status === 'pausado' ? 'Projeto colocado em PAUSA.' : 'Projeto RETOMADO com sucesso!', 'info');
                         });
                     } catch (err) {
@@ -14228,7 +14334,7 @@ storage: {
                         plano.etapas.splice(novoIdx, 0, removida);
 
                         app.storage.saveHarmony().then(() => {
-                            this.renderView_ImplantacaoIA();
+                            app.ui.renderTab('implantacao_ia', true);
                             app.ui.showToast(`Ordem da etapa "${removida.nome}" atualizada!`, 'info');
                         }).catch(err => {
                             console.error("Erro ao mover etapa Harmony:", err);
@@ -22616,7 +22722,7 @@ storage: {
 
                     // Verifica se a base de RH foi importada
                     if (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0) {
-                        return app.ui.showAlert("Etapa Pendente", "Por favor, vá até a aba <b>'Analítico Operação'</b> (no menu Importações &gt; Base de RH) e importe primeiro a <b>Base de RH</b> para o sistema saber a quantidade de pessoas em cada setor.", "error");
+                        return app.ui.showAlert("Etapa Pendente", "Por favor, vá até a aba <b>'Apresentação de Resultados'</b> (no menu Importações &gt; Base de RH) e importe primeiro a <b>Base de RH</b> para o sistema saber a quantidade de pessoas em cada setor.", "error");
                     }
 
                     app.ui.showAlert("Analisando Qualidade...", "Lendo avaliações e cruzando com o Headcount do RH...", "info");
@@ -22751,6 +22857,10 @@ storage: {
                                     if(added) contagem++;
                                 }
                             });
+
+                            // Salva na gaveta mensal do período ativo
+                            if (!app.config.headcountRHPorMes) app.config.headcountRHPorMes = {};
+                            app.config.headcountRHPorMes[app.currentMonth] = { ...app.config.headcountRH };
 
                             // Salva as configurações de forma atômica
                             app.storage.saveConfig().then(() => {
@@ -23246,7 +23356,7 @@ storage: {
                         app.storage.saveApresentacoes(id).then(() => {
                             document.getElementById('global-modal').classList.add('hidden');
                             app.ui.renderTab('analise_csv_dinamico', true);
-                            app.ui.showAlert("Liberado com Sucesso", "Os usuários marcados agora podem acessar essa apresentação na aba Analítico Operação deles.", "success");
+                            app.ui.showAlert("Liberado com Sucesso", "Os usuários marcados agora podem acessar essa apresentação na aba Apresentação de Resultados deles.", "success");
                         });
                     }
                 },
@@ -27071,7 +27181,7 @@ Object.assign(app.ui, {
                                             <i class="fa-solid fa-print text-indigo-500"></i> Exportação e Impressão do Analítico (Ctrl + P)
                                         </h5>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                            Na aba <b>Analítico Operação</b>, pressione <b>Ctrl + P</b> a qualquer momento. O portal oculta menus e formata a página automaticamente para impressão limpa ou salvamento em PDF.
+                                            Na aba <b>Apresentação de Resultados</b>, pressione <b>Ctrl + P</b> a qualquer momento. O portal oculta menus e formata a página automaticamente para impressão limpa ou salvamento em PDF.
                                         </p>
                                     </div>
                                 </div>
