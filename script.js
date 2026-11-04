@@ -2966,7 +2966,6 @@ storage: {
                         }
                     });
                 },
-                },
             
                 exportAtasXLSX() {
                     const atas = Object.values(app.atasList);
@@ -5608,6 +5607,343 @@ storage: {
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui.renderTab('analise_csv_dinamico', true);
                 },
+                // --- ANALITICO OPERACAO: SERIES EM PORCENTAGEM ---
+                cardSerieMensal(cardId, meses, data) {
+                    const vals = meses.map(m => {
+                        const o = (data.mesesEvolutivo && data.mesesEvolutivo[m]) || {};
+                        const L = o.totalLinhas || 0;
+                        if (cardId === 'totalLinhas') return L;
+                        if (cardId === 'conformidadePct') return L > 0 ? ((o.totalNotas100 || 0) / L) * 100 : 0;
+                        if (cardId === 'mediaTotal') return (o.count || 0) > 0 ? o.soma / o.count : 0;
+                        if (cardId === 'desviosTotais') return L > 0 ? ((o.falhasNormais || 0) / L) * 100 : 0;
+                        if (cardId === 'falhasCriticas') return L > 0 ? ((o.falhasCriticas || 0) / L) * 100 : 0;
+                        return 0;
+                    });
+                    const vars = vals.map((v, i) => (i === 0 || !(vals[i - 1] > 0)) ? 0 : parseFloat((((v - vals[i - 1]) / vals[i - 1]) * 100).toFixed(1)));
+                    return { vals, vars };
+                },
+
+                _corVariacao(cardId, v) {
+                    if (v === 0) return '#94a3b8';
+                    const up = v > 0;
+                    if (cardId === 'totalLinhas') return up ? '#3b82f6' : '#94a3b8';
+                    const inverso = (cardId === 'desviosTotais' || cardId === 'falhasCriticas');
+                    return (up !== inverso) ? '#10b981' : '#ef4444';
+                },
+
+                buildVarChart(ctx, labels, serie, cardId) {
+                    const isDark = document.documentElement.classList.contains('dark');
+                    const txt = isDark ? '#94a3b8' : '#64748b';
+                    const grid = isDark ? '#334155' : '#e2e8f0';
+                    return new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [{
+                                data: serie.vars,
+                                backgroundColor: serie.vars.map(v => this._corVariacao(cardId, v)),
+                                borderRadius: 8,
+                                borderSkipped: false,
+                                maxBarThickness: 56
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    padding: 10,
+                                    callbacks: {
+                                        label: c => c.dataIndex === 0 ? ' Mês base' : ' ' + (c.parsed.y > 0 ? '+' : '') + c.parsed.y + '% vs mês anterior',
+                                        afterLabel: c => cardId === 'totalLinhas' ? '' : ' Índice do mês: ' + serie.vals[c.dataIndex].toFixed(1) + '%'
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: { ticks: { color: txt, callback: v => v + '%' }, grid: { color: ctx2 => ctx2.tick && ctx2.tick.value === 0 ? (isDark ? '#94a3b8' : '#475569') : grid } },
+                                x: { ticks: { color: txt, font: { weight: 'bold' } }, grid: { display: false } }
+                            }
+                        }
+                    });
+                },
+
+                _nivelMaturidade(nome, cfg) {
+                    const d = app.utils.getTempoCasaDoOperador(nome);
+                    if (d === null || d === undefined || !cfg || cfg.length === 0) return -1;
+                    for (let i = 0; i < cfg.length; i++) {
+                        if (d <= cfg[i].maxDias || i === cfg.length - 1) return i;
+                    }
+                    return -1;
+                },
+
+                renderAnaliseExtraCharts(data, c) {
+                    const isDark = c.isDark, textColor = c.textColor, gridColor = c.gridColor;
+                    const safe = (fn, nome) => { try { fn(); } catch (e) { console.error('Erro no grafico ' + nome, e); } };
+                    const mk = (key, id, cfg) => {
+                        const el = document.getElementById(id);
+                        if (!el) return null;
+                        if (window[key]) window[key].destroy();
+                        window[key] = new Chart(el, cfg);
+                        return window[key];
+                    };
+                    const meses = data.mesesDisponiveis || [];
+                    const mesesLabel = meses.map(m => app.ui.formatMonthLabel(m).substring(0, 3));
+                    const pctTick = v => v + '%';
+                    const tt = { padding: 10, cornerRadius: 8 };
+
+                    // 1) Evolucao da media: variacao % vs mes anterior
+                    safe(() => {
+                        const vals = (data.evolutivoChartData || []).map(v => parseFloat(v) || 0);
+                        const vars = vals.map((v, i) => (i === 0 || !(vals[i - 1] > 0)) ? 0 : parseFloat((((v - vals[i - 1]) / vals[i - 1]) * 100).toFixed(2)));
+                        mk('myChartAnaliseEvol', 'chart-analise-evolutivo', {
+                            type: 'bar',
+                            data: { labels: data.evolutivoChartLabels, datasets: [{ data: vars, backgroundColor: vars.map(v => app.ui._corVariacao('mediaTotal', v)), borderRadius: 10, borderSkipped: false, maxBarThickness: 64 }] },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { label: x => x.dataIndex === 0 ? ' Mês base' : ' ' + (x.parsed.y > 0 ? '+' : '') + x.parsed.y + '% vs mês anterior', afterLabel: x => ' Média do mês: ' + vals[x.dataIndex].toFixed(1) + '%' } } },
+                                scales: {
+                                    y: { ticks: { color: textColor, callback: pctTick, font: { weight: 'bold' } }, grid: { color: cx => cx.tick && cx.tick.value === 0 ? (isDark ? '#94a3b8' : '#475569') : gridColor } },
+                                    x: { ticks: { color: textColor, font: { weight: 'bold' } }, grid: { display: false } }
+                                }
+                            }
+                        });
+                    }, 'evolutivo');
+
+                    // 2) Matriz de desempenho: distribuicao % + evolucao % por quadrante
+                    safe(() => {
+                        const qc = c.qc;
+                        const qCores = ['#10b981', '#3b82f6', '#f97316', '#ef4444'];
+                        const qNomes = ['Q1 Excelente', 'Q2 Bom', 'Q3 Regular', 'Q4 Atenção'];
+                        const total = data.rankOperadores.length || 1;
+                        const contagens = [c.quads[0].length, c.quads[1].length, c.quads[2].length, c.quads[3].length];
+                        mk('chartQuadDist', 'chart-quad-dist', {
+                            type: 'doughnut',
+                            data: { labels: qNomes, datasets: [{ data: contagens.map(n => parseFloat(((n / total) * 100).toFixed(1))), backgroundColor: qCores, borderWidth: 0, borderRadius: 8, spacing: 3, hoverOffset: 8 }] },
+                            options: {
+                                responsive: true, maintainAspectRatio: false, cutout: '62%',
+                                onClick: (e, els) => { if (els.length) app.ui.openQuadranteModal('Q' + (els[0].index + 1)); },
+                                plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 10, font: { size: 10, weight: 'bold' } } }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.label + ': ' + x.parsed + '%' } } }
+                            }
+                        });
+                        const serie = [[], [], [], []];
+                        meses.forEach(mes => {
+                            const cont = [0, 0, 0, 0]; let ativos = 0;
+                            data.rankOperadores.forEach(op => {
+                                const d = data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes];
+                                if (!d || !(d.count > 0)) return;
+                                ativos++;
+                                const m = d.soma / d.count;
+                                cont[m >= qc.q1 ? 0 : (m >= qc.q2 ? 1 : (m >= qc.q3 ? 2 : 3))]++;
+                            });
+                            for (let i = 0; i < 4; i++) serie[i].push(ativos > 0 ? parseFloat(((cont[i] / ativos) * 100).toFixed(1)) : 0);
+                        });
+                        mk('chartQuadEvol', 'chart-quad-evol', {
+                            type: 'bar',
+                            data: { labels: mesesLabel, datasets: serie.map((s, i) => ({ label: qNomes[i], data: s, backgroundColor: qCores[i], borderRadius: 4, maxBarThickness: 70 })) },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                onClick: (e, els) => { if (els.length) app.ui.openQuadranteModal('Q' + (els[0].datasetIndex + 1)); },
+                                plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 10, font: { size: 10, weight: 'bold' } } }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.dataset.label + ': ' + x.parsed.y + '%' } } },
+                                scales: { x: { stacked: true, ticks: { color: textColor, font: { weight: 'bold' } }, grid: { display: false } }, y: { stacked: true, min: 0, max: 100, ticks: { color: textColor, callback: pctTick }, grid: { color: gridColor } } }
+                            }
+                        });
+                    }, 'quadrantes');
+
+                    // 3) Maiores desvios e falhas criticas: participacao %
+                    const barShare = (key, id, arr, tipo, cor) => safe(() => {
+                        if (!arr || arr.length === 0) return;
+                        const soma = arr.reduce((a, f) => a + f.count, 0) || 1;
+                        const top = arr.slice(0, 8);
+                        mk(key, id, {
+                            type: 'bar',
+                            data: { labels: top.map(f => f.nome.length > 38 ? f.nome.substring(0, 38) + '...' : f.nome), datasets: [{ data: top.map(f => parseFloat(((f.count / soma) * 100).toFixed(1))), backgroundColor: cor, borderRadius: 6, borderSkipped: false }] },
+                            options: {
+                                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                                onClick: (e, els) => { if (els.length) app.ui.showOperatorsModal(encodeURIComponent(top[els[0].index].nome), tipo); },
+                                plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { title: x => top[x[0].dataIndex].nome, label: x => ' ' + x.parsed.x + '% do total de ocorrências' } } },
+                                scales: { x: { min: 0, ticks: { color: textColor, callback: pctTick }, grid: { color: gridColor } }, y: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } } }
+                            }
+                        });
+                    }, id);
+                    barShare('chartDesviosPct', 'chart-desvios-pct', data.falhasComunsArray, 'comum', '#f97316');
+                    barShare('chartCriticasPct', 'chart-criticas-pct', data.falhasCriticasArray, 'critica', '#ef4444');
+
+                    // 4) Ciclo de maturidade: distribuicao % + desempenho x tempo
+                    safe(() => {
+                        const ms = c.matStats;
+                        if (!ms || ms.length === 0) return;
+                        const hex = ['#f97316', '#10b981', '#3b82f6', '#a855f7', '#14b8a6', '#ec4899'];
+                        const colorMap = { slate: '#64748b', blue: '#3b82f6', emerald: '#10b981', orange: '#f97316', red: '#ef4444', purple: '#a855f7', teal: '#14b8a6', pink: '#ec4899' };
+                        const cores = ms.map((s, i) => colorMap[s.cor] || hex[i % hex.length]);
+                        mk('chartMatDist', 'chart-mat-dist', {
+                            type: 'doughnut',
+                            data: { labels: ms.map(s => s.nome), datasets: [{ data: ms.map(s => parseFloat(s.pct) || 0), backgroundColor: cores, borderWidth: 0, borderRadius: 8, spacing: 3, hoverOffset: 8 }] },
+                            options: {
+                                responsive: true, maintainAspectRatio: false, cutout: '62%',
+                                onClick: (e, els) => { if (els.length) app.ui.openMaturidadeModal(els[0].index); },
+                                plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 10, font: { size: 10, weight: 'bold' } } }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.label + ': ' + x.parsed + '% dos operadores' } } }
+                            }
+                        });
+                        const el = document.getElementById('chart-curva-aprendizado');
+                        if (!el) return;
+                        const medias = ms.map(s => s.qtd > 0 ? parseFloat(s.media) : null);
+                        const validos = medias.filter(v => v !== null);
+                        if (validos.length === 0) {
+                            el.parentElement.innerHTML = '<div class="h-full flex items-center justify-center text-sm text-slate-400 italic">Sem operadores com tempo de casa mapeado. Importe a base de RH.</div>';
+                            return;
+                        }
+                        if (window.chartCurvaAprendizado) window.chartCurvaAprendizado.destroy();
+                        const g2 = el.getContext('2d');
+                        const grad = g2.createLinearGradient(0, 0, 0, el.parentElement.clientHeight || 280);
+                        grad.addColorStop(0, 'rgba(99,102,241,0.35)');
+                        grad.addColorStop(1, 'rgba(99,102,241,0.02)');
+                        const yMin = Math.max(0, Math.floor((Math.min(...validos) - 10) / 5) * 5);
+                        window.chartCurvaAprendizado = new Chart(el, {
+                            data: {
+                                labels: ms.map(s => s.nome),
+                                datasets: [
+                                    { type: 'bar', data: medias, backgroundColor: cores.map(h => h + 'cc'), borderRadius: 12, borderSkipped: false, maxBarThickness: 80, order: 2 },
+                                    { type: 'line', data: medias, borderColor: '#6366f1', backgroundColor: grad, fill: true, borderWidth: 3, tension: 0.4, spanGaps: true, pointRadius: 7, pointHoverRadius: 9, pointBackgroundColor: '#ffffff', pointBorderColor: '#6366f1', pointBorderWidth: 3, order: 1 }
+                                ]
+                            },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { ...tt, filter: x => x.datasetIndex === 1, callbacks: { label: x => ' Média: ' + x.parsed.y.toFixed(1) + '%', afterLabel: x => ' ' + ms[x.dataIndex].qtd + ' operadores (' + ms[x.dataIndex].pct + '%)' } }
+                                },
+                                scales: {
+                                    y: { min: yMin, max: 100, ticks: { color: textColor, callback: pctTick }, grid: { color: gridColor } },
+                                    x: { ticks: { color: textColor, font: { weight: 'bold' } }, grid: { display: false } }
+                                }
+                            }
+                        });
+                    }, 'maturidade');
+
+                    // 5) Distribuicao de notas: % por nota + % por faixa
+                    safe(() => {
+                        if (!data.notasDistribuicao) return;
+                        const keys = Object.keys(data.notasDistribuicao).sort((a, b) => parseFloat(a) - parseFloat(b));
+                        const totalN = keys.reduce((a, k) => a + data.notasDistribuicao[k].count, 0) || 1;
+                        const corNota = k => { const n = parseFloat(k); return n < 80 ? '#ef4444' : (n < 95 ? '#f97316' : '#10b981'); };
+                        mk('chartNotasPct', 'chart-notas-pct', {
+                            type: 'bar',
+                            data: { labels: keys, datasets: [{ data: keys.map(k => parseFloat(((data.notasDistribuicao[k].count / totalN) * 100).toFixed(1))), backgroundColor: keys.map(corNota), borderRadius: 6, borderSkipped: false, maxBarThickness: 40 }] },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                onClick: (e, els) => { if (els.length) app.ui.openNotaAnaliseModal(keys[els[0].index]); },
+                                plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { title: x => 'Nota ' + x[0].label, label: x => ' ' + x.parsed.y + '% das avaliações' } } },
+                                scales: { x: { title: { display: true, text: 'Nota', color: textColor, font: { size: 10 } }, ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } }, y: { min: 0, ticks: { color: textColor, callback: pctTick }, grid: { color: gridColor } } }
+                            }
+                        });
+                        const faixa = [0, 0, 0];
+                        keys.forEach(k => { const n = parseFloat(k); faixa[n < 80 ? 0 : (n < 95 ? 1 : 2)] += data.notasDistribuicao[k].count; });
+                        mk('chartNotasFaixas', 'chart-notas-faixas', {
+                            type: 'doughnut',
+                            data: { labels: ['Abaixo de 80', '80 a 94', '95 ou mais'], datasets: [{ data: faixa.map(n => parseFloat(((n / totalN) * 100).toFixed(1))), backgroundColor: ['#ef4444', '#f97316', '#10b981'], borderWidth: 0, borderRadius: 8, spacing: 3, hoverOffset: 8 }] },
+                            options: {
+                                responsive: true, maintainAspectRatio: false, cutout: '62%',
+                                plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 10, font: { size: 10, weight: 'bold' } } }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.label + ': ' + x.parsed + '%' } } }
+                            }
+                        });
+                    }, 'notas');
+
+                    // 6) Motivos de contato (volume por assunto, em % do total)
+                    safe(() => {
+                        if (!data.assuntosDistribuicao || Object.keys(data.assuntosDistribuicao).length === 0) return;
+                        const arr = Object.entries(data.assuntosDistribuicao).map(([n, i]) => ({ nome: n, count: i.count })).sort((a, b) => b.count - a.count);
+                        const soma = arr.reduce((a, x) => a + x.count, 0) || 1;
+                        mk('chartMotivos', 'chart-motivos-canvas', {
+                            type: 'bar',
+                            data: { labels: arr.map(a => a.nome.length > 20 ? a.nome.substring(0, 20) + '...' : a.nome), datasets: [{ data: arr.map(a => parseFloat(((a.count / soma) * 100).toFixed(1))), backgroundColor: '#ec4899', borderRadius: 6 }] },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.parsed.y + '% das avaliações' } } }, scales: { y: { min: 0, ticks: { color: textColor, callback: pctTick }, grid: { color: gridColor } }, x: { grid: { display: false }, ticks: { color: textColor, font: { size: 10 } } } } }
+                        });
+                    }, 'motivos');
+                },
+
+                openMaturidadeModal(idx) {
+                    const data = app.analiseCSVDinamicoData?.consolidado;
+                    if (!data || !data.matConfig) return;
+                    const cfg = data.matConfig;
+                    const nivel = cfg[idx];
+                    if (!nivel) return;
+                    const hexList = ['#f97316', '#10b981', '#3b82f6', '#a855f7', '#14b8a6', '#ec4899'];
+                    const colorMap = { slate: '#64748b', blue: '#3b82f6', emerald: '#10b981', orange: '#f97316', red: '#ef4444', purple: '#a855f7', teal: '#14b8a6', pink: '#ec4899' };
+                    const hex = colorMap[nivel.cor] || hexList[idx % hexList.length];
+                    const lista = data.rankOperadores.filter(op => this._nivelMaturidade(op.nome, cfg) === idx);
+                    const mediaGrupo = lista.length > 0 ? (lista.reduce((a, o) => a + parseFloat(o.media), 0) / lista.length).toFixed(1) : '0.0';
+                    const meses = data.mesesDisponiveis || [];
+                    const labels = meses.map(m => app.ui.formatMonthLabel(m).substring(0, 3));
+                    const serie = meses.map(mes => {
+                        let ativos = 0, doNivel = 0;
+                        data.rankOperadores.forEach(op => {
+                            const n = this._nivelMaturidade(op.nome, cfg);
+                            if (n < 0) return;
+                            const d = data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes];
+                            if (!d || !(d.count > 0)) return;
+                            ativos++;
+                            if (n === idx) doNivel++;
+                        });
+                        return ativos > 0 ? parseFloat(((doNivel / ativos) * 100).toFixed(1)) : 0;
+                    });
+                    const chartHtml = serie.length > 1 ? `
+                        <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
+                            <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução % de Operadores neste Nível</h4>
+                            <div class="w-full h-32 relative"><canvas id="maturidade-chart-canvas"></canvas></div>
+                        </div>` : '';
+                    let htmlList = `<div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    if (lista.length === 0) {
+                        htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador neste nível de maturidade.</div>`;
+                    } else {
+                        lista.forEach((op, i) => {
+                            const dias = app.utils.getTempoCasaDoOperador(op.nome);
+                            htmlList += `
+                                <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50 text-white" style="background:${hex}">${i + 1}</div>
+                                        <div>
+                                            <div class="font-bold text-slate-700 dark:text-slate-200">${op.nome}</div>
+                                            <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">${dias !== null && dias !== undefined ? app.utils.formatTempoCasa(dias) : ''}</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-0.5">Média Final</div>
+                                        <div class="font-black text-xl" style="color:${hex}">${op.media}</div>
+                                    </div>
+                                </div>`;
+                        });
+                    }
+                    htmlList += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-seedling mr-2" style="color:${hex}"></i> Maturidade: ${nivel.nome}`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Média do grupo: <strong style="color:${hex}">${mediaGrupo}</strong></p>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total: ${lista.length}</p>
+                        </div>
+                        ${chartHtml}${htmlList}`;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-2xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+
+                    setTimeout(() => {
+                        const ctx = document.getElementById('maturidade-chart-canvas');
+                        if (!ctx) return;
+                        if (window.maturidadeChart) window.maturidadeChart.destroy();
+                        window.maturidadeChart = new Chart(ctx, {
+                            type: 'line',
+                            data: { labels, datasets: [{ data: serie, borderColor: hex, backgroundColor: hex + '20', fill: true, borderWidth: 3, pointBackgroundColor: hex, tension: 0.3 }] },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + c.parsed.y + '% dos operadores ativos' } } },
+                                scales: { y: { min: 0, max: 100, ticks: { font: { size: 9 }, callback: v => v + '%' } }, x: { ticks: { font: { size: 9 } } } }
+                            }
+                        });
+                    }, 150);
+                },
+
                 openCardChartModal(cardId, title) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
                     if(!data || !data.mesesEvolutivo || Object.keys(data.mesesEvolutivo).length <= 1) {
@@ -5620,17 +5956,9 @@ storage: {
                     if (activeMonthsForEvol.length <= 1) return app.ui.showAlert("Filtro Restrito", "Remova o filtro de meses na área de Evolução Mensal para poder visualizar o gráfico.", "info");
 
                     const labels = activeMonthsForEvol.map(m => this.formatMonthLabel(m));
-                    const chartData = activeMonthsForEvol.map(m => {
-                        const mObj = data.mesesEvolutivo[m] || { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0 };
-                        if(cardId === 'totalLinhas') return mObj.totalLinhas;
-                        if(cardId === 'conformidadePct') return mObj.totalLinhas > 0 ? parseFloat(((mObj.totalNotas100 / mObj.totalLinhas) * 100).toFixed(1)) : 0;
-                        if(cardId === 'mediaTotal') return mObj.count > 0 ? parseFloat((mObj.soma / mObj.count).toFixed(2)) : 0;
-                        if(cardId === 'desviosTotais') return mObj.falhasNormais;
-                        if(cardId === 'falhasCriticas') return mObj.falhasCriticas;
-                        return 0;
-                    });
+                    const serieCard = app.ui.cardSerieMensal(cardId, activeMonthsForEvol, data);
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-line text-blue-500"></i> Evolução: ${title}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-chart-line text-blue-500"></i> Variação % vs mês anterior: ${title}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="w-full h-64 relative mt-4">
                             <canvas id="card-chart-canvas"></canvas>
@@ -5648,45 +5976,8 @@ storage: {
                     setTimeout(() => {
                         const ctx = document.getElementById('card-chart-canvas');
                         if (window.cardModalChart) window.cardModalChart.destroy();
-                        
-                        let color = '#3b82f6'; // Azul
-                        if(cardId === 'conformidadePct') color = '#10b981'; // Verde
-                        if(cardId === 'mediaTotal') color = '#22c55e'; // Verde claro
-                        if(cardId === 'desviosTotais') color = '#f97316'; // Laranja
-                        if(cardId === 'falhasCriticas') color = '#ef4444'; // Vermelho
-
-                        const isDark = document.documentElement.classList.contains('dark');
-
-                        window.cardModalChart = new Chart(ctx, {
-                            type: 'line',
-                            data: {
-                                labels: labels,
-                                datasets: [{
-                                    label: title,
-                                    data: chartData,
-                                    backgroundColor: color + '1A', // Fundo bem translúcido
-                                    borderColor: color,
-                                    borderWidth: 3,
-                                    fill: true,
-                                    tension: 0.4, // Deixa a linha curvilínea e elegante
-                                    pointBackgroundColor: isDark ? '#1e293b' : '#ffffff',
-                                    pointBorderColor: color,
-                                    pointRadius: 5,
-                                    pointHoverRadius: 7,
-                                    pointBorderWidth: 2
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: { legend: { display: false }, tooltip: { padding: 10, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } },
-                                scales: { 
-                                    y: { beginAtZero: false, min: Math.max(0, Math.min(...chartData) - 5), grid: { color: isDark ? '#334155' : '#e2e8f0' } }, 
-                                    x: { grid: { display: false } } 
-                                }
-                            }
-                        });
-                    }, 500);
+                        window.cardModalChart = app.ui.buildVarChart(ctx, labels, serieCard, cardId);
+                    }, 300);
                 },
 
                 // --- COMMAND PALETTE (BUSCA RÁPIDA) ---
@@ -16019,7 +16310,7 @@ storage: {
                     let chartData = [];
 
                     mesesOrd.forEach(mes => {
-                        let countMes = 0;
+                        let countMes = 0; const ativosMes = data.rankOperadores.filter(o => data.operadoresEvolutivo[o.nome] && data.operadoresEvolutivo[o.nome][mes] && data.operadoresEvolutivo[o.nome][mes].count > 0).length;
                         lista.forEach(op => {
                             if(data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes]) {
                                 let dMes = data.operadoresEvolutivo[op.nome][mes];
@@ -16028,14 +16319,14 @@ storage: {
                                 }
                             }
                         });
-                        chartData.push(countMes);
+                        chartData.push(ativosMes > 0 ? parseFloat(((countMes / ativosMes) * 100).toFixed(1)) : 0);
                     });
 
                     let chartHtml = '';
                     if(chartData.length > 1) {
                         chartHtml = `
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner mt-4 mb-2">
-                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução de Operadores Enquadrados</h4>
+                                <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução % de Operadores Enquadrados</h4>
                                 <div class="w-full h-32 relative"><canvas id="quadrante-chart-canvas"></canvas></div>
                             </div>
                         `;
@@ -16058,60 +16349,6 @@ storage: {
 
                     // Desenha os gráficos após a renderização da tela
                     setTimeout(() => {
-                        // --- GRÁFICO CURVA DE APRENDIZADO (BARRA DINÂMICA) ---
-                        if(window.chartCurvaAprendizado) window.chartCurvaAprendizado.destroy();
-                        const ctxCurva = document.getElementById('chart-curva-aprendizado');
-                        
-                        // Garante que matStats existe, senão pega um backup de segurança
-                        const finalMatStats = (typeof matStats !== 'undefined') ? matStats : (data.matConfig || []).map(c => ({...c, media: 0}));
-                        
-                        if (ctxCurva && finalMatStats.length > 0) {
-                            const isDark = document.documentElement.classList.contains('dark');
-                            
-                            // Tradutor mágico de nomes de cores do tailwind para HEX para injetar no Canvas do Chart.js
-                            const colorMap = {
-                                'slate': '#64748b', 'blue': '#3b82f6', 'emerald': '#10b981', 
-                                'orange': '#f97316', 'red': '#ef4444', 'purple': '#a855f7', 'teal': '#14b8a6'
-                            };
-
-                            window.chartCurvaAprendizado = new Chart(ctxCurva, {
-                                type: 'bar', // Gráfico de barras é perfeito para comparar grupos absolutos
-                                data: {
-                                    labels: finalMatStats.map(s => s.nome),
-                                    datasets: [{
-                                        data: finalMatStats.map(s => parseFloat(s.media) || 0),
-                                        backgroundColor: finalMatStats.map(s => colorMap[s.cor] || '#3b82f6'),
-                                        borderRadius: 6,
-                                        borderWidth: 0
-                                    }]
-                                },
-                                options: {
-                                    responsive: true, maintainAspectRatio: false, 
-                                    plugins: { legend: { display: false }, tooltip: { padding: 10, bodyFont: {weight: 'bold', size: 14} } },
-                                    scales: {
-                                        y: { min: Math.max(0, Math.min(...finalMatStats.map(s=>parseFloat(s.media)).filter(m=>m>0)) - 10), max: 100, ticks: { font: { size: 10 }, color: isDark ? '#94a3b8' : '#64748b' }, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
-                                        x: { ticks: { font: { size: 10, weight: 'bold' }, color: isDark ? '#cbd5e1' : '#475569' }, grid: { display: false } }
-                                    }
-                                }
-                            });
-                        }
-
-                    // --- GRÁFICO DE MOTIVOS DE CONTATO ---
-                        if (data.assuntosDistribuicao && Object.keys(data.assuntosDistribuicao).length > 0) {
-                            const ctxMotivos = document.getElementById('chart-motivos-canvas');
-                            if (ctxMotivos) {
-                                if (window.chartMotivos) window.chartMotivos.destroy();
-                                const assuntosArray = Object.entries(data.assuntosDistribuicao).map(([n, i]) => ({nome: n, count: i.count})).sort((a,b) => b.count - a.count);
-                                window.chartMotivos = new Chart(ctxMotivos, {
-                                    type: 'bar',
-                                    data: {
-                                        labels: assuntosArray.map(a => a.nome.length > 20 ? a.nome.substring(0,20)+'...' : a.nome),
-                                        datasets: [{ label: 'Volume', data: assuntosArray.map(a => a.count), backgroundColor: '#ec4899', borderRadius: 4 }]
-                                    },
-                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, grid: { color: isDark ? '#334155' : '#e2e8f0' } }, x: { grid: { display: false }, ticks: { color: textColor, font: {size: 10} } } } }
-                                });
-                            }
-                        }
 
                         // --- GRÁFICO QUADRANTE DO MODAL ---
                         if(chartData.length > 1) {
@@ -16127,7 +16364,7 @@ storage: {
                                 window.quadranteChart = new Chart(ctx, {
                                     type: 'line',
                                     data: { labels: chartLabels, datasets: [{ data: chartData, borderColor: hexColor, backgroundColor: hexColor+'20', fill: true, borderWidth: 3, pointBackgroundColor: hexColor, tension: 0.3 }] },
-                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: Math.max(0, Math.min(...chartData.filter(v=>v>0))-10), max: 100, ticks: {font: {size: 9}} }, x: { ticks: {font: {size: 9}} } } }
+                                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: {font: {size: 9}, callback: v => v + '%'} }, x: { ticks: {font: {size: 9}} } } }
                                     });
                                 }
                             } // <--- CORREÇÃO: A CHAVE QUE FALTAVA FOI ADICIONADA AQUI
@@ -16774,7 +17011,7 @@ storage: {
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
                                 <div class="flex justify-between items-center mb-6">
-                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média & Destaques</h3>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Variação % da Média vs Mês Anterior</h3>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                     <div class="lg:col-span-2 w-full h-full min-h-[320px] relative">
@@ -16789,7 +17026,7 @@ storage: {
                                                     <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50 cursor-pointer hover:border-emerald-400 hover:-translate-y-0.5 transition-all group">
                                                         <div class="flex justify-between items-center mb-1">
                                                             <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-emerald-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
-                                                            <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${op.diff.toFixed(1)}</span>
+                                                            <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${(op.inicio > 0 ? (op.diff / op.inicio) * 100 : 0).toFixed(1)}%</span>
                                                         </div>
                                                         <div class="text-[9px] text-slate-500 font-medium">Subiu de <strong class="text-slate-700 dark:text-slate-300">${op.inicio.toFixed(1)}</strong> para <strong class="text-emerald-600">${op.fim.toFixed(1)}</strong></div>
                                                     </div>
@@ -16804,7 +17041,7 @@ storage: {
                                                     <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50 cursor-pointer hover:border-red-400 hover:-translate-y-0.5 transition-all group">
                                                         <div class="flex justify-between items-center mb-1">
                                                             <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-red-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
-                                                            <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${op.diff.toFixed(1)}</span>
+                                                            <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${(op.inicio > 0 ? (op.diff / op.inicio) * 100 : 0).toFixed(1)}%</span>
                                                         </div>
                                                         <div class="text-[9px] text-slate-500 font-medium">Caiu de <strong class="text-slate-700 dark:text-slate-300">${op.inicio.toFixed(1)}</strong> para <strong class="text-red-600">${op.fim.toFixed(1)}</strong></div>
                                                     </div>
@@ -16866,6 +17103,16 @@ storage: {
                                 </button>
                             </div>`}
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${quadCards}</div>
+                            <div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Distribuição (%) <span class="normal-case font-medium">- clique na fatia</span></div>
+                                    <div class="relative w-full h-72"><canvas id="chart-quad-dist"></canvas></div>
+                                </div>
+                                <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Evolução mensal (% de operadores por quadrante)</div>
+                                    <div class="relative w-full h-72"><canvas id="chart-quad-evol"></canvas></div>
+                                </div>
+                            </div>
                         </div>
                     `;
 
@@ -16889,6 +17136,7 @@ storage: {
                                         </div>
                                     </div>` : ''}
                                     
+                                    ${(data.falhasComunsArray && data.falhasComunsArray.length > 0) ? '<div class="w-full h-56 mb-4 relative"><canvas id="chart-desvios-pct"></canvas></div>' : ''}
                                     <div class="space-y-3 pr-2 flex-1 custom-scrollbar ${this.analiseEditMode ? '' : 'overflow-y-auto max-h-64'}">
                                         ${data.falhasComunsArray && data.falhasComunsArray.length > 0 ? data.falhasComunsArray.map((f, i) => {
                                             const hideClass = (!app.ui.desviosExpandidos && i > 4 && !this.analiseEditMode) ? 'hidden' : '';
@@ -16922,6 +17170,7 @@ storage: {
                                         </div>
                                     </div>` : ''}
                                     
+                                    ${(data.falhasCriticasArray && data.falhasCriticasArray.length > 0) ? '<div class="w-full h-56 mb-4 relative"><canvas id="chart-criticas-pct"></canvas></div>' : ''}
                                     <div class="space-y-3 overflow-y-auto max-h-64 custom-scrollbar pr-2 flex-1">
                                         ${data.falhasCriticasArray && data.falhasCriticasArray.length > 0 ? data.falhasCriticasArray.map((f, i) => {
                                             const hideClass = (!app.ui.criticasExpandidas && i > 4 && !this.analiseEditMode) ? 'hidden' : '';
@@ -16993,7 +17242,7 @@ storage: {
                             const v = matVis[index % matVis.length];
                             const textDias = index === 0 ? `até ${st.maxDias} dias` : (index === matStats.length - 1 ? `acima de ${matStats[index-1].maxDias} dias` : `${matStats[index-1].maxDias + 1} a ${st.maxDias} dias`);
                             return `
-                                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
+                                <div onclick="app.ui.openMaturidadeModal(${index})" class="cursor-pointer bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
                                     <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
                                         <span><span class="${v.txt}">N${index + 1}</span> · ${st.nome}</span>
                                         <span>${textDias}</span>
@@ -17017,9 +17266,15 @@ storage: {
                                     </button>
                                 </div>`}
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${matCards}</div>
-                                <div class="mt-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
-                                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Desempenho x Tempo</div>
-                                    <div class="relative w-full h-48"><canvas id="chart-curva-aprendizado"></canvas></div>
+                                <div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                        <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Distribuição (%) <span class="normal-case font-medium">- clique na fatia</span></div>
+                                        <div class="relative w-full h-72"><canvas id="chart-mat-dist"></canvas></div>
+                                    </div>
+                                    <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+                                        <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Desempenho x Tempo de Casa (média por nível)</div>
+                                        <div class="relative w-full h-72"><canvas id="chart-curva-aprendizado"></canvas></div>
+                                    </div>
                                 </div>
                             </div>`;
                     }
@@ -17088,6 +17343,17 @@ storage: {
                     if (data.notasDistribuicao) {
                         html += renderChapterTitle('Distribuição de Notas', 'Visão quantitativa de todas as notas absolutas aplicadas na operação e sua recorrência.', 'fa-ranking-star', 'orange');
                         
+                        html += `
+                            <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 animate-fade-in">
+                                <div class="lg:col-span-2 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm">
+                                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Frequência de cada nota (% das avaliações) <span class="normal-case font-medium">- clique na barra</span></div>
+                                    <div class="relative w-full h-72"><canvas id="chart-notas-pct"></canvas></div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm">
+                                    <div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">Por faixa de desempenho (%)</div>
+                                    <div class="relative w-full h-72"><canvas id="chart-notas-faixas"></canvas></div>
+                                </div>
+                            </div>`;
                         const notasOrdenadas = Object.keys(data.notasDistribuicao).sort((a,b) => parseFloat(b) - parseFloat(a));
                         
                         let notasCards = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8 relative z-10 hideable-box animate-fade-in">${btnHideCode}`;
@@ -17339,7 +17605,7 @@ storage: {
                             
                             const labelsEvol = activeMonthsForEvol.map(m => app.ui.formatMonthLabel(m).substring(0,3));
 
-                            const getChartData = (cardId) => {
+                            const getChartData = (cardId) => app.ui.cardSerieMensal(cardId, activeMonthsForEvol, data).vars; const _getChartDataLegado = (cardId) => {
                                 if (!data || !data.mesesEvolutivo) return [];
                                 return activeMonthsForEvol.map(m => {
                                     const mObj = data.mesesEvolutivo[m] || { soma: 0, count: 0, totalLinhas: 0, totalNotas100: 0, falhasNormais: 0, falhasCriticas: 0 };
@@ -17373,7 +17639,7 @@ storage: {
 
                                     // Proteção extra para o eixo Y
                                     let minVal = Math.min(...cData);
-                                    let yMin = isNaN(minVal) ? 0 : Math.max(0, minVal - 5);
+                                    let yMin = isNaN(minVal) ? 0 : minVal - 5;
 
                                     window[`chart_${id}`] = new Chart(ctx, {
                                         type: 'line',
@@ -17430,40 +17696,7 @@ storage: {
                                 });
                             }
 
-                            // GRÁFICO EVOLUTIVO CENTRAL
-                            if (data.mesesDisponiveis && data.mesesDisponiveis.length >= 1) {
-                                if(window.myChartAnaliseEvol) window.myChartAnaliseEvol.destroy();
-                                const ctxEvol = document.getElementById('chart-analise-evolutivo');
-                                if (ctxEvol) {
-                                    window.myChartAnaliseEvol = new Chart(ctxEvol, {
-                                        type: 'line',
-                                        data: { 
-                                            labels: data.evolutivoChartLabels, 
-                                            datasets: [{ 
-                                                label: 'Média Consolidada', 
-                                                data: data.evolutivoChartData, 
-                                                borderColor: '#6366f1', 
-                                                backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                                                borderWidth: 4,
-                                                pointBackgroundColor: '#ffffff',
-                                                pointBorderColor: '#6366f1',
-                                                pointRadius: 6,
-                                                pointHoverRadius: 8,
-                                                fill: true,
-                                                tension: 0.4
-                                            }] 
-                                        },
-                                        options: { 
-                                            responsive: true, maintainAspectRatio: false, 
-                                            scales: { 
-                                                y: { beginAtZero: false, min: Math.max(0, Math.min(...data.evolutivoChartData) - 10), max: 100, ticks: {color: textColor, font:{weight:'bold'}}, grid: {color: gridColor} }, 
-                                                x: { ticks: {color: textColor, font:{weight:'bold'}}, grid: {display: false} } 
-                                            }, 
-                                            plugins: { legend: { display: false }, tooltip: { padding: 12, titleFont: {size: 14}, bodyFont: {size: 14, weight: 'bold'} } } 
-                                        }
-                                    });
-                                }
-                            }
+                            app.ui.renderAnaliseExtraCharts(data, { matStats: matStats, qc: qc, quads: [q1, q2, q3, q4], isDark: isDark, textColor: textColor, gridColor: gridColor });
                         } catch(globalErr) {
                             console.error("Erro critico na renderizacao dos graficos", globalErr);
                         }
