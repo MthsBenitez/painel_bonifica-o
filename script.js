@@ -2671,7 +2671,15 @@ storage: {
                     const q2 = document.getElementById('ata-qualidade2').value || '-';
                     const sup = document.getElementById('ata-sup1').value || '-';
                     const extras = this.getPartsData(); 
-                    const fortes = document.getElementById('ata-fortes').value || 'Nada registrado.';
+                    const fortesEl = document.getElementById('ata-fortes-rich') || document.getElementById('ata-fortes');
+                    const fortesRaw = fortesEl ? (fortesEl.innerHTML || fortesEl.value || 'Nada registrado.') : 'Nada registrado.';
+                    const fortes = fortesRaw
+                        .replace(/<br\s*[\/]?>/gi, '\n')
+                        .replace(/<\/p>/gi, '\n')
+                        .replace(/<\/div>/gi, '\n')
+                        .replace(/<li>/gi, '• ')
+                        .replace(/<[^>]+>/g, '')
+                        .trim() || 'Nada registrado.';
                     const acoes = this.getAcoesData();
 
                     doc.setFontSize(15); doc.setTextColor(51, 65, 85); doc.setFont("helvetica", "bold");
@@ -2944,6 +2952,8 @@ storage: {
                         document.getElementById('ata-qualidade2').value = ata.qualidade2 || '';
                         document.getElementById('ata-sup1').value = ata.sup || '';
                         document.getElementById('ata-fortes').value = ata.fortes || '';
+                        const fRich = document.getElementById('ata-fortes-rich');
+                        if (fRich) fRich.innerHTML = ata.fortes || '';
                         
                         document.getElementById('ata-dynamic-actions').innerHTML = '';
                         if(ata.rawAcoes && ata.rawAcoes.length > 0) {
@@ -7724,158 +7734,230 @@ storage: {
                     ` : '';
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     const todayIso = localStorage.getItem('soft_acao_data_draft') || new Date().toISOString().split('T')[0];
-
-                    let html = `
-                        <div class="mb-8">
-                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Qualidade em Ação</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Registre ou atualize suas ações presenciais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
-                        </div>
-                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-4xl mx-auto">
-                            <input type="hidden" id="act-edit-id" value="">
-                            <form onsubmit="event.preventDefault(); app.actions.submitAction();" class="space-y-6">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label><input type="date" id="act-data" value="${todayIso}" onchange="try{localStorage.setItem('soft_acao_data_draft', this.value)}catch(e){}" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none"></div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Operação *</label>
-                                        <select id="act-codigo" required class="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none">
-                                            <option value="">Selecione...</option>${operacoes}
-                                        </select>
-                                    </div>
-                                    <div class="md:col-span-2"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Objetivo *</label><input type="text" id="act-objetivo" required class="w-full p-3.5 rounded-xl bg-slate-50 border outline-none"></div>
-                                    <div class="md:col-span-2">
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Realizada Detalhada *</label>
-                                        <div class="w-full rounded-xl bg-slate-50 border border-slate-200 overflow-hidden focus-within:ring-2 focus-within:ring-green-500 transition-all">
-                                            <!-- Mini Toolbar -->
-                                            <div class="bg-slate-100/80 border-b border-slate-200 p-2 flex gap-2">
-                                                <button type="button" onclick="document.execCommand('bold', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600 font-bold" title="Negrito">B</button>
-                                                <button type="button" onclick="document.execCommand('italic', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600 italic" title="Itálico">I</button>
-                                                <button type="button" onclick="document.execCommand('underline', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600 underline" title="Sublinhado">U</button>
-                                                <div class="w-px h-6 bg-slate-300 mx-1 mt-1"></div>
-                                                <button type="button" onclick="document.execCommand('insertUnorderedList', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600" title="Lista com Marcadores"><i class="fa-solid fa-list-ul"></i></button>
-                                                <button type="button" onclick="document.execCommand('insertOrderedList', false, null)" class="w-8 h-8 rounded hover:bg-slate-200 text-slate-600" title="Lista Numerada"><i class="fa-solid fa-list-ol"></i></button>
-                                            </div>
-                                            <!-- Área Editável -->
-                                            <div id="act-acao-rich" contenteditable="true" class="w-full p-4 min-h-[250px] overflow-y-auto outline-none text-sm bg-white dark:bg-slate-900 dark:text-white cursor-text resize-y" placeholder="Descreva detalhadamente o que foi feito..."></div>
-                                            <!-- Input Oculto para salvar -->
-                                            <input type="hidden" id="act-acao" required>
-                                        </div>
-                                    </div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operadores Envolvidos *</label><input type="number" id="act-qtd" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Alinhado *</label><input type="text" id="act-gestor" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"></div>
-                                    <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label><input type="text" id="act-ofensor" required class="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"></div>
-                                    <div>
-                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Brindes Aplicados (Estoque) *</label>
-                                        <div class="flex gap-2">
-                                            <input type="number" id="act-brindes-qtd" value="0" min="0" class="w-20 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none font-bold text-center">
-                                            <select id="act-brindes-item" class="flex-1 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none cursor-pointer">
-                                                <option value="Nenhum">Nenhum Brinde</option>
-                                                ${Object.values(app.estoqueItems || {}).map(i => `<option value="${i.id}">${i.nome} (${i.qtd} disp.)</option>`).join('')}
-                                            </select>
-                                            <button type="button" onclick="app.actions.addBrindeAoCarrinho()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold w-12 rounded-xl shadow-sm transition-colors flex items-center justify-center" title="Adicionar este item ao carrinho"><i class="fa-solid fa-plus"></i></button>
-                                        </div>
-                                        <div id="act-brindes-carrinho" class="empty:hidden mt-2"></div>
-                                    </div>
-                                    <div class="md:col-span-2">
-                                        <div class="flex justify-between items-end mb-1.5">
-                                            <label class="block text-[11px] font-bold text-slate-500 uppercase">Anexar Evidências *</label>
-                                            <button type="button" onclick="app.actions.removeAllFiles()" class="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-trash mr-1"></i>Remover Tudo</button>
-                                        </div>
-                                        <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                                            <p class="text-sm text-green-600 font-bold"><i class="fa-solid fa-cloud-arrow-up text-xl mb-1 block text-center"></i> Clique para anexar Evidências</p>
-                                            <input type="file" id="act-foto-input" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" multiple class="hidden" onchange="app.actions.handleFilePreview(this)" />
-                                        </label>
-                                        <div id="act-preview-gallery" class="flex flex-wrap gap-3 mt-4 empty:hidden"></div>
-                                    </div>
-                                </div>
-                                <div class="pt-6 flex justify-end">
-                                    <button type="submit" id="btn-submit-action" class="animated-submit-btn bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg transition-all min-w-[200px] h-14">
-                                        <div class="state state--default">
-                                            <div class="icon">
-                                                <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-xl">
-                                                    <g style="filter: url(#shadow-plane)">
-                                                        <path d="M14.2199 21.63C13.0399 21.63 11.3699 20.8 10.0499 16.83L9.32988 14.67L7.16988 13.95C3.20988 12.63 2.37988 10.96 2.37988 9.78001C2.37988 8.61001 3.20988 6.93001 7.16988 5.60001L15.6599 2.77001C17.7799 2.06001 19.5499 2.27001 20.6399 3.35001C21.7299 4.43001 21.9399 6.21001 21.2299 8.33001L18.3999 16.82C17.0699 20.8 15.3999 21.63 14.2199 21.63ZM7.63988 7.03001C4.85988 7.96001 3.86988 9.06001 3.86988 9.78001C3.86988 10.5 4.85988 11.6 7.63988 12.52L10.1599 13.36C10.3799 13.43 10.5599 13.61 10.6299 13.83L11.4699 16.35C12.3899 19.13 13.4999 20.12 14.2199 20.12C14.9399 20.12 16.0399 19.13 16.9699 16.35L19.7999 7.86001C20.3099 6.32001 20.2199 5.06001 19.5699 4.41001C18.9199 3.76001 17.6599 3.68001 16.1299 4.19001L7.63988 7.03001Z" fill="currentColor"></path>
-                                                        <path d="M10.11 14.4C9.92005 14.4 9.73005 14.33 9.58005 14.18C9.29005 13.89 9.29005 13.41 9.58005 13.12L13.16 9.53C13.45 9.24 13.93 9.24 14.22 9.53C14.51 9.82 14.51 10.3 14.22 10.59L10.64 14.18C10.5 14.33 10.3 14.4 10.11 14.4Z" fill="currentColor"></path>
-                                                    </g>
-                                                    <defs><filter id="shadow-plane"><fedropshadow dx="0" dy="1" stdDeviation="0.6" flood-opacity="0.5"></fedropshadow></filter></defs>
-                                                </svg>
-                                            </div>
-                                            <p class="font-bold flex tracking-wide">
-                                                <span style="--i:0">E</span><span style="--i:1">n</span><span style="--i:2">v</span><span style="--i:3">i</span><span style="--i:4">a</span><span style="--i:5">r</span>
-                                                <span style="--i:6; margin-left: 6px;">A</span><span style="--i:7">ç</span><span style="--i:8">ã</span><span style="--i:9">o</span>
-                                            </p>
-                                        </div>
-                                        <div class="state state--sent">
-                                            <div class="icon">
-                                                <i class="fa-solid fa-spinner fa-spin text-xl"></i>
-                                            </div>
-                                            <p class="font-bold flex tracking-wide ml-2 text-sm">
-                                                <span style="--i:5">P</span><span style="--i:6">r</span><span style="--i:7">o</span><span style="--i:8">c</span><span style="--i:9">e</span><span style="--i:10">s</span><span style="--i:11">s</span><span style="--i:12">a</span><span style="--i:13">n</span><span style="--i:14">d</span><span style="--i:15">o</span><span style="--i:16">.</span><span style="--i:17">.</span><span style="--i:18">.</span>
-                                            </p>
-                                        </div>
-                                    </button>
-                                </div>
-                            </form>
-                            
-                            <div class="mt-12 pt-8 border-t border-slate-200">
-                                <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-6">Histórico / Devolutivas</h3>
-                    `;
                     const myMat = String(app.currentUser?.matricula || '').trim();
                     const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
                     const myActions = Object.values(app.actionsList || {}).filter(a => a && String(a.matricula || '').trim() === myMat && getActMonth(a) === app.currentMonth).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
-                    if(myActions.length === 0) {
-                        html += `<div class="text-sm text-slate-500 text-center">Nenhum histórico encontrado para ${monthLabel}.</div>`;
-                    } else {
-                        html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
-                        myActions.forEach(act => {
-                            let statusBadge = act.status === 'pendente' ? `<span class="bg-orange-100 text-orange-600 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-sm">Pendente</span>` : 
-                                              act.status === 'aprovado' ? `<span class="bg-green-100 text-green-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-sm">Aprovado</span>` : 
-                                              `<span class="bg-red-100 text-red-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-sm">Reprovado</span>`;
 
-                            const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
-                            const dataAcaoFmt = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : '-';
-                            const acaoRealizadaSafe = String(act.acaoRealizada || '');
+                    let html = `
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Qualidade em Ação</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Registre ou atualize suas ações presenciais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
+                        </div>
+                        ${pendingBannerOperador}
 
-                            // O usuário AGORA VÊ TUDO IGUAL AO ADM, COM BOTÃO DE CORRIGIR SEMPRE DISPONÍVEL
-                            html += `
-                                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                                    <div class="md:w-1/3 h-48 md:h-auto bg-slate-100 dark:bg-slate-900 relative group cursor-pointer" onclick="app.actions.showImageFull('${act.id}')">
-                                        ${photoThumb && photoThumb.startsWith('data:application/pdf') ? `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 transition-transform duration-500 group-hover:scale-105"><i class="fa-solid fa-file-pdf text-5xl mb-2"></i><span class="text-xs font-bold">Documento PDF</span></div>` : `<img src="${photoThumb}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">`}
-                                    </div>
-                                    <div class="p-5 md:w-2/3 flex flex-col">
-                                        <div class="flex justify-between items-start mb-3">
-                                            <div class="w-full">
-                                                <div class="flex justify-between items-center mb-1.5">
-                                                    <div class="text-[10px] font-black text-blue-500 uppercase tracking-widest"><i class="fa-solid fa-calendar-day"></i> Ref: ${app.ui.formatMonthLabel(getActMonth(act))}</div>
-                                                    ${statusBadge}
+                        <!-- DIVISÃO EM DOIS: FORMULÁRIO À ESQUERDA E HISTÓRICO À DIREITA -->
+                        <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+                            
+                            <!-- COLUNA 1: FORMULÁRIO DE ENVIO DA AÇÃO (xl:col-span-6) -->
+                            <div class="xl:col-span-6 glass-card p-6 md:p-8 rounded-3xl shadow-sm">
+                                <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-paper-plane text-green-600"></i> Formulário de Registro
+                                    </h3>
+                                    <span class="text-xs text-slate-400 font-semibold">* Campos obrigatórios</span>
+                                </div>
+                                <input type="hidden" id="act-edit-id" value="">
+                                <form onsubmit="event.preventDefault(); app.actions.submitAction();" class="space-y-5">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ação *</label>
+                                            <input type="date" id="act-data" value="${todayIso}" onchange="try{localStorage.setItem('soft_acao_data_draft', this.value)}catch(e){}" required class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Nome da Operação *</label>
+                                            <select id="act-codigo" required class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none text-sm">
+                                                <option value="">Selecione...</option>${operacoes}
+                                            </select>
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Objetivo *</label>
+                                            <input type="text" id="act-objetivo" required class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 outline-none text-sm" placeholder="Ex: Redução de TMA e melhoria de FCR">
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ação Realizada Detalhada *</label>
+                                            <div class="w-full rounded-xl bg-slate-50 border border-slate-200 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-green-500 transition-all">
+                                                <!-- Mini Toolbar -->
+                                                <div class="bg-slate-100/80 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 p-2 flex gap-1.5 items-center">
+                                                    <button type="button" onclick="document.execCommand('bold', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 font-bold text-xs" title="Negrito">B</button>
+                                                    <button type="button" onclick="document.execCommand('italic', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 italic font-serif text-xs" title="Itálico">I</button>
+                                                    <button type="button" onclick="document.execCommand('underline', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 underline text-xs" title="Sublinhado">U</button>
+                                                    <div class="w-px h-5 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+                                                    <button type="button" onclick="document.execCommand('insertUnorderedList', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 text-xs" title="Lista com Marcadores"><i class="fa-solid fa-list-ul"></i></button>
+                                                    <button type="button" onclick="document.execCommand('insertOrderedList', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 text-xs" title="Lista Numerada"><i class="fa-solid fa-list-ol"></i></button>
                                                 </div>
-                                                <h4 class="font-extrabold text-base text-slate-800 dark:text-white leading-tight">${act.objetivo || '-'}</h4>
-                                                <div class="text-[10px] text-slate-500 font-bold mt-1">Realizada em: ${dataAcaoFmt}</div>
+                                                <!-- Área Editável -->
+                                                <div id="act-acao-rich" contenteditable="true" class="w-full p-3.5 min-h-[160px] max-h-[300px] overflow-y-auto outline-none text-sm bg-white dark:bg-slate-900 dark:text-white cursor-text resize-y leading-relaxed" placeholder="Descreva detalhadamente o que foi feito..."></div>
+                                                <!-- Input Oculto para salvar -->
+                                                <input type="hidden" id="act-acao" required>
                                             </div>
                                         </div>
-
-                                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Op / Fila</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.codigoOpe || '-'}</div></div>
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Gestor</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.gestor || '-'}</div></div>
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Ofensor</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${act.ofensor || '-'}</div></div>
-                                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Impacto</div><div class="text-[11px] font-bold text-slate-700 dark:text-slate-300">${act.operadores || '0'} Op / ${act.brindes || '0'} Br.</div></div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operadores Envolvidos *</label>
+                                            <input type="number" id="act-qtd" required min="1" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm font-bold">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Gestor Alinhado *</label>
+                                            <input type="text" id="act-gestor" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm">
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ofensor Alvo *</label>
+                                            <input type="text" id="act-ofensor" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-sm" placeholder="Ex: Falha em sondagem, procedimento...">
                                         </div>
 
-                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 flex-1 mb-4">
-                                            <div class="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-3" title="${acaoRealizadaSafe.replace(/"/g, '&quot;')}"><span class="font-bold">Ação:</span> ${acaoRealizadaSafe}</div>
-                                            ${act.comentario ? `<div class="mt-2 pt-2 border-t border-red-200 dark:border-red-900/50 text-[11px] text-red-600 dark:text-red-400 font-bold"><i class="fa-solid fa-reply"></i> Devolutiva ADM: ${act.comentario}</div>` : ''}
+                                        <!-- SEÇÃO BRINDES APLICADOS (CONTAINED, RESPONSIVA E SEM OVERFLOW) -->
+                                        <div class="sm:col-span-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 w-full min-w-0">
+                                            <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-2 flex items-center justify-between">
+                                                <span class="flex items-center gap-1.5"><i class="fa-solid fa-gift text-emerald-600"></i> Brindes Aplicados (Estoque)</span>
+                                                <span class="text-[10px] text-slate-400 font-normal">Conforme estoque</span>
+                                            </label>
+                                            <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full min-w-0">
+                                                <div class="w-20 shrink-0">
+                                                    <input type="number" id="act-brindes-qtd" value="0" min="0" placeholder="Qtd" title="Quantidade de brindes"
+                                                        class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none font-bold text-center text-sm focus:ring-2 focus:ring-emerald-500">
+                                                </div>
+                                                <div class="flex-1 min-w-0 max-w-full">
+                                                    <select id="act-brindes-item"
+                                                        class="w-full min-w-0 max-w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none cursor-pointer text-xs font-semibold text-slate-800 dark:text-slate-100 truncate focus:ring-2 focus:ring-emerald-500">
+                                                        <option value="Nenhum">Nenhum Brinde Selecionado</option>
+                                                        ${Object.values(app.estoqueItems || {}).map(i => `<option value="${i.id}">${i.nome} (${i.qtd} disp.)</option>`).join('')}
+                                                    </select>
+                                                </div>
+                                                <button type="button" onclick="app.actions.addBrindeAoCarrinho()"
+                                                    class="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 px-3.5 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5 text-xs"
+                                                    title="Adicionar ao carrinho da ação">
+                                                    <i class="fa-solid fa-plus"></i> <span>Incluir</span>
+                                                </button>
+                                            </div>
+                                            <div id="act-brindes-carrinho" class="empty:hidden mt-2.5 space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar w-full min-w-0"></div>
                                         </div>
 
-                                        <div class="flex gap-2 justify-end mt-auto">
-                                            <button onclick="app.actions.editAction('${act.id}')" class="flex-1 md:flex-none text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 border border-blue-200 dark:border-blue-800 px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> Corrigir / Editar</button>
-                                            <button onclick="app.actions.deleteAction('${act.id}')" class="flex-none text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800 px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-trash"></i></button>
+                                        <!-- ANEXAR EVIDÊNCIAS -->
+                                        <div class="sm:col-span-2">
+                                            <div class="flex justify-between items-end mb-1.5">
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase">Anexar Evidências *</label>
+                                                <button type="button" onclick="app.actions.removeAllFiles()" class="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-trash mr-1"></i>Remover Tudo</button>
+                                            </div>
+                                            <label class="flex flex-col items-center justify-center w-full h-20 border-2 border-slate-300 dark:border-slate-700 border-dashed rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                                <p class="text-xs text-green-600 font-bold flex items-center gap-2"><i class="fa-solid fa-cloud-arrow-up text-lg"></i> Clique para anexar fotos ou PDF</p>
+                                                <input type="file" id="act-foto-input" accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .csv" multiple class="hidden" onchange="app.actions.handleFilePreview(this)" />
+                                            </label>
+                                            <div id="act-preview-gallery" class="flex flex-wrap gap-2.5 mt-3 empty:hidden"></div>
                                         </div>
                                     </div>
+
+                                    <!-- BOTÃO DE ENVIO -->
+                                    <div class="pt-4 flex justify-end">
+                                        <button type="submit" id="btn-submit-action" class="animated-submit-btn bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all w-full sm:w-auto min-w-[200px] h-12 flex items-center justify-center">
+                                            <div class="state state--default flex items-center gap-2 justify-center">
+                                                <i class="fa-solid fa-paper-plane"></i>
+                                                <span>Enviar Ação</span>
+                                            </div>
+                                            <div class="state state--sent flex items-center gap-2 justify-center">
+                                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                                <span>Processando...</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <!-- COLUNA 2: HISTÓRICO / DEVOLUTIVAS DAS AÇÕES (xl:col-span-6) -->
+                            <div class="xl:col-span-6 glass-card p-6 md:p-8 rounded-3xl shadow-sm flex flex-col">
+                                <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+                                    <div>
+                                        <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-clock-rotate-left text-blue-600"></i> Histórico / Devolutivas
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Acompanhe suas ações de ${monthLabel}</p>
+                                    </div>
+                                    <span class="px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-xs font-bold">
+                                        ${myActions.length} ${myActions.length === 1 ? 'Ação' : 'Ações'}
+                                    </span>
                                 </div>
-                            `;
-                        });
-                        html += `</div>`;
-                    }
-                    html += `</div></div>`;
+
+                                <div class="space-y-4 max-h-[850px] overflow-y-auto pr-1 custom-scrollbar">
+                                    ${myActions.length === 0 ? `
+                                        <div class="p-8 text-center text-slate-400 dark:text-slate-500 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40">
+                                            <i class="fa-solid fa-folder-open text-3xl mb-2 text-slate-300 dark:text-slate-600 block"></i>
+                                            <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Nenhum histórico encontrado para ${monthLabel}.</p>
+                                            <p class="text-[11px] text-slate-400 mt-1">Preencha o formulário ao lado para registrar sua primeira ação presencial.</p>
+                                        </div>
+                                    ` : myActions.map(act => {
+                                        let statusBadge = act.status === 'pendente' ? `<span class="bg-orange-100 text-orange-600 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Pendente</span>` : 
+                                                          act.status === 'aprovado' ? `<span class="bg-green-100 text-green-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Aprovado</span>` : 
+                                                          `<span class="bg-red-100 text-red-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Reprovado</span>`;
+
+                                        const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
+                                        const dataAcaoFmt = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : '-';
+                                        const acaoRealizadaSafe = String(act.acaoRealizada || '');
+
+                                        return `
+                                            <div class="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700/80 overflow-hidden shadow-xs hover:shadow-md transition-shadow">
+                                                <div class="flex flex-col sm:flex-row">
+                                                    ${photoThumb ? `
+                                                        <div class="sm:w-32 h-32 sm:h-auto bg-slate-100 dark:bg-slate-900 relative group cursor-pointer shrink-0" onclick="app.actions.showImageFull('${act.id}')">
+                                                            ${photoThumb.startsWith('data:application/pdf') ? `
+                                                                <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2">
+                                                                    <i class="fa-solid fa-file-pdf text-3xl mb-1 text-red-500"></i>
+                                                                    <span class="text-[9px] font-bold">PDF</span>
+                                                                </div>
+                                                            ` : `
+                                                                <img src="${photoThumb}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+                                                            `}
+                                                        </div>
+                                                    ` : ''}
+                                                    <div class="p-4 flex-1 min-w-0 flex flex-col justify-between">
+                                                        <div>
+                                                            <div class="flex items-center justify-between gap-2 mb-1.5">
+                                                                <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">${act.codigoOpe || 'Operação'}</span>
+                                                                ${statusBadge}
+                                                            </div>
+                                                            <h4 class="font-extrabold text-sm text-slate-800 dark:text-white leading-tight truncate mb-1" title="${act.objetivo || ''}">
+                                                                ${act.objetivo || '-'}
+                                                            </h4>
+                                                            <div class="text-[10px] text-slate-400 font-semibold mb-2">
+                                                                Data: ${dataAcaoFmt} | Gestor: ${act.gestor || '-'}
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="grid grid-cols-2 gap-1.5 mb-2.5">
+                                                            <div class="bg-slate-50 dark:bg-slate-900/60 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 text-center">
+                                                                <div class="text-[9px] uppercase font-bold text-slate-400">Operadores</div>
+                                                                <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${act.operadores || '0'}</div>
+                                                            </div>
+                                                            <div class="bg-slate-50 dark:bg-slate-900/60 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 text-center">
+                                                                <div class="text-[9px] uppercase font-bold text-slate-400">Brindes</div>
+                                                                <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate" title="${act.brindes || '0'}">${act.brindes || '0'}</div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="bg-slate-50 dark:bg-slate-900/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 mb-3 text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                                                            ${acaoRealizadaSafe}
+                                                        </div>
+
+                                                        ${act.comentario ? `
+                                                            <div class="mb-3 p-2 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-[11px] text-red-600 dark:text-red-400 font-semibold">
+                                                                <i class="fa-solid fa-reply mr-1"></i> Devolutiva ADM: ${act.comentario}
+                                                            </div>
+                                                        ` : ''}
+
+                                                        <div class="flex items-center gap-2 justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                            <button onclick="app.actions.editAction('${act.id}')" class="text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1">
+                                                                <i class="fa-solid fa-pen text-[10px]"></i> Corrigir / Editar
+                                                            </button>
+                                                            <button onclick="app.actions.deleteAction('${act.id}')" class="text-red-600 bg-red-50 dark:bg-red-950/40 dark:text-red-300 hover:bg-red-100 border border-red-200 dark:border-red-800 p-1.5 rounded-xl text-xs font-bold transition-colors" title="Excluir ação">
+                                                                <i class="fa-solid fa-trash text-[10px]"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
                     container.innerHTML = html;
                 },
 
@@ -9164,8 +9246,90 @@ storage: {
                             
                             <div class="space-y-8">
                                 <div>
-                                    <label class="block text-sm font-bold text-slate-700 uppercase mb-2"><i class="fa-solid fa-comments text-green-500"></i> Pontos Discutidos</label>
-                                    <textarea id="ata-fortes" rows="4" class="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-green-500 text-sm leading-relaxed shadow-inner"></textarea>
+                                    <label class="block text-sm font-bold text-slate-700 dark:text-slate-300 uppercase mb-2 flex items-center justify-between">
+                                        <span class="flex items-center gap-2"><i class="fa-solid fa-comments text-green-500"></i> Pontos Discutidos</span>
+                                        <span class="text-xs font-normal text-slate-400">Formatação rica habilitada</span>
+                                    </label>
+                                    <div class="w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-green-500 transition-all shadow-sm">
+                                        <!-- Toolbar de Formatação Rica: Tamanho, Negrito, Itálico, Sublinhado, Cores, Listas -->
+                                        <div class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 p-2.5 flex flex-wrap items-center gap-1.5 text-xs select-none">
+                                            <!-- Seletor de Tamanho / Cabeçalho -->
+                                            <select onchange="if(this.value){ document.execCommand('formatBlock', false, this.value); this.value=''; }"
+                                                class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold outline-none cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                title="Tamanho do Texto / Estilo">
+                                                <option value="">Tamanho / Estilo</option>
+                                                <option value="p">Normal (Texto)</option>
+                                                <option value="h2">Título Principal (Grande)</option>
+                                                <option value="h3">Subtítulo (Médio)</option>
+                                                <option value="h4">Tópico (Pequeno)</option>
+                                            </select>
+
+                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                                            <!-- Estilos de Fonte: Negrito, Itálico, Sublinhado, Tachado -->
+                                            <button type="button" onclick="document.execCommand('bold', false, null)"
+                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold flex items-center justify-center transition-colors" title="Negrito (Ctrl+B)">
+                                                <strong>B</strong>
+                                            </button>
+                                            <button type="button" onclick="document.execCommand('italic', false, null)"
+                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 italic font-serif flex items-center justify-center transition-colors" title="Itálico (Ctrl+I)">
+                                                <em>I</em>
+                                            </button>
+                                            <button type="button" onclick="document.execCommand('underline', false, null)"
+                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 underline flex items-center justify-center transition-colors" title="Sublinhado (Ctrl+U)">
+                                                <u>U</u>
+                                            </button>
+                                            <button type="button" onclick="document.execCommand('strikeThrough', false, null)"
+                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 line-through flex items-center justify-center transition-colors" title="Tachado">
+                                                <s>S</s>
+                                            </button>
+
+                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                                            <!-- Listas -->
+                                            <button type="button" onclick="document.execCommand('insertUnorderedList', false, null)"
+                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors" title="Lista com Marcadores">
+                                                <i class="fa-solid fa-list-ul"></i>
+                                            </button>
+                                            <button type="button" onclick="document.execCommand('insertOrderedList', false, null)"
+                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors" title="Lista Numerada">
+                                                <i class="fa-solid fa-list-ol"></i>
+                                            </button>
+
+                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                                            <!-- Cores Rápidas -->
+                                            <button type="button" onclick="document.execCommand('foreColor', false, '#16a34a')"
+                                                class="w-6 h-6 rounded-full bg-emerald-600 hover:scale-110 transition-transform shadow-xs" title="Cor Verde (Positivo/Meta)"></button>
+                                            <button type="button" onclick="document.execCommand('foreColor', false, '#dc2626')"
+                                                class="w-6 h-6 rounded-full bg-red-600 hover:scale-110 transition-transform shadow-xs" title="Cor Vermelho (Alerta/Ofensor)"></button>
+                                            <button type="button" onclick="document.execCommand('foreColor', false, '#2563eb')"
+                                                class="w-6 h-6 rounded-full bg-blue-600 hover:scale-110 transition-transform shadow-xs" title="Cor Azul (Institucional)"></button>
+                                            <button type="button" onclick="document.execCommand('foreColor', false, '#0f172a')"
+                                                class="w-6 h-6 rounded-full bg-slate-900 dark:bg-white hover:scale-110 transition-transform shadow-xs" title="Cor Padrão"></button>
+                                            <button type="button" onclick="document.execCommand('hiliteColor', false, '#fef08a')"
+                                                class="px-2 py-1 rounded-lg bg-amber-200 text-amber-900 font-bold text-[10px] hover:bg-amber-300 transition-colors" title="Marca-Texto Amarelo">
+                                                <i class="fa-solid fa-highlighter mr-1"></i> Destacar
+                                            </button>
+
+                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                                            <!-- Limpar Formatação -->
+                                            <button type="button" onclick="document.execCommand('removeFormat', false, null)"
+                                                class="px-2.5 py-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center gap-1 font-semibold transition-colors" title="Remover Formatação">
+                                                <i class="fa-solid fa-eraser"></i> Limpar
+                                            </button>
+                                        </div>
+
+                                        <!-- Editor Rich Text dos Pontos Discutidos -->
+                                        <div id="ata-fortes-rich" contenteditable="true"
+                                            oninput="const el=document.getElementById('ata-fortes'); if(el) el.value=this.innerHTML;"
+                                            class="w-full p-4 min-h-[180px] max-h-[480px] overflow-y-auto outline-none text-sm text-slate-800 dark:text-slate-100 cursor-text resize-y leading-relaxed bg-white dark:bg-slate-900"
+                                            placeholder="Descreva detalhadamente os pontos discutidos, destaques e deliberações da reunião..."></div>
+
+                                        <!-- Input Oculto para persistência e retrocompatibilidade -->
+                                        <input type="hidden" id="ata-fortes">
+                                    </div>
                                 </div>
                                 
                                 <div class="bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
