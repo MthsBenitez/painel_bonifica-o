@@ -764,4 +764,42 @@ input:focus, textarea:focus, select:focus {
     font-weight: 900;
 }
 
+/* Crossword Puzzle / Palavras Cruzadas */
+.palavras-cruzadas-cell {
+    user-select: none;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.palavras-cruzadas-cell:hover {
+    transform: scale(1.05);
+    border-color: #c026d3;
+}
+
+/* Post-its & Lembretes Rápidos (Início) */
+.postit-card {
+    position: relative;
+    border-radius: 1.15rem;
+    padding: 1.1rem 1rem 0.85rem 1rem;
+    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: top center;
+}
+.postit-card:nth-child(even) {
+    transform: rotate(0.65deg);
+}
+.postit-card:nth-child(odd) {
+    transform: rotate(-0.65deg);
+}
+.postit-card:hover {
+    transform: rotate(0deg) translateY(-3px) scale(1.015);
+    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.12), 0 4px 10px -2px rgba(0, 0, 0, 0.06);
+    z-index: 10;
+}
+.postit-textarea {
+    resize: none;
+    font-family: inherit;
+}
+.postit-textarea:focus {
+    outline: none;
+}
+
 

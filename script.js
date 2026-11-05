@@ -907,7 +907,7 @@ storage: {
                                 if (savedIsAdmin) {
                                     app.isAdmin = true;
                                     app.currentUser = null;
-                                    app.currentTab = localStorage.getItem("soft_session_tab") || "dashboard_adm";
+                                    app.currentTab = localStorage.getItem("soft_session_tab") || "home";
                                     const ws = document.getElementById("session-wait-screen");
                                     if (ws) ws.classList.add("hidden");
                                     document.getElementById("view-login").classList.add("hidden");
@@ -917,7 +917,7 @@ storage: {
                                     if (userObj) {
                                         app.isAdmin = false;
                                         app.currentUser = userObj;
-                                        app.currentTab = localStorage.getItem("soft_session_tab") || "meu_painel";
+                                        app.currentTab = localStorage.getItem("soft_session_tab") || "home";
                                         const ws = document.getElementById("session-wait-screen");
                                         if (ws) ws.classList.add("hidden");
                                         document.getElementById("view-login").classList.add("hidden");
@@ -1580,7 +1580,7 @@ storage: {
             currentUser: null,
             isAdmin: false,
             isGuest: false,
-            currentTab: 'meu_painel',
+            currentTab: 'home',
 
             changeMonth(newMonthStr) {
                 if(!newMonthStr) return;
@@ -1602,6 +1602,7 @@ storage: {
 
                 this.currentMonth = newMonthStr;
                 try { localStorage.setItem('soft_current_month', newMonthStr); } catch (e) {}
+                if (this.ui) this.ui._monitoriasFiltroDia = null;
 
                 const gmEl = document.getElementById('global-month');
                 if (gmEl && gmEl.value !== newMonthStr) gmEl.value = newMonthStr;
@@ -3894,10 +3895,10 @@ storage: {
                         solutions
                     };
                 },
-                exportToPdf(puzzleData, title = 'CAÇA-PALAVRAS DA QUALIDADE', themeLabel = 'Operação & Qualidade') {
+                exportToPdf(puzzleData, title = 'CAÇA-PALAVRAS DA QUALIDADE', themeLabel = 'Operação & Qualidade', returnDoc = false) {
                     if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
                         alert("Biblioteca de PDF em carregamento. Tente novamente em instantes.");
-                        return;
+                        return null;
                     }
 
                     const { jsPDF } = window.jspdf;
@@ -3910,36 +3911,37 @@ storage: {
                     const N = puzzleData.size;
                     const placed = puzzleData.placedWords;
 
-                    // 1. Cabeçalho Executivo
-                    doc.setFillColor(15, 23, 42);
-                    doc.rect(marginX, 12, pageWidth - (marginX * 2), 22, 'F');
+                    // 1. Cabeçalho Executivo Preto e Branco (100% Otimizado para Impressoras Laser/P&B)
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.6);
+                    doc.rect(marginX, 11, pageWidth - (marginX * 2), 20);
+                    doc.setLineWidth(0.2);
+                    doc.rect(marginX + 0.8, 11.8, pageWidth - (marginX * 2) - 1.6, 18.4);
 
-                    doc.setTextColor(255, 255, 255);
+                    doc.setTextColor(0, 0, 0);
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(14);
-                    doc.text(title.toUpperCase(), pageWidth / 2, 21, { align: 'center' });
+                    doc.text(title.toUpperCase(), pageWidth / 2, 20, { align: 'center' });
 
                     doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(8.5);
-                    doc.setTextColor(226, 232, 240);
-                    doc.text(`TEMA: ${themeLabel.toUpperCase()}  |  NÍVEL: ${puzzleData.diffPreset.label.toUpperCase()}  |  GRADE: ${N}x${N}`, pageWidth / 2, 29, { align: 'center' });
+                    doc.setFontSize(8);
+                    doc.text(`TEMA: ${themeLabel.toUpperCase()}  |  NÍVEL: ${puzzleData.diffPreset.label.toUpperCase()}  |  GRADE: ${N}x${N}`, pageWidth / 2, 27, { align: 'center' });
 
-                    // 2. Linha de identificação do colaborador
-                    let currentY = 40;
-                    doc.setDrawColor(203, 213, 225);
-                    doc.setLineWidth(0.3);
-                    doc.setFillColor(248, 250, 252);
-                    doc.roundedRect(marginX, currentY, pageWidth - (marginX * 2), 12, 1.5, 1.5, 'FD');
+                    // 2. Linha de identificação do colaborador (P&B nítido sem fundos escuros)
+                    let currentY = 36;
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.35);
+                    doc.rect(marginX, currentY, pageWidth - (marginX * 2), 12);
 
                     doc.setFontSize(8);
-                    doc.setTextColor(71, 85, 105);
+                    doc.setTextColor(0, 0, 0);
                     doc.setFont('helvetica', 'bold');
-                    doc.text("Colaborador:", marginX + 3, currentY + 7.5);
-                    doc.text("Operação / Equipe:", marginX + 85, currentY + 7.5);
-                    doc.text("Data: ____/____/________", marginX + 145, currentY + 7.5);
+                    doc.text("Colaborador: _____________________________________", marginX + 3, currentY + 7.5);
+                    doc.text("Operação: ___________________", marginX + 96, currentY + 7.5);
+                    doc.text("Data: ____/____/________", marginX + 146, currentY + 7.5);
 
-                    // 3. Grade de Caça-Palavras
-                    currentY = 57;
+                    // 3. Grade de Caça-Palavras (Bordas pretas nítidas e fundo branco puro para máxima legibilidade)
+                    currentY = 53;
                     let cellMm = 8.5;
                     if (N === 12) cellMm = 11.2;
                     else if (N === 16) cellMm = 8.8;
@@ -3948,8 +3950,8 @@ storage: {
                     const gridTotalWidth = N * cellMm;
                     const gridStartX = (pageWidth - gridTotalWidth) / 2;
 
-                    doc.setDrawColor(148, 163, 184);
-                    doc.setLineWidth(0.25);
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.28);
                     const fontSize = N === 12 ? 11 : (N === 16 ? 9.5 : 8);
 
                     for (let r = 0; r < N; r++) {
@@ -3957,10 +3959,9 @@ storage: {
                             const x = gridStartX + (c * cellMm);
                             const y = currentY + (r * cellMm);
 
-                            doc.setFillColor((r + c) % 2 === 0 ? 255 : 250, (r + c) % 2 === 0 ? 255 : 252, (r + c) % 2 === 0 ? 255 : 255);
-                            doc.rect(x, y, cellMm, cellMm, 'FD');
+                            doc.rect(x, y, cellMm, cellMm);
 
-                            doc.setTextColor(15, 23, 42);
+                            doc.setTextColor(0, 0, 0);
                             doc.setFont('helvetica', 'bold');
                             doc.setFontSize(fontSize);
                             const char = grid[r][c];
@@ -3968,13 +3969,14 @@ storage: {
                         }
                     }
 
-                    // 4. Seção de Palavras a Encontrar
+                    // 4. Seção de Palavras a Encontrar (Limpo com caixinhas pretas para assinalar)
                     const gridBottomY = currentY + (N * cellMm);
                     let wordsStartY = gridBottomY + 7;
 
-                    doc.setFillColor(241, 245, 249);
-                    doc.roundedRect(marginX, wordsStartY, pageWidth - (marginX * 2), 6.5, 1, 1, 'F');
-                    doc.setTextColor(30, 41, 59);
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.35);
+                    doc.rect(marginX, wordsStartY, pageWidth - (marginX * 2), 6.5);
+                    doc.setTextColor(0, 0, 0);
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(8.5);
                     doc.text(`BANCO DE PALAVRAS A ENCONTRAR (${placed.length} PALAVRAS):`, marginX + 3, wordsStartY + 4.5);
@@ -3986,7 +3988,7 @@ storage: {
 
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(8);
-                    doc.setTextColor(51, 65, 85);
+                    doc.setTextColor(0, 0, 0);
 
                     placed.forEach((item, idx) => {
                         const col = idx % numCols;
@@ -3995,7 +3997,8 @@ storage: {
                         const wy = wordListY + (row * lineSpacing);
 
                         if (wy < pageHeight - 14) {
-                            doc.setDrawColor(148, 163, 184);
+                            doc.setDrawColor(0, 0, 0);
+                            doc.setLineWidth(0.25);
                             doc.rect(wx, wy - 2.8, 3, 3);
                             doc.text(item.original, wx + 4.5, wy);
                         }
@@ -4004,11 +4007,399 @@ storage: {
                     // 5. Rodapé
                     doc.setFont('helvetica', 'italic');
                     doc.setFontSize(7);
-                    doc.setTextColor(148, 163, 184);
+                    doc.setTextColor(80, 80, 80);
                     doc.text("Portal Qualidade & Treinamento Soft Marketing - Dinâmica Pedagógica Corporativa | Folha 1 de 1", pageWidth / 2, pageHeight - 6, { align: 'center' });
+
+                    if (returnDoc) return doc;
 
                     const fileName = `caca_palavras_${N}x${N}_${new Date().toISOString().slice(0, 10)}.pdf`;
                     doc.save(fileName);
+                    return doc;
+                }
+            },
+
+            // --- NOVO MÓDULO: PALAVRAS CRUZADAS PEDAGÓGICAS ---
+            crossword: {
+                sizePresets: {
+                    'pequeno': { size: 12, label: 'Pequeno (12x12)', cellMm: 10.5, fontSizePt: 10 },
+                    'medio': { size: 15, label: 'Médio (15x15)', cellMm: 8.8, fontSizePt: 9 },
+                    'grande': { size: 18, label: 'Grande (18x18)', cellMm: 7.4, fontSizePt: 8 }
+                },
+                themePresets: {
+                    'qualidade': {
+                        label: 'Qualidade & Monitoria',
+                        items: [
+                            { word: 'MONITORIA', clue: 'Processo de escuta e auditoria de ligações para avaliação da qualidade técnica.' },
+                            { word: 'CALIBRACAO', clue: 'Alinhamento entre qualidade e supervisão para unificar critérios de avaliação.' },
+                            { word: 'FEEDBACK', clue: 'Retorno orientador dado ao colaborador para desenvolvimento e melhoria contínua.' },
+                            { word: 'CRITERIO', clue: 'Parâmetro oficial ou diretriz para mensurar a conformidade na chamada.' },
+                            { word: 'CONFORMIDADE', clue: 'Estar em pleno alinhamento com as normas, leis e scripts operacionais.' },
+                            { word: 'EXCELENCIA', clue: 'Busca permanente pelo mais alto padrão de atendimento e entrega ao cliente.' },
+                            { word: 'DESVIO', clue: 'Falha ou não conformidade identificada em relação ao script padrão.' },
+                            { word: 'REQUISITO', clue: 'Condição indispensável que precisa ser cumprida durante a ligação.' }
+                        ]
+                    },
+                    'atendimento': {
+                        label: 'Atendimento Humanizado',
+                        items: [
+                            { word: 'EMPATIA', clue: 'Capacidade de se colocar no lugar do cliente compreendendo sua necessidade e dor.' },
+                            { word: 'CORDIALIDADE', clue: 'Tratamento educado, atencioso, gentil e respeitoso em todo o contato.' },
+                            { word: 'AGILIDADE', clue: 'Rapidez e eficiência na busca e condução da resposta ao cliente.' },
+                            { word: 'ESCUTA', clue: 'Atenção ativa ao relato do cliente sem interrupções precipitadas.' },
+                            { word: 'CLAREZA', clue: 'Comunicação simples, direta, transparente e de fácil entendimento.' },
+                            { word: 'RESPEITO', clue: 'Consideração fundamental e cortesia aos direitos do consumidor.' },
+                            { word: 'PACIENCIA', clue: 'Manter a calma, serenidade e equilíbrio em situações críticas.' },
+                            { word: 'ACOLHIMENTO', clue: 'Sensação transmitida ao cliente de que seu caso será resolvido.' }
+                        ]
+                    },
+                    'indicadores': {
+                        label: 'Indicadores & Metas',
+                        items: [
+                            { word: 'CSAT', clue: 'Percentual de satisfação imediata do cliente após o atendimento prestado.' },
+                            { word: 'NPS', clue: 'Índice de lealdade que mede a probabilidade do cliente recomendar a empresa.' },
+                            { word: 'FCR', clue: 'Resolução definitiva da demanda do cliente logo no primeiro contato.' },
+                            { word: 'TMA', clue: 'Tempo médio despendido pelo operador em cada atendimento telefônico.' },
+                            { word: 'TME', clue: 'Tempo médio de espera do cliente na fila até o atendimento humano.' },
+                            { word: 'ADESAO', clue: 'Cumprimento rigoroso da escala e horários programados de trabalho.' },
+                            { word: 'RETENCAO', clue: 'Ação de reverter um cancelamento mantendo o cliente na base ativa.' },
+                            { word: 'ABSENTEISMO', clue: 'Índice de ausências, atrasos e faltas na jornada operacional.' }
+                        ]
+                    },
+                    'operacoes': {
+                        label: 'Operações & Call Center',
+                        items: [
+                            { word: 'PAUSA', clue: 'Intervalo regulamentar da jornada de trabalho conforme exigido pela NR-17.' },
+                            { word: 'PROTOCOLO', clue: 'Número identificador único gerado pelo sistema para rastrear a ligação.' },
+                            { word: 'ESCALA', clue: 'Quadro oficial de dias e horários de trabalho de cada equipe.' },
+                            { word: 'SCRIPT', clue: 'Roteiro de atendimento contendo a saudação e fluxo de perguntas.' },
+                            { word: 'LOGON', clue: 'Ação de inserir credenciais e registrar início de expediente no sistema.' },
+                            { word: 'AUDITORIA', clue: 'Inspeção minuciosa das gravações e notas de atendimento.' },
+                            { word: 'NR17', clue: 'Norma regulamentadora de ergonomia e segurança no teleatendimento.' },
+                            { word: 'SUPERVISAO', clue: 'Liderança operacional imediata responsável por guiar e apoiar a equipe.' }
+                        ]
+                    }
+                },
+                cleanWord(w) {
+                    if (!w) return '';
+                    return String(w)
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")
+                        .toUpperCase()
+                        .replace(/[^A-Z]/g, "");
+                },
+                generate(itemsList, sizeKey = 'medio') {
+                    const preset = this.sizePresets[sizeKey] || this.sizePresets['medio'];
+                    const N = preset.size;
+
+                    const cleanItems = [];
+                    const seen = new Set();
+                    (itemsList || []).forEach(it => {
+                        const rawWord = typeof it === 'string' ? it.split('-')[0] : (it.word || '');
+                        const rawClue = typeof it === 'string' ? (it.split('-').slice(1).join('-') || 'Sem dica cadastrada') : (it.clue || '');
+                        const cWord = this.cleanWord(rawWord);
+                        if (cWord.length >= 2 && cWord.length <= N && !seen.has(cWord)) {
+                            seen.add(cWord);
+                            cleanItems.push({ original: rawWord.trim().toUpperCase(), word: cWord, clue: rawClue.trim() });
+                        }
+                    });
+
+                    cleanItems.sort((a, b) => b.word.length - a.word.length);
+
+                    const grid = Array.from({ length: N }, () => Array(N).fill(null));
+                    const placedWords = [];
+                    const unplacedWords = [];
+
+                    const canPlace = (word, row, col, isHoriz) => {
+                        if (isHoriz) {
+                            if (col + word.length > N) return false;
+                            if (col > 0 && grid[row][col - 1] !== null) return false;
+                            if (col + word.length < N && grid[row][col + word.length] !== null) return false;
+
+                            let hasIntersection = placedWords.length === 0;
+                            for (let i = 0; i < word.length; i++) {
+                                const c = col + i;
+                                const cur = grid[row][c];
+                                if (cur !== null) {
+                                    if (cur !== word[i]) return false;
+                                    hasIntersection = true;
+                                } else {
+                                    if (row > 0 && grid[row - 1][c] !== null) return false;
+                                    if (row < N - 1 && grid[row + 1][c] !== null) return false;
+                                }
+                            }
+                            return hasIntersection;
+                        } else {
+                            if (row + word.length > N) return false;
+                            if (row > 0 && grid[row - 1][col] !== null) return false;
+                            if (row + word.length < N && grid[row + word.length][col] !== null) return false;
+
+                            let hasIntersection = placedWords.length === 0;
+                            for (let i = 0; i < word.length; i++) {
+                                const r = row + i;
+                                const cur = grid[r][col];
+                                if (cur !== null) {
+                                    if (cur !== word[i]) return false;
+                                    hasIntersection = true;
+                                } else {
+                                    if (col > 0 && grid[r][col - 1] !== null) return false;
+                                    if (col < N - 1 && grid[r][col + 1] !== null) return false;
+                                }
+                            }
+                            return hasIntersection;
+                        }
+                    };
+
+                    const placeOnGrid = (item, row, col, isHoriz) => {
+                        const coords = [];
+                        for (let i = 0; i < item.word.length; i++) {
+                            const r = isHoriz ? row : row + i;
+                            const c = isHoriz ? col + i : col;
+                            grid[r][c] = item.word[i];
+                            coords.push([r, c]);
+                        }
+                        placedWords.push({
+                            original: item.original,
+                            word: item.word,
+                            clue: item.clue,
+                            row,
+                            col,
+                            isHoriz,
+                            coords
+                        });
+                    };
+
+                    if (cleanItems.length > 0) {
+                        const first = cleanItems[0];
+                        const startCol = Math.max(0, Math.floor((N - first.word.length) / 2));
+                        const startRow = Math.floor(N / 2);
+                        placeOnGrid(first, startRow, startCol, true);
+                    }
+
+                    for (let idx = 1; idx < cleanItems.length; idx++) {
+                        const item = cleanItems[idx];
+                        let placed = false;
+                        const possiblePositions = [];
+
+                        for (const pw of placedWords) {
+                            const targetHoriz = !pw.isHoriz;
+
+                            for (let i = 0; i < item.word.length; i++) {
+                                const charA = item.word[i];
+
+                                for (let j = 0; j < pw.word.length; j++) {
+                                    const charB = pw.word[j];
+                                    if (charA === charB) {
+                                        const interRow = pw.isHoriz ? pw.row : pw.row + j;
+                                        const interCol = pw.isHoriz ? pw.col + j : pw.col;
+
+                                        const testRow = targetHoriz ? interRow : interRow - i;
+                                        const testCol = targetHoriz ? interCol - i : interCol;
+
+                                        if (testRow >= 0 && testCol >= 0 && canPlace(item.word, testRow, testCol, targetHoriz)) {
+                                            possiblePositions.push({ row: testRow, col: testCol, isHoriz: targetHoriz });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (possiblePositions.length > 0) {
+                            const best = possiblePositions[Math.floor(Math.random() * possiblePositions.length)];
+                            placeOnGrid(item, best.row, best.col, best.isHoriz);
+                            placed = true;
+                        }
+
+                        if (!placed) {
+                            unplacedWords.push(item);
+                        }
+                    }
+
+                    const startPoints = [];
+                    placedWords.forEach(pw => {
+                        startPoints.push({
+                            pw,
+                            row: pw.row,
+                            col: pw.col
+                        });
+                    });
+
+                    startPoints.sort((a, b) => (a.row === b.row ? a.col - b.col : a.row - b.row));
+
+                    let currentNum = 1;
+                    const cellNumbers = {};
+
+                    startPoints.forEach(sp => {
+                        const key = `${sp.row},${sp.col}`;
+                        if (!cellNumbers[key]) {
+                            cellNumbers[key] = currentNum++;
+                        }
+                        sp.pw.num = cellNumbers[key];
+                    });
+
+                    const acrossClues = placedWords.filter(pw => pw.isHoriz).sort((a, b) => a.num - b.num);
+                    const downClues = placedWords.filter(pw => !pw.isHoriz).sort((a, b) => a.num - b.num);
+
+                    return {
+                        grid,
+                        size: N,
+                        sizeKey,
+                        sizePreset: preset,
+                        placedWords,
+                        unplacedWords,
+                        cellNumbers,
+                        acrossClues,
+                        downClues
+                    };
+                },
+                exportToPdf(puzzleData, title = 'PALAVRAS CRUZADAS DA QUALIDADE', themeLabel = 'Qualidade & Treinamento', returnDoc = false) {
+                    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+                        alert("Biblioteca de PDF em carregamento. Tente novamente em instantes.");
+                        return null;
+                    }
+
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                    const pageWidth = 210;
+                    const pageHeight = 297;
+                    const marginX = 14;
+
+                    const grid = puzzleData.grid;
+                    const N = puzzleData.size;
+                    const cellNumbers = puzzleData.cellNumbers || {};
+
+                    // 1. Cabeçalho Executivo Preto e Branco (Econômico e Elegante)
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.6);
+                    doc.rect(marginX, 11, pageWidth - (marginX * 2), 20);
+                    doc.setLineWidth(0.2);
+                    doc.rect(marginX + 0.8, 11.8, pageWidth - (marginX * 2) - 1.6, 18.4);
+
+                    doc.setTextColor(0, 0, 0);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(14);
+                    doc.text(title.toUpperCase(), pageWidth / 2, 20, { align: 'center' });
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8);
+                    doc.text(`TEMA: ${themeLabel.toUpperCase()}  |  GRADE: ${N}x${N}  |  TOTAL: ${puzzleData.placedWords.length} PALAVRAS CRUZADAS`, pageWidth / 2, 27, { align: 'center' });
+
+                    // 2. Linha de identificação do colaborador
+                    let currentY = 36;
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.35);
+                    doc.rect(marginX, currentY, pageWidth - (marginX * 2), 12);
+
+                    doc.setFontSize(8);
+                    doc.setTextColor(0, 0, 0);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text("Colaborador: _____________________________________", marginX + 3, currentY + 7.5);
+                    doc.text("Operação: ___________________", marginX + 96, currentY + 7.5);
+                    doc.text("Data: ____/____/________", marginX + 146, currentY + 7.5);
+
+                    // 3. Grade de Palavras Cruzadas (Bordas pretas e números nos cantos)
+                    currentY = 53;
+                    let cellMm = 8.5;
+                    if (N === 12) cellMm = 10.5;
+                    else if (N === 15) cellMm = 8.8;
+                    else if (N === 18) cellMm = 7.4;
+
+                    const gridTotalWidth = N * cellMm;
+                    const gridStartX = (pageWidth - gridTotalWidth) / 2;
+
+                    for (let r = 0; r < N; r++) {
+                        for (let c = 0; c < N; c++) {
+                            const x = gridStartX + (c * cellMm);
+                            const y = currentY + (r * cellMm);
+                            const char = grid[r][c];
+
+                            if (char !== null) {
+                                // Apenas células ativas com letras ganham borda e fundo branco (sem fundo preto)
+                                doc.setDrawColor(0, 0, 0);
+                                doc.setLineWidth(0.35);
+                                doc.setFillColor(255, 255, 255);
+                                doc.rect(x, y, cellMm, cellMm, 'FD');
+
+                                const numKey = `${r},${c}`;
+                                if (cellNumbers[numKey]) {
+                                    doc.setFont('helvetica', 'bold');
+                                    doc.setFontSize(cellMm > 8 ? 6 : 5);
+                                    doc.setTextColor(0, 0, 0);
+                                    doc.text(String(cellNumbers[numKey]), x + 1.2, y + 2.8);
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Seção de Dicas: Horizontais e Verticais em 2 colunas
+                    const gridBottomY = currentY + (N * cellMm);
+                    let cluesStartY = gridBottomY + 7;
+
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.35);
+                    doc.rect(marginX, cluesStartY, pageWidth - (marginX * 2), 6.5);
+                    doc.setTextColor(0, 0, 0);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8.5);
+                    doc.text("DICAS OPERACIONAIS E PEDAGÓGICAS (HORIZONTAIS & VERTICAIS):", marginX + 3, cluesStartY + 4.5);
+
+                    const colWidth = (pageWidth - (marginX * 2)) / 2 - 4;
+                    const clueCol1X = marginX;
+                    const clueCol2X = marginX + colWidth + 8;
+                    let cY = cluesStartY + 11;
+
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8);
+                    doc.text("HORIZONTAIS:", clueCol1X, cY);
+                    doc.text("VERTICAIS:", clueCol2X, cY);
+                    cY += 4.5;
+
+                    const maxClueY = pageHeight - 12;
+
+                    // Horizontais
+                    let curY1 = cY;
+                    puzzleData.acrossClues.forEach(clueItem => {
+                        if (curY1 < maxClueY) {
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(7.5);
+                            const prefix = `${clueItem.num}. `;
+                            doc.text(prefix, clueCol1X, curY1);
+
+                            doc.setFont('helvetica', 'normal');
+                            const pWidth = doc.getTextWidth(prefix);
+                            const clueLines = doc.splitTextToSize(clueItem.clue, colWidth - pWidth);
+                            doc.text(clueLines, clueCol1X + pWidth, curY1);
+                            curY1 += (clueLines.length * 3.5) + 1.5;
+                        }
+                    });
+
+                    // Verticais
+                    let curY2 = cY;
+                    puzzleData.downClues.forEach(clueItem => {
+                        if (curY2 < maxClueY) {
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(7.5);
+                            const prefix = `${clueItem.num}. `;
+                            doc.text(prefix, clueCol2X, curY2);
+
+                            doc.setFont('helvetica', 'normal');
+                            const pWidth = doc.getTextWidth(prefix);
+                            const clueLines = doc.splitTextToSize(clueItem.clue, colWidth - pWidth);
+                            doc.text(clueLines, clueCol2X + pWidth, curY2);
+                            curY2 += (clueLines.length * 3.5) + 1.5;
+                        }
+                    });
+
+                    // 5. Rodapé
+                    doc.setFont('helvetica', 'italic');
+                    doc.setFontSize(7);
+                    doc.setTextColor(80, 80, 80);
+                    doc.text("Portal Qualidade & Treinamento Soft Marketing - Dinâmica Pedagógica Corporativa | Folha 1 de 1", pageWidth / 2, pageHeight - 6, { align: 'center' });
+
+                    if (returnDoc) return doc;
+
+                    const fileName = `palavras_cruzadas_${N}x${N}_${new Date().toISOString().slice(0, 10)}.pdf`;
+                    doc.save(fileName);
+                    return doc;
                 }
             },
             
@@ -4102,10 +4493,11 @@ storage: {
 
                     // 1. Acesso ADM: Imediato e prioritario sem travas
                     if(mat === "gestaosoft" && pwd === "qualidade2026") {
-                        app.isAdmin = true; app.currentUser = null; app.currentTab = "dashboard_adm";
+                        app.isAdmin = true; app.currentUser = null; app.currentTab = "home";
                         localStorage.setItem("soft_session_date", new Date().toLocaleDateString("pt-BR"));
                         localStorage.setItem("soft_session_mat", "gestaosoft");
                         localStorage.setItem("soft_session_admin", "true");
+                        localStorage.setItem("soft_session_tab", "home");
                         const ws = document.getElementById("session-wait-screen");
                         if (ws) ws.classList.add("hidden");
                         document.getElementById("view-login").classList.add("hidden");
@@ -4123,10 +4515,11 @@ storage: {
                             app.users[userIdx].loginCount = newLoginCount;
                             app.users[userIdx].senha = encryptedPwd;
                             app.currentUser = app.users[userIdx];
-                            app.currentTab = "meu_painel";
+                            app.currentTab = "home";
                             localStorage.setItem("soft_session_date", new Date().toLocaleDateString("pt-BR"));
                             localStorage.setItem("soft_session_mat", app.users[userIdx].matricula);
                             localStorage.setItem("soft_session_admin", "false");
+                            localStorage.setItem("soft_session_tab", "home");
                             app.storage.saveSingleUserField(userIdx, { loginCount: newLoginCount, senha: encryptedPwd });
 
                             const ws = document.getElementById("session-wait-screen");
@@ -4676,15 +5069,15 @@ storage: {
                     // Auto-login imediato
                     app.isAdmin = false;
                     app.currentUser = novoUsuario;
-                    app.currentTab = 'meu_painel';
+                    app.currentTab = 'home';
                     localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
                     localStorage.setItem('soft_session_mat', mat);
                     localStorage.setItem('soft_session_admin', 'false');
-                    localStorage.setItem('soft_session_tab', 'meu_painel');
+                    localStorage.setItem('soft_session_tab', 'home');
 
                     document.getElementById('view-login').classList.add('hidden');
                     app.ui.showApp();
-                    app.ui.renderTab('meu_painel', true);
+                    app.ui.renderTab('home', true);
                     app.ui.showAlert("Cadastro Realizado!", `Bem-vindo(a) à Softmarketing, <strong>${novoUsuario.nome}</strong>! Sua matrícula é <strong>${mat}</strong>.<br><small class="text-slate-500">Seu perfil de Operador foi criado e está aguardando vinculação pelo setor de Treinamento.</small>`, "success");
                 },
 
@@ -5744,7 +6137,7 @@ storage: {
                 menusUser: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
-                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -5752,7 +6145,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -5766,9 +6159,9 @@ storage: {
                     const defaults = {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas'])],
                         'Gerente': allIds
                     };
 
@@ -5785,6 +6178,7 @@ storage: {
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                         if (!base.includes('home')) base.unshift('home');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('caca_palavras')) base.push('caca_palavras');
+                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('palavras_cruzadas')) base.push('palavras_cruzadas');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
                         if (['Gestor', 'Gerente', 'Dev'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
                         if (base.includes('hierarquia') && !base.includes('span_operacoes')) base.push('span_operacoes');
@@ -5806,6 +6200,7 @@ storage: {
                     let savedTabs = (Array.isArray(user.abasLiberadas) && user.abasLiberadas.length > 0)
                         ? [...user.abasLiberadas].filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev')
                         : [...presetTabs];
+                    if (!savedTabs.includes('home')) savedTabs.unshift('home');
                     
                     // Liberação automática da aba 'implantacao_ia' para o monitor e treinador responsáveis vinculados no plano
                     const uMat = String(user.matricula || '').trim();
@@ -6340,6 +6735,48 @@ storage: {
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
+                showNotification(message, type = 'info', duration = 3200) {
+                    let container = document.getElementById('global-toast-container');
+                    if (!container) {
+                        container = document.createElement('div');
+                        container.id = 'global-toast-container';
+                        container.className = 'fixed bottom-5 right-5 z-[99999] flex flex-col gap-2.5 pointer-events-none max-w-sm w-full px-4';
+                        document.body.appendChild(container);
+                    }
+                    const toast = document.createElement('div');
+                    
+                    let icon = 'fa-circle-info text-blue-500';
+                    let bgBorder = 'bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 shadow-slate-900/10';
+                    if (type === 'success') {
+                        icon = 'fa-circle-check text-emerald-500';
+                        bgBorder = 'bg-white/95 dark:bg-slate-900/95 border-emerald-500/30 text-slate-800 dark:text-slate-100 shadow-emerald-500/10';
+                    } else if (type === 'warning') {
+                        icon = 'fa-triangle-exclamation text-amber-500';
+                        bgBorder = 'bg-white/95 dark:bg-slate-900/95 border-amber-500/30 text-slate-800 dark:text-slate-100 shadow-amber-500/10';
+                    } else if (type === 'error') {
+                        icon = 'fa-circle-xmark text-rose-500';
+                        bgBorder = 'bg-white/95 dark:bg-slate-900/95 border-rose-500/30 text-slate-800 dark:text-slate-100 shadow-rose-500/10';
+                    }
+                    
+                    toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border backdrop-blur-md transition-all duration-300 transform translate-y-3 opacity-0 ${bgBorder}`;
+                    toast.innerHTML = `
+                        <i class="fa-solid ${icon} text-lg shrink-0"></i>
+                        <div class="text-xs sm:text-sm font-semibold flex-1 leading-snug">${message}</div>
+                        <button type="button" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-2" onclick="this.parentElement.remove()" aria-label="Fechar">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
+                    `;
+                    container.appendChild(toast);
+                    requestAnimationFrame(() => {
+                        toast.classList.remove('translate-y-3', 'opacity-0');
+                        toast.classList.add('translate-y-0', 'opacity-100');
+                    });
+                    setTimeout(() => {
+                        toast.classList.add('opacity-0', 'translate-y-2');
+                        setTimeout(() => toast.remove(), 350);
+                    }, duration);
+                },
+
                 showConfirm(title, message, confirmCallbackStr, danger = false) {
                     document.getElementById('modal-title').innerHTML = title;
                     document.getElementById('modal-content').innerHTML = message;
@@ -6491,7 +6928,12 @@ storage: {
                     safe(() => {
                         const qc = c.qc;
                         const qCores = ['#10b981', '#3b82f6', '#f97316', '#ef4444'];
-                        const qNomes = ['Q1 Excelente', 'Q2 Bom', 'Q3 Regular', 'Q4 Atenção'];
+                        const qNomes = [
+                            'Q1 ' + (qc.nomeQ1 || 'Excelente'),
+                            'Q2 ' + (qc.nomeQ2 || 'Bom'),
+                            'Q3 ' + (qc.nomeQ3 || 'Regular'),
+                            'Q4 ' + (qc.nomeQ4 || 'Atenção')
+                        ];
                         const total = data.rankOperadores.length || 1;
                         const contagens = [c.quads[0].length, c.quads[1].length, c.quads[2].length, c.quads[3].length];
                         mk('chartQuadDist', 'chart-quad-dist', {
@@ -6833,7 +7275,8 @@ storage: {
                     if (urlTab) {
                         app.currentTab = urlTab;
                     } else if (!app.currentTab || app.currentTab === 'dashboard_adm' || app.currentTab === 'meu_painel') {
-                        app.currentTab = localStorage.getItem("soft_session_tab") || 'home';
+                        const savedTab = localStorage.getItem("soft_session_tab");
+                        app.currentTab = (savedTab && savedTab !== 'dashboard_adm' && savedTab !== 'meu_painel') ? savedTab : 'home';
                     }
                     
                     this.renderNav();
@@ -7047,6 +7490,18 @@ storage: {
 
                     app.currentTab = tabId;
                     localStorage.setItem('soft_session_tab', tabId);
+
+                    // Rastreamento automático dos módulos mais acessados pelo usuário para o Speed Dial
+                    if (tabId && tabId !== 'home') {
+                        try {
+                            const mat = String(app.currentUser?.matricula || 'default').trim();
+                            const visitsKey = 'soft_tab_visits_' + mat;
+                            const visits = JSON.parse(localStorage.getItem(visitsKey) || '{}');
+                            visits[tabId] = (visits[tabId] || 0) + 1;
+                            localStorage.setItem(visitsKey, JSON.stringify(visits));
+                        } catch(e) {}
+                    }
+
                     this.renderNav();
                     const mainContainer = document.getElementById('content-container');
                     
@@ -7073,6 +7528,7 @@ storage: {
                         try {
                             if(tabId === 'home') this.renderView_Home(viewDiv);
                             else if(tabId === 'caca_palavras') this.renderView_CacaPalavras(viewDiv);
+                            else if(tabId === 'palavras_cruzadas') this.renderView_PalavrasCruzadas(viewDiv);
                             else if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
                             else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
                             else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
@@ -9211,7 +9667,7 @@ storage: {
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário e faça o download (salvamento automático).</p>
                             </div>
                         </div>
-                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-blue-600 shadow-xl">
+                        <div class="glass-card p-6 md:p-8 rounded-3xl w-full border-t-4 border-t-blue-600 shadow-xl">
                             <input type="hidden" id="ata-edit-id" value="">
 
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 dark:border-slate-700 pb-8">
@@ -12542,6 +12998,43 @@ storage: {
                             });
                         };
                         reader.readAsDataURL(file);
+                    },
+
+                    solicitarDinamica(fileName, base64Data, copias = 10, titulo = 'Dinâmica Pedagógica') {
+                        const now = Date.now();
+                        const id = 'prt_' + now;
+                        if (!app.impressoesList) app.impressoesList = {};
+                        const currentUser = app.currentUser || { nome: 'Colaborador', matricula: '99999' };
+
+                        app.impressoesList[id] = {
+                            id: id,
+                            timestamp: now,
+                            autor: currentUser.nome,
+                            matricula: currentUser.matricula,
+                            fileName: fileName,
+                            fileBase64: base64Data,
+                            copias: copias,
+                            desc: `${titulo} (${copias}x) - Gerado automaticamente pelo módulo pedagógico`,
+                            status: 'pendente',
+                            data: new Date().toLocaleString('pt-BR')
+                        };
+
+                        return app.storage.saveImpressoes(id).then(() => {
+                            app.notifications.notify('ADM', 'Nova Impressão Pedagógica', `${currentUser.nome} solicitou ${copias} cópia(s) de "${titulo}".`, 'info');
+                            (app.users || []).forEach(u => {
+                                if (u && u.matricula && u.matricula !== currentUser.matricula && ['Dev', 'Gestor', 'Gerente', 'Treinamento'].includes(u.tipoAcesso)) {
+                                    app.notifications.notify(u.matricula, 'Nova Impressão na Fila', `${currentUser.nome} enviou "${titulo}" (${copias}x) para impressão.`, 'info');
+                                }
+                            });
+                            app.ui.showAlert("Enviado para Impressão!", `<b>${titulo}</b> (${copias} cópias) foi adicionado à fila do Centro de Impressão e os gestores foram notificados automaticamente!`, "success");
+                            const targetTab = (app.hasAdminAccess && app.hasAdminAccess('gestao_impressoes')) ? 'gestao_impressoes' : 'impressoes';
+                            setTimeout(() => {
+                                app.ui.renderTab(targetTab, true);
+                            }, 1200);
+                        }).catch(err => {
+                            console.error("Erro ao salvar impressão pedagógica:", err);
+                            app.ui.showAlert("Erro ao Enviar", "Falha de comunicação ao encaminhar solicitação de impressão.", "error");
+                        });
                     },
 
                     baixarUnico(id) {
@@ -17984,6 +18477,46 @@ storage: {
                 },
 
 
+                setFiltroDiaMonitorias(diaYMD) {
+                    this._monitoriasFiltroDia = diaYMD || null;
+                    this.renderTab('import_monitorias', true);
+                },
+
+                limparFiltroDiaMonitorias() {
+                    this._monitoriasFiltroDia = null;
+                    this.renderTab('import_monitorias', true);
+                },
+
+                isSameDay(rowDateStr, targetYMD) {
+                    if (!rowDateStr || !targetYMD) return false;
+                    const s = String(rowDateStr).trim();
+                    if (s.startsWith(targetYMD)) return true;
+                    const parts = s.split(' ')[0].split('/');
+                    if (parts.length === 3) {
+                        let d = parts[0].padStart(2, '0');
+                        let m = parts[1].padStart(2, '0');
+                        let y = parts[2].length === 2 ? ('20' + parts[2]) : parts[2];
+                        if (`${y}-${m}-${d}` === targetYMD) return true;
+                    }
+                    try {
+                        const dObj = new Date(s);
+                        if (!isNaN(dObj.getTime())) {
+                            const y = dObj.getFullYear();
+                            const m = String(dObj.getMonth() + 1).padStart(2, '0');
+                            const d = String(dObj.getDate()).padStart(2, '0');
+                            if (`${y}-${m}-${d}` === targetYMD) return true;
+                        }
+                    } catch(e) {}
+                    return false;
+                },
+
+                formatDateToBR(ymd) {
+                    if (!ymd) return '';
+                    const parts = String(ymd).split('-');
+                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    return ymd;
+                },
+
                 renderView_ImportMonitorias(container) {
                     const canManageMon = app.hasAdminAccess('import_monitorias');
                     if(!canManageMon && !app.currentUser) return;
@@ -18018,45 +18551,237 @@ storage: {
                         </div>
                     `;
 
-                    // BARRAS DE BOTÕES (APENAS ADMIN / PERFIS COM ACESSO)
+                    // BARRA DE FERRAMENTAS PROFISSIONAL & ORGANIZADA
                     if(canManageMon) {
                         html += `
-                        <div class="flex flex-col sm:flex-row flex-wrap gap-3">
-                            <button onclick="app.admin.resetarMonitorias()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Apaga todas as monitorias deste mês">
-                                <i class="fa-solid fa-trash-can"></i> Resetar Mês
-                            </button>
-                    
-                            <button onclick="app.admin.abrirModalMonitoriaManual()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-plus"></i> Adicionar Manual
-                            </button>
-                            
-                            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados da Amil">
-                                <i class="fa-solid fa-file-csv"></i> Relatório Amil
-                                <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
-                            </label>
-                    
-                            <label class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Importa ou substitui os dados Padrão">
-                                <i class="fa-solid fa-upload"></i> Relatório Padrão
-                                <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
-                            </label>
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm mb-6 space-y-4">
+                            <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                                <!-- Grupo 1: Ações de Importação & Carga -->
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 hidden sm:inline">Arquivos:</span>
+                                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer transition-all hover:shadow hover:-translate-y-0.5" title="Importar Relatório Padrão (CSV/XLSX)">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i> Relatório Padrão
+                                        <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
+                                    </label>
+                                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm cursor-pointer transition-all hover:shadow hover:-translate-y-0.5" title="Importar Relatório Amil (CSV/XLSX)">
+                                        <i class="fa-solid fa-file-medical"></i> Relatório Amil
+                                        <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
+                                    </label>
+                                    <label class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 cursor-pointer transition-all" title="Inspecionar e diagnosticar erros no arquivo Padrão">
+                                        <i class="fa-solid fa-bug text-amber-500"></i> Debug
+                                        <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.debugRelatorioPadrao(this)" onclick="this.value = null">
+                                    </label>
+                                </div>
 
-                            <label class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Inspecionar e diagnosticar erros na planilha do Relatório Padrão">
-                                <i class="fa-solid fa-bug"></i> Debug Padrão
-                                <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.debugRelatorioPadrao(this)" onclick="this.value = null">
-                            </label>
+                                <!-- Grupo 2: Gestão & Regras -->
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 hidden sm:inline">Ajustes:</span>
+                                    <button type="button" onclick="app.admin.abrirModalMonitoriaManual()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-all hover:shadow hover:-translate-y-0.5" title="Cadastrar ou editar monitorias manuais fixas">
+                                        <i class="fa-solid fa-plus-circle"></i> Adicionar Manual
+                                    </button>
+                                    <button type="button" onclick="app.admin.openAliasModal()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-all hover:shadow hover:-translate-y-0.5" title="Vincular nomes da planilha aos colaboradores cadastrados">
+                                        <i class="fa-solid fa-link"></i> Vincular Nomes
+                                    </button>
+                                    <button type="button" onclick="app.admin.abrirModalRegraFeedback()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition-all hover:shadow hover:-translate-y-0.5" title="Configurar nota de corte de feedback obrigatório">
+                                        <i class="fa-solid fa-sliders"></i> Regra FB (${app.getDescricaoRegraFeedback()})
+                                    </button>
+                                    <button type="button" onclick="app.admin.resetarMonitorias()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs font-bold transition-all ml-auto" title="Apaga todas as monitorias deste mês">
+                                        <i class="fa-solid fa-trash-can"></i> Resetar Mês
+                                    </button>
+                                </div>
+                            </div>
 
-                            <button onclick="app.admin.openAliasModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Vincular nomes da planilha aos colaboradores">
-                                <i class="fa-solid fa-link"></i> Vincular Nomes
-                            </button>
-
-                            <button onclick="app.admin.abrirModalRegraFeedback()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-colors flex items-center gap-2 text-sm whitespace-nowrap" title="Configurar a regra/nota de corte para feedback obrigatório">
-                                <i class="fa-solid fa-sliders"></i> Regra de Feedback (${app.getDescricaoRegraFeedback()})
-                            </button>
+                            <!-- Barra de Filtro de Produtividade de UM DIA SÓ -->
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                <div class="flex flex-wrap items-center gap-2.5">
+                                    <span class="text-xs font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                        <i class="fa-regular fa-calendar-check text-indigo-500"></i> Filtrar Produtividade Diária (1 Dia):
+                                    </span>
+                                    <div class="inline-flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
+                                        <input type="date" id="filtro-dia-monitorias" value="${this._monitoriasFiltroDia || ''}" onchange="app.ui.setFiltroDiaMonitorias(this.value)" class="bg-transparent text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                                    </div>
+                                    ${this._monitoriasFiltroDia ? `
+                                        <button type="button" onclick="app.ui.limparFiltroDiaMonitorias()" class="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-xmark"></i> Ver Mês Inteiro
+                                        </button>
+                                    ` : ''}
+                                </div>
+                                ${this._monitoriasFiltroDia ? `
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold">
+                                        <i class="fa-solid fa-filter"></i> Dia Selecionado: ${this.formatDateToBR(this._monitoriasFiltroDia)}
+                                    </div>
+                                ` : `
+                                    <span class="text-xs text-slate-400 font-medium">Exibindo consolidado do mês (${this.formatMonthLabel ? this.formatMonthLabel(app.currentMonth) : app.currentMonth})</span>
+                                `}
+                            </div>
                         </div>
                         `;
                     }
                     
-                    if(canManageMon && rankingArray.length > 0) {
+                    const filtroDiaAtivo = this._monitoriasFiltroDia;
+                    if(canManageMon && filtroDiaAtivo) {
+                        const todasLinhas = (state.detalhes && state.detalhes.linhas) ? state.detalhes.linhas : [];
+                        const linhasDoDia = todasLinhas.filter(l => this.isSameDay(l.data, filtroDiaAtivo));
+                        
+                        const rankingDiaMap = {};
+                        rankingArray.forEach(r => {
+                            rankingDiaMap[r.matricula] = {
+                                matricula: r.matricula,
+                                nome: r.nome,
+                                totalDia: 0,
+                                pendenteFbDia: 0,
+                                operacao: r.operacao || 'N/A'
+                            };
+                        });
+
+                        linhasDoDia.forEach(l => {
+                            const mat = l.matriculaMonitor;
+                            if (mat && rankingDiaMap[mat]) {
+                                rankingDiaMap[mat].totalDia++;
+                                if (app.isNotaFeedback(l.nota)) {
+                                    const isAplicado = String(l.status).toLowerCase().includes('feedback_aplicado') || String(l.status).toLowerCase().includes('feedback aplicado');
+                                    if (!isAplicado) rankingDiaMap[mat].pendenteFbDia++;
+                                }
+                            } else if (mat) {
+                                if (!rankingDiaMap[mat]) {
+                                    rankingDiaMap[mat] = {
+                                        matricula: mat,
+                                        nome: l.monitor,
+                                        totalDia: 0,
+                                        pendenteFbDia: 0,
+                                        operacao: l.operacao || 'N/A'
+                                    };
+                                }
+                                rankingDiaMap[mat].totalDia++;
+                                if (app.isNotaFeedback(l.nota)) {
+                                    const isAplicado = String(l.status).toLowerCase().includes('feedback_aplicado') || String(l.status).toLowerCase().includes('feedback aplicado');
+                                    if (!isAplicado) rankingDiaMap[mat].pendenteFbDia++;
+                                }
+                            }
+                        });
+
+                        const rankingDiaArray = Object.values(rankingDiaMap).sort((a,b) => b.totalDia - a.totalDia);
+                        const totalMonitoriasDia = linhasDoDia.length;
+                        const monitoresAtivosDia = rankingDiaArray.filter(r => r.totalDia > 0).length;
+                        const totalFbDia = rankingDiaArray.reduce((acc, cur) => acc + cur.pendenteFbDia, 0);
+                        const mediaPorMonitorDia = monitoresAtivosDia > 0 ? (totalMonitoriasDia / monitoresAtivosDia).toFixed(1) : '0.0';
+
+                        html += `
+                            <!-- Banner do Filtro Diário -->
+                            <div class="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex flex-wrap items-center justify-between gap-3 mb-6">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-sm">
+                                        <i class="fa-regular fa-calendar-check"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-sm font-black text-indigo-950 dark:text-indigo-200">Produtividade do Dia: ${this.formatDateToBR(filtroDiaAtivo)}</h3>
+                                        <p class="text-xs text-indigo-700/80 dark:text-indigo-300/80">Exibindo exclusivamente as monitorias auditadas nesta data específica.</p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="app.ui.limparFiltroDiaMonitorias()" class="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 text-xs font-bold border border-indigo-200 dark:border-indigo-700 shadow-xs transition">
+                                    <i class="fa-solid fa-arrow-left mr-1.5"></i>Voltar ao Mês Completo
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                    <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado no Dia</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${totalMonitoriasDia} <span class="text-xs font-semibold text-slate-400">monitorias</span></div>
+                                    </div>
+                                </div>
+                                <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                    <div class="text-3xl text-emerald-500"><i class="fa-solid fa-users"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Monitores Ativos no Dia</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${monitoresAtivosDia} <span class="text-xs font-semibold text-slate-400">(${mediaPorMonitorDia} méd/monitor)</span></div>
+                                    </div>
+                                </div>
+                                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                                    <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div>
+                                        <div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Gerados no Dia</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${totalFbDia} <span class="text-xs font-semibold text-slate-400">pendentes</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
+                                <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+                                    <div>
+                                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                                            <i class="fa-solid fa-calendar-day text-indigo-500"></i> Desempenho Individual no Dia (${this.formatDateToBR(filtroDiaAtivo)})
+                                        </h3>
+                                        <p class="text-xs text-slate-400 mt-1">Produtividade de cada monitor registrada para a data selecionada.</p>
+                                    </div>
+                                    <button onclick="app.admin.openAliasModal()" class="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-bold py-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-colors"><i class="fa-solid fa-link text-blue-500 mr-1"></i> Vincular Nomes</button>
+                                </div>
+                                <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <table class="w-full text-left border-collapse min-w-[700px]">
+                                        <thead class="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                            <tr>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700">Monitor</th>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Total no Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-36">% do Volume do Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Pend. FB Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-36">Status no Dia</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
+                        `;
+
+                        rankingDiaArray.forEach(r => {
+                            const userObj = app.users.find(u => u.matricula === r.matricula) || { nome: r.nome, foto: null };
+                            const avatar = userObj.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(userObj.nome)}&background=cbd5e1&color=ffffff`;
+                            const pctDia = totalMonitoriasDia > 0 ? ((r.totalDia / totalMonitoriasDia) * 100).toFixed(1) : '0.0';
+                            const ativoNoDia = r.totalDia > 0;
+
+                            html += `
+                                <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                    <td class="py-3 px-4 flex items-center gap-3">
+                                        <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
+                                        <div>
+                                            <div class="font-bold text-blue-600 dark:text-blue-400 text-sm flex items-center gap-2 flex-wrap">
+                                                <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:text-blue-700 transition-colors" title="Abrir Lançamento">${userObj.nome}</span>
+                                            </div>
+                                            <span class="text-[10px] text-slate-400 font-semibold">${r.operacao || 'Geral'}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4 text-center font-black text-slate-800 dark:text-white text-base">
+                                        <span class="px-2.5 py-1 rounded-lg ${ativoNoDia ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-black' : 'text-slate-400'}">${r.totalDia}</span>
+                                    </td>
+                                    <td class="py-3 px-4 text-center">
+                                        <div class="flex flex-col items-center gap-1 w-full max-w-[120px] mx-auto">
+                                            <span class="text-[10px] font-bold text-slate-500">${pctDia}%</span>
+                                            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div class="h-full bg-indigo-500 rounded-full" style="width: ${pctDia}%"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4 text-center font-bold text-red-500">${r.pendenteFbDia > 0 ? '<i class="fa-solid fa-triangle-exclamation mr-1"></i> ' + r.pendenteFbDia : '-'}</td>
+                                    <td class="py-3 px-4 text-center">
+                                        ${ativoNoDia ? `
+                                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Ativo no Dia
+                                            </span>
+                                        ` : `
+                                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                Sem produção
+                                            </span>
+                                        `}
+                                    </td>
+                                </tr>
+                            `;
+                        });
+
+                        html += `
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    } else if(canManageMon && rankingArray.length > 0) {
                         const numUsers = rankingArray.length;
                         const metaIndividual = 400; 
                         const metaGlobal = numUsers * metaIndividual; 
@@ -18857,7 +19582,7 @@ storage: {
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Laudos e Estudos Analíticos</h2>
                         </div>
                         
-                        <div class="glass-card p-6 md:p-8 rounded-3xl max-w-5xl mx-auto border-t-4 border-t-purple-500 shadow-xl">
+                        <div class="glass-card p-6 md:p-8 rounded-3xl w-full border-t-4 border-t-purple-500 shadow-xl">
                             <form onsubmit="event.preventDefault(); app.laudos.submitLaudo();" class="space-y-8">
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -19605,14 +20330,14 @@ storage: {
                                         <div class="bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-200 dark:border-red-900/30">
                                             <h4 class="text-[10px] uppercase font-bold text-red-600 mb-1.5"><i class="fa-solid fa-circle-exclamation"></i> Recorrência Crítica</h4>
                                             ${topCriticos.length > 0 
-                                                ? topCriticos.map(c => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-red-500 bg-red-100 px-1.5 rounded mr-1">${c[1]}x</span>${c[0]}</div>`).join('')
-                                                : '<div class="text-[10px] text-slate-500 italic">Nenhuma falha crítica recorrente.</div>'}
+                                                ? topCriticos.map(c => `<div class="text-[11px] font-bold text-slate-700 dark:text-slate-200 break-words whitespace-normal leading-relaxed mb-2 flex items-start gap-1.5 border-b border-red-100 dark:border-red-900/30 pb-1.5"><span class="text-red-500 bg-red-100 dark:bg-red-950/60 px-1.5 py-0.5 rounded text-[10px] shrink-0 mt-0.5">${c[1]}x</span><span class="flex-1">${c[0]}</span></div>`).join('')
+                                                : '<div class="text-xs text-slate-500 italic">Nenhuma falha crítica recorrente.</div>'}
                                         </div>
                                         <div class="bg-orange-50 dark:bg-orange-900/10 p-3 rounded-xl border border-orange-200 dark:border-orange-900/30">
                                             <h4 class="text-[10px] uppercase font-bold text-orange-600 mb-1.5"><i class="fa-solid fa-layer-group"></i> Maior Oportunidade</h4>
                                             ${topErros.length > 0 
-                                                ? topErros.map(e => `<div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate mb-1"><span class="text-orange-500 bg-orange-100 px-1.5 rounded mr-1">${e[1]}x</span>${e[0]}</div>`).join('')
-                                                : '<div class="text-[10px] text-slate-500 italic">Sem desvios padrões registrados.</div>'}
+                                                ? topErros.map(e => `<div class="text-[11px] font-bold text-slate-700 dark:text-slate-200 break-words whitespace-normal leading-relaxed mb-2 flex items-start gap-1.5 border-b border-orange-100 dark:border-orange-900/30 pb-1.5"><span class="text-orange-500 bg-orange-100 dark:bg-orange-950/60 px-1.5 py-0.5 rounded text-[10px] shrink-0 mt-0.5">${e[1]}x</span><span class="flex-1">${e[0]}</span></div>`).join('')
+                                                : '<div class="text-xs text-slate-500 italic">Sem desvios padrões registrados.</div>'}
                                         </div>
                                     </div>
                                     ${maturidadeHtml}
@@ -19980,11 +20705,11 @@ storage: {
                     let resumoErrosHtml = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div class="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-200 dark:border-orange-800/50 shadow-sm">
                             <div class="text-[10px] font-black uppercase tracking-widest text-orange-600 mb-3"><i class="fa-solid fa-layer-group"></i> Principais Desvios nesta Nota</div>
-                            ${topErrNota.length > 0 ? topErrNota.map(e => `<div class="text-[10px] text-slate-700 dark:text-slate-300 truncate mb-1.5 border-b border-orange-100 dark:border-orange-800/30 pb-1.5"><span class="font-bold text-orange-600 bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 rounded mr-1">${e[1]}x</span>${e[0]}</div>`).join('') : '<div class="text-[10px] text-slate-500 italic">Nenhum desvio comum registrado.</div>'}
+                            ${topErrNota.length > 0 ? topErrNota.map(e => `<div class="text-[11px] text-slate-700 dark:text-slate-200 break-words whitespace-normal leading-relaxed mb-2.5 border-b border-orange-100 dark:border-orange-800/30 pb-2 flex items-start gap-2"><span class="font-bold text-orange-600 bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 rounded text-[10px] shrink-0 mt-0.5">${e[1]}x</span><span class="flex-1">${e[0]}</span></div>`).join('') : '<div class="text-xs text-slate-500 italic">Nenhum desvio comum registrado.</div>'}
                         </div>
                         <div class="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-800/50 shadow-sm">
                             <div class="text-[10px] font-black uppercase tracking-widest text-red-600 mb-3"><i class="fa-solid fa-circle-exclamation"></i> Falhas Críticas nesta Nota</div>
-                            ${topCritNota.length > 0 ? topCritNota.map(e => `<div class="text-[10px] text-slate-700 dark:text-slate-300 truncate mb-1.5 border-b border-red-100 dark:border-red-800/30 pb-1.5"><span class="font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded mr-1">${e[1]}x</span>${e[0]}</div>`).join('') : '<div class="text-[10px] text-slate-500 italic">Nenhuma falha crítica registrada.</div>'}
+                            ${topCritNota.length > 0 ? topCritNota.map(e => `<div class="text-[11px] text-slate-700 dark:text-slate-200 break-words whitespace-normal leading-relaxed mb-2.5 border-b border-red-100 dark:border-red-800/30 pb-2 flex items-start gap-2"><span class="font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded text-[10px] shrink-0 mt-0.5">${e[1]}x</span><span class="flex-1">${e[0]}</span></div>`).join('') : '<div class="text-xs text-slate-500 italic">Nenhuma falha crítica registrada.</div>'}
                         </div>
                     </div>`;
 
@@ -20044,40 +20769,71 @@ storage: {
                 },
 
                 getQuadCfg() {
-                    const def = { q1: 90, q2: 80, q3: 70 };
+                    const def = { 
+                        q1: 90, q2: 80, q3: 70,
+                        nomeQ1: 'Excelente',
+                        nomeQ2: 'Bom',
+                        nomeQ3: 'Regular',
+                        nomeQ4: 'Atenção'
+                    };
                     try {
                         const c = JSON.parse(localStorage.getItem('soft_quad_cfg') || 'null');
-                        if (c && c.q1 > c.q2 && c.q2 > c.q3 && c.q3 > 0 && c.q1 <= 100) return { q1: +c.q1, q2: +c.q2, q3: +c.q3 };
+                        if (c && c.q1 > c.q2 && c.q2 > c.q3 && c.q3 > 0 && c.q1 <= 100) {
+                            return { 
+                                q1: +c.q1, q2: +c.q2, q3: +c.q3,
+                                nomeQ1: String(c.nomeQ1 || 'Excelente').trim(),
+                                nomeQ2: String(c.nomeQ2 || 'Bom').trim(),
+                                nomeQ3: String(c.nomeQ3 || 'Regular').trim(),
+                                nomeQ4: String(c.nomeQ4 || 'Atenção').trim()
+                            };
+                        }
                     } catch (e) {}
                     return def;
                 },
 
                 openQuadConfigModal() {
                     const c = this.getQuadCfg();
-                    const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-lg font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
-                    const row = (id, cor, nome, val) => `
-                        <div class="flex items-center gap-3">
-                            <span class="w-2 h-10 rounded-full ${cor}"></span>
-                            <div class="flex-1">
-                                <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${nome}</div>
-                                <div class="text-[11px] text-slate-400" id="quadcfg-hint-${id}"></div>
+                    const inpNome = 'w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500 shadow-xs';
+                    const inpNum = 'w-24 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500 shadow-xs';
+                    
+                    const row = (id, cor, idLabel, defaultNome, val, isLast = false) => `
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full ${cor}"></span>
+                                    <span class="text-xs font-black uppercase text-slate-700 dark:text-slate-200">${idLabel}</span>
+                                </div>
+                                ${!isLast ? `
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-[11px] font-bold text-slate-400">Nota Mínima:</span>
+                                        <input type="number" step="0.1" min="1" max="100" id="quadcfg-${id}" value="${val}" oninput="app.ui.previewQuadConfig()" class="${inpNum}">
+                                    </div>
+                                ` : `
+                                    <span class="text-[11px] font-bold text-slate-400 italic">Notas abaixo de Q3</span>
+                                `}
                             </div>
-                            <div class="w-28"><input type="number" step="0.1" min="1" max="100" id="quadcfg-${id}" value="${val}" oninput="app.ui.previewQuadConfig()" class="${inp}"></div>
+                            <div>
+                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Nome Personalizado do Quadrante</label>
+                                <input type="text" id="quadcfg-nome-${id}" value="${c['nome' + id.toUpperCase()] || defaultNome}" placeholder="Ex: ${defaultNome}" class="${inpNome}">
+                                <div class="text-[11px] text-slate-400 mt-1" id="quadcfg-hint-${id}"></div>
+                            </div>
                         </div>`;
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-orange-500 mr-2"></i> Faixas dos Quadrantes`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-orange-500 mr-2"></i> Configurar Faixas e Nomes dos Quadrantes`;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="space-y-4">
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Defina a nota mínima de cada quadrante. O Q4 recebe tudo que ficar abaixo do Q3.</p>
-                            ${row('q1', 'bg-emerald-500', 'Q1 · Excelente — a partir de', c.q1)}
-                            ${row('q2', 'bg-blue-500', 'Q2 · Bom — a partir de', c.q2)}
-                            ${row('q3', 'bg-orange-500', 'Q3 · Regular — a partir de', c.q3)}
+                        <div class="space-y-3.5 text-left">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Personalize os nomes de identificação e as notas mínimas de corte para cada quadrante de qualidade.</p>
+                            ${row('q1', 'bg-emerald-500', 'Quadrante 1 (Q1)', 'Excelente', c.q1)}
+                            ${row('q2', 'bg-blue-500', 'Quadrante 2 (Q2)', 'Bom', c.q2)}
+                            ${row('q3', 'bg-orange-500', 'Quadrante 3 (Q3)', 'Regular', c.q3)}
+                            ${row('q4', 'bg-red-500', 'Quadrante 4 (Q4)', 'Atenção', null, true)}
                             <div class="flex h-3 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800" id="quadcfg-bar"></div>
                             <div id="quadcfg-error" class="hidden text-xs font-bold text-red-500"></div>
                         </div>`;
                     document.getElementById('modal-actions').innerHTML = `
                         <button type="button" onclick="app.ui.resetQuadConfig()" class="px-4 py-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl font-bold text-sm">Restaurar padrão</button>
                         <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
-                        <button type="button" onclick="app.ui.saveQuadConfig()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Aplicar</button>`;
+                        <button type="button" onclick="app.ui.saveQuadConfig()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Salvar Quadrantes</button>`;
                     document.getElementById('global-modal').classList.remove('hidden');
                     this.previewQuadConfig();
                 },
@@ -20088,9 +20844,10 @@ storage: {
                     const ok = v.every(n => !isNaN(n)) && a > b && b > c && c > 0 && a <= 100;
                     const set = (id, t) => { const el = document.getElementById('quadcfg-hint-' + id); if (el) el.textContent = t; };
                     if (ok) {
-                        set('q1', `Notas de ${a} a 100`);
-                        set('q2', `Notas de ${b} a ${(a - 0.1).toFixed(1)}`);
-                        set('q3', `Notas de ${c} a ${(b - 0.1).toFixed(1)}`);
+                        set('q1', `Faixa de ${a} até 100 pontos`);
+                        set('q2', `Faixa de ${b} até ${(a - 0.1).toFixed(1)} pontos`);
+                        set('q3', `Faixa de ${c} até ${(b - 0.1).toFixed(1)} pontos`);
+                        set('q4', `Notas abaixo de ${c} pontos`);
                         const bar = document.getElementById('quadcfg-bar');
                         if (bar) bar.innerHTML = [[c, 'bg-red-500'], [b - c, 'bg-orange-500'], [a - b, 'bg-blue-500'], [100 - a, 'bg-emerald-500']].map(([w, cls]) => `<div class="${cls}" style="width:${Math.max(0, w)}%"></div>`).join('');
                     }
@@ -20104,7 +20861,15 @@ storage: {
 
                 saveQuadConfig() {
                     if (!this.previewQuadConfig()) return;
-                    const cfg = { q1: parseFloat(document.getElementById('quadcfg-q1').value), q2: parseFloat(document.getElementById('quadcfg-q2').value), q3: parseFloat(document.getElementById('quadcfg-q3').value) };
+                    const cfg = { 
+                        q1: parseFloat(document.getElementById('quadcfg-q1').value), 
+                        q2: parseFloat(document.getElementById('quadcfg-q2').value), 
+                        q3: parseFloat(document.getElementById('quadcfg-q3').value),
+                        nomeQ1: (document.getElementById('quadcfg-nome-q1')?.value || 'Excelente').trim(),
+                        nomeQ2: (document.getElementById('quadcfg-nome-q2')?.value || 'Bom').trim(),
+                        nomeQ3: (document.getElementById('quadcfg-nome-q3')?.value || 'Regular').trim(),
+                        nomeQ4: (document.getElementById('quadcfg-nome-q4')?.value || 'Atenção').trim()
+                    };
                     localStorage.setItem('soft_quad_cfg', JSON.stringify(cfg));
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui._refreshComMemoriaDeScroll();
@@ -20118,39 +20883,70 @@ storage: {
 
                 openMatConfigModal() {
                     const c = this.getMatCfg();
-                    const inp = 'w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-lg font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500';
-                    const row = (id, cor, nome, val) => `
-                        <div class="flex items-center gap-3">
-                            <span class="w-2 h-10 rounded-full ${cor}"></span>
-                            <div class="flex-1">
-                                <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${nome}</div>
-                                <div class="text-[11px] text-slate-400" id="matcfg-hint-${id}"></div>
+                    const inpNome = 'w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500 shadow-xs';
+                    const inpNum = 'w-24 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-800 dark:text-white text-center outline-none focus:border-indigo-500 shadow-xs';
+
+                    const row = (id, cor, idLabel, defaultNome, val, isLast = false) => `
+                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full ${cor}"></span>
+                                    <span class="text-xs font-black uppercase text-slate-700 dark:text-slate-200">${idLabel}</span>
+                                </div>
+                                ${!isLast ? `
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-[11px] font-bold text-slate-400">Até (Dias):</span>
+                                        <input type="number" step="1" min="1" max="9999" id="matcfg-${id}" value="${val}" oninput="app.ui.previewMatConfig()" class="${inpNum}">
+                                    </div>
+                                ` : `
+                                    <span class="text-[11px] font-bold text-slate-400 italic">Acima do Nível 3</span>
+                                `}
                             </div>
-                            <div class="w-28"><input type="number" step="1" min="1" max="9999" id="matcfg-${id}" value="${val}" oninput="app.ui.previewMatConfig()" class="${inp}"></div>
+                            <div>
+                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Nome Personalizado do Nível</label>
+                                <input type="text" id="matcfg-nome-${id}" value="${c['nome' + id.toUpperCase()] || defaultNome}" placeholder="Ex: ${defaultNome}" class="${inpNome}">
+                                <div class="text-[11px] text-slate-400 mt-1" id="matcfg-hint-${id}"></div>
+                            </div>
                         </div>`;
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-orange-500 mr-2"></i> Faixas do Ciclo de Maturidade`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-sliders text-orange-500 mr-2"></i> Configurar Faixas e Nomes do Ciclo de Maturidade`;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="space-y-4">
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Defina o limite em dias de tempo de casa de cada nível. O nível Veterano recebe tudo que passar do Pleno.</p>
-                            ${row('m1', 'bg-orange-500', 'Ramp-Up · até', c.m1)}
-                            ${row('m2', 'bg-emerald-500', 'Júnior · até', c.m2)}
-                            ${row('m3', 'bg-blue-500', 'Pleno · até', c.m3)}
+                        <div class="space-y-3.5 text-left">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Personalize os nomes e limites em dias de tempo de empresa para os níveis do Ciclo de Maturidade.</p>
+                            ${row('m1', 'bg-orange-500', 'Nível 1 (N1)', 'Ramp-Up', c.m1)}
+                            ${row('m2', 'bg-emerald-500', 'Nível 2 (N2)', 'Júnior', c.m2)}
+                            ${row('m3', 'bg-blue-500', 'Nível 3 (N3)', 'Pleno', c.m3)}
+                            ${row('m4', 'bg-purple-500', 'Nível 4 (N4)', 'Veterano', null, true)}
                             <div class="flex h-3 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800" id="matcfg-bar"></div>
                             <div id="matcfg-error" class="hidden text-xs font-bold text-red-500"></div>
                         </div>`;
                     document.getElementById('modal-actions').innerHTML = `
                         <button type="button" onclick="app.ui.resetMatConfig()" class="px-4 py-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl font-bold text-sm">Restaurar padrão</button>
                         <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
-                        <button type="button" onclick="app.ui.saveMatConfig()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Aplicar</button>`;
+                        <button type="button" onclick="app.ui.saveMatConfig()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow">Salvar Níveis</button>`;
                     document.getElementById('global-modal').classList.remove('hidden');
                     this.previewMatConfig();
                 },
 
                 getMatCfg() {
-                    const def = { m1: 90, m2: 180, m3: 365 };
+                    const def = { 
+                        m1: 90, m2: 180, m3: 365,
+                        nomeM1: 'Ramp-Up',
+                        nomeM2: 'Júnior',
+                        nomeM3: 'Pleno',
+                        nomeM4: 'Veterano'
+                    };
                     try {
                         const c = JSON.parse(localStorage.getItem('soft_mat_cfg') || 'null');
-                        if (c && c.m1 > 0 && c.m2 > c.m1 && c.m3 > c.m2) return { m1: +c.m1, m2: +c.m2, m3: +c.m3 };
+                        if (c && c.m1 > 0 && c.m2 > c.m1 && c.m3 > c.m2) {
+                            return { 
+                                m1: +c.m1, m2: +c.m2, m3: +c.m3,
+                                nomeM1: String(c.nomeM1 || 'Ramp-Up').trim(),
+                                nomeM2: String(c.nomeM2 || 'Júnior').trim(),
+                                nomeM3: String(c.nomeM3 || 'Pleno').trim(),
+                                nomeM4: String(c.nomeM4 || 'Veterano').trim()
+                            };
+                        }
                     } catch (e) {}
                     return def;
                 },
@@ -20164,6 +20960,7 @@ storage: {
                         set('m1', `De 0 a ${a} dias`);
                         set('m2', `De ${a + 1} a ${b} dias`);
                         set('m3', `De ${b + 1} a ${c} dias`);
+                        set('m4', `Acima de ${c} dias`);
                         const bar = document.getElementById('matcfg-bar');
                         if (bar) {
                             const tot = c * 1.25;
@@ -20173,14 +20970,22 @@ storage: {
                     const err = document.getElementById('matcfg-error');
                     if (err) {
                         err.classList.toggle('hidden', ok);
-                        err.textContent = ok ? '' : 'Use valores crescentes: Ramp-Up < Júnior < Pleno.';
+                        err.textContent = ok ? '' : 'Use valores crescentes: Nível 1 < Nível 2 < Nível 3.';
                     }
                     return ok;
                 },
 
                 saveMatConfig() {
                     if (!this.previewMatConfig()) return;
-                    const cfg = { m1: parseInt(document.getElementById('matcfg-m1').value), m2: parseInt(document.getElementById('matcfg-m2').value), m3: parseInt(document.getElementById('matcfg-m3').value) };
+                    const cfg = { 
+                        m1: parseInt(document.getElementById('matcfg-m1').value), 
+                        m2: parseInt(document.getElementById('matcfg-m2').value), 
+                        m3: parseInt(document.getElementById('matcfg-m3').value),
+                        nomeM1: (document.getElementById('matcfg-nome-m1')?.value || 'Ramp-Up').trim(),
+                        nomeM2: (document.getElementById('matcfg-nome-m2')?.value || 'Júnior').trim(),
+                        nomeM3: (document.getElementById('matcfg-nome-m3')?.value || 'Pleno').trim(),
+                        nomeM4: (document.getElementById('matcfg-nome-m4')?.value || 'Veterano').trim()
+                    };
                     localStorage.setItem('soft_mat_cfg', JSON.stringify(cfg));
                     this._aplicarMatCfg();
                 },
@@ -20195,10 +21000,10 @@ storage: {
                     document.getElementById('global-modal').classList.add('hidden');
                     if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
                         app.analiseCSVDinamicoData.consolidado.matConfig = [
-                            { id: 'm1', nome: 'Ramp-Up', maxDias: c.m1 },
-                            { id: 'm2', nome: 'Júnior', maxDias: c.m2 },
-                            { id: 'm3', nome: 'Pleno', maxDias: c.m3 },
-                            { id: 'm4', nome: 'Veterano', maxDias: 99999 }
+                            { id: 'm1', nome: c.nomeM1 || 'Ramp-Up', maxDias: c.m1 },
+                            { id: 'm2', nome: c.nomeM2 || 'Júnior', maxDias: c.m2 },
+                            { id: 'm3', nome: c.nomeM3 || 'Pleno', maxDias: c.m3 },
+                            { id: 'm4', nome: c.nomeM4 || 'Veterano', maxDias: 99999 }
                         ];
                         app.admin.gerarInteligenciaCSV();
                     }
@@ -20221,10 +21026,10 @@ storage: {
                         else if(qName === 'Q4' && m < qc.q3) lista.push(op);
                     });
 
-                    if(qName === 'Q1') { cor = 'text-green-500'; bg = 'bg-green-100 dark:bg-green-900/30'; desc = `Excelente (${qc.q1} a 100)`; icon = 'fa-star'; }
-                    else if(qName === 'Q2') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = `Bom (${qc.q2} a ${(qc.q1-0.1).toFixed(1)})`; icon = 'fa-thumbs-up'; }
-                    else if(qName === 'Q3') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = `Regular (${qc.q3} a ${(qc.q2-0.1).toFixed(1)})`; icon = 'fa-triangle-exclamation'; }
-                    else if(qName === 'Q4') { cor = 'text-red-500'; bg = 'bg-red-100 dark:bg-red-900/30'; desc = `Atenção (< ${qc.q3})`; icon = 'fa-fire'; }
+                    if(qName === 'Q1') { cor = 'text-green-500'; bg = 'bg-green-100 dark:bg-green-900/30'; desc = `${qc.nomeQ1 || 'Excelente'} (${qc.q1} a 100)`; icon = 'fa-star'; }
+                    else if(qName === 'Q2') { cor = 'text-blue-500'; bg = 'bg-blue-100 dark:bg-blue-900/30'; desc = `${qc.nomeQ2 || 'Bom'} (${qc.q2} a ${(qc.q1-0.1).toFixed(1)})`; icon = 'fa-thumbs-up'; }
+                    else if(qName === 'Q3') { cor = 'text-orange-500'; bg = 'bg-orange-100 dark:bg-orange-900/30'; desc = `${qc.nomeQ3 || 'Regular'} (${qc.q3} a ${(qc.q2-0.1).toFixed(1)})`; icon = 'fa-triangle-exclamation'; }
+                    else if(qName === 'Q4') { cor = 'text-red-500'; bg = 'bg-red-100 dark:bg-red-900/30'; desc = `${qc.nomeQ4 || 'Atenção'} (< ${qc.q3})`; icon = 'fa-fire'; }
 
                     let htmlList = `<div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
                     if(lista.length === 0) {
@@ -21013,10 +21818,10 @@ storage: {
                     const mediaDe = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + parseFloat(b.media), 0) / arr.length).toFixed(1) : '—';
                     const fmtLim = (n) => (Math.round(n * 10) / 10).toString();
                     const quadCards = [
-                        { id: 'Q1', nome: 'Excelente', lista: q1, bar: 'bg-emerald-500', txt: 'text-emerald-600 dark:text-emerald-400', faixa: `${fmtLim(qc.q1)} a 100` },
-                        { id: 'Q2', nome: 'Bom', lista: q2, bar: 'bg-blue-500', txt: 'text-blue-600 dark:text-blue-400', faixa: `${fmtLim(qc.q2)} a ${fmtLim(qc.q1 - 0.1)}` },
-                        { id: 'Q3', nome: 'Regular', lista: q3, bar: 'bg-orange-500', txt: 'text-orange-600 dark:text-orange-400', faixa: `${fmtLim(qc.q3)} a ${fmtLim(qc.q2 - 0.1)}` },
-                        { id: 'Q4', nome: 'Atenção', lista: q4, bar: 'bg-red-500', txt: 'text-red-600 dark:text-red-400', faixa: `abaixo de ${fmtLim(qc.q3)}` }
+                        { id: 'Q1', nome: qc.nomeQ1 || 'Excelente', lista: q1, bar: 'bg-emerald-500', txt: 'text-emerald-600 dark:text-emerald-400', faixa: `${fmtLim(qc.q1)} a 100` },
+                        { id: 'Q2', nome: qc.nomeQ2 || 'Bom', lista: q2, bar: 'bg-blue-500', txt: 'text-blue-600 dark:text-blue-400', faixa: `${fmtLim(qc.q2)} a ${fmtLim(qc.q1 - 0.1)}` },
+                        { id: 'Q3', nome: qc.nomeQ3 || 'Regular', lista: q3, bar: 'bg-orange-500', txt: 'text-orange-600 dark:text-orange-400', faixa: `${fmtLim(qc.q3)} a ${fmtLim(qc.q2 - 0.1)}` },
+                        { id: 'Q4', nome: qc.nomeQ4 || 'Atenção', lista: q4, bar: 'bg-red-500', txt: 'text-red-600 dark:text-red-400', faixa: `abaixo de ${fmtLim(qc.q3)}` }
                     ].map(c => {
                         const pct = ((c.lista.length / tOps) * 100).toFixed(1);
                         return `
@@ -21042,7 +21847,7 @@ storage: {
                             ${app.isGuest ? '' : `
                             <div class="flex justify-end mb-3">
                                 <button type="button" onclick="app.ui.openQuadConfigModal()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                    <i class="fa-solid fa-sliders mr-1.5"></i>Configurar faixas
+                                    <i class="fa-solid fa-sliders mr-1.5"></i>Configurar faixas e nomes
                                 </button>
                             </div>`}
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${quadCards}</div>
@@ -21135,13 +21940,14 @@ storage: {
                     `;
 
                     // --- MATRIZ DE TEMPO DE CASA (CURVA DE APRENDIZADO TOTALMENTE CONFIGURÁVEL E DINÂMICA) ---
-                    // Se não houver configuração salva, injeta a padrão
+                    // Se não houver configuração salva, injeta a do usuário ou padrão
+                    const _matSaved = app.ui ? app.ui.getMatCfg() : { m1: 90, m2: 180, m3: 365, nomeM1: 'Ramp-Up', nomeM2: 'Júnior', nomeM3: 'Pleno', nomeM4: 'Veterano' };
                     if (!data.matConfig) {
                         data.matConfig = [
-                            { id: 'm1', nome: 'Ramp-Up', maxDias: 90, cor: 'orange', icone: 'fa-baby' },
-                            { id: 'm2', nome: 'Júnior', maxDias: 180, cor: 'emerald', icone: 'fa-child-reaching' },
-                            { id: 'm3', nome: 'Pleno', maxDias: 365, cor: 'blue', icone: 'fa-person-running' },
-                            { id: 'm4', nome: 'Veterano', maxDias: 99999, cor: 'purple', icone: 'fa-user-ninja' }
+                            { id: 'm1', nome: _matSaved.nomeM1 || 'Ramp-Up', maxDias: _matSaved.m1, cor: 'orange', icone: 'fa-baby' },
+                            { id: 'm2', nome: _matSaved.nomeM2 || 'Júnior', maxDias: _matSaved.m2, cor: 'emerald', icone: 'fa-child-reaching' },
+                            { id: 'm3', nome: _matSaved.nomeM3 || 'Pleno', maxDias: _matSaved.m3, cor: 'blue', icone: 'fa-person-running' },
+                            { id: 'm4', nome: _matSaved.nomeM4 || 'Veterano', maxDias: 99999, cor: 'purple', icone: 'fa-user-ninja' }
                         ];
                     }
 
@@ -21205,7 +22011,7 @@ storage: {
                                 ${app.isGuest ? '' : `
                                 <div class="flex justify-end mb-3">
                                     <button type="button" onclick="app.ui.openMatConfigModal()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                        <i class="fa-solid fa-sliders mr-1.5"></i>Configurar faixas
+                                        <i class="fa-solid fa-sliders mr-1.5"></i>Configurar faixas e nomes
                                     </button>
                                 </div>`}
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${matCards}</div>
@@ -25662,11 +26468,12 @@ storage: {
                     const key = 'q' + quadranteNum;
                     const valores = meses.map(m => dataObj.quadrantesEvolutivo[m][key] || 0);
                     
+                    const qc = app.ui ? app.ui.getQuadCfg() : { nomeQ1: "Excelente", nomeQ2: "Bom", nomeQ3: "Regular", nomeQ4: "Atenção" };
                     const configQ = { 
-                        1: { n: "Engajados / Estrelas", c: "#10b981", bg: "rgba(16, 185, 129, 0.2)" }, 
-                        2: { n: "Ofensores / Atenção", c: "#ef4444", bg: "rgba(239, 68, 68, 0.2)" }, 
-                        3: { n: "Potenciais / Ocultos", c: "#f59e0b", bg: "rgba(245, 158, 11, 0.2)" }, 
-                        4: { n: "Baixo Impacto / Risco", c: "#64748b", bg: "rgba(100, 116, 139, 0.2)" } 
+                        1: { n: qc.nomeQ1 || "Excelente", c: "#10b981", bg: "rgba(16, 185, 129, 0.2)" }, 
+                        2: { n: qc.nomeQ2 || "Bom", c: "#3b82f6", bg: "rgba(59, 130, 246, 0.2)" }, 
+                        3: { n: qc.nomeQ3 || "Regular", c: "#f59e0b", bg: "rgba(245, 158, 11, 0.2)" }, 
+                        4: { n: qc.nomeQ4 || "Atenção", c: "#ef4444", bg: "rgba(239, 68, 68, 0.2)" } 
                     };
 
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users-rays" style="color: ${configQ[quadranteNum].c}"></i> Evolução: Quadrante ${quadranteNum} (${configQ[quadranteNum].n})`;
@@ -25774,8 +26581,8 @@ storage: {
 
                     const _mc = app.ui.getMatCfg();
                     let matConfigFallback = app.analiseCSVDinamicoData?.consolidado?.matConfig || [
-                        { id: 'm1', nome: 'Ramp-Up', maxDias: _mc.m1 }, { id: 'm2', nome: 'Júnior', maxDias: _mc.m2 },
-                        { id: 'm3', nome: 'Pleno', maxDias: _mc.m3 }, { id: 'm4', nome: 'Veterano', maxDias: 99999 }
+                        { id: 'm1', nome: _mc.nomeM1 || 'Ramp-Up', maxDias: _mc.m1 }, { id: 'm2', nome: _mc.nomeM2 || 'Júnior', maxDias: _mc.m2 },
+                        { id: 'm3', nome: _mc.nomeM3 || 'Pleno', maxDias: _mc.m3 }, { id: 'm4', nome: _mc.nomeM4 || 'Veterano', maxDias: 99999 }
                     ];
 
                     // [NOVO] Resgatando a memória do usuário antes de recriar a estrutura!
@@ -31004,10 +31811,12 @@ Object.assign(app.ui, {
                         const mat = String(currentUser.matricula || 'admin').trim();
                         const userTabs = app.isAdmin ? null : this.getEffectiveUserTabs(currentUser);
 
-                        // Carrega favoritos e curtidas do usuário
+                        // Carrega favoritos, curtidas e contagem de acessos do usuário
                         const favKey = 'soft_user_favs_' + mat;
                         const likeKey = 'soft_user_likes_' + mat;
                         const likesCountKey = 'soft_card_likes_counter';
+                        const visitsKey = 'soft_tab_visits_' + mat;
+                        const postitsKey = 'soft_user_postits_' + mat;
 
                         let userFavs = [];
                         try { userFavs = JSON.parse(localStorage.getItem(favKey) || '[]'); } catch (e) { userFavs = []; }
@@ -31018,7 +31827,76 @@ Object.assign(app.ui, {
                         let likesCounter = {};
                         try { likesCounter = JSON.parse(localStorage.getItem(likesCountKey) || '{}'); } catch (e) { likesCounter = {}; }
 
-                        // Catálogo completo de módulos do portal
+                        let tabVisits = {};
+                        try { tabVisits = JSON.parse(localStorage.getItem(visitsKey) || '{}'); } catch (e) { tabVisits = {}; }
+
+                        // Post-its e lembretes pessoais
+                        let userPostits = [];
+                        try { userPostits = JSON.parse(localStorage.getItem(postitsKey) || 'null'); } catch (e) { userPostits = null; }
+                        if (!userPostits || !Array.isArray(userPostits)) {
+                            const todayStr = new Date().toLocaleDateString('pt-BR');
+                            userPostits = [
+                                {
+                                    id: 'postit_' + Date.now() + '_1',
+                                    text: 'Metas do dia: Acompanhar os planos de ação abertos, conferir as notas de monitoria e alinhar pendências da operação.',
+                                    color: 'yellow',
+                                    updatedAt: 'Criado em ' + todayStr
+                                },
+                                {
+                                    id: 'postit_' + Date.now() + '_2',
+                                    text: 'Lembrete de governança: Checar laudos de auditoria críticos e validar a pauta da próxima reunião.',
+                                    color: 'green',
+                                    updatedAt: 'Criado em ' + todayStr
+                                }
+                            ];
+                            try { localStorage.setItem(postitsKey, JSON.stringify(userPostits)); } catch (err) {}
+                        }
+
+                        // Paleta de cores para os Post-its
+                        const postitThemes = {
+                            yellow: {
+                                name: 'Amarelo',
+                                card: 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-950 dark:text-amber-100 shadow-amber-500/10',
+                                strip: 'bg-amber-400 dark:bg-amber-500',
+                                pin: 'text-amber-600 dark:text-amber-400',
+                                dot: 'bg-amber-400 ring-amber-200',
+                                placeholder: 'placeholder-amber-800/50 dark:placeholder-amber-200/40'
+                            },
+                            green: {
+                                name: 'Verde',
+                                card: 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-100 shadow-emerald-500/10',
+                                strip: 'bg-emerald-400 dark:bg-emerald-500',
+                                pin: 'text-emerald-600 dark:text-emerald-400',
+                                dot: 'bg-emerald-400 ring-emerald-200',
+                                placeholder: 'placeholder-emerald-800/50 dark:placeholder-emerald-200/40'
+                            },
+                            blue: {
+                                name: 'Azul',
+                                card: 'bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 text-sky-950 dark:text-sky-100 shadow-sky-500/10',
+                                strip: 'bg-sky-400 dark:bg-sky-500',
+                                pin: 'text-sky-600 dark:text-sky-400',
+                                dot: 'bg-sky-400 ring-sky-200',
+                                placeholder: 'placeholder-sky-800/50 dark:placeholder-sky-200/40'
+                            },
+                            rose: {
+                                name: 'Rosa',
+                                card: 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-950 dark:text-rose-100 shadow-rose-500/10',
+                                strip: 'bg-rose-400 dark:bg-rose-500',
+                                pin: 'text-rose-600 dark:text-rose-400',
+                                dot: 'bg-rose-400 ring-rose-200',
+                                placeholder: 'placeholder-rose-800/50 dark:placeholder-rose-200/40'
+                            },
+                            purple: {
+                                name: 'Roxo',
+                                card: 'bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-950 dark:text-purple-100 shadow-purple-500/10',
+                                strip: 'bg-purple-400 dark:bg-purple-500',
+                                pin: 'text-purple-600 dark:text-purple-400',
+                                dot: 'bg-purple-400 ring-purple-200',
+                                placeholder: 'placeholder-purple-800/50 dark:placeholder-purple-200/40'
+                            }
+                        };
+
+                        // Catálogo completo de módulos do portal com ícones vibrantes e bem destacados
                         const catalog = [
                             {
                                 id: 'meu_painel',
@@ -31027,7 +31905,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Operação & Qualidade',
                                 icon: 'fa-gauge-high',
                                 badge: 'Essencial',
-                                color: 'from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30',
                                 desc: 'Acompanhe seus indicadores individuais, bonificação, notas de monitoria e status do mês em tempo real.'
                             },
                             {
@@ -31037,8 +31915,18 @@ Object.assign(app.ui, {
                                 catLabel: 'Qualidade & Dinâmicas',
                                 icon: 'fa-puzzle-piece',
                                 badge: 'Novo',
-                                color: 'from-violet-500/10 to-purple-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
-                                desc: 'Crie dinâmicas pedagógicas e caça-palavras temáticos personalizados com exportação em folha A4 cheia.'
+                                iconBg: 'bg-gradient-to-br from-violet-600 to-purple-700 text-white shadow-lg shadow-violet-500/30',
+                                desc: 'Crie dinâmicas pedagógicas e caça-palavras sob medida com exportação em folha A4 e envio direto para impressão.'
+                            },
+                            {
+                                id: 'palavras_cruzadas',
+                                title: 'Palavras Cruzadas Pedagógicas',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Dinâmicas',
+                                icon: 'fa-spell-check',
+                                badge: 'Novo',
+                                iconBg: 'bg-gradient-to-br from-fuchsia-600 to-pink-700 text-white shadow-lg shadow-fuchsia-500/30',
+                                desc: 'Gere palavras cruzadas com temas técnicos, dicas horizontais e verticais, gabarito e envio à fila de impressão.'
                             },
                             {
                                 id: 'calendario',
@@ -31047,8 +31935,48 @@ Object.assign(app.ui, {
                                 catLabel: 'Operação & Rotina',
                                 icon: 'fa-calendar-days',
                                 badge: 'Rotina',
-                                color: 'from-blue-500/10 to-indigo-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                                iconBg: 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-500/30',
                                 desc: 'Consulte calibrações, quality days, reuniões setoriais e painel analítico com indicadores executivos.'
+                            },
+                            {
+                                id: 'ata_reuniao',
+                                title: 'Criar Nova Ata de Reunião',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Governança',
+                                icon: 'fa-pen-to-square',
+                                badge: 'Rotina',
+                                iconBg: 'bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-lg shadow-teal-500/30',
+                                desc: 'Formulário completo com toolbar rica, participantes, pautas discutidas e salvamento automático.'
+                            },
+                            {
+                                id: 'minhas_atas',
+                                title: 'Minhas Atas Gravadas',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Governança',
+                                icon: 'fa-folder-open',
+                                badge: 'Atas',
+                                iconBg: 'bg-gradient-to-br from-cyan-600 to-blue-700 text-white shadow-lg shadow-cyan-500/30',
+                                desc: 'Histórico pessoal de atas cadastradas, downloads em PDF e acompanhamento de status de aprovação.'
+                            },
+                            {
+                                id: 'laudos_estudos',
+                                title: 'Meus Laudos & Estudos',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Auditoria',
+                                icon: 'fa-file-waveform',
+                                badge: 'Auditoria',
+                                iconBg: 'bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-lg shadow-purple-500/30',
+                                desc: 'Emissão e registro de laudos analíticos de chamadas críticas, desvios operacionais e resolutividade FCR.'
+                            },
+                            {
+                                id: 'dashboard_estudos',
+                                title: 'Dashboard de Laudos',
+                                cat: 'gestao',
+                                catLabel: 'Gestão & Estudos',
+                                icon: 'fa-chart-simple',
+                                badge: 'Gerencial',
+                                iconBg: 'bg-gradient-to-br from-violet-600 to-indigo-800 text-white shadow-lg shadow-violet-600/30',
+                                desc: 'Análise consolidada e percentual de responsabilidade, origem de falhas e habilidades dos operadores.'
                             },
                             {
                                 id: 'dashboard_adm',
@@ -31057,7 +31985,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Gestão & Métricas',
                                 icon: 'fa-chart-pie',
                                 badge: 'Gerencial',
-                                color: 'from-sky-500/10 to-blue-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20',
+                                iconBg: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-lg shadow-sky-500/30',
                                 desc: 'Visão consolidada da operação, atingimento de metas globais, dispersão de notas e saúde operacional.'
                             },
                             {
@@ -31067,7 +31995,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Gestão & Resultados',
                                 icon: 'fa-chart-line',
                                 badge: 'Mensal',
-                                color: 'from-indigo-500/10 to-violet-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+                                iconBg: 'bg-gradient-to-br from-indigo-600 to-violet-700 text-white shadow-lg shadow-indigo-500/30',
                                 desc: 'Relatórios analíticos setoriais com histórico por mês, status operacionais e exportação profissional.'
                             },
                             {
@@ -31077,7 +32005,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Gestão & Equipes',
                                 icon: 'fa-sitemap',
                                 badge: 'Equipes',
-                                color: 'from-amber-500/10 to-orange-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                                iconBg: 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/30',
                                 desc: 'Organograma operacional, supervisões, gestão de operadores, alocações setoriais e span de controle.'
                             },
                             {
@@ -31087,7 +32015,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Gestão & Equipes',
                                 icon: 'fa-people-arrows',
                                 badge: 'Controle',
-                                color: 'from-teal-500/10 to-emerald-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20',
+                                iconBg: 'bg-gradient-to-br from-teal-600 to-emerald-700 text-white shadow-lg shadow-teal-500/30',
                                 desc: 'Métricas de dimensionamento, equilíbrio de equipes e proporção operador x supervisor.'
                             },
                             {
@@ -31097,7 +32025,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Planejamento & Projetos',
                                 icon: 'fa-diagram-project',
                                 badge: 'Projetos',
-                                color: 'from-cyan-500/10 to-blue-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
+                                iconBg: 'bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30',
                                 desc: 'Cronograma interativo de implantação, fases, marcos, troca de posições e extração em PDF executivo.'
                             },
                             {
@@ -31107,7 +32035,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Treinamento & Pessoas',
                                 icon: 'fa-graduation-cap',
                                 badge: 'Oficial',
-                                color: 'from-emerald-500/10 to-green-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                iconBg: 'bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30',
                                 desc: 'Provas oficiais de NPS/CSAT, avaliação FCR anti-cola e emissão de certificados oficiais em PDF.'
                             },
                             {
@@ -31117,7 +32045,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Treinamento Gamificado',
                                 icon: 'fa-gamepad',
                                 badge: 'Gamificação',
-                                color: 'from-green-500/10 to-emerald-500/10 text-green-600 dark:text-green-400 border-green-500/20',
+                                iconBg: 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30',
                                 desc: 'Trilha gamificada de capacitação com lições interativas, sistema de vidas, mascotes e CMS por operação.'
                             },
                             {
@@ -31127,7 +32055,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Qualidade & Governança',
                                 icon: 'fa-file-lines',
                                 badge: 'Governança',
-                                color: 'from-slate-500/10 to-zinc-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                iconBg: 'bg-gradient-to-br from-slate-600 to-slate-800 text-white shadow-lg shadow-slate-600/30',
                                 desc: 'Registro e consulta de atas de reunião, alinhamentos de processo, auditorias e compromissos operacionais.'
                             },
                             {
@@ -31137,7 +32065,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Qualidade & Auditoria',
                                 icon: 'fa-clipboard-check',
                                 badge: 'Qualidade',
-                                color: 'from-rose-500/10 to-red-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+                                iconBg: 'bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-lg shadow-rose-500/30',
                                 desc: 'Aprovação e auditoria de planos de ação cadastrados pela supervisão e acompanhamento de eficácia.'
                             },
                             {
@@ -31147,7 +32075,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Qualidade & Ações',
                                 icon: 'fa-plus-circle',
                                 badge: 'Melhoria',
-                                color: 'from-orange-500/10 to-amber-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+                                iconBg: 'bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/30',
                                 desc: 'Cadastro de plano de melhoria operacional, 5 Porquês, causa raiz, prazos e evidências de suporte.'
                             },
                             {
@@ -31157,7 +32085,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Qualidade & Monitoria',
                                 icon: 'fa-headphones',
                                 badge: 'Auditivo',
-                                color: 'from-purple-500/10 to-pink-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                                iconBg: 'bg-gradient-to-br from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30',
                                 desc: 'Calibragem auditiva de monitorias com simulação de notas, critérios e comparativo de desvios.'
                             },
                             {
@@ -31167,17 +32095,17 @@ Object.assign(app.ui, {
                                 catLabel: 'Qualidade & Desempenho',
                                 icon: 'fa-trophy',
                                 badge: 'Destaque',
-                                color: 'from-amber-500/10 to-yellow-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                                iconBg: 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-lg shadow-amber-400/30',
                                 desc: 'Classificação de qualidade por operador, equipe e operação, destacando notas máximas e evolução.'
                             },
                             {
                                 id: 'import_monitorias',
-                                title: 'Importação de Monitorias',
+                                title: 'Controle de Monitorias',
                                 cat: 'ferramentas',
                                 catLabel: 'Ferramentas & Dados',
                                 icon: 'fa-file-excel',
                                 badge: 'Dados',
-                                color: 'from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                iconBg: 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-lg shadow-emerald-600/30',
                                 desc: 'Importação de planilhas de monitoria, conciliação de bases e consolidação de resultados.'
                             },
                             {
@@ -31187,7 +32115,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Ferramentas & Apoio',
                                 icon: 'fa-calculator',
                                 badge: 'Cálculo',
-                                color: 'from-blue-500/10 to-cyan-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                                iconBg: 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30',
                                 desc: 'Simulador dinâmico de bonificação variável de acordo com o atingimento dos multiplicadores de meta.'
                             },
                             {
@@ -31195,9 +32123,9 @@ Object.assign(app.ui, {
                                 title: 'Calculadora Amostral',
                                 cat: 'ferramentas',
                                 catLabel: 'Ferramentas & Apoio',
-                                icon: 'fa-chart-simple',
+                                icon: 'fa-chart-column',
                                 badge: 'Estatística',
-                                color: 'from-indigo-500/10 to-blue-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+                                iconBg: 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30',
                                 desc: 'Cálculo de dimensionamento de amostras estatísticas de monitorias necessárias por operação.'
                             },
                             {
@@ -31207,17 +32135,17 @@ Object.assign(app.ui, {
                                 catLabel: 'Operação & Apoio',
                                 icon: 'fa-boxes-stacked',
                                 badge: 'Logística',
-                                color: 'from-stone-500/10 to-zinc-500/10 text-stone-600 dark:text-stone-400 border-stone-500/20',
+                                iconBg: 'bg-gradient-to-br from-stone-500 to-zinc-600 text-white shadow-lg shadow-stone-500/30',
                                 desc: 'Solicitações e gestão de insumos, materiais de apoio, uniformes e headsets da operação.'
                             },
                             {
                                 id: 'impressoes',
-                                title: 'Gestão de Impressões',
+                                title: 'Centro de Impressão',
                                 cat: 'ferramentas',
                                 catLabel: 'Operação & Apoio',
                                 icon: 'fa-print',
                                 badge: 'Suporte',
-                                color: 'from-slate-500/10 to-neutral-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                iconBg: 'bg-gradient-to-br from-slate-700 to-zinc-800 text-white shadow-lg shadow-slate-700/30',
                                 desc: 'Controle de filas e solicitações de impressão de materiais de treinamento, dinâmicas e formulários.'
                             },
                             {
@@ -31227,7 +32155,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Regras & Governança',
                                 icon: 'fa-scale-balanced',
                                 badge: 'Governança',
-                                color: 'from-slate-500/10 to-blue-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                iconBg: 'bg-gradient-to-br from-slate-600 to-blue-700 text-white shadow-lg shadow-slate-600/30',
                                 desc: 'Regulamento oficial de bonificação, critérios de monitoria, políticas de tolerância e governança.'
                             },
                             {
@@ -31237,7 +32165,7 @@ Object.assign(app.ui, {
                                 catLabel: 'Minha Conta',
                                 icon: 'fa-user-gear',
                                 badge: 'Conta',
-                                color: 'from-purple-500/10 to-indigo-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                                iconBg: 'bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-lg shadow-purple-600/30',
                                 desc: 'Gestão dos dados cadastrais do seu usuário, foto de perfil, permissões e alteração segura de senha.'
                             }
                         ];
@@ -31263,30 +32191,35 @@ Object.assign(app.ui, {
                         let searchQuery = '';
 
                         container.innerHTML = `
-                            <div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in">
-                                <!-- Banner Hero de Boas-Vindas -->
-                                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-8 md:p-10 shadow-2xl border border-slate-800 mb-8">
-                                    <div class="relative z-10 max-w-3xl">
-                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-4">
-                                            <i class="fa-solid fa-compass"></i> Central de Navegação do Portal
-                                        </div>
-                                        <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight mb-3">
+                            <div class="w-full px-2 sm:px-6 py-4 animate-fade-in">
+                                <!-- Banner Hero de Boas-Vindas Simplificado -->
+                                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800 mb-6">
+                                    <div class="relative z-10 max-w-4xl">
+                                        <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
                                             Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-sky-200 to-emerald-300">${currentUser.nome || 'Colaborador'}</span>
                                         </h1>
-                                        <p class="text-slate-300 text-sm md:text-base leading-relaxed mb-6">
-                                            Organize seus atalhos favoritos, pesquise rotinas e navegue de forma instantânea por todas as ferramentas de qualidade, treinamento e gestão.
-                                        </p>
 
                                         <!-- Campo de Busca em Tempo Real (Speed Dial Search) -->
-                                        <div class="relative max-w-2xl">
+                                        <div class="relative max-w-2xl mb-3">
                                             <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                                 <i class="fa-solid fa-magnifying-glass text-lg"></i>
                                             </div>
                                             <input id="home-speed-dial-search" type="search" placeholder="Pesquisar por página, relatório, ferramenta ou rotina..."
-                                                class="w-full pl-12 pr-12 py-3.5 bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-700/60 rounded-2xl text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white/15 transition-all shadow-inner backdrop-blur-md">
+                                                class="w-full pl-12 pr-12 py-3 bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-700/60 rounded-2xl text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white/15 transition-all shadow-inner backdrop-blur-md">
                                             <button id="home-search-clear-btn" type="button" class="hidden absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-white transition">
                                                 <i class="fa-solid fa-circle-xmark"></i>
                                             </button>
+                                        </div>
+
+                                        <!-- Atalhos Rápidos Estilo Navegador -->
+                                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                                            <span class="text-slate-400 font-semibold text-[11px] uppercase tracking-wider mr-1">Atalhos rápidos:</span>
+                                            <button type="button" onclick="app.ui.renderTab('meu_painel', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-gauge-high text-emerald-400"></i> Meu Painel</button>
+                                            <button type="button" onclick="app.ui.renderTab('calendario', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-calendar-days text-blue-400"></i> Calendário</button>
+                                            <button type="button" onclick="app.ui.renderTab('caca_palavras', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-puzzle-piece text-violet-400"></i> Caça-Palavras</button>
+                                            <button type="button" onclick="app.ui.renderTab('palavras_cruzadas', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-spell-check text-fuchsia-400"></i> Palavras Cruzadas</button>
+                                            <button type="button" onclick="app.ui.renderTab('ata_reuniao', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-pen-to-square text-teal-400"></i> Nova Ata</button>
+                                            <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-chart-line text-indigo-400"></i> Resultados</button>
                                         </div>
                                     </div>
 
@@ -31296,7 +32229,7 @@ Object.assign(app.ui, {
                                 </div>
 
                                 <!-- Filtros por Categoria -->
-                                <div class="flex items-center gap-2 overflow-x-auto pb-4 mb-6 custom-scrollbar">
+                                <div class="flex items-center gap-2 overflow-x-auto pb-3 mb-5 custom-scrollbar">
                                     ${categories.map(cat => `
                                         <button type="button" data-home-cat="${cat.id}"
                                             class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
@@ -31305,13 +32238,48 @@ Object.assign(app.ui, {
                                     `).join('')}
                                 </div>
 
+                                <!-- Seção: POST-ITS / LEMBRETES OPERACIONAIS -->
+                                <div id="home-postits-wrapper" class="mb-8">
+                                    <div class="flex items-center justify-between mb-3.5">
+                                        <div>
+                                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-note-sticky text-amber-500"></i> Meus Post-its & Lembretes Rápidos
+                                                <span id="home-postits-count" class="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800">
+                                                    ${userPostits.length}
+                                                </span>
+                                            </h2>
+                                            <p class="text-xs text-slate-400 font-medium">Anotações pessoais, metas do dia e avisos operacionais com salvamento automático</p>
+                                        </div>
+                                        <button id="home-add-postit-btn" type="button"
+                                            class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 active:scale-95 shrink-0">
+                                            <i class="fa-solid fa-plus"></i> Novo Post-it
+                                        </button>
+                                    </div>
+                                    <div id="home-postits-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                        <!-- Renderizado via renderPostits() -->
+                                    </div>
+                                </div>
+
+                                <!-- Seção: MAIS USADOS PELO USUÁRIO -->
+                                <div id="home-most-used-wrapper" class="mb-8">
+                                    <div class="flex items-center justify-between mb-3.5">
+                                        <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-fire text-amber-500"></i> Mais Usados por Você
+                                        </h2>
+                                        <span class="text-xs text-slate-400 font-medium">Suas rotinas e ferramentas mais frequentes</span>
+                                    </div>
+                                    <div id="home-most-used-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                        <!-- Renderizado via JS -->
+                                    </div>
+                                </div>
+
                                 <!-- Seção de Favoritos Fixados -->
-                                <div id="home-favorites-wrapper" class="mb-10 ${userFavs.length > 0 ? '' : 'hidden'}">
-                                    <div class="flex items-center justify-between mb-4">
+                                <div id="home-favorites-wrapper" class="mb-8">
+                                    <div class="flex items-center justify-between mb-3.5">
                                         <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
                                             <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
                                         </h2>
-                                        <span class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
+                                        <span id="home-favs-subtitle" class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
                                     </div>
                                     <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                         <!-- Renderizado via JS -->
@@ -31320,7 +32288,7 @@ Object.assign(app.ui, {
 
                                 <!-- Grade Principal de Blocos / Speed Dial -->
                                 <div>
-                                    <div class="flex items-center justify-between mb-4">
+                                    <div class="flex items-center justify-between mb-3.5">
                                         <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
                                             <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
                                         </h2>
@@ -31345,7 +32313,7 @@ Object.assign(app.ui, {
                             </div>
                         `;
 
-                        // Função auxiliar para renderizar um card individual
+                        // Função auxiliar para renderizar um card individual com ícones ampliados e vibrantes
                         const buildCardHtml = (card, isPinnedSection = false) => {
                             const isFav = userFavs.includes(card.id);
                             const isLiked = userLikes.includes(card.id);
@@ -31355,18 +32323,19 @@ Object.assign(app.ui, {
                                 <div class="speed-dial-card group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 rounded-2xl p-5 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer"
                                     data-card-id="${card.id}">
                                     <div>
-                                        <div class="flex items-start justify-between gap-3 mb-3">
-                                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br ${card.color} flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+                                        <div class="flex items-start justify-between gap-3 mb-3.5">
+                                            <!-- ÍCONE AMPLIADO E COM MÁXIMO DESTAQUE VISUAL -->
+                                            <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${card.iconBg || 'bg-indigo-600 text-white shadow-indigo-500/30'} flex items-center justify-center text-2xl sm:text-3xl shadow-lg group-hover:scale-105 transition-transform duration-200 shrink-0">
                                                 <i class="fa-solid ${card.icon}"></i>
                                             </div>
                                             <div class="flex items-center gap-1">
                                                 <button type="button" class="fav-star-btn p-2 rounded-lg text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400 transition ${isFav ? 'is-fav' : ''}"
                                                     data-card-id="${card.id}" title="${isFav ? 'Desafixar dos Favoritos' : 'Fixar nos Favoritos'}">
-                                                    <i class="fa-${isFav ? 'solid' : 'regular'} fa-star text-sm"></i>
+                                                    <i class="fa-${isFav ? 'solid' : 'regular'} fa-star text-base"></i>
                                                 </button>
                                                 <button type="button" class="like-heart-btn p-2 rounded-lg text-slate-300 hover:text-rose-500 dark:text-slate-600 dark:hover:text-rose-400 transition flex items-center gap-1 ${isLiked ? 'is-liked' : ''}"
                                                     data-card-id="${card.id}" title="${isLiked ? 'Descurtir' : 'Curtir'}">
-                                                    <i class="fa-${isLiked ? 'solid' : 'regular'} fa-heart text-sm"></i>
+                                                    <i class="fa-${isLiked ? 'solid' : 'regular'} fa-heart text-base"></i>
                                                     <span class="like-count-num text-[11px] font-bold ${isLiked ? 'text-rose-500' : 'text-slate-400'}">${likeCount > 0 ? likeCount : ''}</span>
                                                 </button>
                                             </div>
@@ -31400,19 +32369,54 @@ Object.assign(app.ui, {
                         const updateViews = () => {
                             const query = searchQuery.trim().toLowerCase();
 
-                            // 1. Atualiza lista de favoritos
+                            // 0. Atualiza visibilidade dos Post-its
+                            const postitsWrapper = container.querySelector('#home-postits-wrapper');
+                            if (postitsWrapper) {
+                                if (activeFilter === 'all' && !query) {
+                                    postitsWrapper.classList.remove('hidden');
+                                } else {
+                                    postitsWrapper.classList.add('hidden');
+                                }
+                            }
+
+                            // 1. Atualiza bloco: MAIS USADOS PELO USUÁRIO
+                            const mostUsedWrapper = container.querySelector('#home-most-used-wrapper');
+                            const mostUsedGrid = container.querySelector('#home-most-used-grid');
+                            if (activeFilter === 'all' && !query) {
+                                mostUsedWrapper.classList.remove('hidden');
+                                const sortedByVisits = [...accessibleCards]
+                                    .map(c => ({ ...c, visits: tabVisits[c.id] || 0 }))
+                                    .sort((a, b) => b.visits - a.visits);
+                                const topCards = sortedByVisits.slice(0, 4);
+                                mostUsedGrid.innerHTML = topCards.map(c => buildCardHtml(c)).join('');
+                            } else {
+                                mostUsedWrapper.classList.add('hidden');
+                            }
+
+                            // 2. Atualiza lista de favoritos
                             const favWrapper = container.querySelector('#home-favorites-wrapper');
                             const favGrid = container.querySelector('#home-favorites-grid');
                             const favCards = accessibleCards.filter(c => userFavs.includes(c.id));
+                            const favSubtitle = container.querySelector('#home-favs-subtitle');
 
                             if (favCards.length > 0 && activeFilter !== 'favs') {
                                 favWrapper.classList.remove('hidden');
+                                if (favSubtitle) favSubtitle.textContent = 'Fixados no topo para acesso rápido';
                                 favGrid.innerHTML = favCards.map(c => buildCardHtml(c, true)).join('');
+                            } else if (userFavs.length === 0 && activeFilter !== 'favs' && !query) {
+                                const defaultQuick = accessibleCards.slice(0, 4);
+                                if (defaultQuick.length > 0) {
+                                    favWrapper.classList.remove('hidden');
+                                    if (favSubtitle) favSubtitle.textContent = 'Sugestões de atalhos (clique na estrela de qualquer módulo para fixar)';
+                                    favGrid.innerHTML = defaultQuick.map(c => buildCardHtml(c, true)).join('');
+                                } else {
+                                    favWrapper.classList.add('hidden');
+                                }
                             } else {
                                 favWrapper.classList.add('hidden');
                             }
 
-                            // 2. Filtra grade principal
+                            // 3. Filtra grade principal
                             let filtered = accessibleCards;
 
                             if (activeFilter === 'favs') {
@@ -31552,6 +32556,167 @@ Object.assign(app.ui, {
                             });
                         }
 
+                        // =========================================================================
+                        // GESTÃO DOS POST-ITS & LEMBRETES OPERACIONAIS DA PÁGINA INICIAL
+                        // =========================================================================
+                        const postitsGrid = container.querySelector('#home-postits-grid');
+                        const postitsCount = container.querySelector('#home-postits-count');
+
+                        const savePostits = () => {
+                            try { localStorage.setItem(postitsKey, JSON.stringify(userPostits)); } catch (e) {}
+                        };
+
+                        const renderPostits = () => {
+                            if (!postitsGrid) return;
+                            if (postitsCount) postitsCount.textContent = userPostits.length;
+
+                            if (userPostits.length === 0) {
+                                postitsGrid.innerHTML = `
+                                    <div class="col-span-full py-8 px-4 rounded-2xl border-2 border-dashed border-amber-300/60 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20 text-center flex flex-col items-center justify-center">
+                                        <div class="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl mb-2">
+                                            <i class="fa-solid fa-note-sticky"></i>
+                                        </div>
+                                        <p class="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhum lembrete salvo</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Crie anotações para metas do dia, protocolos ou recados operacionais rápidos.</p>
+                                        <button type="button" class="home-create-first-postit-btn px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 active:scale-95">
+                                            <i class="fa-solid fa-plus"></i> Criar Primeiro Post-it
+                                        </button>
+                                    </div>
+                                `;
+                                const firstBtn = postitsGrid.querySelector('.home-create-first-postit-btn');
+                                if (firstBtn) firstBtn.onclick = () => addPostit();
+                                return;
+                            }
+
+                            postitsGrid.innerHTML = userPostits.map(p => {
+                                const theme = postitThemes[p.color] || postitThemes.yellow;
+                                const safeText = (app.utils && typeof app.utils.escapeHtml === 'function')
+                                    ? app.utils.escapeHtml(p.text || '')
+                                    : String(p.text || '').replace(/"/g, '&quot;');
+
+                                return `
+                                    <div class="postit-card ${theme.card} relative flex flex-col justify-between overflow-hidden group min-h-[175px]" data-postit-id="${p.id}">
+                                        <!-- Faixa superior tipo bloco de anotações -->
+                                        <div class="absolute top-0 left-0 right-0 h-2.5 ${theme.strip}"></div>
+
+                                        <!-- Cabeçalho do Post-it com pino e paleta -->
+                                        <div class="flex items-center justify-between pt-1.5 pb-2">
+                                            <div class="flex items-center gap-1.5 ${theme.pin}">
+                                                <i class="fa-solid fa-thumbtack text-xs"></i>
+                                                <span class="text-[10px] font-bold uppercase tracking-wider opacity-75">${theme.name}</span>
+                                            </div>
+
+                                            <div class="flex items-center gap-1.5">
+                                                <!-- Seletor de cores -->
+                                                <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                                                    ${Object.keys(postitThemes).map(cKey => `
+                                                        <button type="button" class="postit-color-btn w-3.5 h-3.5 rounded-full ${postitThemes[cKey].dot} hover:scale-125 transition-transform ${p.color === cKey ? 'ring-2 ring-slate-800 dark:ring-white scale-110' : ''}"
+                                                            data-color="${cKey}" data-postit-id="${p.id}" title="Cor: ${postitThemes[cKey].name}"></button>
+                                                    `).join('')}
+                                                </div>
+
+                                                <!-- Botão Excluir -->
+                                                <button type="button" class="postit-delete-btn ml-1 p-1 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition"
+                                                    data-postit-id="${p.id}" title="Excluir lembrete">
+                                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Campo de texto auto-salvável com smooth typing -->
+                                        <div class="flex-1 py-1">
+                                            <textarea class="postit-textarea w-full bg-transparent border-none outline-none resize-none text-xs sm:text-sm font-medium leading-relaxed custom-scrollbar ${theme.placeholder}"
+                                                rows="4" placeholder="Escreva seu lembrete aqui..." data-postit-id="${p.id}">${safeText}</textarea>
+                                        </div>
+
+                                        <!-- Rodapé com data/hora e indicador de salvamento automático -->
+                                        <div class="flex items-center justify-between pt-2 border-t border-black/5 dark:border-white/5 text-[10px] opacity-60 font-semibold">
+                                            <span>${p.updatedAt || 'Lembrete'}</span>
+                                            <span class="italic"><i class="fa-solid fa-floppy-disk text-[9px] mr-0.5"></i> Auto-salvo</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('');
+
+                            attachPostitEvents();
+                        };
+
+                        const attachPostitEvents = () => {
+                            // Salva em tempo real enquanto digita
+                            postitsGrid.querySelectorAll('.postit-textarea').forEach(textarea => {
+                                textarea.addEventListener('input', (e) => {
+                                    const pId = textarea.getAttribute('data-postit-id');
+                                    const note = userPostits.find(n => n.id === pId);
+                                    if (note) {
+                                        note.text = e.target.value;
+                                        const now = new Date();
+                                        note.updatedAt = 'Atualizado às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                                        savePostits();
+                                        const timeSpan = textarea.closest('.postit-card').querySelector('.border-t span');
+                                        if (timeSpan) timeSpan.textContent = note.updatedAt;
+                                    }
+                                });
+                            });
+
+                            // Troca de cor com clique direto
+                            postitsGrid.querySelectorAll('.postit-color-btn').forEach(btn => {
+                                btn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const pId = btn.getAttribute('data-postit-id');
+                                    const color = btn.getAttribute('data-color');
+                                    const note = userPostits.find(n => n.id === pId);
+                                    if (note && color) {
+                                        note.color = color;
+                                        savePostits();
+                                        renderPostits();
+                                    }
+                                });
+                            });
+
+                            // Exclusão de post-it
+                            postitsGrid.querySelectorAll('.postit-delete-btn').forEach(btn => {
+                                btn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const pId = btn.getAttribute('data-postit-id');
+                                    const idx = userPostits.findIndex(n => n.id === pId);
+                                    if (idx !== -1) {
+                                        userPostits.splice(idx, 1);
+                                        savePostits();
+                                        renderPostits();
+                                        app.ui.showNotification("Lembrete removido com sucesso.", "info");
+                                    }
+                                });
+                            });
+                        };
+
+                        const addPostit = () => {
+                            const colors = ['yellow', 'green', 'blue', 'rose', 'purple'];
+                            const randomColor = colors[userPostits.length % colors.length];
+                            const now = new Date();
+                            const newNote = {
+                                id: 'postit_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                                text: '',
+                                color: randomColor,
+                                updatedAt: 'Criado às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                            };
+                            userPostits.unshift(newNote);
+                            savePostits();
+                            renderPostits();
+                            app.ui.showNotification("Novo post-it adicionado! Digite sua anotação.", "success");
+
+                            setTimeout(() => {
+                                const firstTextarea = postitsGrid.querySelector('.postit-textarea');
+                                if (firstTextarea) firstTextarea.focus();
+                            }, 80);
+                        };
+
+                        const addPostitBtn = container.querySelector('#home-add-postit-btn');
+                        if (addPostitBtn) {
+                            addPostitBtn.onclick = () => addPostit();
+                        }
+
+                        renderPostits();
+
                         // Inicializa
                         updateViews();
                     },
@@ -31583,7 +32748,7 @@ Object.assign(app.ui, {
                         const N = pData.size;
 
                         container.innerHTML = `
-                            <div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in">
+                            <div class="w-full px-2 sm:px-6 py-6 animate-fade-in">
                                 <!-- Cabeçalho Executivo -->
                                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800 mb-8">
                                     <div>
@@ -31598,10 +32763,14 @@ Object.assign(app.ui, {
                                         </p>
                                     </div>
 
-                                    <div class="flex items-center gap-3">
+                                    <div class="flex flex-wrap items-center gap-3">
                                         <button id="cp-btn-export-pdf" type="button"
                                             class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 transition flex items-center gap-2">
                                             <i class="fa-solid fa-file-pdf"></i> Imprimir em PDF (A4)
+                                        </button>
+                                        <button id="cp-btn-send-print" type="button"
+                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                                            <i class="fa-solid fa-print"></i> Enviar para Impressão
                                         </button>
                                     </div>
                                 </div>
@@ -31662,35 +32831,17 @@ Object.assign(app.ui, {
                                                 </p>
                                             </div>
 
-                                            <!-- 3. Temas Pré-Prontos -->
-                                            <div class="mb-5">
-                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
-                                                    3. Carregar Tema Pré-Pronto (1 Clique)
-                                                </label>
-                                                <div class="flex flex-wrap gap-1.5">
-                                                    ${Object.keys(app.wordSearch.themePresets).map(tKey => {
-                                                        const p = app.wordSearch.themePresets[tKey];
-                                                        return `
-                                                            <button type="button" data-cp-theme="${tKey}"
-                                                                class="cp-theme-chip px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${state.theme === tKey ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-800' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'}">
-                                                                ${p.label}
-                                                            </button>
-                                                        `;
-                                                    }).join('')}
-                                                </div>
-                                            </div>
-
-                                            <!-- 4. Palavras Personalizadas -->
+                                            <!-- 3. Palavras Personalizadas (Opção 3 anterior de temas foi removida a pedido) -->
                                             <div class="mb-6">
                                                 <div class="flex items-center justify-between mb-2">
                                                     <label class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                                        4. Palavras (Escolha quantas quiser)
+                                                        3. Palavras (Escolha quantas quiser)
                                                     </label>
                                                     <span id="cp-words-counter" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">
                                                         ${pData.placedWords.length} válidas
                                                     </span>
                                                 </div>
-                                                <textarea id="cp-custom-words-input" rows="4" placeholder="Digite ou cole as palavras separadas por vírgula ou uma por linha..."
+                                                <textarea id="cp-custom-words-input" rows="5" placeholder="Digite ou cole as palavras separadas por vírgula ou uma por linha..."
                                                     class="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all leading-relaxed">${state.customWordsText}</textarea>
                                                 <div class="flex items-center justify-between mt-1 text-[11px] text-slate-400">
                                                     <span>Dica: Palavras com acentos serão normalizadas na grade.</span>
@@ -31737,7 +32888,6 @@ Object.assign(app.ui, {
                                                 <div class="caca-palavras-grid inline-grid gap-1 bg-slate-100 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800"
                                                     style="grid-template-columns: repeat(${N}, minmax(0, 1fr));">
                                                     ${pData.grid.map((row, r) => row.map((char, c) => {
-                                                        // Verifica se faz parte de alguma solução
                                                         let isHighlighted = false;
                                                         if (state.showSolution) {
                                                             for (const k in pData.solutions) {
@@ -31803,19 +32953,7 @@ Object.assign(app.ui, {
                                 };
                             });
 
-                            // 3. Seleção de tema pré-pronto
-                            container.querySelectorAll('.cp-theme-chip').forEach(chip => {
-                                chip.onclick = () => {
-                                    const tKey = chip.getAttribute('data-cp-theme');
-                                    state.theme = tKey;
-                                    state.customWordsText = app.wordSearch.themePresets[tKey].words.join(', ');
-                                    const words = state.customWordsText.split(/[\n,;]+/).map(w => w.trim()).filter(Boolean);
-                                    state.puzzleData = app.wordSearch.generate(words, state.size, state.diff);
-                                    this.renderView_CacaPalavras(container);
-                                };
-                            });
-
-                            // 4. Digitação de palavras personalizadas
+                            // 3. Digitação de palavras personalizadas
                             const wordsInput = container.querySelector('#cp-custom-words-input');
                             if (wordsInput) {
                                 wordsInput.oninput = (e) => {
@@ -31823,7 +32961,7 @@ Object.assign(app.ui, {
                                 };
                             }
 
-                            // 5. Botão de correção ortográfica
+                            // 4. Botão de correção ortográfica
                             const spellBtn = container.querySelector('#cp-spellcheck-btn');
                             if (spellBtn && wordsInput) {
                                 spellBtn.onclick = () => {
@@ -31834,7 +32972,7 @@ Object.assign(app.ui, {
                                 };
                             }
 
-                            // 6. Botão Gerar
+                            // 5. Botão Gerar
                             const genBtn = container.querySelector('#cp-btn-generate');
                             if (genBtn) {
                                 genBtn.onclick = () => {
@@ -31845,7 +32983,7 @@ Object.assign(app.ui, {
                                 };
                             }
 
-                            // 7. Alternador de Gabarito
+                            // 6. Alternador de Gabarito
                             const solBtn = container.querySelector('#cp-btn-toggle-solution');
                             if (solBtn) {
                                 solBtn.onclick = () => {
@@ -31854,7 +32992,7 @@ Object.assign(app.ui, {
                                 };
                             }
 
-                            // 8. Exportação para PDF (A4)
+                            // 7. Exportação para PDF (A4)
                             const pdfBtn = container.querySelector('#cp-btn-export-pdf');
                             if (pdfBtn) {
                                 pdfBtn.onclick = () => {
@@ -31862,9 +33000,332 @@ Object.assign(app.ui, {
                                     app.wordSearch.exportToPdf(state.puzzleData, 'CAÇA-PALAVRAS DA QUALIDADE', themeLabel);
                                 };
                             }
+
+                            // 8. Enviar Direto para Impressão
+                            const sendPrintBtn = container.querySelector('#cp-btn-send-print');
+                            if (sendPrintBtn) {
+                                sendPrintBtn.onclick = () => {
+                                    const themeLabel = app.wordSearch.themePresets[state.theme]?.label || 'Operação & Qualidade';
+                                    const doc = app.wordSearch.exportToPdf(state.puzzleData, 'CAÇA-PALAVRAS DA QUALIDADE', themeLabel, true);
+                                    if (!doc) return;
+                                    const base64 = doc.output('datauristring');
+                                    const copiasStr = prompt("Quantas cópias do Caça-Palavras deseja solicitar para impressão?", "10");
+                                    if (copiasStr === null) return;
+                                    const copias = Math.max(1, parseInt(copiasStr) || 1);
+                                    app.ui.impressoes.solicitarDinamica('caca_palavras.pdf', base64, copias, 'Caça-Palavras da Qualidade');
+                                };
+                            }
                         };
 
                         setupCacaEvents();
+                    },
+
+                    // =========================================================================
+                    // ABA PALAVRAS CRUZADAS DA QUALIDADE COM IMPRESSÃO EM PDF A4 COMPLETA
+                    // =========================================================================
+                    renderView_PalavrasCruzadas(container) {
+                        if (!this._crosswordState) {
+                            this._crosswordState = {
+                                size: 'medio',
+                                theme: 'qualidade',
+                                customText: app.crossword.themePresets['qualidade'].items.map(it => `${it.word} - ${it.clue}`).join('\n'),
+                                showSolution: false,
+                                puzzleData: null
+                            };
+                        }
+
+                        const state = this._crosswordState;
+
+                        if (!state.puzzleData) {
+                            const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+                                const parts = line.split('-');
+                                return {
+                                    word: parts[0].trim(),
+                                    clue: parts.slice(1).join('-').trim() || 'Sem dica cadastrada'
+                                };
+                            });
+                            state.puzzleData = app.crossword.generate(items, state.size);
+                        }
+
+                        const pData = state.puzzleData;
+                        const N = pData.size;
+                        const cellNumbers = pData.cellNumbers || {};
+
+                        container.innerHTML = `
+                            <div class="w-full px-2 sm:px-6 py-6 animate-fade-in">
+                                <!-- Cabeçalho Executivo -->
+                                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800 mb-8">
+                                    <div>
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300 text-xs font-bold uppercase tracking-wider mb-2">
+                                            <i class="fa-solid fa-spell-check"></i> Módulo Pedagógico & Treinamento
+                                        </div>
+                                        <h1 class="text-2xl md:text-3xl font-extrabold text-slate-800 dark:text-white">
+                                            Gerador de Palavras Cruzadas Pedagógicas
+                                        </h1>
+                                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                            Crie palavras cruzadas temáticas com termos técnicos e dicas operacionais, grade numerada, exportação em folha A4 e envio direto para impressão.
+                                        </p>
+                                    </div>
+
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <button id="cw-btn-export-pdf" type="button"
+                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 transition flex items-center gap-2">
+                                            <i class="fa-solid fa-file-pdf"></i> Imprimir em PDF (A4)
+                                        </button>
+                                        <button id="cw-btn-send-print" type="button"
+                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                                            <i class="fa-solid fa-print"></i> Enviar para Impressão
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                    <!-- Painel de Configurações (Esquerda) -->
+                                    <div class="lg:col-span-5 space-y-6">
+                                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+                                            <h2 class="text-base font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                                <i class="fa-solid fa-sliders text-fuchsia-600"></i> Configurações da Cruzada
+                                            </h2>
+
+                                            <!-- 1. Tamanho da Grade -->
+                                            <div class="mb-5">
+                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                                                    1. Tamanho da Grade
+                                                </label>
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <button type="button" data-cw-size="pequeno"
+                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'pequeno' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'}">
+                                                        Pequeno (12x12)
+                                                    </button>
+                                                    <button type="button" data-cw-size="medio"
+                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'medio' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'}">
+                                                        Médio (15x15)
+                                                    </button>
+                                                    <button type="button" data-cw-size="grande"
+                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'grande' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'}">
+                                                        Grande (18x18)
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- 2. Temas Pré-Prontos -->
+                                            <div class="mb-5">
+                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                                                    2. Carregar Tema Pré-Pronto (1 Clique)
+                                                </label>
+                                                <div class="flex flex-wrap gap-1.5">
+                                                    ${Object.keys(app.crossword.themePresets).map(tKey => {
+                                                        const p = app.crossword.themePresets[tKey];
+                                                        return `
+                                                            <button type="button" data-cw-theme="${tKey}"
+                                                                class="cw-theme-chip px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${state.theme === tKey ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-800' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'}">
+                                                                ${p.label}
+                                                            </button>
+                                                        `;
+                                                    }).join('')}
+                                                </div>
+                                            </div>
+
+                                            <!-- 3. Palavras e Dicas -->
+                                            <div class="mb-6">
+                                                <div class="flex items-center justify-between mb-2">
+                                                    <label class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                        3. Palavras & Dicas (PALAVRA - Dica)
+                                                    </label>
+                                                    <span id="cw-words-counter" class="text-xs font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                                                        ${pData.placedWords.length} cruzadas
+                                                    </span>
+                                                </div>
+                                                <textarea id="cw-custom-text-input" rows="6" placeholder="Digite uma palavra por linha no formato: PALAVRA - Dica da palavra..."
+                                                    class="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 text-xs focus:ring-2 focus:ring-fuchsia-500 focus:outline-none transition-all leading-relaxed font-mono">${state.customText}</textarea>
+                                                <div class="flex items-center justify-between mt-1 text-[11px] text-slate-400">
+                                                    <span>Formato: PALAVRA - Dica explicativa</span>
+                                                    <button id="cw-spellcheck-btn" type="button" class="text-fuchsia-600 dark:text-fuchsia-400 hover:underline font-semibold">
+                                                        <i class="fa-solid fa-spell-check mr-1"></i> Corrigir Acentos
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Botão Gerar -->
+                                            <div class="pt-2">
+                                                <button id="cw-btn-generate" type="button"
+                                                    class="w-full py-3 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold text-xs uppercase tracking-wider shadow-md transition flex items-center justify-center gap-2">
+                                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Novas Palavras Cruzadas
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Painel de Prévia Interativa (Direita) -->
+                                    <div class="lg:col-span-7 space-y-6">
+                                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+                                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+                                                <div>
+                                                    <h2 class="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                                        <i class="fa-solid fa-eye text-fuchsia-600"></i> Prévia da Grade Cruzada (${N}x${N})
+                                                    </h2>
+                                                    <p class="text-xs text-slate-400 mt-0.5">
+                                                        ${pData.placedWords.length} palavras posicionadas com cruzamentos válidos
+                                                    </p>
+                                                </div>
+
+                                                <div class="flex items-center gap-2">
+                                                    <button id="cw-btn-toggle-solution" type="button"
+                                                        class="px-3.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${state.showSolution ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-700' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'}">
+                                                        <i class="fa-solid ${state.showSolution ? 'fa-eye-slash' : 'fa-lightbulb'}"></i>
+                                                        ${state.showSolution ? 'Ocultar Respostas' : 'Ver Gabarito'}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Grade de Palavras Cruzadas (Fundo Claro sem Preto) -->
+                                            <div class="flex justify-center overflow-x-auto py-2">
+                                                <div class="inline-grid gap-1 bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800"
+                                                    style="grid-template-columns: repeat(${N}, minmax(0, 1fr));">
+                                                    ${pData.grid.map((row, r) => row.map((char, c) => {
+                                                        if (char === null) {
+                                                            // Espaço vazio/bloqueado sem fundo preto, transparente e limpo
+                                                            return `<div class="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded bg-transparent opacity-0 pointer-events-none"></div>`;
+                                                        }
+                                                        const numKey = `${r},${c}`;
+                                                        const num = cellNumbers[numKey] || '';
+                                                        return `
+                                                            <div class="relative w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center font-extrabold text-xs sm:text-sm select-none shadow-sm transition-all hover:border-fuchsia-500">
+                                                                ${num ? `<span class="absolute top-0.5 left-1 text-[8px] sm:text-[9px] font-black text-slate-400 dark:text-slate-500 leading-none">${num}</span>` : ''}
+                                                                <span>${state.showSolution ? char : ''}</span>
+                                                            </div>
+                                                        `;
+                                                    }).join('')).join('')}
+                                                </div>
+                                            </div>
+
+                                            <!-- Dicas Horizontais e Verticais -->
+                                            <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <!-- Horizontais -->
+                                                <div>
+                                                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                                                        <i class="fa-solid fa-arrows-left-right text-fuchsia-600"></i> Horizontais (${pData.acrossClues.length})
+                                                    </h3>
+                                                    <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                                                        ${pData.acrossClues.map(c => `
+                                                            <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
+                                                                <span class="font-extrabold text-fuchsia-600 dark:text-fuchsia-400 mr-1">${c.num}.</span>
+                                                                <span class="text-slate-700 dark:text-slate-300">${c.clue}</span>
+                                                                ${state.showSolution ? `<span class="ml-1 font-bold text-emerald-600 dark:text-emerald-400">(${c.original})</span>` : ''}
+                                                            </div>
+                                                        `).join('')}
+                                                    </div>
+                                                </div>
+
+                                                <!-- Verticais -->
+                                                <div>
+                                                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                                                        <i class="fa-solid fa-arrows-up-down text-indigo-600"></i> Verticais (${pData.downClues.length})
+                                                    </h3>
+                                                    <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                                                        ${pData.downClues.map(c => `
+                                                            <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
+                                                                <span class="font-extrabold text-indigo-600 dark:text-indigo-400 mr-1">${c.num}.</span>
+                                                                <span class="text-slate-700 dark:text-slate-300">${c.clue}</span>
+                                                                ${state.showSolution ? `<span class="ml-1 font-bold text-emerald-600 dark:text-emerald-400">(${c.original})</span>` : ''}
+                                                            </div>
+                                                        `).join('')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Vincula eventos de Palavras Cruzadas
+                        const setupCwEvents = () => {
+                            container.querySelectorAll('.cw-size-btn').forEach(btn => {
+                                btn.onclick = () => {
+                                    state.size = btn.getAttribute('data-cw-size');
+                                    const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+                                        const parts = line.split('-');
+                                        return { word: parts[0].trim(), clue: parts.slice(1).join('-').trim() || 'Sem dica' };
+                                    });
+                                    state.puzzleData = app.crossword.generate(items, state.size);
+                                    this.renderView_PalavrasCruzadas(container);
+                                };
+                            });
+
+                            container.querySelectorAll('.cw-theme-chip').forEach(chip => {
+                                chip.onclick = () => {
+                                    const tKey = chip.getAttribute('data-cw-theme');
+                                    state.theme = tKey;
+                                    state.customText = app.crossword.themePresets[tKey].items.map(it => `${it.word} - ${it.clue}`).join('\n');
+                                    const items = app.crossword.themePresets[tKey].items;
+                                    state.puzzleData = app.crossword.generate(items, state.size);
+                                    this.renderView_PalavrasCruzadas(container);
+                                };
+                            });
+
+                            const textInput = container.querySelector('#cw-custom-text-input');
+                            if (textInput) {
+                                textInput.oninput = (e) => {
+                                    state.customText = e.target.value;
+                                };
+                            }
+
+                            const spellBtn = container.querySelector('#cw-spellcheck-btn');
+                            if (spellBtn && textInput) {
+                                spellBtn.onclick = () => {
+                                    if (app.spellchecker) {
+                                        app.spellchecker.autoCorrectElement(textInput);
+                                        state.customText = textInput.value;
+                                    }
+                                };
+                            }
+
+                            const genBtn = container.querySelector('#cw-btn-generate');
+                            if (genBtn) {
+                                genBtn.onclick = () => {
+                                    const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+                                        const parts = line.split('-');
+                                        return { word: parts[0].trim(), clue: parts.slice(1).join('-').trim() || 'Sem dica' };
+                                    });
+                                    state.puzzleData = app.crossword.generate(items, state.size);
+                                    this.renderView_PalavrasCruzadas(container);
+                                    app.ui.showNotification("Novas palavras cruzadas geradas com sucesso!", "success");
+                                };
+                            }
+
+                            const solBtn = container.querySelector('#cw-btn-toggle-solution');
+                            if (solBtn) {
+                                solBtn.onclick = () => {
+                                    state.showSolution = !state.showSolution;
+                                    this.renderView_PalavrasCruzadas(container);
+                                };
+                            }
+
+                            const pdfBtn = container.querySelector('#cw-btn-export-pdf');
+                            if (pdfBtn) {
+                                pdfBtn.onclick = () => {
+                                    const themeLabel = app.crossword.themePresets[state.theme]?.label || 'Operação & Qualidade';
+                                    app.crossword.exportToPdf(state.puzzleData, 'PALAVRAS CRUZADAS DA QUALIDADE', themeLabel);
+                                };
+                            }
+
+                            const printBtn = container.querySelector('#cw-btn-send-print');
+                            if (printBtn) {
+                                printBtn.onclick = () => {
+                                    const themeLabel = app.crossword.themePresets[state.theme]?.label || 'Operação & Qualidade';
+                                    const doc = app.crossword.exportToPdf(state.puzzleData, 'PALAVRAS CRUZADAS DA QUALIDADE', themeLabel, true);
+                                    if (!doc) return;
+                                    const base64 = doc.output('datauristring');
+                                    const copiasStr = prompt("Quantas cópias das Palavras Cruzadas deseja solicitar para impressão?", "10");
+                                    if (copiasStr === null) return;
+                                    const copias = Math.max(1, parseInt(copiasStr) || 1);
+                                    app.ui.impressoes.solicitarDinamica('palavras_cruzadas.pdf', base64, copias, 'Palavras Cruzadas da Qualidade');
+                                };
+                            }
+                        };
+
+                        setupCwEvents();
                     },
 });
 
