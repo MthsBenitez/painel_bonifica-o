@@ -1861,9 +1861,14 @@ storage: {
                     if (this.brindesSelecionados.length === 0) { container.innerHTML = ''; return; }
 
                     container.innerHTML = this.brindesSelecionados.map((b, i) => `
-                        <div class="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-800/50 mb-2 mt-2">
-                            <div class="text-xs font-bold text-emerald-800 dark:text-emerald-300"><span class="bg-emerald-200 dark:bg-emerald-800 px-2 py-0.5 rounded mr-2">${b.qtd}x</span> ${b.nome}</div>
-                            <button type="button" onclick="app.actions.removeBrindeDoCarrinho(${i})" class="text-red-500 hover:text-red-700 transition-colors"><i class="fa-solid fa-xmark"></i></button>
+                        <div class="flex items-center justify-between gap-2 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs w-full min-w-0">
+                            <div class="flex items-center gap-2 min-w-0 flex-1 truncate">
+                                <span class="bg-emerald-600 text-white font-extrabold text-[11px] px-2 py-0.5 rounded-md shrink-0 shadow-xs">${b.qtd}x</span>
+                                <span class="text-xs font-bold text-emerald-900 dark:text-emerald-200 truncate" title="${b.nome}">${b.nome}</span>
+                            </div>
+                            <button type="button" onclick="app.actions.removeBrindeDoCarrinho(${i})" class="shrink-0 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1" title="Remover brinde">
+                                <i class="fa-solid fa-xmark text-sm"></i>
+                            </button>
                         </div>
                     `).join('');
                 },
@@ -1967,6 +1972,15 @@ storage: {
                     }
                     document.getElementById('act-brindes-qtd').value = bQtd;
                     document.getElementById('act-brindes-item').value = bItem;
+                    if (Array.isArray(act.brindesItems) && act.brindesItems.length > 0) {
+                        this.brindesSelecionados = JSON.parse(JSON.stringify(act.brindesItems));
+                    } else if (bQtd > 0 && bItem !== "Nenhum") {
+                        const itObj = app.estoqueItems[bItem];
+                        this.brindesSelecionados = [{ id: bItem, nome: itObj ? itObj.nome : bItem, qtd: bQtd }];
+                    } else {
+                        this.brindesSelecionados = [];
+                    }
+                    this.renderCarrinhoBrindes();
                     
                     const richText = document.getElementById('act-acao-rich');
                     if(richText) richText.innerHTML = act.acaoRealizada;
@@ -2555,7 +2569,8 @@ storage: {
                     const o = document.getElementById('ata-op').value || 'Operação Não Definida';
                     const q = document.getElementById('ata-qualidade').value || 'Não Definido';
                     
-                    const fortes = document.getElementById('ata-fortes').value ? document.getElementById('ata-fortes').value.replace(/\n/g, '<br/>') : 'Nada registrado.';
+                    const fortesEl = document.getElementById('ata-fortes-rich') || document.getElementById('ata-fortes');
+                    const fortes = fortesEl ? (fortesEl.innerHTML || fortesEl.value || 'Nada registrado.') : 'Nada registrado.';
                     const acoesTxt = this.getAcoesData().replace(/\n/g, '<br/>');
                     const extras = this.getPartsData();
                     const g2 = document.getElementById('ata-qualidade2').value;
@@ -2607,7 +2622,7 @@ storage: {
                         tema: t, op: o, qualidade: q, 
                         qualidade2: document.getElementById('ata-qualidade2').value || '',
                         sup: document.getElementById('ata-sup1').value || '',
-                        fortes: document.getElementById('ata-fortes').value || '',
+                        fortes: (document.getElementById('ata-fortes-rich') ? document.getElementById('ata-fortes-rich').innerHTML : (document.getElementById('ata-fortes')?.value || '')),
                         acoes: this.getAcoesData(),
                         extras: this.getPartsData(),
                         rawAcoes: this.getRawAcoes(),
@@ -3355,15 +3370,637 @@ storage: {
                 },
 
                 deleteEvent(id) {
-                    // A trava de exclusão para datas retroativas foi removida
-                    app.ui.showConfirm("Aviso", "Remover permanentemente este evento?", `app.calendar.executeDelete('${id}')`, true);
+                    const eventBackup = app.eventsList[id] ? JSON.parse(JSON.stringify(app.eventsList[id])) : null;
+                    if (!eventBackup) return;
+                    const eventTitle = eventBackup.titulo || eventBackup.tema || 'Evento';
+                    
+                    delete app.eventsList[id];
+                    app.ui.renderTab('calendario', true);
+                    
+                    if (app.undo && typeof app.undo.register === 'function') {
+                        app.undo.register(
+                            `Evento "<strong>${eventTitle}</strong>" removido.`,
+                            () => {
+                                app.eventsList[id] = eventBackup;
+                                app.storage.saveEvents().then(() => {
+                                    app.ui.renderTab('calendario', true);
+                                });
+                            },
+                            () => {
+                                app.storage.saveEvents();
+                            },
+                            6000
+                        );
+                    } else {
+                        app.storage.saveEvents();
+                    }
                 },
                 
                 executeDelete(id) {
-                    delete app.eventsList[id];
-                    app.storage.saveEvents().then(() => app.ui.renderTab('calendario', true));
+                    this.deleteEvent(id);
                 }
             }, // <-- AQUI: Fechamento correto do objeto calendar
+
+            // --- SISTEMA DESFAZER (UNDO) ---
+            undo: {
+                timer: null,
+                currentAction: null,
+                register(description, onUndo, onCommit, timeoutMs = 6000) {
+                    if (this.currentAction && typeof this.currentAction.commit === 'function') {
+                        try { this.currentAction.commit(); } catch(e) { console.error(e); }
+                    }
+                    if (this.timer) {
+                        clearTimeout(this.timer);
+                        this.timer = null;
+                    }
+                    this.currentAction = { onUndo, commit: onCommit };
+                    this.showToast(description, timeoutMs);
+                    this.timer = setTimeout(() => {
+                        this.finish();
+                    }, timeoutMs);
+                },
+                triggerUndo() {
+                    if (this.timer) {
+                        clearTimeout(this.timer);
+                        this.timer = null;
+                    }
+                    const action = this.currentAction;
+                    this.currentAction = null;
+                    this.hideToast();
+                    if (action && typeof action.onUndo === 'function') {
+                        try {
+                            action.onUndo();
+                            if (app.ui && typeof app.ui.showNotification === 'function') {
+                                app.ui.showNotification("Ação desfeita com sucesso!", "info");
+                            }
+                        } catch(e) {
+                            console.error("Erro ao desfazer ação:", e);
+                        }
+                    }
+                },
+                finish() {
+                    if (this.timer) {
+                        clearTimeout(this.timer);
+                        this.timer = null;
+                    }
+                    const action = this.currentAction;
+                    this.currentAction = null;
+                    this.hideToast();
+                    if (action && typeof action.commit === 'function') {
+                        try { action.commit(); } catch(e) { console.error(e); }
+                    }
+                },
+                showToast(message, timeoutMs = 6000) {
+                    let container = document.getElementById('undo-toast-container');
+                    if (!container) {
+                        container = document.createElement('div');
+                        container.id = 'undo-toast-container';
+                        document.body.appendChild(container);
+                    }
+                    container.innerHTML = `
+                        <div class="undo-toast-box">
+                            <div class="undo-toast-content">
+                                <i class="fa-solid fa-circle-check" style="color:#22c55e;"></i>
+                                <span class="undo-toast-text">${message}</span>
+                            </div>
+                            <div class="undo-toast-actions">
+                                <button type="button" class="undo-toast-btn" onclick="app.undo.triggerUndo()">
+                                    <i class="fa-solid fa-rotate-left mr-1"></i> Desfazer
+                                </button>
+                                <button type="button" class="undo-toast-close" onclick="app.undo.finish()" aria-label="Fechar">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="undo-toast-progress" style="animation-duration: ${timeoutMs}ms;"></div>
+                        </div>
+                    `;
+                },
+                hideToast() {
+                    const container = document.getElementById('undo-toast-container');
+                    if (container) container.innerHTML = '';
+                }
+            },
+
+            // --- SINCRONIZAÇÃO DE FILTROS E ESTADO NA URL (QUERY PARAMS) ---
+            urlState: {
+                isHandlingPopState: false,
+                init() {
+                    window.addEventListener('popstate', (e) => {
+                        this.isHandlingPopState = true;
+                        this.applyFromUrl();
+                        this.isHandlingPopState = false;
+                    });
+                },
+                getParams() {
+                    return new URLSearchParams(window.location.search);
+                },
+                get(key, defaultValue = null) {
+                    const params = this.getParams();
+                    return params.has(key) ? params.get(key) : defaultValue;
+                },
+                set(key, value) {
+                    if (this.isHandlingPopState) return;
+                    const params = this.getParams();
+                    if (value === undefined || value === null || value === '' || value === 'all') {
+                        params.delete(key);
+                    } else {
+                        params.set(key, String(value));
+                    }
+                    const searchStr = params.toString() ? '?' + params.toString() : '';
+                    const newUrl = window.location.pathname + searchStr + window.location.hash;
+                    window.history.replaceState({ path: newUrl }, '', newUrl);
+                },
+                push(key, value) {
+                    if (this.isHandlingPopState) return;
+                    const params = this.getParams();
+                    if (value === undefined || value === null || value === '' || value === 'all') {
+                        params.delete(key);
+                    } else {
+                        params.set(key, String(value));
+                    }
+                    const searchStr = params.toString() ? '?' + params.toString() : '';
+                    const newUrl = window.location.pathname + searchStr + window.location.hash;
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                },
+                sync(tabId) {
+                    if (this.isHandlingPopState) return;
+                    const activeTab = tabId || app.currentTab || 'home';
+                    this.set('tab', activeTab);
+                    if (app.currentMonth) this.set('mes', app.currentMonth);
+                },
+                applyFromUrl() {
+                    const params = this.getParams();
+                    const tab = params.get('tab');
+                    const mes = params.get('mes');
+                    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+                        app.currentMonth = mes;
+                        const sel = document.getElementById('selected-month') || document.getElementById('global-month');
+                        if (sel) sel.value = mes;
+                    }
+                    if (tab && app.ui && typeof app.ui.renderTab === 'function') {
+                        if (app.currentUser || app.isAdmin) {
+                            app.ui.renderTab(tab, true);
+                        }
+                    }
+                }
+            },
+
+            // --- VALIDAÇÃO HUMANA EM TEMPO REAL ---
+            validator: {
+                rules: {
+                    email: {
+                        test: val => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
+                        message: 'Insira um e-mail válido como nome@empresa.com.'
+                    },
+                    required: {
+                        test: val => String(val || '').trim().length > 0,
+                        message: 'Este campo é obrigatório e precisa ser preenchido.'
+                    },
+                    password: {
+                        test: val => !val || String(val).length >= 6,
+                        message: 'A senha deve conter no mínimo 6 caracteres para sua segurança.'
+                    },
+                    numeric: {
+                        test: val => !val || (!isNaN(Number(val)) && !isNaN(parseFloat(val))),
+                        message: 'Insira apenas números válidos neste campo.'
+                    },
+                    date: {
+                        test: val => !val || !isNaN(Date.parse(val)),
+                        message: 'Informe uma data válida no calendário.'
+                    }
+                },
+                init() {
+                    document.addEventListener('blur', (e) => {
+                        const el = e.target;
+                        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
+                            this.validateField(el);
+                        }
+                    }, true);
+
+                    document.addEventListener('input', (e) => {
+                        const el = e.target;
+                        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+                            this.clearError(el);
+                        }
+                    }, true);
+                },
+                validateField(el) {
+                    if (!el || el.type === 'hidden' || el.type === 'button' || el.type === 'submit' || el.type === 'checkbox' || el.type === 'radio') return true;
+                    if (el.readOnly || el.disabled) return true;
+                    
+                    const val = el.value;
+                    let isValid = true;
+                    let errorMsg = '';
+
+                    if (el.hasAttribute('required') && !this.rules.required.test(val)) {
+                        isValid = false;
+                        errorMsg = el.getAttribute('data-error-required') || 'Este campo é obrigatório e precisa ser preenchido.';
+                    } else if (el.type === 'email' && !this.rules.email.test(val)) {
+                        isValid = false;
+                        errorMsg = 'Insira um e-mail válido como nome@empresa.com.';
+                    } else if (el.type === 'password' && val && !this.rules.password.test(val)) {
+                        isValid = false;
+                        errorMsg = 'A senha deve conter no mínimo 6 caracteres.';
+                    } else if (el.type === 'number' && val && !this.rules.numeric.test(val)) {
+                        isValid = false;
+                        errorMsg = 'Insira um valor numérico válido.';
+                    } else if (el.type === 'date' && val && !this.rules.date.test(val)) {
+                        isValid = false;
+                        errorMsg = 'Selecione uma data válida no formato DD/MM/AAAA.';
+                    }
+
+                    if (!isValid) {
+                        this.showError(el, errorMsg);
+                        return false;
+                    } else {
+                        this.clearError(el);
+                        if (val && String(val).trim().length > 0) {
+                            el.classList.add('is-valid-field');
+                        }
+                        return true;
+                    }
+                },
+                showError(el, msg) {
+                    el.classList.add('is-invalid-field');
+                    el.classList.remove('is-valid-field');
+                    
+                    const parent = el.closest('.relative') || el.parentElement;
+                    if (!parent) return;
+
+                    let hint = parent.querySelector('.field-validation-msg');
+                    if (!hint) {
+                        hint = document.createElement('div');
+                        hint.className = 'field-validation-msg';
+                        if (el.nextSibling) {
+                            parent.insertBefore(hint, el.nextSibling);
+                        } else {
+                            parent.appendChild(hint);
+                        }
+                    }
+                    hint.textContent = msg;
+                },
+                clearError(el) {
+                    el.classList.remove('is-invalid-field');
+                    const parent = el.closest('.relative') || el.parentElement;
+                    if (parent) {
+                        const hint = parent.querySelector('.field-validation-msg');
+                        if (hint) hint.remove();
+                    }
+                }
+            },
+
+            // --- CORRETOR ORTOGRÁFICO E TIPOGRÁFICO AUTOMÁTICO ---
+            spellchecker: {
+                dictionary: {
+                    'nao': 'não', 'voce': 'você', 'tambem': 'também', 'ate': 'até',
+                    'usuario': 'usuário', 'usuarios': 'usuários', 'operacao': 'operação', 'operacoes': 'operações',
+                    'monitoria': 'monitoria', 'monitorias': 'monitorias', 'avaliacao': 'avaliação', 'avaliacoes': 'avaliações',
+                    'reuniao': 'reunião', 'reunioes': 'reuniões', 'calibracao': 'calibração', 'calibracoes': 'calibrações',
+                    'informacao': 'informação', 'informacoes': 'informações', 'atencao': 'atenção',
+                    'situacao': 'situação', 'situacoes': 'situações', 'acao': 'ação', 'acoes': 'ações',
+                    'padrao': 'padrão', 'padroes': 'padrões', 'duvida': 'dúvida', 'duvidas': 'dúvidas',
+                    'horario': 'horário', 'horarios': 'horários', 'periodo': 'período', 'periodos': 'períodos',
+                    'responsavel': 'responsável', 'responsaveis': 'responsáveis', 'relatorio': 'relatório', 'relatorios': 'relatórios',
+                    'modulo': 'módulo', 'modulos': 'módulos', 'politica': 'política', 'politicas': 'políticas',
+                    'servico': 'serviço', 'servicos': 'serviços', 'numero': 'número', 'numeros': 'números',
+                    'analise': 'análise', 'analises': 'análises', 'critico': 'crítico', 'criticos': 'críticos',
+                    'critica': 'crítica', 'criticas': 'críticas', 'publico': 'público', 'publicos': 'públicos',
+                    'conclusao': 'conclusão', 'conclusoes': 'conclusões', 'solucao': 'solução', 'solucoes': 'soluções',
+                    'definicao': 'definição', 'definicoes': 'definições', 'descricao': 'descrição', 'descricoes': 'descrições',
+                    'orientacao': 'orientação', 'orientacoes': 'orientações', 'pontuacao': 'pontuação', 'pontuacoes': 'pontuações',
+                    'observacao': 'observação', 'observacoes': 'observações', 'producao': 'produção', 'comunicacao': 'comunicação',
+                    'satisfacao': 'satisfação', 'resolucao': 'resolução', 'motivacao': 'motivação', 'lideranca': 'liderança',
+                    'eficiencia': 'eficiência', 'experiencia': 'experiência', 'excelencia': 'excelência', 'urgencia': 'urgência',
+                    'tendencia': 'tendência', 'frequencia': 'frequência', 'consistencia': 'consistência'
+                },
+                correctText(text) {
+                    if (!text || typeof text !== 'string') return text;
+                    let result = text;
+                    result = result.replace(/\s{2,}/g, ' ');
+                    result = result.replace(/\s+([,.;:?!])/g, '$1');
+                    result = result.replace(/([,.;:?!])(?=[^\s\d])/g, '$1 ');
+
+                    const words = result.split(/(\b[a-zA-ZÀ-ÿ]+\b)/g);
+                    for (let i = 0; i < words.length; i++) {
+                        const rawWord = words[i];
+                        const lower = rawWord.toLowerCase();
+                        if (this.dictionary[lower]) {
+                            const replacement = this.dictionary[lower];
+                            if (rawWord === rawWord.toUpperCase() && rawWord.length > 1) {
+                                words[i] = replacement.toUpperCase();
+                            } else if (rawWord[0] === rawWord[0].toUpperCase()) {
+                                words[i] = replacement.charAt(0).toUpperCase() + replacement.slice(1);
+                            } else {
+                                words[i] = replacement;
+                            }
+                        }
+                    }
+                    return words.join('');
+                },
+                autoCorrectElement(el) {
+                    if (!el || typeof el.value !== 'string') return;
+                    const original = el.value;
+                    const corrected = this.correctText(original);
+                    if (original !== corrected) {
+                        el.value = corrected;
+                        if (app.ui && typeof app.ui.showNotification === 'function') {
+                            app.ui.showNotification("Ortografia corrigida automaticamente!", "info");
+                        }
+                    }
+                }
+            },
+
+            // --- MOTOR DE CAÇA-PALAVRAS PARA QUALIDADE & EXPORTAÇÃO A4 ---
+            wordSearch: {
+                sizePresets: {
+                    'pequeno': { size: 12, label: 'Pequeno (12x12)', cellMm: 11.5, fontSizePt: 12 },
+                    'medio': { size: 16, label: 'Médio (16x16)', cellMm: 8.8, fontSizePt: 10 },
+                    'grande': { size: 20, label: 'Grande (20x20)', cellMm: 7.2, fontSizePt: 8.5 }
+                },
+                difficultyPresets: {
+                    'facil': {
+                        label: 'Fácil (Horizontal e Vertical Direto)',
+                        directions: [
+                            [0, 1],
+                            [1, 0]
+                        ]
+                    },
+                    'medio': {
+                        label: 'Médio (Horizontal, Vertical e Diagonal)',
+                        directions: [
+                            [0, 1],
+                            [1, 0],
+                            [1, 1],
+                            [-1, 1]
+                        ]
+                    },
+                    'dificil': {
+                        label: 'Difícil (Todas as 8 direções incluindo invertidas)',
+                        directions: [
+                            [0, 1],
+                            [0, -1],
+                            [1, 0],
+                            [-1, 0],
+                            [1, 1],
+                            [-1, -1],
+                            [1, -1],
+                            [-1, 1]
+                        ]
+                    }
+                },
+                themePresets: {
+                    'qualidade': {
+                        label: 'Qualidade & Monitoria',
+                        words: ['MONITORIA', 'CALIBRACAO', 'FEEDBACK', 'CONFORMIDADE', 'REQUISITO', 'EVOLUCAO', 'PROCEDIMENTO', 'CRITERIO', 'EXCELENCIA', 'PADRAO', 'DIRETRIZ', 'ASSERTIVIDADE']
+                    },
+                    'atendimento': {
+                        label: 'Atendimento Humanizado',
+                        words: ['EMPATIA', 'CORDIALIDADE', 'AGILIDADE', 'RESOLUCAO', 'ESCUTA', 'RESPEITO', 'CLAREZA', 'PACIENCIA', 'PROATIVIDADE', 'SATISFACAO', 'FIDELIZACAO', 'ACOLHIMENTO']
+                    },
+                    'indicadores': {
+                        label: 'Indicadores & Metas',
+                        words: ['CSAT', 'NPS', 'FCR', 'TMA', 'TME', 'RETENCAO', 'ADESAO', 'EFICIENCIA', 'QUALIDADE', 'PRODUTIVIDADE', 'CONVERSAO', 'ABSENTEISMO']
+                    },
+                    'softskills': {
+                        label: 'Soft Skills & Liderança',
+                        words: ['COMUNICACAO', 'COLABORACAO', 'RESILIENCIA', 'MOTIVACAO', 'LIDERANCA', 'SINERGIA', 'COMPROMISSO', 'ADAPTABILIDADE', 'ETICA', 'CRIATIVIDADE', 'EMPENHO', 'DISCIPLINA']
+                    },
+                    'operacoes': {
+                        label: 'Operações & Call Center',
+                        words: ['PAUSA', 'LOGON', 'ESCALA', 'PROTOCOLO', 'CHAMADA', 'REGISTRO', 'SCRIPT', 'AUDITORIA', 'ALINHAMENTO', 'PLANEJAMENTO', 'COBERTURA', 'PERFORMANCE']
+                    }
+                },
+                cleanWord(w) {
+                    if (!w) return '';
+                    return String(w)
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")
+                        .toUpperCase()
+                        .replace(/[^A-Z]/g, "");
+                },
+                generate(wordsList, sizeKey = 'medio', diffKey = 'facil') {
+                    const presetSize = this.sizePresets[sizeKey] || this.sizePresets['medio'];
+                    const presetDiff = this.difficultyPresets[diffKey] || this.difficultyPresets['facil'];
+                    const N = presetSize.size;
+                    const dirs = presetDiff.directions;
+
+                    const grid = [];
+                    for (let r = 0; r < N; r++) {
+                        grid[r] = new Array(N).fill('');
+                    }
+
+                    const normalizedWords = [];
+                    const seen = new Set();
+                    (wordsList || []).forEach(item => {
+                        const raw = String(item || '').trim();
+                        const clean = this.cleanWord(raw);
+                        if (clean.length >= 2 && clean.length <= N && !seen.has(clean)) {
+                            seen.add(clean);
+                            normalizedWords.push({ original: raw.toUpperCase(), clean });
+                        }
+                    });
+
+                    normalizedWords.sort((a, b) => b.clean.length - a.clean.length);
+
+                    const placedWords = [];
+                    const unplacedWords = [];
+                    const solutions = {};
+
+                    normalizedWords.forEach(wObj => {
+                        const word = wObj.clean;
+                        let placed = false;
+                        let attempts = 0;
+                        const maxAttempts = 300;
+                        const availableDirs = [...dirs].sort(() => Math.random() - 0.5);
+
+                        while (!placed && attempts < maxAttempts) {
+                            attempts++;
+                            const dir = availableDirs[Math.floor(Math.random() * availableDirs.length)];
+                            const dRow = dir[0];
+                            const dCol = dir[1];
+
+                            let minRow = 0, maxRow = N - 1;
+                            let minCol = 0, maxCol = N - 1;
+
+                            if (dRow > 0) maxRow = N - word.length;
+                            else if (dRow < 0) minRow = word.length - 1;
+
+                            if (dCol > 0) maxCol = N - word.length;
+                            else if (dCol < 0) minCol = word.length - 1;
+
+                            if (minRow > maxRow || minCol > maxCol) continue;
+
+                            const startRow = Math.floor(Math.random() * (maxRow - minRow + 1)) + minRow;
+                            const startCol = Math.floor(Math.random() * (maxCol - minCol + 1)) + minCol;
+
+                            let canPlace = true;
+                            for (let i = 0; i < word.length; i++) {
+                                const r = startRow + i * dRow;
+                                const c = startCol + i * dCol;
+                                const cellChar = grid[r][c];
+                                if (cellChar !== '' && cellChar !== word[i]) {
+                                    canPlace = false;
+                                    break;
+                                }
+                            }
+
+                            if (canPlace) {
+                                const coords = [];
+                                for (let i = 0; i < word.length; i++) {
+                                    const r = startRow + i * dRow;
+                                    const c = startCol + i * dCol;
+                                    grid[r][c] = word[i];
+                                    coords.push([r, c]);
+                                }
+                                solutions[word] = coords;
+                                placedWords.push({ original: wObj.original, clean: word, coords });
+                                placed = true;
+                            }
+                        }
+
+                        if (!placed) {
+                            unplacedWords.push(wObj.original);
+                        }
+                    });
+
+                    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                    for (let r = 0; r < N; r++) {
+                        for (let c = 0; c < N; c++) {
+                            if (grid[r][c] === '') {
+                                grid[r][c] = letters.charAt(Math.floor(Math.random() * letters.length));
+                            }
+                        }
+                    }
+
+                    return {
+                        grid,
+                        size: N,
+                        sizeKey,
+                        diffKey,
+                        sizePreset: presetSize,
+                        diffPreset: presetDiff,
+                        placedWords,
+                        unplacedWords,
+                        solutions
+                    };
+                },
+                exportToPdf(puzzleData, title = 'CAÇA-PALAVRAS DA QUALIDADE', themeLabel = 'Operação & Qualidade') {
+                    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+                        alert("Biblioteca de PDF em carregamento. Tente novamente em instantes.");
+                        return;
+                    }
+
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                    const pageWidth = 210;
+                    const pageHeight = 297;
+                    const marginX = 14;
+
+                    const grid = puzzleData.grid;
+                    const N = puzzleData.size;
+                    const placed = puzzleData.placedWords;
+
+                    // 1. Cabeçalho Executivo
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(marginX, 12, pageWidth - (marginX * 2), 22, 'F');
+
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(14);
+                    doc.text(title.toUpperCase(), pageWidth / 2, 21, { align: 'center' });
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(226, 232, 240);
+                    doc.text(`TEMA: ${themeLabel.toUpperCase()}  |  NÍVEL: ${puzzleData.diffPreset.label.toUpperCase()}  |  GRADE: ${N}x${N}`, pageWidth / 2, 29, { align: 'center' });
+
+                    // 2. Linha de identificação do colaborador
+                    let currentY = 40;
+                    doc.setDrawColor(203, 213, 225);
+                    doc.setLineWidth(0.3);
+                    doc.setFillColor(248, 250, 252);
+                    doc.roundedRect(marginX, currentY, pageWidth - (marginX * 2), 12, 1.5, 1.5, 'FD');
+
+                    doc.setFontSize(8);
+                    doc.setTextColor(71, 85, 105);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text("Colaborador:", marginX + 3, currentY + 7.5);
+                    doc.text("Operação / Equipe:", marginX + 85, currentY + 7.5);
+                    doc.text("Data: ____/____/________", marginX + 145, currentY + 7.5);
+
+                    // 3. Grade de Caça-Palavras
+                    currentY = 57;
+                    let cellMm = 8.5;
+                    if (N === 12) cellMm = 11.2;
+                    else if (N === 16) cellMm = 8.8;
+                    else if (N === 20) cellMm = 7.3;
+
+                    const gridTotalWidth = N * cellMm;
+                    const gridStartX = (pageWidth - gridTotalWidth) / 2;
+
+                    doc.setDrawColor(148, 163, 184);
+                    doc.setLineWidth(0.25);
+                    const fontSize = N === 12 ? 11 : (N === 16 ? 9.5 : 8);
+
+                    for (let r = 0; r < N; r++) {
+                        for (let c = 0; c < N; c++) {
+                            const x = gridStartX + (c * cellMm);
+                            const y = currentY + (r * cellMm);
+
+                            doc.setFillColor((r + c) % 2 === 0 ? 255 : 250, (r + c) % 2 === 0 ? 255 : 252, (r + c) % 2 === 0 ? 255 : 255);
+                            doc.rect(x, y, cellMm, cellMm, 'FD');
+
+                            doc.setTextColor(15, 23, 42);
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(fontSize);
+                            const char = grid[r][c];
+                            doc.text(char, x + (cellMm / 2), y + (cellMm / 2) + (fontSize * 0.12), { align: 'center', baseline: 'middle' });
+                        }
+                    }
+
+                    // 4. Seção de Palavras a Encontrar
+                    const gridBottomY = currentY + (N * cellMm);
+                    let wordsStartY = gridBottomY + 7;
+
+                    doc.setFillColor(241, 245, 249);
+                    doc.roundedRect(marginX, wordsStartY, pageWidth - (marginX * 2), 6.5, 1, 1, 'F');
+                    doc.setTextColor(30, 41, 59);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8.5);
+                    doc.text(`BANCO DE PALAVRAS A ENCONTRAR (${placed.length} PALAVRAS):`, marginX + 3, wordsStartY + 4.5);
+
+                    const numCols = N >= 16 ? 4 : 3;
+                    const colWidth = (pageWidth - (marginX * 2)) / numCols;
+                    const wordListY = wordsStartY + 10;
+                    const lineSpacing = 4.8;
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8);
+                    doc.setTextColor(51, 65, 85);
+
+                    placed.forEach((item, idx) => {
+                        const col = idx % numCols;
+                        const row = Math.floor(idx / numCols);
+                        const wx = marginX + (col * colWidth) + 2;
+                        const wy = wordListY + (row * lineSpacing);
+
+                        if (wy < pageHeight - 14) {
+                            doc.setDrawColor(148, 163, 184);
+                            doc.rect(wx, wy - 2.8, 3, 3);
+                            doc.text(item.original, wx + 4.5, wy);
+                        }
+                    });
+
+                    // 5. Rodapé
+                    doc.setFont('helvetica', 'italic');
+                    doc.setFontSize(7);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("Portal Qualidade & Treinamento Soft Marketing - Dinâmica Pedagógica Corporativa | Folha 1 de 1", pageWidth / 2, pageHeight - 6, { align: 'center' });
+
+                    const fileName = `caca_palavras_${N}x${N}_${new Date().toISOString().slice(0, 10)}.pdf`;
+                    doc.save(fileName);
+                }
+            },
             
             // --- MOTOR MATEMÁTICO ---
             calc: {
@@ -5095,15 +5732,17 @@ storage: {
 
                 // Estrutura centralizada dos menus para automatização de abas
                 menusUser: [
+                    { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
-                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
+                    { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -5115,11 +5754,11 @@ storage: {
                     const allIds = todasAbas.map(t => t.id);
 
                     const defaults = {
-                        'Operador': ['meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
+                        'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras'])],
                         'Gerente': allIds
                     };
 
@@ -5134,6 +5773,8 @@ storage: {
                             : [...(defaults[g] || defaultUserIds)];
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
+                        if (!base.includes('home')) base.unshift('home');
+                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('caca_palavras')) base.push('caca_palavras');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
                         if (['Gestor', 'Gerente', 'Dev'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
                         if (base.includes('hierarquia') && !base.includes('span_operacoes')) base.push('span_operacoes');
@@ -5514,6 +6155,13 @@ storage: {
                     this.checkTheme();
                     document.body.classList.remove('custom-cursor');
                     this.initThemeColors(); 
+
+                    // Inicialização dos recursos de UX, validação, filtros na URL e produtividade
+                    if (app.validator && typeof app.validator.init === 'function') app.validator.init();
+                    if (app.urlState && typeof app.urlState.init === 'function') app.urlState.init();
+                    this.initDismissListeners();
+                    this.initSmoothTyping();
+                    this.attachPasswordToggles(); 
                     
                     const savedMat = localStorage.getItem('soft_saved_mat');
                     if(savedMat) {
@@ -6170,6 +6818,14 @@ storage: {
                     // Rotina Diária de Agenda
                     app.notifications.checkDailySchedule();
                     
+                    // Resgata aba inicial da URL ou padrão Home
+                    const urlTab = app.urlState ? app.urlState.get('tab') : null;
+                    if (urlTab) {
+                        app.currentTab = urlTab;
+                    } else if (!app.currentTab || app.currentTab === 'dashboard_adm' || app.currentTab === 'meu_painel') {
+                        app.currentTab = localStorage.getItem("soft_session_tab") || 'home';
+                    }
+                    
                     this.renderNav();
                     this.renderTab(app.currentTab, true);
                     app.notifications.updateBadge();
@@ -6405,7 +7061,9 @@ storage: {
 
                         // RENDER DIRETO E INSTANTÂNEO COM CINTURÃO DE SEGURANÇA (TRY/CATCH)
                         try {
-                            if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
+                            if(tabId === 'home') this.renderView_Home(viewDiv);
+                            else if(tabId === 'caca_palavras') this.renderView_CacaPalavras(viewDiv);
+                            else if(tabId === 'meu_painel') this.renderView_MeuPainel(viewDiv);
                             else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
                             else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
                             else if(tabId === 'hierarquia' || tabId === 'operacoes') this.renderView_Hierarquia(viewDiv);
@@ -6453,8 +7111,8 @@ storage: {
                             else if(tabId === 'impressoes' || tabId === 'gestao_impressoes') this.renderView_Impressoes(viewDiv);
                             else if(tabId === 'dashboard_firebase_dev') { this.abrirModalFirebaseDev(); this.renderTab('dashboard_adm', true); }
                             else {
-                                // Fallback Cirúrgico: Se a aba guardada não existir, força uma aba segura.
-                                app.currentTab = app.isAdmin ? 'dashboard_adm' : 'meu_painel';
+                                // Fallback Cirúrgico: Se a aba guardada não existir, força a tela inicial Home
+                                app.currentTab = 'home';
                                 localStorage.setItem('soft_session_tab', app.currentTab);
                                 this.renderTab(app.currentTab, true);
                             }
@@ -6467,8 +7125,8 @@ storage: {
                                     </div>
                                     <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-2">Ops! Falha ao carregar a tela</h3>
                                     <p class="text-sm leading-relaxed mb-6">Aconteceu um imprevisto ao tentar desenhar as informações desta página. Não se preocupe, isso não corrompeu seus dados.</p>
-                                    <button onclick="app.ui.renderTab('${app.isAdmin ? 'dashboard_adm' : 'meu_painel'}', true)" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all">
-                                        <i class="fa-solid fa-house mr-2"></i> Voltar ao Início Seguro
+                                    <button onclick="app.ui.renderTab('home', true)" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all">
+                                        <i class="fa-solid fa-house mr-2"></i> Voltar ao Início
                                     </button>
                                 </div>
                             `;
@@ -6479,6 +7137,13 @@ storage: {
                     }
                     
                     viewDiv.classList.remove('hidden');
+
+                    // Sincroniza filtros e estado na URL, digitação suave e alternadores de senha
+                    try {
+                        if (app.urlState && typeof app.urlState.sync === 'function') app.urlState.sync(tabId);
+                        if (typeof this.attachPasswordToggles === 'function') this.attachPasswordToggles();
+                        if (typeof this.initSmoothTyping === 'function') this.initSmoothTyping(viewDiv);
+                    } catch (e) {}
 
                     // Aplica melhorias leves de UX apenas na aba ativa
                     requestAnimationFrame(() => this.applyPremiumUX(viewDiv));
@@ -7215,17 +7880,1112 @@ storage: {
                 },
 
                 calFiltroNome: '', calFiltroOp: '', calFiltroStatus: '', calFiltroTema: '', estudosFiltroOp: '',
+                calSubView: (typeof localStorage !== 'undefined' ? localStorage.getItem('soft_cal_subview') : null) || 'calendar',
+                calDashPeriodo: 'mes',
+                calDashOp: '',
+                calDashTema: '',
+                calDashStatus: '',
+                calDashBusca: '',
+                calDashPage: 1,
+                calDashPageSize: 10,
+                calDashSortCol: 'data',
+                calDashSortDir: 'desc',
+                calDashExpandedRowId: null,
+                _calCharts: {},
+
+                isGestorGerenteDev() {
+                    const role = String(app.currentUser?.tipoAcesso || '').toLowerCase();
+                    return app.isAdmin || ['gestor', 'gerente', 'dev', 'administrador', 'treinamento'].includes(role) || app.currentUser?.matricula === 'admin';
+                },
+
+                setCalSubView(subView) {
+                    this.calSubView = subView;
+                    try { localStorage.setItem('soft_cal_subview', subView); } catch(e) {}
+                    this.renderTab('calendario', true);
+                },
+
+                getCalEventDuration(e) {
+                    if (e.duracaoMin && !isNaN(e.duracaoMin)) return Number(e.duracaoMin);
+                    const inicio = e.hora || e.horaInicio;
+                    const fim = e.horaFim;
+                    if (!inicio || !fim) return 0;
+                    const [h1, m1] = inicio.split(':').map(Number);
+                    const [h2, m2] = fim.split(':').map(Number);
+                    if (isNaN(h1) || isNaN(m1) || isNaN(h2) || isNaN(m2)) return 0;
+                    let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                    if (diff < 0) diff += 24 * 60;
+                    return diff;
+                },
+
+                formatCalDuration(min) {
+                    if (!min || min <= 0) return '0 min';
+                    const h = Math.floor(min / 60);
+                    const m = min % 60;
+                    if (h > 0 && m > 0) return `${h}h ${m}m`;
+                    if (h > 0) return `${h}h`;
+                    return `${m} min`;
+                },
+
+                getTemaBadge(tema) {
+                    const map = {
+                        'Quality Day': 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                        'Aplicação de Ação': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                        'Reunião': 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-800',
+                        'Calibração': 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+                        'Feedback': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                        'Controle Diário': 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                    };
+                    const cls = map[tema] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+                    return `<span class="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${cls}">${tema || 'Geral'}</span>`;
+                },
+
+                getStatusBadge(status) {
+                    const st = status || 'Previsto';
+                    if (st.includes('Finalizado')) {
+                        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border border-green-300 dark:border-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Finalizado</span>`;
+                    }
+                    if (st === 'Cancelado') {
+                        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-300 dark:border-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Cancelado</span>`;
+                    }
+                    return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Previsto</span>`;
+                },
+
+                getAnexoButton(evt) {
+                    if (evt.anexo) {
+                        return `<button onclick="event.stopPropagation(); app.ui.openPreviewAnexo('${evt.id}')" title="Visualizar Evidência Anexada" class="px-2.5 py-1 rounded-xl bg-sky-100 hover:bg-sky-200 text-sky-800 dark:bg-sky-900/40 dark:hover:bg-sky-800/60 dark:text-sky-300 font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm transition-all"><i class="fa-solid fa-camera"></i> Evidência</button>`;
+                    }
+                    return `<span class="text-slate-300 dark:text-slate-600 text-xs">-</span>`;
+                },
+
+                openPreviewAnexo(evtId) {
+                    const evt = (app.eventsList || {})[evtId];
+                    if (!evt || !evt.anexo) return this.showAlert('Evidência', 'Nenhuma imagem ou evidência anexada para este evento.', 'info');
+                    
+                    let modal = document.getElementById('preview-anexo-modal');
+                    if (!modal) {
+                        modal = document.createElement('div');
+                        modal.id = 'preview-anexo-modal';
+                        modal.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 transition-all';
+                        document.body.appendChild(modal);
+                    }
+                    
+                    const titulo = `${evt.tema || 'Evento'} - ${evt.op || 'Operação'} (${evt.data})`;
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+                            <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm">
+                                        <i class="fa-solid fa-camera"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-extrabold text-slate-800 dark:text-white text-base">${titulo}</h4>
+                                        <p class="text-xs text-slate-400">Evidência fotográfica registrada</p>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('preview-anexo-modal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center transition-colors">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="p-6 overflow-y-auto flex-1 flex items-center justify-center bg-slate-100/50 dark:bg-slate-950/50">
+                                <img src="${evt.anexo}" alt="Evidência" class="max-h-[60vh] max-w-full rounded-2xl shadow-lg object-contain border border-slate-200 dark:border-slate-800">
+                            </div>
+                            <div class="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50/50 dark:bg-slate-800/50">
+                                <a href="${evt.anexo}" download="Evidencia_${evt.id}.jpg" target="_blank" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all">
+                                    <i class="fa-solid fa-download"></i> Baixar Imagem
+                                </a>
+                                <button onclick="document.getElementById('preview-anexo-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-all">
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    modal.classList.remove('hidden');
+                    modal.onclick = (e) => { if(e.target === modal) modal.classList.add('hidden'); };
+                },
+
+                quickFinalizarCalEvent(id) {
+                    if (!app.eventsList || !app.eventsList[id]) return;
+                    app.eventsList[id].status = 'Finalizado';
+                    if (app.storage && app.storage.saveEvents) {
+                        app.storage.saveEvents().then(() => {
+                            this.showAlert("Sucesso", "Evento marcado como finalizado com sucesso.", "success");
+                            this.updateCalDashboard(true);
+                        });
+                    }
+                },
+
+                toggleExpandCalRow(id) {
+                    this.calDashExpandedRowId = this.calDashExpandedRowId === id ? null : id;
+                    this.updateCalDashboardTableOnly();
+                },
+
+                sortCalTable(col) {
+                    if (this.calDashSortCol === col) {
+                        this.calDashSortDir = this.calDashSortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.calDashSortCol = col;
+                        this.calDashSortDir = 'asc';
+                    }
+                    this.calDashPage = 1;
+                    this.updateCalDashboardTableOnly();
+                },
+
+                changeCalDashPage(p) {
+                    this.calDashPage = p;
+                    this.updateCalDashboardTableOnly();
+                },
+
+                setCalPageSize(size) {
+                    this.calDashPageSize = Number(size) || 10;
+                    this.calDashPage = 1;
+                    this.updateCalDashboardTableOnly();
+                },
+
+                resetCalDashFilters() {
+                    this.calDashPeriodo = 'mes';
+                    this.calDashOp = '';
+                    this.calDashTema = '';
+                    this.calDashStatus = '';
+                    this.calDashBusca = '';
+                    this.calDashPage = 1;
+                    this.calDashExpandedRowId = null;
+                    const viewDiv = document.getElementById('view-calendario') || document.querySelector('[id*="calendario"]');
+                    if (viewDiv) this.renderView_CalendarioDashboard(viewDiv);
+                },
+
+                getCalDashFilteredEvents() {
+                    const all = Object.values(app.eventsList || {});
+                    const activeMonth = this.calDashPeriodo === 'mes' ? (app.currentMonth || new Date().toISOString().substring(0, 7)) : this.calDashPeriodo;
+                    
+                    return all.filter(e => {
+                        if (!e) return false;
+                        if (activeMonth !== 'todos' && e.data) {
+                            if (!e.data.startsWith(activeMonth)) return false;
+                        }
+                        if (this.calDashOp && e.op !== this.calDashOp) return false;
+                        if (this.calDashTema && e.tema !== this.calDashTema) return false;
+                        if (this.calDashStatus) {
+                            const st = (e.status || 'Previsto');
+                            if (this.calDashStatus === 'Finalizado' && !st.includes('Finalizado')) return false;
+                            if (this.calDashStatus === 'Previsto' && st !== 'Previsto') return false;
+                            if (this.calDashStatus === 'Cancelado' && st !== 'Cancelado') return false;
+                        }
+                        return true;
+                    });
+                },
+
+                renderView_CalendarioDashboard(container) {
+                    const isGestorGerenteDev = this.isGestorGerenteDev();
+                    if (!isGestorGerenteDev) {
+                        this.calSubView = 'calendar';
+                        return this.renderView_Calendario(container);
+                    }
+
+                    // Available Months for Period Filter
+                    const allMonthsSet = new Set();
+                    if (app.currentMonth) allMonthsSet.add(app.currentMonth);
+                    const currIso = new Date().toISOString().substring(0, 7);
+                    allMonthsSet.add(currIso);
+                    Object.values(app.eventsList || {}).forEach(e => {
+                        if (e && e.data && e.data.length >= 7) allMonthsSet.add(e.data.substring(0, 7));
+                    });
+                    const sortedMonths = Array.from(allMonthsSet).sort().reverse();
+
+                    // Available Operations
+                    const allOpsSet = new Set();
+                    Object.values(app.operacoesList || {}).forEach(op => { if(op && op.nome) allOpsSet.add(op.nome); });
+                    Object.values(app.eventsList || {}).forEach(e => { if(e && e.op) allOpsSet.add(e.op); });
+                    const sortedOpsList = Array.from(allOpsSet).sort();
+
+                    // Available Themes
+                    const allTemasSet = new Set(['Quality Day', 'Aplicação de Ação', 'Reunião', 'Calibração', 'Feedback', 'Controle Diário']);
+                    Object.values(app.eventsList || {}).forEach(e => { if(e && e.tema) allTemasSet.add(e.tema); });
+                    const sortedTemasList = Array.from(allTemasSet).sort();
+
+                    const currentPeriodLabel = this.calDashPeriodo === 'todos' 
+                        ? 'Todo o Histórico' 
+                        : (this.calDashPeriodo === 'mes' ? (app.currentMonth || currIso) : this.calDashPeriodo);
+
+                    let html = `
+                        <!-- Header Dashboard Executivo -->
+                        <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">Gestão Executiva</span>
+                                    <span class="text-xs text-slate-400 font-bold">• ${currentPeriodLabel}</span>
+                                </div>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Dashboard Executivo do Calendário</h2>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Indicadores de eventos, aderência operacional, análise de Pareto e conformidade com evidências visuais</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <div class="inline-flex p-1 bg-slate-200/80 dark:bg-slate-800 rounded-2xl border border-slate-300/60 dark:border-slate-700 shadow-inner mr-2">
+                                    <button onclick="app.ui.setCalSubView('calendar')" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                                        <i class="fa-solid fa-calendar-days"></i> Calendário Mensal
+                                    </button>
+                                    <button onclick="app.ui.setCalSubView('dashboard')" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-blue-600 text-white shadow-sm">
+                                        <i class="fa-solid fa-chart-pie"></i> Dashboard Executivo
+                                    </button>
+                                </div>
+                                <button onclick="app.calendar.openModal(new Date().toISOString().split('T')[0])" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md text-sm transition-all"><i class="fa-solid fa-plus"></i> Novo Evento</button>
+                                <button onclick="app.admin.exportCalendarXLSX()" class="bg-slate-800 hover:bg-black text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-all"><i class="fa-solid fa-file-excel"></i> Exportar XLSX</button>
+                            </div>
+                        </div>
+
+                        <!-- Barra de Filtros Analíticos -->
+                        <div class="bg-slate-100/90 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 mb-6 flex flex-wrap items-center gap-3 shadow-sm">
+                            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-full flex items-center justify-between mb-1">
+                                <span class="flex items-center gap-1.5"><i class="fa-solid fa-filter text-blue-500"></i> Filtros Analíticos do Dashboard</span>
+                                <button onclick="app.ui.resetCalDashFilters()" class="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline">Limpar Filtros</button>
+                            </div>
+                            
+                            <!-- Filtro Período -->
+                            <div class="flex-1 min-w-[150px]">
+                                <label class="block text-[10px] font-extrabold uppercase text-slate-400 mb-1">Período / Mês</label>
+                                <select onchange="app.ui.calDashPeriodo=this.value; app.ui.calDashPage=1; app.ui.updateCalDashboard(true)" class="w-full p-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer">
+                                    <option value="mes" ${this.calDashPeriodo==='mes'?'selected':''}>Mês Vigente (${app.currentMonth || currIso})</option>
+                                    ${sortedMonths.filter(m => m !== (app.currentMonth || currIso)).map(m => `<option value="${m}" ${this.calDashPeriodo===m?'selected':''}>${m}</option>`).join('')}
+                                    <option value="todos" ${this.calDashPeriodo==='todos'?'selected':''}>Todos os Períodos (Histórico Completo)</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtro Operação -->
+                            <div class="flex-1 min-w-[150px]">
+                                <label class="block text-[10px] font-extrabold uppercase text-slate-400 mb-1">Operação</label>
+                                <select onchange="app.ui.calDashOp=this.value; app.ui.calDashPage=1; app.ui.updateCalDashboard(true)" class="w-full p-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer">
+                                    <option value="">Todas as Operações</option>
+                                    ${sortedOpsList.map(op => `<option value="${op}" ${this.calDashOp===op?'selected':''}>${op}</option>`).join('')}
+                                </select>
+                            </div>
+
+                            <!-- Filtro Tema -->
+                            <div class="flex-1 min-w-[150px]">
+                                <label class="block text-[10px] font-extrabold uppercase text-slate-400 mb-1">Tema / Categoria</label>
+                                <select onchange="app.ui.calDashTema=this.value; app.ui.calDashPage=1; app.ui.updateCalDashboard(true)" class="w-full p-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer">
+                                    <option value="">Todos os Temas</option>
+                                    ${sortedTemasList.map(t => `<option value="${t}" ${this.calDashTema===t?'selected':''}>${t}</option>`).join('')}
+                                </select>
+                            </div>
+
+                            <!-- Filtro Status -->
+                            <div class="flex-1 min-w-[130px]">
+                                <label class="block text-[10px] font-extrabold uppercase text-slate-400 mb-1">Status Operacional</label>
+                                <select onchange="app.ui.calDashStatus=this.value; app.ui.calDashPage=1; app.ui.updateCalDashboard(true)" class="w-full p-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer">
+                                    <option value="">Todos os Status</option>
+                                    <option value="Finalizado" ${this.calDashStatus==='Finalizado'?'selected':''}>Finalizado</option>
+                                    <option value="Previsto" ${this.calDashStatus==='Previsto'?'selected':''}>Previsto</option>
+                                    <option value="Cancelado" ${this.calDashStatus==='Cancelado'?'selected':''}>Cancelado</option>
+                                </select>
+                            </div>
+
+                            <!-- Busca Livre -->
+                            <div class="w-full md:w-64">
+                                <label class="block text-[10px] font-extrabold uppercase text-slate-400 mb-1">Busca em Registros</label>
+                                <div class="relative">
+                                    <input type="text" placeholder="Buscar em Obs, Autor, Op..." value="${this.calDashBusca}" oninput="app.ui.calDashBusca=this.value; app.ui.calDashPage=1; app.ui.updateCalDashboardTableOnly()" class="w-full p-2.5 pl-8 rounded-xl text-xs border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white">
+                                    <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-3 text-slate-400 text-xs"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Camada 1: Destaque Executivo (Topo) -->
+                        <div id="cal-dash-kpis-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                            <!-- Injetado dinamicamente -->
+                        </div>
+
+                        <!-- Camada 2: Visualizações Gráficas (Meio) -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                            <!-- Gráfico 1: Temporal & Tendência -->
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h3 class="font-extrabold text-slate-800 dark:text-white text-base">Evolução Temporal & Tendência</h3>
+                                        <p class="text-xs text-slate-400 mt-0.5">Volume semanal desagregado por Status (Finalizado, Previsto e Cancelado)</p>
+                                    </div>
+                                    <span class="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg">Tendência</span>
+                                </div>
+                                <div class="relative w-full h-72">
+                                    <canvas id="chart-cal-tendencia"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Gráfico 2: Ranking & Pareto -->
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h3 class="font-extrabold text-slate-800 dark:text-white text-base">Ranking de Operações & Pareto</h3>
+                                        <p class="text-xs text-slate-400 mt-0.5">Volume decrescente por Operação com curva de Pareto acumulada</p>
+                                    </div>
+                                    <span class="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg">80/20</span>
+                                </div>
+                                <div class="relative w-full h-72">
+                                    <canvas id="chart-cal-pareto"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Gráfico 3: Composição Temática -->
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h3 class="font-extrabold text-slate-800 dark:text-white text-base">Composição Temática</h3>
+                                        <p class="text-xs text-slate-400 mt-0.5">Distribuição percentual e volumétrica por Tema de evento</p>
+                                    </div>
+                                    <span class="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg">Categorias</span>
+                                </div>
+                                <div class="relative w-full h-72">
+                                    <canvas id="chart-cal-temas"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Gráfico 4: Matriz de Densidade / Heatmap -->
+                            <div class="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h3 class="font-extrabold text-slate-800 dark:text-white text-base">Matriz de Densidade (Heatmap)</h3>
+                                        <p class="text-xs text-slate-400 mt-0.5">Cruzamento de intensidade entre Top 8 Operações e Principais Temas</p>
+                                    </div>
+                                    <span class="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg">Densidade</span>
+                                </div>
+                                <div id="cal-heatmap-container" class="overflow-x-auto custom-scrollbar flex-1 flex flex-col justify-between">
+                                    <!-- Heatmap Injetado dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Camada 3: Tabela Analítica Detalhada (Base) -->
+                        <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                                <div>
+                                    <h3 class="font-extrabold text-slate-800 dark:text-white text-lg">Base Analítica de Registros do Calendário</h3>
+                                    <p class="text-xs text-slate-400 mt-0.5">Listagem detalhada com ordenação em todas as colunas, busca livre e accordion expansível</p>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <div class="flex items-center gap-2 text-xs text-slate-500 font-bold">
+                                        <span>Registros por página:</span>
+                                        <select onchange="app.ui.setCalPageSize(this.value)" class="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-white font-bold outline-none cursor-pointer">
+                                            <option value="10" ${this.calDashPageSize===10?'selected':''}>10</option>
+                                            <option value="25" ${this.calDashPageSize===25?'selected':''}>25</option>
+                                            <option value="50" ${this.calDashPageSize===50?'selected':''}>50</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="cal-dash-table-container">
+                                <!-- Tabela Injetada dinamicamente -->
+                            </div>
+                        </div>
+                    `;
+
+                    container.innerHTML = html;
+                    setTimeout(() => {
+                        this.updateCalDashboard(true);
+                    }, 60);
+                },
+
+                renderCalHeatmap(events) {
+                    const container = document.getElementById('cal-heatmap-container');
+                    if (!container) return;
+                    
+                    const opCounts = {};
+                    events.forEach(e => {
+                        const op = e.op || 'Não Informada';
+                        opCounts[op] = (opCounts[op] || 0) + 1;
+                    });
+                    let sortedOps = Object.entries(opCounts).sort((a,b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
+                    if (sortedOps.length === 0) sortedOps = ['Geral'];
+                    
+                    const temaCounts = {};
+                    events.forEach(e => {
+                        const t = e.tema || (e.tipo === 'pessoal' ? 'Controle Diário' : 'Outros');
+                        temaCounts[t] = (temaCounts[t] || 0) + 1;
+                    });
+                    const baseTemas = ['Quality Day', 'Aplicação de Ação', 'Reunião', 'Calibração'];
+                    Object.keys(temaCounts).forEach(t => { if (!baseTemas.includes(t)) baseTemas.push(t); });
+                    const topTemas = baseTemas.slice(0, 6);
+                    
+                    const matrix = {};
+                    let maxVal = 0;
+                    sortedOps.forEach(op => {
+                        matrix[op] = {};
+                        topTemas.forEach(tema => {
+                            const c = events.filter(e => (e.op || 'Não Informada') === op && (e.tema || (e.tipo === 'pessoal' ? 'Controle Diário' : 'Outros')) === tema).length;
+                            matrix[op][tema] = c;
+                            if (c > maxVal) maxVal = c;
+                        });
+                    });
+                    
+                    let h = `
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-200 dark:border-slate-700">
+                                    <th class="p-2.5 font-bold text-slate-400 uppercase text-[10px]">Operação</th>
+                                    ${topTemas.map(t => `<th class="p-2.5 font-bold text-slate-500 dark:text-slate-300 text-center text-[10px] uppercase truncate max-w-[90px]" title="${t}">${t}</th>`).join('')}
+                                    <th class="p-2.5 font-bold text-slate-700 dark:text-slate-200 text-center text-[10px] uppercase">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    sortedOps.forEach(op => {
+                        let rowSum = 0;
+                        h += `<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            <td class="p-2.5 font-bold text-slate-700 dark:text-slate-200 truncate max-w-[130px]" title="${op}">${op}</td>`;
+                        
+                        topTemas.forEach(tema => {
+                            const val = matrix[op][tema] || 0;
+                            rowSum += val;
+                            const ratio = maxVal > 0 ? (val / maxVal) : 0;
+                            const bgStyle = val > 0 
+                                ? `background-color: rgba(37, 99, 235, ${Math.max(0.12, (ratio * 0.85).toFixed(2))}); color: ${ratio > 0.5 ? '#ffffff' : 'inherit'}; font-weight: 800;` 
+                                : 'color: #94a3b8; font-weight: 500;';
+                            h += `<td class="p-2 text-center">
+                                <div style="${bgStyle}" title="Operação: ${op} | Tema: ${tema} | Volume: ${val} eventos" class="py-1.5 px-2 rounded-lg text-xs transition-all hover:scale-105 inline-block min-w-[32px]">
+                                    ${val > 0 ? val : '-'}
+                                </div>
+                            </td>`;
+                        });
+                        
+                        h += `<td class="p-2 text-center font-black text-slate-800 dark:text-white">
+                            <span class="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-700/60 text-xs">${rowSum}</span>
+                        </td></tr>`;
+                    });
+                    
+                    h += `<tr class="bg-slate-50/80 dark:bg-slate-800/50 font-bold border-t border-slate-200 dark:border-slate-700">
+                        <td class="p-2.5 text-slate-500 uppercase text-[10px]">Total Coluna</td>`;
+                    let grandTotal = 0;
+                    topTemas.forEach(tema => {
+                        let colSum = 0;
+                        sortedOps.forEach(op => { colSum += (matrix[op][tema] || 0); });
+                        grandTotal += colSum;
+                        h += `<td class="p-2 text-center text-slate-700 dark:text-slate-300 font-extrabold">${colSum}</td>`;
+                    });
+                    h += `<td class="p-2 text-center text-blue-600 dark:text-blue-400 font-black text-sm">${grandTotal}</td></tr>`;
+                    
+                    h += `</tbody></table>`;
+                    
+                    h += `
+                        <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Escala de Densidade:</span>
+                            <div class="flex items-center gap-1.5">
+                                <span>0</span>
+                                <span class="w-4 h-3 rounded bg-blue-500/10 border border-slate-200 dark:border-slate-700"></span>
+                                <span class="w-4 h-3 rounded bg-blue-500/30"></span>
+                                <span class="w-4 h-3 rounded bg-blue-500/60"></span>
+                                <span class="w-4 h-3 rounded bg-blue-600 text-white flex items-center justify-center font-bold"></span>
+                                <span>Máx (${maxVal})</span>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML = h;
+                },
+
+                initCalDashboardCharts(events) {
+                    const isDark = document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
+                    const textColor = isDark ? '#cbd5e1' : '#475569';
+                    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+                    
+                    if (this._calCharts.tendencia) { try { this._calCharts.tendencia.destroy(); } catch(e){} this._calCharts.tendencia = null; }
+                    if (this._calCharts.pareto) { try { this._calCharts.pareto.destroy(); } catch(e){} this._calCharts.pareto = null; }
+                    if (this._calCharts.temas) { try { this._calCharts.temas.destroy(); } catch(e){} this._calCharts.temas = null; }
+                    
+                    // 1. Gráfico 1: Temporal & Tendência
+                    const ctx1 = document.getElementById('chart-cal-tendencia');
+                    if (ctx1 && typeof Chart !== 'undefined') {
+                        const activeMonth = this.calDashPeriodo === 'mes' ? (app.currentMonth || new Date().toISOString().substring(0, 7)) : this.calDashPeriodo;
+                        let labels = [];
+                        let finalizados = [];
+                        let previstos = [];
+                        let cancelados = [];
+                        
+                        if (activeMonth !== 'todos') {
+                            labels = ['Sem 1 (01-07)', 'Sem 2 (08-14)', 'Sem 3 (15-21)', 'Sem 4 (22-28)', 'Sem 5 (29+)'];
+                            finalizados = [0, 0, 0, 0, 0];
+                            previstos = [0, 0, 0, 0, 0];
+                            cancelados = [0, 0, 0, 0, 0];
+                            
+                            events.forEach(e => {
+                                const day = parseInt((e.data || '').split('-')[2], 10);
+                                let idx = 0;
+                                if (day > 28) idx = 4;
+                                else if (day > 21) idx = 3;
+                                else if (day > 14) idx = 2;
+                                else if (day > 7) idx = 1;
+                                
+                                const st = (e.status || 'Previsto');
+                                if (st.includes('Finalizado')) finalizados[idx]++;
+                                else if (st === 'Cancelado') cancelados[idx]++;
+                                else previstos[idx]++;
+                            });
+                        } else {
+                            const monthMap = {};
+                            events.forEach(e => {
+                                const m = (e.data || '').substring(0, 7) || 'Outros';
+                                if (!monthMap[m]) monthMap[m] = { fin: 0, prev: 0, canc: 0 };
+                                const st = (e.status || 'Previsto');
+                                if (st.includes('Finalizado')) monthMap[m].fin++;
+                                else if (st === 'Cancelado') monthMap[m].canc++;
+                                else monthMap[m].prev++;
+                            });
+                            labels = Object.keys(monthMap).sort();
+                            if (labels.length === 0) labels = ['Sem dados'];
+                            finalizados = labels.map(l => monthMap[l] ? monthMap[l].fin : 0);
+                            previstos = labels.map(l => monthMap[l] ? monthMap[l].prev : 0);
+                            cancelados = labels.map(l => monthMap[l] ? monthMap[l].canc : 0);
+                        }
+                        
+                        this._calCharts.tendencia = new Chart(ctx1, {
+                            type: 'line',
+                            data: {
+                                labels,
+                                datasets: [
+                                    {
+                                        label: 'Finalizado',
+                                        data: finalizados,
+                                        borderColor: '#10b981',
+                                        backgroundColor: 'rgba(16, 185, 129, 0.25)',
+                                        fill: true,
+                                        tension: 0.35,
+                                        borderWidth: 2.5,
+                                        pointRadius: 4,
+                                        pointHoverRadius: 6
+                                    },
+                                    {
+                                        label: 'Previsto',
+                                        data: previstos,
+                                        borderColor: '#f59e0b',
+                                        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                                        fill: true,
+                                        tension: 0.35,
+                                        borderWidth: 2.5,
+                                        pointRadius: 4,
+                                        pointHoverRadius: 6
+                                    },
+                                    {
+                                        label: 'Cancelado',
+                                        data: cancelados,
+                                        borderColor: '#ef4444',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                        fill: true,
+                                        tension: 0.35,
+                                        borderWidth: 2.5,
+                                        pointRadius: 4,
+                                        pointHoverRadius: 6
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                scales: {
+                                    x: {
+                                        grid: { color: gridColor },
+                                        ticks: { color: textColor, font: { size: 11, weight: 'bold' } }
+                                    },
+                                    y: {
+                                        stacked: true,
+                                        beginAtZero: true,
+                                        grid: { color: gridColor },
+                                        ticks: { precision: 0, color: textColor, font: { size: 11 } }
+                                    }
+                                },
+                                plugins: {
+                                    legend: {
+                                        position: 'top',
+                                        labels: { color: textColor, font: { size: 11, weight: 'bold' } }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    // 2. Gráfico 2: Ranking & Pareto
+                    const ctx2 = document.getElementById('chart-cal-pareto');
+                    if (ctx2 && typeof Chart !== 'undefined') {
+                        const opCounts = {};
+                        events.forEach(e => {
+                            const op = e.op || 'Não Informada';
+                            opCounts[op] = (opCounts[op] || 0) + 1;
+                        });
+                        const sorted = Object.entries(opCounts).sort((a,b) => b[1] - a[1]);
+                        const topSorted = sorted.slice(0, 8);
+                        let labels = topSorted.map(x => x[0]);
+                        let volumes = topSorted.map(x => x[1]);
+                        const total = volumes.reduce((a,b) => a + b, 0);
+                        let cum = 0;
+                        let pareto = volumes.map(v => {
+                            cum += v;
+                            return total > 0 ? Number(((cum / total) * 100).toFixed(1)) : 0;
+                        });
+                        
+                        if (labels.length === 0) {
+                            labels = ['Sem eventos'];
+                            volumes = [0];
+                            pareto = [0];
+                        }
+                        
+                        this._calCharts.pareto = new Chart(ctx2, {
+                            type: 'bar',
+                            data: {
+                                labels,
+                                datasets: [
+                                    {
+                                        type: 'bar',
+                                        label: 'Volume de Eventos',
+                                        data: volumes,
+                                        xAxisID: 'x',
+                                        backgroundColor: 'rgba(59, 130, 246, 0.85)',
+                                        borderRadius: 6,
+                                        maxBarThickness: 32
+                                    },
+                                    {
+                                        type: 'line',
+                                        label: 'Pareto Acumulado (%)',
+                                        data: pareto,
+                                        xAxisID: 'x1',
+                                        borderColor: '#ec4899',
+                                        backgroundColor: '#ec4899',
+                                        borderWidth: 2.5,
+                                        pointRadius: 4,
+                                        pointHoverRadius: 6,
+                                        tension: 0.2
+                                    }
+                                ]
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        grid: { color: gridColor },
+                                        ticks: { color: textColor, font: { size: 11, weight: 'bold' } }
+                                    },
+                                    x: {
+                                        beginAtZero: true,
+                                        grid: { color: gridColor },
+                                        ticks: { precision: 0, color: textColor, font: { size: 11 } },
+                                        title: { display: true, text: 'Volume de Eventos', color: textColor, font: { size: 10, weight: 'bold' } }
+                                    },
+                                    x1: {
+                                        position: 'top',
+                                        min: 0,
+                                        max: 100,
+                                        grid: { drawOnChartArea: false },
+                                        ticks: { callback: v => v + '%', color: '#ec4899', font: { size: 10, weight: 'bold' } },
+                                        title: { display: true, text: '% Acumulado (Pareto)', color: '#ec4899', font: { size: 10, weight: 'bold' } }
+                                    }
+                                },
+                                plugins: {
+                                    legend: {
+                                        position: 'bottom',
+                                        labels: { color: textColor, font: { size: 11, weight: 'bold' } }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    // 3. Gráfico 3: Composição Temática (Donut/Rosca)
+                    const ctx3 = document.getElementById('chart-cal-temas');
+                    if (ctx3 && typeof Chart !== 'undefined') {
+                        const temaMap = {};
+                        events.forEach(e => {
+                            const t = e.tema || (e.tipo === 'pessoal' ? 'Controle Diário' : 'Outros');
+                            temaMap[t] = (temaMap[t] || 0) + 1;
+                        });
+                        let labels = Object.keys(temaMap);
+                        let data = Object.values(temaMap);
+                        
+                        const coresTema = {
+                            'Quality Day': '#8b5cf6',
+                            'Aplicação de Ação': '#3b82f6',
+                            'Reunião': '#f97316',
+                            'Calibração': '#14b8a6',
+                            'Feedback': '#10b981',
+                            'Controle Diário': '#06b6d4',
+                            'Outros': '#64748b'
+                        };
+                        let bgColors = labels.map(l => coresTema[l] || '#94a3b8');
+                        
+                        if (labels.length === 0) {
+                            labels = ['Sem eventos'];
+                            data = [1];
+                            bgColors = ['#cbd5e1'];
+                        }
+                        
+                        this._calCharts.temas = new Chart(ctx3, {
+                            type: 'doughnut',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    data,
+                                    backgroundColor: bgColors,
+                                    borderWidth: 2,
+                                    borderColor: isDark ? '#1e293b' : '#ffffff'
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                cutout: '65%',
+                                plugins: {
+                                    legend: {
+                                        position: 'bottom',
+                                        labels: { boxWidth: 12, padding: 12, font: { size: 11, weight: 'bold' }, color: textColor }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    // 4. Gráfico 4: Matriz de Densidade (Heatmap)
+                    this.renderCalHeatmap(events);
+                },
+
+                updateCalDashboard(updateCharts = false) {
+                    const events = this.getCalDashFilteredEvents();
+                    const N = events.length;
+                    
+                    const setOps = new Set();
+                    events.forEach(e => {
+                        if (e.matricula && e.matricula !== 'TODOS' && e.matricula !== 'ADM') setOps.add(e.matricula);
+                        else if (e.autor && e.autor !== 'ADM') setOps.add(e.autor);
+                    });
+                    const countOperacionais = setOps.size;
+                    
+                    const concluidos = events.filter(e => e.status && e.status.includes('Finalizado')).length;
+                    const crPercent = N > 0 ? (concluidos / N) * 100 : 0;
+                    const crAbaixoMeta = crPercent < 80;
+                    
+                    let totalMinutos = 0;
+                    events.forEach(e => { totalMinutos += this.getCalEventDuration(e); });
+                    const hTotal = (totalMinutos / 60).toFixed(1);
+                    const mediaDurMin = N > 0 ? Math.round(totalMinutos / N) : 0;
+                    
+                    const cancelados = events.filter(e => e.status === 'Cancelado').length;
+                    const txCanc = N > 0 ? (cancelados / N) * 100 : 0;
+                    
+                    const comAnexo = events.filter(e => Boolean(e.anexo)).length;
+                    const txAnexo = N > 0 ? (comAnexo / N) * 100 : 0;
+                    
+                    const kpiContainer = document.getElementById('cal-dash-kpis-container');
+                    if (kpiContainer) {
+                        kpiContainer.innerHTML = `
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Total de Eventos Registados</span>
+                                    <div class="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                        <i class="fa-solid fa-calendar-check"></i>
+                                    </div>
+                                </div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white tracking-tight">${N}</div>
+                                <div class="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                    <span>${countOperacionais} operacionais ativos</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Taxa de Conclusão Operacional</span>
+                                    <div class="w-8 h-8 rounded-xl ${crAbaixoMeta ? 'bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'} flex items-center justify-center text-xs">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                    </div>
+                                </div>
+                                <div class="text-3xl font-black ${crAbaixoMeta ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'} tracking-tight">${crPercent.toFixed(1)}%</div>
+                                <div class="mt-2 flex items-center justify-between">
+                                    <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">${concluidos} de ${N} concluídos</span>
+                                    <span class="text-[10px] font-extrabold px-2 py-0.5 rounded-full ${crAbaixoMeta ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'}">
+                                        ${crAbaixoMeta ? '<i class=\"fa-solid fa-triangle-exclamation mr-1\"></i>< 80%' : '<i class=\"fa-solid fa-check mr-1\"></i>>= 80%'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Carga Horária Total e Média</span>
+                                    <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">
+                                        <i class="fa-solid fa-clock"></i>
+                                    </div>
+                                </div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white tracking-tight">${hTotal}h</div>
+                                <div class="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                    <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                    <span>Média: <strong>${mediaDurMin} min</strong> / sessão</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Índice de Cancelamento</span>
+                                    <div class="w-8 h-8 rounded-xl ${cancelados > 0 ? 'bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400' : 'bg-slate-50 dark:bg-slate-800 text-slate-400'} flex items-center justify-center text-xs">
+                                        <i class="fa-solid fa-ban"></i>
+                                    </div>
+                                </div>
+                                <div class="text-3xl font-black ${cancelados > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'} tracking-tight">${txCanc.toFixed(1)}%</div>
+                                <div class="mt-2 flex items-center justify-between">
+                                    <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">${cancelados} cancelado(s)</span>
+                                    <span class="text-[10px] font-extrabold px-2 py-0.5 rounded-full ${cancelados > 0 ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}">
+                                        ${cancelados > 0 ? '<i class=\"fa-solid fa-triangle-exclamation mr-1\"></i>Atenção' : 'Normal'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Adesão a Evidências Visuais</span>
+                                    <div class="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 flex items-center justify-center text-xs">
+                                        <i class="fa-solid fa-camera"></i>
+                                    </div>
+                                </div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white tracking-tight">${txAnexo.toFixed(1)}%</div>
+                                <div class="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                    <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+                                    <span>${comAnexo} de ${N} com suporte visual</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    if (updateCharts) {
+                        this.initCalDashboardCharts(events);
+                    }
+                    
+                    this.updateCalDashboardTableOnly();
+                },
+
+                updateCalDashboardTableOnly() {
+                    const container = document.getElementById('cal-dash-table-container');
+                    if (!container) return;
+                    
+                    let events = this.getCalDashFilteredEvents();
+                    
+                    if (this.calDashBusca && this.calDashBusca.trim()) {
+                        const q = this.calDashBusca.trim().toLowerCase();
+                        events = events.filter(e => {
+                            const obsMatch = (e.obs || '').toLowerCase().includes(q);
+                            const autorMatch = (e.autor || '').toLowerCase().includes(q);
+                            const opMatch = (e.op || '').toLowerCase().includes(q);
+                            const temaMatch = (e.tema || '').toLowerCase().includes(q);
+                            const matMatch = (e.matricula || '').toLowerCase().includes(q);
+                            return obsMatch || autorMatch || opMatch || temaMatch || matMatch;
+                        });
+                    }
+                    
+                    const col = this.calDashSortCol || 'data';
+                    const dir = this.calDashSortDir === 'asc' ? 1 : -1;
+                    events.sort((a, b) => {
+                        if (col === 'data') return (a.data || '').localeCompare(b.data || '') * dir;
+                        if (col === 'hora') return (a.hora || '00:00').localeCompare(b.hora || '00:00') * dir;
+                        if (col === 'duracao') return (this.getCalEventDuration(a) - this.getCalEventDuration(b)) * dir;
+                        if (col === 'op') return (a.op || '').localeCompare(b.op || '') * dir;
+                        if (col === 'tema') return (a.tema || '').localeCompare(b.tema || '') * dir;
+                        if (col === 'autor') return (a.autor || '').localeCompare(b.autor || '') * dir;
+                        if (col === 'matricula') return (a.matricula || '').localeCompare(b.matricula || '') * dir;
+                        if (col === 'status') return (a.status || 'Previsto').localeCompare(b.status || 'Previsto') * dir;
+                        if (col === 'anexo') return ((a.anexo ? 1 : 0) - (b.anexo ? 1 : 0)) * dir;
+                        return 0;
+                    });
+                    
+                    const total = events.length;
+                    const pageSize = this.calDashPageSize || 10;
+                    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                    if (this.calDashPage > totalPages) this.calDashPage = totalPages;
+                    if (this.calDashPage < 1) this.calDashPage = 1;
+                    
+                    const startIndex = (this.calDashPage - 1) * pageSize;
+                    const pageItems = events.slice(startIndex, startIndex + pageSize);
+                    
+                    const sortIcon = (c) => {
+                        if (this.calDashSortCol !== c) return '<i class="fa-solid fa-sort text-slate-300 dark:text-slate-600 ml-1"></i>';
+                        return this.calDashSortDir === 'asc' 
+                            ? '<i class="fa-solid fa-sort-up text-blue-500 ml-1"></i>' 
+                            : '<i class="fa-solid fa-sort-down text-blue-500 ml-1"></i>';
+                    };
+                    
+                    const getNome = (matStr) => {
+                        if (!matStr || matStr === 'TODOS' || matStr === 'ADM') return matStr;
+                        const u = (app.users || []).find(x => x.matricula === matStr);
+                        return u ? u.nome : matStr;
+                    };
+                    
+                    let html = `
+                        <div class="overflow-x-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-2xl">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-100/80 dark:bg-slate-900/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                                        <th onclick="app.ui.sortCalTable('data')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Data ${sortIcon('data')}</th>
+                                        <th onclick="app.ui.sortCalTable('hora')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Horário ${sortIcon('hora')}</th>
+                                        <th onclick="app.ui.sortCalTable('duracao')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Duração ${sortIcon('duracao')}</th>
+                                        <th onclick="app.ui.sortCalTable('op')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Operação ${sortIcon('op')}</th>
+                                        <th onclick="app.ui.sortCalTable('tema')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Tema ${sortIcon('tema')}</th>
+                                        <th onclick="app.ui.sortCalTable('autor')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Autor ${sortIcon('autor')}</th>
+                                        <th onclick="app.ui.sortCalTable('matricula')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Matrícula Alvo ${sortIcon('matricula')}</th>
+                                        <th onclick="app.ui.sortCalTable('status')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px]">Status ${sortIcon('status')}</th>
+                                        <th onclick="app.ui.sortCalTable('anexo')" class="p-3.5 font-bold cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors uppercase text-[10px] text-center">Evidência ${sortIcon('anexo')}</th>
+                                        <th class="p-3.5 font-bold text-center uppercase text-[10px]">Detalhes</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                    `;
+                    
+                    if (pageItems.length === 0) {
+                        html += `
+                            <tr>
+                                <td colspan="10" class="p-8 text-center text-slate-400">
+                                    <i class="fa-solid fa-inbox text-3xl mb-2 block opacity-40"></i>
+                                    Nenhum evento localizado com os filtros aplicados.
+                                </td>
+                            </tr>
+                        `;
+                    } else {
+                        pageItems.forEach(e => {
+                            const isExpanded = this.calDashExpandedRowId === e.id;
+                            const durMin = this.getCalEventDuration(e);
+                            const durFmt = this.formatCalDuration(durMin);
+                            const dataFmt = e.data ? new Date(e.data + 'T00:00:00').toLocaleDateString('pt-BR') : '-';
+                            const horario = e.tipo === 'pessoal' ? 'Dia todo' : `${e.hora || '--:--'} às ${e.horaFim || '--:--'}`;
+                            const targetNome = getNome(e.matricula);
+                            
+                            html += `
+                                <tr onclick="app.ui.toggleExpandCalRow('${e.id}')" class="hover:bg-blue-50/40 dark:hover:bg-slate-700/40 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/60 dark:bg-slate-800/80 font-medium' : ''}">
+                                    <td class="p-3.5 font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">${dataFmt}</td>
+                                    <td class="p-3.5 text-slate-600 dark:text-slate-300 whitespace-nowrap font-mono">${horario}</td>
+                                    <td class="p-3.5 text-slate-700 dark:text-slate-300 font-bold whitespace-nowrap">${durFmt}</td>
+                                    <td class="p-3.5 font-bold text-blue-600 dark:text-blue-400 truncate max-w-[120px]" title="${e.op || 'N/A'}">${e.op || 'N/A'}</td>
+                                    <td class="p-3.5 whitespace-nowrap">${this.getTemaBadge(e.tema || (e.tipo === 'pessoal' ? 'Controle Diário' : 'Outros'))}</td>
+                                    <td class="p-3.5 text-slate-600 dark:text-slate-300 truncate max-w-[120px]" title="${e.autor || '-'}">${e.autor || '-'}</td>
+                                    <td class="p-3.5 text-slate-600 dark:text-slate-300 truncate max-w-[130px]" title="${targetNome}">
+                                        <span class="font-bold text-slate-800 dark:text-slate-200">${e.matricula || '-'}</span> 
+                                        ${targetNome && targetNome !== e.matricula ? `<span class="text-[10px] text-slate-400 block">${targetNome.split(' ')[0]}</span>` : ''}
+                                    </td>
+                                    <td class="p-3.5 whitespace-nowrap">${this.getStatusBadge(e.status)}</td>
+                                    <td class="p-3.5 text-center whitespace-nowrap">${this.getAnexoButton(e)}</td>
+                                    <td class="p-3.5 text-center">
+                                        <button onclick="event.stopPropagation(); app.ui.toggleExpandCalRow('${e.id}')" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 transition-colors flex items-center justify-center mx-auto">
+                                            <i class="fa-solid ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-xs"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                            
+                            if (isExpanded) {
+                                html += `
+                                    <tr class="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                                        <td colspan="10" class="p-5">
+                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                                <div class="md:col-span-2 space-y-3">
+                                                    <div class="flex flex-wrap items-center gap-2">
+                                                        <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold">ID: #${e.id}</span>
+                                                        <span class="text-xs text-slate-400">• Fila: <strong>${e.fila || 'N/A'}</strong></span>
+                                                        <span class="text-xs text-slate-400">• Tipo: <strong>${e.tipo === 'pessoal' ? 'Controle Pessoal' : 'Evento de Operação'}</strong></span>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Observações Completas:</div>
+                                                        <div class="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap shadow-inner">
+                                                            ${e.obs || (e.tipo === 'pessoal' ? `Mon: ${e.qtdMon || 0} | FB: ${e.qtdFb || 0}` : 'Nenhuma observação informada.')}
+                                                        </div>
+                                                    </div>
+                                                    ${e.comments && e.comments.length > 0 ? `
+                                                        <div class="pt-2">
+                                                            <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Comentários Registrados:</div>
+                                                            <div class="space-y-1.5">
+                                                                ${e.comments.map(c => `<div class="p-2 bg-white dark:bg-slate-800 rounded-lg text-xs border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"><strong>${c.autor}:</strong> ${c.text}</div>`).join('')}
+                                                            </div>
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+                                                <div class="space-y-3 flex flex-col justify-between">
+                                                    <div>
+                                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Evidência Fotográfica:</div>
+                                                        ${e.anexo ? `
+                                                            <div class="relative group cursor-pointer overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 max-h-40 flex items-center justify-center bg-slate-900" onclick="app.ui.openPreviewAnexo('${e.id}')">
+                                                                <img src="${e.anexo}" class="object-cover w-full h-36 group-hover:scale-105 transition-all">
+                                                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-all gap-1.5">
+                                                                    <i class="fa-solid fa-magnifying-glass-plus"></i> Ampliar
+                                                                </div>
+                                                            </div>
+                                                        ` : `
+                                                            <div class="p-4 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400">
+                                                                Sem evidência anexada
+                                                            </div>
+                                                        `}
+                                                    </div>
+                                                    <div class="flex flex-col gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                        <button onclick="event.stopPropagation(); app.calendar.viewEvent('${e.id}')" class="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all">
+                                                            <i class="fa-solid fa-arrow-up-right-from-square"></i> Ver / Editar no Modal
+                                                        </button>
+                                                        ${e.status === 'Previsto' ? `
+                                                            <button onclick="event.stopPropagation(); app.ui.quickFinalizarCalEvent('${e.id}')" class="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all">
+                                                                <i class="fa-solid fa-check"></i> Marcar como Finalizado
+                                                            </button>
+                                                        ` : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }
+                        });
+                    }
+                    
+                    html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                    
+                    const startNum = total === 0 ? 0 : startIndex + 1;
+                    const endNum = Math.min(startIndex + pageSize, total);
+                    
+                    html += `
+                        <div class="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 text-xs text-slate-500">
+                            <div>
+                                Mostrando <strong class="text-slate-800 dark:text-slate-200">${startNum}</strong> a <strong class="text-slate-800 dark:text-slate-200">${endNum}</strong> de <strong class="text-slate-800 dark:text-slate-200">${total}</strong> registros filtrados
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button onclick="app.ui.changeCalDashPage(1)" ${this.calDashPage <= 1 ? 'disabled class="opacity-40 cursor-not-allowed"' : ''} class="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Primeira Página">
+                                    <i class="fa-solid fa-angles-left"></i>
+                                </button>
+                                <button onclick="app.ui.changeCalDashPage(${this.calDashPage - 1})" ${this.calDashPage <= 1 ? 'disabled class="opacity-40 cursor-not-allowed"' : ''} class="px-2.5 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors font-bold gap-1" title="Página Anterior">
+                                    <i class="fa-solid fa-chevron-left"></i> Anterior
+                                </button>
+                                <span class="px-3 py-1 font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-lg">Página ${this.calDashPage} de ${totalPages}</span>
+                                <button onclick="app.ui.changeCalDashPage(${this.calDashPage + 1})" ${this.calDashPage >= totalPages ? 'disabled class="opacity-40 cursor-not-allowed"' : ''} class="px-2.5 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors font-bold gap-1" title="Próxima Página">
+                                    Próxima <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                                <button onclick="app.ui.changeCalDashPage(${totalPages})" ${this.calDashPage >= totalPages ? 'disabled class="opacity-40 cursor-not-allowed"' : ''} class="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Última Página">
+                                    <i class="fa-solid fa-angles-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    container.innerHTML = html;
+                },
 
                 renderView_Calendario(container) {
-                    const isGlobalCalendar = app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente';
+                    const isGestorGerenteDev = this.isGestorGerenteDev();
+                    const isGlobalCalendar = isGestorGerenteDev;
+
+                    if (!this.calSubView) {
+                        this.calSubView = (typeof localStorage !== 'undefined' ? localStorage.getItem('soft_cal_subview') : null) || 'calendar';
+                    }
+
+                    if (isGestorGerenteDev && this.calSubView === 'dashboard') {
+                        return this.renderView_CalendarioDashboard(container);
+                    }
+
                     const mat = (isGlobalCalendar || !app.currentUser) ? 'ADM' : app.currentUser.matricula;
                     const [year, month] = (app.currentMonth || new Date().toISOString().substring(0, 7)).split('-');
-                    const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}" ${this.calFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
+                    const operacoes = Object.values(app.operacoesList || {}).map(op => `<option value="${op.nome}" ${this.calFiltroOp===op.nome?'selected':''}>${op.nome}</option>`).join('');
                     
                     // Helper Puxar Nomes
                     const getNome = (matStr) => {
                         if(!matStr || matStr === 'TODOS' || matStr === 'ADM') return matStr;
-                        const u = app.users.find(x => x.matricula === matStr);
+                        const u = (app.users || []).find(x => x.matricula === matStr);
                         return u ? u.nome : matStr;
                     };
 
@@ -7240,7 +9000,7 @@ storage: {
                         return `(${h > 0 ? h+'h' : ''}${m > 0 ? m+'m' : (h==0?'0m':'')})`;
                     };
 
-                    let allEvtsMonth = Object.values(app.eventsList).filter(e => e.data.startsWith(`${year}-${month}`));
+                    let allEvtsMonth = Object.values(app.eventsList || {}).filter(e => e && e.data && e.data.startsWith(`${year}-${month}`));
                     let myEvts = allEvtsMonth;
                     if(!isGlobalCalendar) {
                         myEvts = allEvtsMonth.filter(e => e.matricula === mat || e.matricula === 'TODOS');
@@ -7266,7 +9026,17 @@ storage: {
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${isGlobalCalendar ? 'Calendário Global da Operação' : 'Meu Calendário'}</h2>
                             </div>
-                            <div class="flex gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
+                                ${isGestorGerenteDev ? `
+                                    <div class="inline-flex p-1 bg-slate-200/80 dark:bg-slate-800 rounded-2xl border border-slate-300/60 dark:border-slate-700 shadow-inner mr-2">
+                                        <button onclick="app.ui.setCalSubView('calendar')" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm">
+                                            <i class="fa-solid fa-calendar-days"></i> Calendário Mensal
+                                        </button>
+                                        <button onclick="app.ui.setCalSubView('dashboard')" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                                            <i class="fa-solid fa-chart-pie"></i> Dashboard Executivo
+                                        </button>
+                                    </div>
+                                ` : ''}
                                 <button onclick="app.calendar.openModal(new Date().toISOString().split('T')[0])" class="bg-blue-600 text-white font-bold py-2.5 px-5 rounded-xl shadow-md text-sm"><i class="fa-solid fa-plus"></i> Novo Evento</button>
                                 ${isGlobalCalendar ? `<button onclick="app.admin.exportCalendarXLSX()" class="bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm"><i class="fa-solid fa-file-excel"></i> Exportar XLSX</button>` : ''}
                             </div>
@@ -28852,6 +30622,1085 @@ Object.assign(app.ui, {
                         if (app.duolingo) {
                             app.duolingo.render(container);
                         }
+                    },
+
+                    // =========================================================================
+                    // UX PREMIUM: DISMISS LISTENERS (ESC & CLIQUE FORA), SMOOTH TYPING & SENHAS
+                    // =========================================================================
+                    initDismissListeners() {
+                        if (this._dismissListenersInitialized) return;
+                        this._dismissListenersInitialized = true;
+
+                        // Fechamento instantâneo com tecla ESC
+                        document.addEventListener('keydown', (e) => {
+                            if (e.key === 'Escape') {
+                                this.closeTopModal();
+                            }
+                        });
+
+                        // Fechamento ao clicar fora (no backdrop escuro)
+                        document.addEventListener('click', (e) => {
+                            const target = e.target;
+                            if (!target || !target.classList) return;
+
+                            // Se o elemento clicado é o backdrop escuro externo
+                            const isBackdrop = target.classList.contains('fixed') &&
+                                target.classList.contains('inset-0') &&
+                                (target.classList.contains('backdrop-blur-md') || target.classList.contains('backdrop-blur-sm') ||
+                                 target.classList.contains('bg-slate-950/85') || target.classList.contains('bg-slate-900/80') ||
+                                 target.classList.contains('bg-black/50') || target.classList.contains('bg-black/60') ||
+                                 target.classList.contains('bg-black/70') || target.classList.contains('bg-black/80'));
+
+                            if (isBackdrop) {
+                                // Não fecha telas vitais de login ou erro
+                                if (target.id === 'view-login' || target.id === 'view-app' || target.id === 'session-wait-screen' || target.id === 'error-boundary-screen') {
+                                    return;
+                                }
+                                this.closeModalElement(target);
+                            }
+                        });
+                    },
+
+                    closeTopModal() {
+                        // 1. Command Palette
+                        const cp = document.getElementById('command-palette');
+                        if (cp && !cp.classList.contains('hidden')) {
+                            this.closeCommandPalette();
+                            return true;
+                        }
+
+                        // 2. Modais com IDs conhecidos
+                        const knownModals = [
+                            'alert-modal', 'confirm-modal', 'custom-confirm-modal',
+                            'calendar-modal', 'add-user-modal', 'edit-user-modal',
+                            'report-modal', 'fcr-admin-modal', 'modal-detalhes-acao',
+                            'modal-gestao-reportes', 'modal-softlingo-cms', 'audio-modal',
+                            'analise-chart-modal', 'modal-firebase-dev', 'fcr-result-modal',
+                            'csat-admin-modal', 'cert-modal'
+                        ];
+                        for (const id of knownModals) {
+                            const el = document.getElementById(id);
+                            if (el && !el.classList.contains('hidden')) {
+                                this.closeModalElement(el);
+                                return true;
+                            }
+                        }
+
+                        // 3. Qualquer modal genérico com fixed inset-0
+                        const allFixed = Array.from(document.querySelectorAll('.fixed.inset-0:not(.hidden)'));
+                        for (let i = allFixed.length - 1; i >= 0; i--) {
+                            const el = allFixed[i];
+                            if (el.id !== 'view-login' && el.id !== 'view-app' && el.id !== 'session-wait-screen' && el.id !== 'error-boundary-screen') {
+                                this.closeModalElement(el);
+                                return true;
+                            }
+                        }
+                        return false;
+                    },
+
+                    closeModalElement(el) {
+                        if (!el) return;
+                        if (el.id === 'fcr-admin-modal' || el.id === 'report-modal' || el.id === 'modal-detalhes-acao' || el.id === 'fcr-result-modal') {
+                            el.remove();
+                        } else {
+                            el.classList.add('hidden');
+                        }
+                    },
+
+                    // Alternador discreto de visibilidade de senha (ícone de olho)
+                    togglePasswordVisibility(buttonOrId) {
+                        let input = null;
+                        let btn = null;
+                        if (typeof buttonOrId === 'string') {
+                            input = document.getElementById(buttonOrId);
+                            btn = document.querySelector(`[data-target-pwd="${buttonOrId}"]`);
+                        } else if (buttonOrId && buttonOrId.nodeType) {
+                            btn = buttonOrId.closest('button') || buttonOrId;
+                            const targetId = btn.getAttribute('data-target-pwd');
+                            if (targetId) input = document.getElementById(targetId);
+                            else {
+                                const parent = btn.parentElement;
+                                input = parent ? parent.querySelector('input') : null;
+                            }
+                        }
+
+                        if (!input) return;
+                        const icon = btn ? btn.querySelector('i') : null;
+
+                        if (input.type === 'password') {
+                            input.type = 'text';
+                            if (icon) {
+                                icon.classList.remove('fa-eye');
+                                icon.classList.add('fa-eye-slash');
+                            }
+                        } else {
+                            input.type = 'password';
+                            if (icon) {
+                                icon.classList.remove('fa-eye-slash');
+                                icon.classList.add('fa-eye');
+                            }
+                        }
+                    },
+
+                    // Injeta dinamicamente o alternador de olho em campos de senha que ainda não o possuem
+                    attachPasswordToggles() {
+                        const pwdInputs = document.querySelectorAll('input[type="password"]');
+                        pwdInputs.forEach(input => {
+                            if (input.dataset.pwdToggleAttached) return;
+                            input.dataset.pwdToggleAttached = 'true';
+
+                            const parent = input.parentElement;
+                            if (!parent) return;
+
+                            // Garante que o container pai é relativo para posicionamento
+                            if (!parent.classList.contains('relative') && parent !== document.body) {
+                                parent.classList.add('relative');
+                            }
+
+                            // Verifica se já existe um botão de toggle imediatamente após ou associado
+                            if (input.nextElementSibling && (input.nextElementSibling.classList.contains('password-eye-btn') || input.nextElementSibling.hasAttribute('data-target-pwd'))) {
+                                return;
+                            }
+
+                            const toggleBtn = document.createElement('button');
+                            toggleBtn.type = 'button';
+                            toggleBtn.className = 'password-eye-btn absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1.5 focus:outline-none';
+                            toggleBtn.innerHTML = '<i class="fa-solid fa-eye text-sm"></i>';
+                            toggleBtn.title = 'Mostrar / Ocultar Senha';
+                            toggleBtn.setAttribute('aria-label', 'Mostrar ou ocultar senha');
+
+                            toggleBtn.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const isPwd = input.type === 'password';
+                                input.type = isPwd ? 'text' : 'password';
+                                const icon = toggleBtn.querySelector('i');
+                                if (icon) {
+                                    if (isPwd) {
+                                        icon.classList.remove('fa-eye');
+                                        icon.classList.add('fa-eye-slash');
+                                    } else {
+                                        icon.classList.remove('fa-eye-slash');
+                                        icon.classList.add('fa-eye');
+                                    }
+                                }
+                            });
+
+                            if (input.nextSibling) {
+                                parent.insertBefore(toggleBtn, input.nextSibling);
+                            } else {
+                                parent.appendChild(toggleBtn);
+                            }
+                            input.classList.add('pr-10');
+                        });
+                    },
+
+                    // Digitação fluida, auto-expansão de textarea e corretor ortográfico
+                    initSmoothTyping(container = document) {
+                        const textareas = container.querySelectorAll('textarea');
+                        textareas.forEach(ta => {
+                            if (ta.dataset.smoothAttached) return;
+                            ta.dataset.smoothAttached = 'true';
+                            ta.setAttribute('spellcheck', 'true');
+                            ta.setAttribute('lang', 'pt-BR');
+                            ta.setAttribute('autocorrect', 'on');
+
+                            const autoResize = () => {
+                                if (ta.classList.contains('no-autoresize')) return;
+                                ta.style.height = 'auto';
+                                const newHeight = Math.max(ta.scrollHeight, 42);
+                                ta.style.height = newHeight + 'px';
+                            };
+
+                            ta.addEventListener('input', autoResize);
+                            if (ta.value) setTimeout(autoResize, 50);
+
+                            // Atalho para correção ortográfica automática no blur
+                            ta.addEventListener('blur', () => {
+                                if (app.spellchecker && typeof app.spellchecker.autoCorrectElement === 'function') {
+                                    app.spellchecker.autoCorrectElement(ta);
+                                }
+                            });
+                        });
+
+                        const inputs = container.querySelectorAll('input[type="text"], input[type="search"]');
+                        inputs.forEach(inp => {
+                            if (inp.dataset.smoothAttached) return;
+                            inp.dataset.smoothAttached = 'true';
+                            inp.setAttribute('spellcheck', 'true');
+                            inp.setAttribute('lang', 'pt-BR');
+                        });
+                    },
+
+                    // =========================================================================
+                    // ABA INICIAL: SPEED DIAL ESTILO NAVEGADOR COM BUSCA, FAVORITOS E LIKES
+                    // =========================================================================
+                    renderView_Home(container) {
+                        const currentUser = app.currentUser || { matricula: 'admin', nome: 'Administrador', tipoAcesso: 'Dev' };
+                        const mat = String(currentUser.matricula || 'admin').trim();
+                        const userTabs = app.isAdmin ? null : this.getEffectiveUserTabs(currentUser);
+
+                        // Carrega favoritos e curtidas do usuário
+                        const favKey = 'soft_user_favs_' + mat;
+                        const likeKey = 'soft_user_likes_' + mat;
+                        const likesCountKey = 'soft_card_likes_counter';
+
+                        let userFavs = [];
+                        try { userFavs = JSON.parse(localStorage.getItem(favKey) || '[]'); } catch (e) { userFavs = []; }
+
+                        let userLikes = [];
+                        try { userLikes = JSON.parse(localStorage.getItem(likeKey) || '[]'); } catch (e) { userLikes = []; }
+
+                        let likesCounter = {};
+                        try { likesCounter = JSON.parse(localStorage.getItem(likesCountKey) || '{}'); } catch (e) { likesCounter = {}; }
+
+                        // Catálogo completo de módulos do portal
+                        const catalog = [
+                            {
+                                id: 'meu_painel',
+                                title: 'Meu Painel de Resultados',
+                                cat: 'operacao',
+                                catLabel: 'Operação & Qualidade',
+                                icon: 'fa-gauge-high',
+                                badge: 'Essencial',
+                                color: 'from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                desc: 'Acompanhe seus indicadores individuais, bonificação, notas de monitoria e status do mês em tempo real.'
+                            },
+                            {
+                                id: 'caca_palavras',
+                                title: 'Caça-Palavras da Qualidade',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Dinâmicas',
+                                icon: 'fa-puzzle-piece',
+                                badge: 'Novo',
+                                color: 'from-violet-500/10 to-purple-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
+                                desc: 'Crie dinâmicas pedagógicas e caça-palavras temáticos personalizados com exportação em folha A4 cheia.'
+                            },
+                            {
+                                id: 'calendario',
+                                title: 'Calendário & Agenda Executiva',
+                                cat: 'operacao',
+                                catLabel: 'Operação & Rotina',
+                                icon: 'fa-calendar-days',
+                                badge: 'Rotina',
+                                color: 'from-blue-500/10 to-indigo-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                                desc: 'Consulte calibrações, quality days, reuniões setoriais e painel analítico com indicadores executivos.'
+                            },
+                            {
+                                id: 'dashboard_adm',
+                                title: 'Dashboard Executivo ADM',
+                                cat: 'gestao',
+                                catLabel: 'Gestão & Métricas',
+                                icon: 'fa-chart-pie',
+                                badge: 'Gerencial',
+                                color: 'from-sky-500/10 to-blue-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20',
+                                desc: 'Visão consolidada da operação, atingimento de metas globais, dispersão de notas e saúde operacional.'
+                            },
+                            {
+                                id: 'analitico_visao_geral',
+                                title: 'Apresentação de Resultados',
+                                cat: 'gestao',
+                                catLabel: 'Gestão & Resultados',
+                                icon: 'fa-chart-line',
+                                badge: 'Mensal',
+                                color: 'from-indigo-500/10 to-violet-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+                                desc: 'Relatórios analíticos setoriais com histórico por mês, status operacionais e exportação profissional.'
+                            },
+                            {
+                                id: 'hierarquia',
+                                title: 'Hierarquia & Supervisões',
+                                cat: 'gestao',
+                                catLabel: 'Gestão & Equipes',
+                                icon: 'fa-sitemap',
+                                badge: 'Equipes',
+                                color: 'from-amber-500/10 to-orange-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                                desc: 'Organograma operacional, supervisões, gestão de operadores, alocações setoriais e span de controle.'
+                            },
+                            {
+                                id: 'span_operacoes',
+                                title: 'Span de Operações',
+                                cat: 'gestao',
+                                catLabel: 'Gestão & Equipes',
+                                icon: 'fa-people-arrows',
+                                badge: 'Controle',
+                                color: 'from-teal-500/10 to-emerald-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20',
+                                desc: 'Métricas de dimensionamento, equilíbrio de equipes e proporção operador x supervisor.'
+                            },
+                            {
+                                id: 'implantacao_ia',
+                                title: 'Gantt de Implantação',
+                                cat: 'gestao',
+                                catLabel: 'Planejamento & Projetos',
+                                icon: 'fa-diagram-project',
+                                badge: 'Projetos',
+                                color: 'from-cyan-500/10 to-blue-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
+                                desc: 'Cronograma interativo de implantação, fases, marcos, troca de posições e extração em PDF executivo.'
+                            },
+                            {
+                                id: 'treinamentos',
+                                title: 'Treinamentos & Avaliações',
+                                cat: 'treinamento',
+                                catLabel: 'Treinamento & Pessoas',
+                                icon: 'fa-graduation-cap',
+                                badge: 'Oficial',
+                                color: 'from-emerald-500/10 to-green-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                desc: 'Provas oficiais de NPS/CSAT, avaliação FCR anti-cola e emissão de certificados oficiais em PDF.'
+                            },
+                            {
+                                id: 'teste_duolingo',
+                                title: 'Softlingo Gamificado',
+                                cat: 'treinamento',
+                                catLabel: 'Treinamento Gamificado',
+                                icon: 'fa-gamepad',
+                                badge: 'Gamificação',
+                                color: 'from-green-500/10 to-emerald-500/10 text-green-600 dark:text-green-400 border-green-500/20',
+                                desc: 'Trilha gamificada de capacitação com lições interativas, sistema de vidas, mascotes e CMS por operação.'
+                            },
+                            {
+                                id: 'gestao_atas',
+                                title: 'Gestão de Atas & Alinhamentos',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Governança',
+                                icon: 'fa-file-lines',
+                                badge: 'Governança',
+                                color: 'from-slate-500/10 to-zinc-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                desc: 'Registro e consulta de atas de reunião, alinhamentos de processo, auditorias e compromissos operacionais.'
+                            },
+                            {
+                                id: 'validar_acoes',
+                                title: 'Validação de Ações',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Auditoria',
+                                icon: 'fa-clipboard-check',
+                                badge: 'Qualidade',
+                                color: 'from-rose-500/10 to-red-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+                                desc: 'Aprovação e auditoria de planos de ação cadastrados pela supervisão e acompanhamento de eficácia.'
+                            },
+                            {
+                                id: 'registrar_acao',
+                                title: 'Registrar Plano de Ação',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Ações',
+                                icon: 'fa-plus-circle',
+                                badge: 'Melhoria',
+                                color: 'from-orange-500/10 to-amber-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+                                desc: 'Cadastro de plano de melhoria operacional, 5 Porquês, causa raiz, prazos e evidências de suporte.'
+                            },
+                            {
+                                id: 'calibragem_audio',
+                                title: 'Laboratório de Áudio',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Monitoria',
+                                icon: 'fa-headphones',
+                                badge: 'Auditivo',
+                                color: 'from-purple-500/10 to-pink-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                                desc: 'Calibragem auditiva de monitorias com simulação de notas, critérios e comparativo de desvios.'
+                            },
+                            {
+                                id: 'ranking_monitorias',
+                                title: 'Ranking de Monitorias',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Desempenho',
+                                icon: 'fa-trophy',
+                                badge: 'Destaque',
+                                color: 'from-amber-500/10 to-yellow-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                                desc: 'Classificação de qualidade por operador, equipe e operação, destacando notas máximas e evolução.'
+                            },
+                            {
+                                id: 'import_monitorias',
+                                title: 'Importação de Monitorias',
+                                cat: 'ferramentas',
+                                catLabel: 'Ferramentas & Dados',
+                                icon: 'fa-file-excel',
+                                badge: 'Dados',
+                                color: 'from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                desc: 'Importação de planilhas de monitoria, conciliação de bases e consolidação de resultados.'
+                            },
+                            {
+                                id: 'calculadora',
+                                title: 'Calculadora de Premiação',
+                                cat: 'ferramentas',
+                                catLabel: 'Ferramentas & Apoio',
+                                icon: 'fa-calculator',
+                                badge: 'Cálculo',
+                                color: 'from-blue-500/10 to-cyan-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                                desc: 'Simulador dinâmico de bonificação variável de acordo com o atingimento dos multiplicadores de meta.'
+                            },
+                            {
+                                id: 'calc_monitorias',
+                                title: 'Calculadora Amostral',
+                                cat: 'ferramentas',
+                                catLabel: 'Ferramentas & Apoio',
+                                icon: 'fa-chart-simple',
+                                badge: 'Estatística',
+                                color: 'from-indigo-500/10 to-blue-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+                                desc: 'Cálculo de dimensionamento de amostras estatísticas de monitorias necessárias por operação.'
+                            },
+                            {
+                                id: 'controle_estoque',
+                                title: 'Controle de Estoque & Materiais',
+                                cat: 'ferramentas',
+                                catLabel: 'Operação & Apoio',
+                                icon: 'fa-boxes-stacked',
+                                badge: 'Logística',
+                                color: 'from-stone-500/10 to-zinc-500/10 text-stone-600 dark:text-stone-400 border-stone-500/20',
+                                desc: 'Solicitações e gestão de insumos, materiais de apoio, uniformes e headsets da operação.'
+                            },
+                            {
+                                id: 'impressoes',
+                                title: 'Gestão de Impressões',
+                                cat: 'ferramentas',
+                                catLabel: 'Operação & Apoio',
+                                icon: 'fa-print',
+                                badge: 'Suporte',
+                                color: 'from-slate-500/10 to-neutral-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                desc: 'Controle de filas e solicitações de impressão de materiais de treinamento, dinâmicas e formulários.'
+                            },
+                            {
+                                id: 'regras',
+                                title: 'Regras & Políticas de Qualidade',
+                                cat: 'apoio',
+                                catLabel: 'Regras & Governança',
+                                icon: 'fa-scale-balanced',
+                                badge: 'Governança',
+                                color: 'from-slate-500/10 to-blue-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                desc: 'Regulamento oficial de bonificação, critérios de monitoria, políticas de tolerância e governança.'
+                            },
+                            {
+                                id: 'perfil',
+                                title: 'Meu Perfil & Segurança',
+                                cat: 'apoio',
+                                catLabel: 'Minha Conta',
+                                icon: 'fa-user-gear',
+                                badge: 'Conta',
+                                color: 'from-purple-500/10 to-indigo-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                                desc: 'Gestão dos dados cadastrais do seu usuário, foto de perfil, permissões e alteração segura de senha.'
+                            }
+                        ];
+
+                        // Filtra módulos permitidos para o perfil atual
+                        const accessibleCards = catalog.filter(c => {
+                            if (app.isAdmin) return true;
+                            if (c.id === 'home' || c.id === 'meu_painel' || c.id === 'perfil') return true;
+                            return userTabs && userTabs.includes(c.id);
+                        });
+
+                        // Categorias disponíveis
+                        const categories = [
+                            { id: 'all', label: 'Todas as Telas' },
+                            { id: 'favs', label: 'Favoritos Fixados' },
+                            { id: 'operacao', label: 'Operação & Qualidade' },
+                            { id: 'gestao', label: 'Gestão & Métricas' },
+                            { id: 'treinamento', label: 'Treinamento & Pessoas' },
+                            { id: 'ferramentas', label: 'Ferramentas & Apoio' }
+                        ];
+
+                        let activeFilter = 'all';
+                        let searchQuery = '';
+
+                        container.innerHTML = `
+                            <div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in">
+                                <!-- Banner Hero de Boas-Vindas -->
+                                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-8 md:p-10 shadow-2xl border border-slate-800 mb-8">
+                                    <div class="relative z-10 max-w-3xl">
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-4">
+                                            <i class="fa-solid fa-compass"></i> Central de Navegação do Portal
+                                        </div>
+                                        <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight mb-3">
+                                            Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-sky-200 to-emerald-300">${currentUser.nome || 'Colaborador'}</span>
+                                        </h1>
+                                        <p class="text-slate-300 text-sm md:text-base leading-relaxed mb-6">
+                                            Organize seus atalhos favoritos, pesquise rotinas e navegue de forma instantânea por todas as ferramentas de qualidade, treinamento e gestão.
+                                        </p>
+
+                                        <!-- Campo de Busca em Tempo Real (Speed Dial Search) -->
+                                        <div class="relative max-w-2xl">
+                                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                                <i class="fa-solid fa-magnifying-glass text-lg"></i>
+                                            </div>
+                                            <input id="home-speed-dial-search" type="search" placeholder="Pesquisar por página, relatório, ferramenta ou rotina..."
+                                                class="w-full pl-12 pr-12 py-3.5 bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-700/60 rounded-2xl text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white/15 transition-all shadow-inner backdrop-blur-md">
+                                            <button id="home-search-clear-btn" type="button" class="hidden absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-white transition">
+                                                <i class="fa-solid fa-circle-xmark"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Grafismo de fundo decorativo -->
+                                    <div class="absolute -right-12 -bottom-12 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                                    <div class="absolute right-32 -top-12 w-64 h-64 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                                </div>
+
+                                <!-- Filtros por Categoria -->
+                                <div class="flex items-center gap-2 overflow-x-auto pb-4 mb-6 custom-scrollbar">
+                                    ${categories.map(cat => `
+                                        <button type="button" data-home-cat="${cat.id}"
+                                            class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
+                                            ${cat.label}
+                                        </button>
+                                    `).join('')}
+                                </div>
+
+                                <!-- Seção de Favoritos Fixados -->
+                                <div id="home-favorites-wrapper" class="mb-10 ${userFavs.length > 0 ? '' : 'hidden'}">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
+                                        </h2>
+                                        <span class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
+                                    </div>
+                                    <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                        <!-- Renderizado via JS -->
+                                    </div>
+                                </div>
+
+                                <!-- Grade Principal de Blocos / Speed Dial -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-4">
+                                        <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
+                                        </h2>
+                                        <span id="home-catalog-count" class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                            Exibindo ${accessibleCards.length} páginas
+                                        </span>
+                                    </div>
+                                    <div id="home-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                        <!-- Renderizado via JS -->
+                                    </div>
+                                    <div id="home-empty-state" class="hidden text-center py-16 px-4 glass-card rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
+                                        <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl">
+                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                        </div>
+                                        <h3 class="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhuma página encontrada</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Tente buscar por outro termo ou limpe os filtros de categoria.</p>
+                                        <button id="home-reset-filters-btn" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition">
+                                            Limpar Busca e Filtros
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Função auxiliar para renderizar um card individual
+                        const buildCardHtml = (card, isPinnedSection = false) => {
+                            const isFav = userFavs.includes(card.id);
+                            const isLiked = userLikes.includes(card.id);
+                            const likeCount = likesCounter[card.id] || 0;
+
+                            return `
+                                <div class="speed-dial-card group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 rounded-2xl p-5 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer"
+                                    data-card-id="${card.id}">
+                                    <div>
+                                        <div class="flex items-start justify-between gap-3 mb-3">
+                                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br ${card.color} flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+                                                <i class="fa-solid ${card.icon}"></i>
+                                            </div>
+                                            <div class="flex items-center gap-1">
+                                                <button type="button" class="fav-star-btn p-2 rounded-lg text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400 transition ${isFav ? 'is-fav' : ''}"
+                                                    data-card-id="${card.id}" title="${isFav ? 'Desafixar dos Favoritos' : 'Fixar nos Favoritos'}">
+                                                    <i class="fa-${isFav ? 'solid' : 'regular'} fa-star text-sm"></i>
+                                                </button>
+                                                <button type="button" class="like-heart-btn p-2 rounded-lg text-slate-300 hover:text-rose-500 dark:text-slate-600 dark:hover:text-rose-400 transition flex items-center gap-1 ${isLiked ? 'is-liked' : ''}"
+                                                    data-card-id="${card.id}" title="${isLiked ? 'Descurtir' : 'Curtir'}">
+                                                    <i class="fa-${isLiked ? 'solid' : 'regular'} fa-heart text-sm"></i>
+                                                    <span class="like-count-num text-[11px] font-bold ${isLiked ? 'text-rose-500' : 'text-slate-400'}">${likeCount > 0 ? likeCount : ''}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-2">
+                                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">${card.catLabel}</span>
+                                            <h3 class="text-sm font-bold text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1 mt-0.5">
+                                                ${card.title}
+                                            </h3>
+                                        </div>
+
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-4">
+                                            ${card.desc}
+                                        </p>
+                                    </div>
+
+                                    <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+                                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                            ${card.badge || 'Módulo'}
+                                        </span>
+                                        <span class="text-indigo-600 dark:text-indigo-400 font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                                            Acessar <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                            `;
+                        };
+
+                        // Atualiza as visualizações dos blocos
+                        const updateViews = () => {
+                            const query = searchQuery.trim().toLowerCase();
+
+                            // 1. Atualiza lista de favoritos
+                            const favWrapper = container.querySelector('#home-favorites-wrapper');
+                            const favGrid = container.querySelector('#home-favorites-grid');
+                            const favCards = accessibleCards.filter(c => userFavs.includes(c.id));
+
+                            if (favCards.length > 0 && activeFilter !== 'favs') {
+                                favWrapper.classList.remove('hidden');
+                                favGrid.innerHTML = favCards.map(c => buildCardHtml(c, true)).join('');
+                            } else {
+                                favWrapper.classList.add('hidden');
+                            }
+
+                            // 2. Filtra grade principal
+                            let filtered = accessibleCards;
+
+                            if (activeFilter === 'favs') {
+                                filtered = filtered.filter(c => userFavs.includes(c.id));
+                            } else if (activeFilter !== 'all') {
+                                filtered = filtered.filter(c => c.cat === activeFilter);
+                            }
+
+                            if (query) {
+                                filtered = filtered.filter(c =>
+                                    c.title.toLowerCase().includes(query) ||
+                                    c.desc.toLowerCase().includes(query) ||
+                                    c.catLabel.toLowerCase().includes(query) ||
+                                    c.id.toLowerCase().includes(query)
+                                );
+                            }
+
+                            const catalogGrid = container.querySelector('#home-catalog-grid');
+                            const emptyState = container.querySelector('#home-empty-state');
+                            const countEl = container.querySelector('#home-catalog-count');
+
+                            if (filtered.length === 0) {
+                                catalogGrid.classList.add('hidden');
+                                emptyState.classList.remove('hidden');
+                                countEl.textContent = 'Nenhum resultado';
+                            } else {
+                                catalogGrid.classList.remove('hidden');
+                                emptyState.classList.add('hidden');
+                                catalogGrid.innerHTML = filtered.map(c => buildCardHtml(c)).join('');
+                                countEl.textContent = `Exibindo ${filtered.length} página${filtered.length > 1 ? 's' : ''}`;
+                            }
+
+                            attachCardListeners();
+                        };
+
+                        // Associa os cliques aos cards, estrelas e corações
+                        const attachCardListeners = () => {
+                            // Clique no card abre a aba
+                            container.querySelectorAll('.speed-dial-card').forEach(cardEl => {
+                                cardEl.onclick = (e) => {
+                                    if (e.target.closest('.fav-star-btn') || e.target.closest('.like-heart-btn')) return;
+                                    const tabId = cardEl.getAttribute('data-card-id');
+                                    if (tabId) {
+                                        app.ui.renderTab(tabId, true);
+                                    }
+                                };
+                            });
+
+                            // Favoritar (estrela)
+                            container.querySelectorAll('.fav-star-btn').forEach(btn => {
+                                btn.onclick = (e) => {
+                                    e.stopPropagation();
+                                    const cardId = btn.getAttribute('data-card-id');
+                                    if (!cardId) return;
+
+                                    if (userFavs.includes(cardId)) {
+                                        userFavs = userFavs.filter(id => id !== cardId);
+                                        app.ui.showNotification("Atalho removido dos favoritos.", "info");
+                                    } else {
+                                        userFavs.push(cardId);
+                                        app.ui.showNotification("Atalho fixado nos favoritos com sucesso!", "success");
+                                    }
+                                    try { localStorage.setItem(favKey, JSON.stringify(userFavs)); } catch (err) {}
+                                    updateViews();
+                                };
+                            });
+
+                            // Curtir (coração)
+                            container.querySelectorAll('.like-heart-btn').forEach(btn => {
+                                btn.onclick = (e) => {
+                                    e.stopPropagation();
+                                    const cardId = btn.getAttribute('data-card-id');
+                                    if (!cardId) return;
+
+                                    const curCount = likesCounter[cardId] || 0;
+                                    if (userLikes.includes(cardId)) {
+                                        userLikes = userLikes.filter(id => id !== cardId);
+                                        likesCounter[cardId] = Math.max(0, curCount - 1);
+                                    } else {
+                                        userLikes.push(cardId);
+                                        likesCounter[cardId] = curCount + 1;
+                                    }
+                                    try {
+                                        localStorage.setItem(likeKey, JSON.stringify(userLikes));
+                                        localStorage.setItem(likesCountKey, JSON.stringify(likesCounter));
+                                    } catch (err) {}
+                                    updateViews();
+                                };
+                            });
+                        };
+
+                        // Eventos da barra de busca
+                        const searchInput = container.querySelector('#home-speed-dial-search');
+                        const clearBtn = container.querySelector('#home-search-clear-btn');
+
+                        searchInput.addEventListener('input', (e) => {
+                            searchQuery = e.target.value;
+                            if (searchQuery) clearBtn.classList.remove('hidden');
+                            else clearBtn.classList.add('hidden');
+                            updateViews();
+                        });
+
+                        clearBtn.addEventListener('click', () => {
+                            searchInput.value = '';
+                            searchQuery = '';
+                            clearBtn.classList.add('hidden');
+                            searchInput.focus();
+                            updateViews();
+                        });
+
+                        // Eventos dos chips de categoria
+                        container.querySelectorAll('.home-cat-chip').forEach(chip => {
+                            chip.addEventListener('click', () => {
+                                const catId = chip.getAttribute('data-home-cat');
+                                activeFilter = catId;
+                                container.querySelectorAll('.home-cat-chip').forEach(c => {
+                                    c.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700';
+                                });
+                                chip.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20';
+                                updateViews();
+                            });
+                        });
+
+                        // Botão de reset no empty state
+                        const resetBtn = container.querySelector('#home-reset-filters-btn');
+                        if (resetBtn) {
+                            resetBtn.addEventListener('click', () => {
+                                searchInput.value = '';
+                                searchQuery = '';
+                                clearBtn.classList.add('hidden');
+                                activeFilter = 'all';
+                                container.querySelectorAll('.home-cat-chip').forEach((c, idx) => {
+                                    if (idx === 0) c.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20';
+                                    else c.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700';
+                                });
+                                updateViews();
+                            });
+                        }
+
+                        // Inicializa
+                        updateViews();
+                    },
+
+                    // =========================================================================
+                    // ABA CAÇA-PALAVRAS DA QUALIDADE COM IMPRESSÃO EM PDF A4 COMPLETA
+                    // =========================================================================
+                    renderView_CacaPalavras(container) {
+                        if (!this._cacaState) {
+                            this._cacaState = {
+                                size: 'medio',
+                                diff: 'facil',
+                                theme: 'qualidade',
+                                customWordsText: app.wordSearch.themePresets['qualidade'].words.join(', '),
+                                showSolution: false,
+                                puzzleData: null
+                            };
+                        }
+
+                        const state = this._cacaState;
+
+                        // Se ainda não gerou, gera a primeira vez
+                        if (!state.puzzleData) {
+                            const words = state.customWordsText.split(/[\n,;]+/).map(w => w.trim()).filter(Boolean);
+                            state.puzzleData = app.wordSearch.generate(words, state.size, state.diff);
+                        }
+
+                        const pData = state.puzzleData;
+                        const N = pData.size;
+
+                        container.innerHTML = `
+                            <div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in">
+                                <!-- Cabeçalho Executivo -->
+                                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800 mb-8">
+                                    <div>
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-bold uppercase tracking-wider mb-2">
+                                            <i class="fa-solid fa-puzzle-piece"></i> Módulo Pedagógico & Treinamento
+                                        </div>
+                                        <h1 class="text-2xl md:text-3xl font-extrabold text-slate-800 dark:text-white">
+                                            Gerador de Caça-Palavras da Qualidade
+                                        </h1>
+                                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                            Crie dinâmicas pedagógicas sob medida, defina tamanho, dificuldade e quantas palavras quiser, com exportação para PDF em folha A4 cheia.
+                                        </p>
+                                    </div>
+
+                                    <div class="flex items-center gap-3">
+                                        <button id="cp-btn-export-pdf" type="button"
+                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 transition flex items-center gap-2">
+                                            <i class="fa-solid fa-file-pdf"></i> Imprimir em PDF (A4)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                    <!-- Painel de Configurações (Esquerda) -->
+                                    <div class="lg:col-span-5 space-y-6">
+                                        <!-- Card de Configurações -->
+                                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+                                            <h2 class="text-base font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                                <i class="fa-solid fa-sliders text-indigo-500"></i> Configurações da Dinâmica
+                                            </h2>
+
+                                            <!-- 1. Tamanho da Grade -->
+                                            <div class="mb-5">
+                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                                                    1. Tamanho da Grade
+                                                </label>
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <button type="button" data-cp-size="pequeno"
+                                                        class="cp-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'pequeno' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                                                        Pequeno (12x12)
+                                                    </button>
+                                                    <button type="button" data-cp-size="medio"
+                                                        class="cp-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'medio' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                                                        Médio (16x16)
+                                                    </button>
+                                                    <button type="button" data-cp-size="grande"
+                                                        class="cp-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'grande' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                                                        Grande (20x20)
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- 2. Nível de Dificuldade -->
+                                            <div class="mb-5">
+                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                                                    2. Nível de Dificuldade
+                                                </label>
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <button type="button" data-cp-diff="facil"
+                                                        class="cp-diff-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.diff === 'facil' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-400'}">
+                                                        Fácil (H & V)
+                                                    </button>
+                                                    <button type="button" data-cp-diff="medio"
+                                                        class="cp-diff-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.diff === 'medio' ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-400'}">
+                                                        Médio (+Diag)
+                                                    </button>
+                                                    <button type="button" data-cp-diff="dificil"
+                                                        class="cp-diff-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.diff === 'dificil' ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-rose-400'}">
+                                                        Difícil (8 Dirs)
+                                                    </button>
+                                                </div>
+                                                <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                                                    ${state.diff === 'facil' ? 'Apenas horizontal e vertical direto (esquerda para a direita, cima para baixo).' :
+                                                      state.diff === 'medio' ? 'Inclui diagonais para a frente e direções retas.' :
+                                                      'Inclui palavras escritas de trás para frente e todas as 8 direções.'}
+                                                </p>
+                                            </div>
+
+                                            <!-- 3. Temas Pré-Prontos -->
+                                            <div class="mb-5">
+                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                                                    3. Carregar Tema Pré-Pronto (1 Clique)
+                                                </label>
+                                                <div class="flex flex-wrap gap-1.5">
+                                                    ${Object.keys(app.wordSearch.themePresets).map(tKey => {
+                                                        const p = app.wordSearch.themePresets[tKey];
+                                                        return `
+                                                            <button type="button" data-cp-theme="${tKey}"
+                                                                class="cp-theme-chip px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${state.theme === tKey ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-800' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'}">
+                                                                ${p.label}
+                                                            </button>
+                                                        `;
+                                                    }).join('')}
+                                                </div>
+                                            </div>
+
+                                            <!-- 4. Palavras Personalizadas -->
+                                            <div class="mb-6">
+                                                <div class="flex items-center justify-between mb-2">
+                                                    <label class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                        4. Palavras (Escolha quantas quiser)
+                                                    </label>
+                                                    <span id="cp-words-counter" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                                        ${pData.placedWords.length} válidas
+                                                    </span>
+                                                </div>
+                                                <textarea id="cp-custom-words-input" rows="4" placeholder="Digite ou cole as palavras separadas por vírgula ou uma por linha..."
+                                                    class="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all leading-relaxed">${state.customWordsText}</textarea>
+                                                <div class="flex items-center justify-between mt-1 text-[11px] text-slate-400">
+                                                    <span>Dica: Palavras com acentos serão normalizadas na grade.</span>
+                                                    <button id="cp-spellcheck-btn" type="button" class="text-indigo-500 hover:underline font-semibold">
+                                                        <i class="fa-solid fa-spell-check mr-1"></i> Corrigir Acentos
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Botão de Ação: Gerar -->
+                                            <div class="pt-2 flex flex-col sm:flex-row gap-3">
+                                                <button id="cp-btn-generate" type="button"
+                                                    class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider shadow-md transition flex items-center justify-center gap-2">
+                                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Novo Caça-Palavras
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Painel de Pré-visualização Interativa (Direita) -->
+                                    <div class="lg:col-span-7 space-y-6">
+                                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+                                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+                                                <div>
+                                                    <h2 class="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                                        <i class="fa-solid fa-eye text-emerald-500"></i> Prévia da Grade (${N}x${N})
+                                                    </h2>
+                                                    <p class="text-xs text-slate-400 mt-0.5">
+                                                        ${pData.placedWords.length} palavras posicionadas na grade de ${N}x${N}
+                                                    </p>
+                                                </div>
+
+                                                <div class="flex items-center gap-2">
+                                                    <button id="cp-btn-toggle-solution" type="button"
+                                                        class="px-3.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${state.showSolution ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-700' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'}">
+                                                        <i class="fa-solid ${state.showSolution ? 'fa-eye-slash' : 'fa-lightbulb'}"></i>
+                                                        ${state.showSolution ? 'Ocultar Respostas' : 'Ver Gabarito'}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Grade Visual -->
+                                            <div class="flex justify-center overflow-x-auto py-2">
+                                                <div class="caca-palavras-grid inline-grid gap-1 bg-slate-100 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800"
+                                                    style="grid-template-columns: repeat(${N}, minmax(0, 1fr));">
+                                                    ${pData.grid.map((row, r) => row.map((char, c) => {
+                                                        // Verifica se faz parte de alguma solução
+                                                        let isHighlighted = false;
+                                                        if (state.showSolution) {
+                                                            for (const k in pData.solutions) {
+                                                                if (pData.solutions[k].some(coord => coord[0] === r && coord[1] === c)) {
+                                                                    isHighlighted = true;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        return `
+                                                            <div class="caca-palavras-cell w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 flex items-center justify-center font-bold text-xs sm:text-sm rounded-lg border select-none transition-colors ${isHighlighted ? 'bg-emerald-500 text-white border-emerald-600 shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700'}">
+                                                                ${char}
+                                                            </div>
+                                                        `;
+                                                    }).join('')).join('')}
+                                                </div>
+                                            </div>
+
+                                            <!-- Banco de Palavras a Encontrar -->
+                                            <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                        Palavras a Encontrar (${pData.placedWords.length}):
+                                                    </h3>
+                                                    ${pData.unplacedWords.length > 0 ? `
+                                                        <span class="text-[11px] text-amber-500 font-bold" title="Palavras que não couberam nesta grade">
+                                                            (${pData.unplacedWords.length} não couberam)
+                                                        </span>
+                                                    ` : ''}
+                                                </div>
+
+                                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                                    ${pData.placedWords.map(w => `
+                                                        <div class="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-200">
+                                                            <div class="w-3.5 h-3.5 rounded border border-slate-300 dark:border-slate-600"></div>
+                                                            <span class="font-bold truncate">${w.original}</span>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Vincula eventos do Caça-Palavras
+                        const setupCacaEvents = () => {
+                            // 1. Alternador de tamanho
+                            container.querySelectorAll('.cp-size-btn').forEach(btn => {
+                                btn.onclick = () => {
+                                    state.size = btn.getAttribute('data-cp-size');
+                                    this.renderView_CacaPalavras(container);
+                                };
+                            });
+
+                            // 2. Alternador de dificuldade
+                            container.querySelectorAll('.cp-diff-btn').forEach(btn => {
+                                btn.onclick = () => {
+                                    state.diff = btn.getAttribute('data-cp-diff');
+                                    this.renderView_CacaPalavras(container);
+                                };
+                            });
+
+                            // 3. Seleção de tema pré-pronto
+                            container.querySelectorAll('.cp-theme-chip').forEach(chip => {
+                                chip.onclick = () => {
+                                    const tKey = chip.getAttribute('data-cp-theme');
+                                    state.theme = tKey;
+                                    state.customWordsText = app.wordSearch.themePresets[tKey].words.join(', ');
+                                    const words = state.customWordsText.split(/[\n,;]+/).map(w => w.trim()).filter(Boolean);
+                                    state.puzzleData = app.wordSearch.generate(words, state.size, state.diff);
+                                    this.renderView_CacaPalavras(container);
+                                };
+                            });
+
+                            // 4. Digitação de palavras personalizadas
+                            const wordsInput = container.querySelector('#cp-custom-words-input');
+                            if (wordsInput) {
+                                wordsInput.oninput = (e) => {
+                                    state.customWordsText = e.target.value;
+                                };
+                            }
+
+                            // 5. Botão de correção ortográfica
+                            const spellBtn = container.querySelector('#cp-spellcheck-btn');
+                            if (spellBtn && wordsInput) {
+                                spellBtn.onclick = () => {
+                                    if (app.spellchecker) {
+                                        app.spellchecker.autoCorrectElement(wordsInput);
+                                        state.customWordsText = wordsInput.value;
+                                    }
+                                };
+                            }
+
+                            // 6. Botão Gerar
+                            const genBtn = container.querySelector('#cp-btn-generate');
+                            if (genBtn) {
+                                genBtn.onclick = () => {
+                                    const words = state.customWordsText.split(/[\n,;]+/).map(w => w.trim()).filter(Boolean);
+                                    state.puzzleData = app.wordSearch.generate(words, state.size, state.diff);
+                                    this.renderView_CacaPalavras(container);
+                                    app.ui.showNotification("Novo caça-palavras gerado!", "success");
+                                };
+                            }
+
+                            // 7. Alternador de Gabarito
+                            const solBtn = container.querySelector('#cp-btn-toggle-solution');
+                            if (solBtn) {
+                                solBtn.onclick = () => {
+                                    state.showSolution = !state.showSolution;
+                                    this.renderView_CacaPalavras(container);
+                                };
+                            }
+
+                            // 8. Exportação para PDF (A4)
+                            const pdfBtn = container.querySelector('#cp-btn-export-pdf');
+                            if (pdfBtn) {
+                                pdfBtn.onclick = () => {
+                                    const themeLabel = app.wordSearch.themePresets[state.theme]?.label || 'Operação & Qualidade';
+                                    app.wordSearch.exportToPdf(state.puzzleData, 'CAÇA-PALAVRAS DA QUALIDADE', themeLabel);
+                                };
+                            }
+                        };
+
+                        setupCacaEvents();
                     },
 });
 
