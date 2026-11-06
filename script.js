@@ -14325,12 +14325,13 @@ storage: {
                     const maxG7 = getGoalMax('g7'); 
                     
                     let html = `
-                        <div class="mb-10">
-                            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Manual de Metas e Critérios</h2>
-                            <p class="text-slate-500 dark:text-slate-400 text-base max-w-3xl">Entenda a estrutura do nosso programa de excelência, desenhado para reconhecer o engajamento, a qualidade e o desenvolvimento contínuo da equipe.</p>
-                        </div>
-                        
-                        <div class="space-y-8 max-w-4xl mx-auto">
+                        <div class="w-full px-2 sm:px-6 py-4 animate-fade-in">
+                            <div class="mb-8">
+                                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight mb-2">Manual de Metas e Critérios</h2>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base">Entenda a estrutura do nosso programa de excelência, desenhado para reconhecer o engajamento, a qualidade e o desenvolvimento contínuo da equipe.</p>
+                            </div>
+                            
+                            <div class="space-y-8 w-full">
                             
                             <!-- Deflatores Reestilizados -->
                             <div class="glass-card p-6 rounded-3xl border-l-4 border-l-red-500 relative overflow-hidden mb-8 shadow-sm">
@@ -14544,6 +14545,7 @@ storage: {
                                 </div>
                             </div>
                         </div>
+                    </div>
                     `;
                     container.innerHTML = html;
                 },
@@ -26297,7 +26299,8 @@ storage: {
                                 html, body { background: #ffffff !important; color: #0f172a !important; height: auto !important; max-height: none !important; overflow: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                                 #view-app, main, #content-container, #view-container-analise_csv_dinamico { position: static !important; display: block !important; padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; height: auto !important; max-height: none !important; overflow: visible !important; visibility: visible !important; opacity: 1 !important; transform: none !important; }
                                 .pdf-clean-mode .scroll-reveal-card, .pdf-clean-mode .reveal-item, .scroll-reveal-card, .reveal-item { opacity: 1 !important; transform: none !important; visibility: visible !important; transition: none !important; }
-                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .hideable-box, #btn-sair-apresentacao, header, nav, aside, #global-modal, #toast-container, #command-palette-modal { display: none !important; }
+                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], #btn-sair-apresentacao, header, nav, aside, #global-modal, #toast-container, #command-palette-modal { display: none !important; }
+                                .pdf-clean-mode .hideable-box { visibility: visible !important; opacity: 1 !important; overflow: visible !important; max-height: none !important; }
                                 .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar, .pdf-clean-mode details, .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
                                 .pdf-clean-mode .glass-card, .chapter-marker, details { box-shadow: none !important; border: 1px solid rgba(203, 213, 225, 0.9) !important; background: #ffffff !important; color: #0f172a !important; page-break-inside: avoid !important; break-inside: avoid !important; display: block !important; margin-bottom: 18px !important; }
                                 .pdf-clean-mode canvas { max-width: 100% !important; page-break-inside: avoid !important; break-inside: avoid !important; }
@@ -28516,7 +28519,8 @@ storage: {
                                 overflow: visible !important;
                             }
 
-                            .pdf-clean-mode button, .pdf-clean-mode .hideable-box, #apresentacao-topo-actions, header, nav, #global-modal { display: none !important; }
+                            .pdf-clean-mode button, #apresentacao-topo-actions, header, nav, #global-modal { display: none !important; }
+                            .pdf-clean-mode .hideable-box { visibility: visible !important; opacity: 1 !important; overflow: visible !important; max-height: none !important; }
                             
                             .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar { 
                                 overflow: visible !important; max-height: none !important; 
@@ -31852,47 +31856,51 @@ Object.assign(app.ui, {
                             try { localStorage.setItem(postitsKey, JSON.stringify(userPostits)); } catch (err) {}
                         }
 
-                        // Paleta de cores para os Post-its
+                        // Modo de exibição: 'tortinho' (inclinado natural), 'reto' (alinhado), 'balancando' (flutuante)
+                        const postitStyleKey = 'soft_user_postit_style_' + mat;
+                        let userPostitStyle = localStorage.getItem(postitStyleKey) || 'tortinho';
+
+                        // Paleta de cores para os Post-its com contraste perfeito no modo claro e escuro
                         const postitThemes = {
                             yellow: {
                                 name: 'Amarelo',
-                                card: 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-950 dark:text-amber-100 shadow-amber-500/10',
+                                card: 'bg-amber-50 dark:bg-[#241f12] border-2 border-amber-300 dark:border-amber-500/70 text-amber-950 dark:text-amber-100 shadow-amber-500/10',
                                 strip: 'bg-amber-400 dark:bg-amber-500',
                                 pin: 'text-amber-600 dark:text-amber-400',
-                                dot: 'bg-amber-400 ring-amber-200',
-                                placeholder: 'placeholder-amber-800/50 dark:placeholder-amber-200/40'
+                                dot: 'bg-amber-400 ring-amber-200 dark:ring-amber-900',
+                                placeholder: 'placeholder-amber-800/40 dark:placeholder-amber-200/40'
                             },
                             green: {
                                 name: 'Verde',
-                                card: 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-100 shadow-emerald-500/10',
+                                card: 'bg-emerald-50 dark:bg-[#112419] border-2 border-emerald-300 dark:border-emerald-500/70 text-emerald-950 dark:text-emerald-100 shadow-emerald-500/10',
                                 strip: 'bg-emerald-400 dark:bg-emerald-500',
                                 pin: 'text-emerald-600 dark:text-emerald-400',
-                                dot: 'bg-emerald-400 ring-emerald-200',
-                                placeholder: 'placeholder-emerald-800/50 dark:placeholder-emerald-200/40'
+                                dot: 'bg-emerald-400 ring-emerald-200 dark:ring-emerald-900',
+                                placeholder: 'placeholder-emerald-800/40 dark:placeholder-emerald-200/40'
                             },
                             blue: {
                                 name: 'Azul',
-                                card: 'bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 text-sky-950 dark:text-sky-100 shadow-sky-500/10',
+                                card: 'bg-sky-50 dark:bg-[#102231] border-2 border-sky-300 dark:border-sky-500/70 text-sky-950 dark:text-sky-100 shadow-sky-500/10',
                                 strip: 'bg-sky-400 dark:bg-sky-500',
                                 pin: 'text-sky-600 dark:text-sky-400',
-                                dot: 'bg-sky-400 ring-sky-200',
-                                placeholder: 'placeholder-sky-800/50 dark:placeholder-sky-200/40'
+                                dot: 'bg-sky-400 ring-sky-200 dark:ring-sky-900',
+                                placeholder: 'placeholder-sky-800/40 dark:placeholder-sky-200/40'
                             },
                             rose: {
                                 name: 'Rosa',
-                                card: 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-950 dark:text-rose-100 shadow-rose-500/10',
+                                card: 'bg-rose-50 dark:bg-[#2b1419] border-2 border-rose-300 dark:border-rose-500/70 text-rose-950 dark:text-rose-100 shadow-rose-500/10',
                                 strip: 'bg-rose-400 dark:bg-rose-500',
                                 pin: 'text-rose-600 dark:text-rose-400',
-                                dot: 'bg-rose-400 ring-rose-200',
-                                placeholder: 'placeholder-rose-800/50 dark:placeholder-rose-200/40'
+                                dot: 'bg-rose-400 ring-rose-200 dark:ring-rose-900',
+                                placeholder: 'placeholder-rose-800/40 dark:placeholder-rose-200/40'
                             },
                             purple: {
                                 name: 'Roxo',
-                                card: 'bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-950 dark:text-purple-100 shadow-purple-500/10',
+                                card: 'bg-purple-50 dark:bg-[#22152c] border-2 border-purple-300 dark:border-purple-500/70 text-purple-950 dark:text-purple-100 shadow-purple-500/10',
                                 strip: 'bg-purple-400 dark:bg-purple-500',
                                 pin: 'text-purple-600 dark:text-purple-400',
-                                dot: 'bg-purple-400 ring-purple-200',
-                                placeholder: 'placeholder-purple-800/50 dark:placeholder-purple-200/40'
+                                dot: 'bg-purple-400 ring-purple-200 dark:ring-purple-900',
+                                placeholder: 'placeholder-purple-800/40 dark:placeholder-purple-200/40'
                             }
                         };
 
@@ -32191,9 +32199,9 @@ Object.assign(app.ui, {
                         let searchQuery = '';
 
                         container.innerHTML = `
-                            <div class="w-full px-2 sm:px-6 py-4 animate-fade-in">
-                                <!-- Banner Hero de Boas-Vindas Simplificado -->
-                                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800 mb-6">
+                            <div class="w-full px-2 sm:px-6 py-4 animate-fade-in space-y-6">
+                                <!-- Banner Hero de Boas-Vindas em Toda a Largura (Proporcional, Amplo e Elegante) -->
+                                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
                                     <div class="relative z-10 max-w-4xl">
                                         <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
                                             Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-sky-200 to-emerald-300">${currentUser.nome || 'Colaborador'}</span>
@@ -32228,86 +32236,117 @@ Object.assign(app.ui, {
                                     <div class="absolute right-32 -top-12 w-64 h-64 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
                                 </div>
 
-                                <!-- Filtros por Categoria -->
-                                <div class="flex items-center gap-2 overflow-x-auto pb-3 mb-5 custom-scrollbar">
-                                    ${categories.map(cat => `
-                                        <button type="button" data-home-cat="${cat.id}"
-                                            class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
-                                            ${cat.label}
-                                        </button>
-                                    `).join('')}
-                                </div>
+                                <!-- Layout Dividido: Coluna Principal e Post-its na Lateral até o Final da Página -->
+                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                                    <!-- Coluna Principal (8 colunas em lg/xl) -->
+                                    <div class="lg:col-span-8 xl:col-span-8 space-y-6">
+                                        <!-- Filtros por Categoria -->
+                                        <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                            ${categories.map(cat => `
+                                                <button type="button" data-home-cat="${cat.id}"
+                                                    class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
+                                                    ${cat.label}
+                                                </button>
+                                            `).join('')}
+                                        </div>
 
-                                <!-- Seção: POST-ITS / LEMBRETES OPERACIONAIS -->
-                                <div id="home-postits-wrapper" class="mb-8">
-                                    <div class="flex items-center justify-between mb-3.5">
+                                        <!-- Seção: MAIS USADOS PELO USUÁRIO -->
+                                        <div id="home-most-used-wrapper">
+                                            <div class="flex items-center justify-between mb-3.5">
+                                                <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                    <i class="fa-solid fa-fire text-amber-500"></i> Mais Usados por Você
+                                                </h2>
+                                                <span class="text-xs text-slate-400 font-medium">Suas rotinas e ferramentas mais frequentes</span>
+                                            </div>
+                                            <div id="home-most-used-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                <!-- Renderizado via JS -->
+                                            </div>
+                                        </div>
+
+                                        <!-- Seção de Favoritos Fixados -->
+                                        <div id="home-favorites-wrapper">
+                                            <div class="flex items-center justify-between mb-3.5">
+                                                <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                    <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
+                                                </h2>
+                                                <span id="home-favs-subtitle" class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
+                                            </div>
+                                            <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                <!-- Renderizado via JS -->
+                                            </div>
+                                        </div>
+
+                                        <!-- Grade Principal de Blocos / Speed Dial -->
                                         <div>
-                                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                <i class="fa-solid fa-note-sticky text-amber-500"></i> Meus Post-its & Lembretes Rápidos
-                                                <span id="home-postits-count" class="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800">
-                                                    ${userPostits.length}
+                                            <div class="flex items-center justify-between mb-3.5">
+                                                <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                    <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
+                                                </h2>
+                                                <span id="home-catalog-count" class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                                    Exibindo ${accessibleCards.length} páginas
                                                 </span>
-                                            </h2>
-                                            <p class="text-xs text-slate-400 font-medium">Anotações pessoais, metas do dia e avisos operacionais com salvamento automático</p>
+                                            </div>
+                                            <div id="home-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                <!-- Renderizado via JS -->
+                                            </div>
+                                            <div id="home-empty-state" class="hidden text-center py-16 px-4 glass-card rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
+                                                <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl">
+                                                    <i class="fa-solid fa-magnifying-glass"></i>
+                                                </div>
+                                                <h3 class="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhuma página encontrada</h3>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Tente buscar por outro termo ou limpe os filtros de categoria.</p>
+                                                <button id="home-reset-filters-btn" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition">
+                                                    Limpar Busca e Filtros
+                                                </button>
+                                            </div>
                                         </div>
-                                        <button id="home-add-postit-btn" type="button"
-                                            class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 active:scale-95 shrink-0">
-                                            <i class="fa-solid fa-plus"></i> Novo Post-it
-                                        </button>
                                     </div>
-                                    <div id="home-postits-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                        <!-- Renderizado via renderPostits() -->
-                                    </div>
-                                </div>
 
-                                <!-- Seção: MAIS USADOS PELO USUÁRIO -->
-                                <div id="home-most-used-wrapper" class="mb-8">
-                                    <div class="flex items-center justify-between mb-3.5">
-                                        <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                            <i class="fa-solid fa-fire text-amber-500"></i> Mais Usados por Você
-                                        </h2>
-                                        <span class="text-xs text-slate-400 font-medium">Suas rotinas e ferramentas mais frequentes</span>
-                                    </div>
-                                    <div id="home-most-used-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                        <!-- Renderizado via JS -->
-                                    </div>
-                                </div>
+                                    <!-- Coluna Lateral: POST-ITS OCUPANDO ATÉ O FINAL DA PÁGINA (4 colunas em lg/xl) -->
+                                    <div class="lg:col-span-4 xl:col-span-4 flex flex-col">
+                                        <div id="home-postits-wrapper" class="flex-1 flex flex-col lg:sticky lg:top-4">
+                                            <div class="bg-white/90 dark:bg-slate-900/95 backdrop-blur-md rounded-3xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-xl flex-1 flex flex-col min-h-[600px] lg:min-h-[calc(100vh-250px)]">
+                                                <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4 shrink-0">
+                                                    <div class="flex items-center gap-3">
+                                                        <div class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center text-lg shadow-sm">
+                                                            <i class="fa-solid fa-note-sticky"></i>
+                                                        </div>
+                                                        <div>
+                                                            <h2 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                                Meus Post-its
+                                                                <span id="home-postits-count" class="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-black border border-amber-200 dark:border-amber-800">
+                                                                    ${userPostits.length}
+                                                                </span>
+                                                            </h2>
+                                                            <span class="text-xs text-slate-400 font-medium">Arraste para reorganizar</span>
+                                                        </div>
+                                                    </div>
 
-                                <!-- Seção de Favoritos Fixados -->
-                                <div id="home-favorites-wrapper" class="mb-8">
-                                    <div class="flex items-center justify-between mb-3.5">
-                                        <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                            <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
-                                        </h2>
-                                        <span id="home-favs-subtitle" class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
-                                    </div>
-                                    <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                        <!-- Renderizado via JS -->
-                                    </div>
-                                </div>
+                                                    <button id="home-add-postit-btn" type="button"
+                                                        class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 active:scale-95 shrink-0" title="Criar novo post-it">
+                                                        <i class="fa-solid fa-plus text-xs"></i> Novo
+                                                    </button>
+                                                </div>
 
-                                <!-- Grade Principal de Blocos / Speed Dial -->
-                                <div>
-                                    <div class="flex items-center justify-between mb-3.5">
-                                        <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                            <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
-                                        </h2>
-                                        <span id="home-catalog-count" class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                                            Exibindo ${accessibleCards.length} páginas
-                                        </span>
-                                    </div>
-                                    <div id="home-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                        <!-- Renderizado via JS -->
-                                    </div>
-                                    <div id="home-empty-state" class="hidden text-center py-16 px-4 glass-card rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
-                                        <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl">
-                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                                <!-- Seletor de Modo: Tortinho | Reto | Balançando -->
+                                                <div class="flex items-center justify-between gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-2xl mb-4 border border-slate-200/60 dark:border-slate-700/60 text-xs shrink-0">
+                                                    <button type="button" class="postit-style-btn flex-1 py-1.5 px-2 rounded-xl text-center text-xs font-bold transition-all ${userPostitStyle === 'tortinho' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-style="tortinho" title="Inclinado natural">
+                                                        <i class="fa-solid fa-italic mr-1 text-[10px]"></i> Tortinho
+                                                    </button>
+                                                    <button type="button" class="postit-style-btn flex-1 py-1.5 px-2 rounded-xl text-center text-xs font-bold transition-all ${userPostitStyle === 'reto' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-style="reto" title="Alinhado e reto">
+                                                        <i class="fa-solid fa-square mr-1 text-[10px]"></i> Reto
+                                                    </button>
+                                                    <button type="button" class="postit-style-btn flex-1 py-1.5 px-2 rounded-xl text-center text-xs font-bold transition-all ${userPostitStyle === 'balancando' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-style="balancando" title="Efeito de balanço suave">
+                                                        <i class="fa-solid fa-wind mr-1 text-[10px]"></i> Balançando
+                                                    </button>
+                                                </div>
+
+                                                <!-- Grade/Lista de Post-its na Lateral MAIORES E ROLÁVEL ATÉ O FINAL -->
+                                                <div id="home-postits-grid" class="flex-1 space-y-4 overflow-y-auto custom-scrollbar px-3.5 py-2.5">
+                                                    <!-- Renderizado via renderPostits() -->
+                                                </div>
+                                            </div>
                                         </div>
-                                        <h3 class="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhuma página encontrada</h3>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Tente buscar por outro termo ou limpe os filtros de categoria.</p>
-                                        <button id="home-reset-filters-btn" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition">
-                                            Limpar Busca e Filtros
-                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -32369,14 +32408,10 @@ Object.assign(app.ui, {
                         const updateViews = () => {
                             const query = searchQuery.trim().toLowerCase();
 
-                            // 0. Atualiza visibilidade dos Post-its
+                            // 0. Atualiza visibilidade dos Post-its na lateral
                             const postitsWrapper = container.querySelector('#home-postits-wrapper');
                             if (postitsWrapper) {
-                                if (activeFilter === 'all' && !query) {
-                                    postitsWrapper.classList.remove('hidden');
-                                } else {
-                                    postitsWrapper.classList.add('hidden');
-                                }
+                                postitsWrapper.classList.remove('hidden');
                             }
 
                             // 1. Atualiza bloco: MAIS USADOS PELO USUÁRIO
@@ -32387,7 +32422,7 @@ Object.assign(app.ui, {
                                 const sortedByVisits = [...accessibleCards]
                                     .map(c => ({ ...c, visits: tabVisits[c.id] || 0 }))
                                     .sort((a, b) => b.visits - a.visits);
-                                const topCards = sortedByVisits.slice(0, 4);
+                                const topCards = sortedByVisits.slice(0, 3);
                                 mostUsedGrid.innerHTML = topCards.map(c => buildCardHtml(c)).join('');
                             } else {
                                 mostUsedWrapper.classList.add('hidden');
@@ -32404,7 +32439,7 @@ Object.assign(app.ui, {
                                 if (favSubtitle) favSubtitle.textContent = 'Fixados no topo para acesso rápido';
                                 favGrid.innerHTML = favCards.map(c => buildCardHtml(c, true)).join('');
                             } else if (userFavs.length === 0 && activeFilter !== 'favs' && !query) {
-                                const defaultQuick = accessibleCards.slice(0, 4);
+                                const defaultQuick = accessibleCards.slice(0, 3);
                                 if (defaultQuick.length > 0) {
                                     favWrapper.classList.remove('hidden');
                                     if (favSubtitle) favSubtitle.textContent = 'Sugestões de atalhos (clique na estrela de qualquer módulo para fixar)';
@@ -32569,6 +32604,7 @@ Object.assign(app.ui, {
                         const renderPostits = () => {
                             if (!postitsGrid) return;
                             if (postitsCount) postitsCount.textContent = userPostits.length;
+                            postitsGrid.className = 'flex-1 space-y-4 overflow-y-auto custom-scrollbar px-3.5 py-2.5 postit-mode-' + userPostitStyle;
 
                             if (userPostits.length === 0) {
                                 postitsGrid.innerHTML = `
@@ -32588,51 +32624,57 @@ Object.assign(app.ui, {
                                 return;
                             }
 
-                            postitsGrid.innerHTML = userPostits.map(p => {
+                            postitsGrid.innerHTML = userPostits.map((p, idx) => {
                                 const theme = postitThemes[p.color] || postitThemes.yellow;
                                 const safeText = (app.utils && typeof app.utils.escapeHtml === 'function')
                                     ? app.utils.escapeHtml(p.text || '')
                                     : String(p.text || '').replace(/"/g, '&quot;');
 
                                 return `
-                                    <div class="postit-card ${theme.card} relative flex flex-col justify-between overflow-hidden group min-h-[175px]" data-postit-id="${p.id}">
-                                        <!-- Faixa superior tipo bloco de anotações -->
-                                        <div class="absolute top-0 left-0 right-0 h-2.5 ${theme.strip}"></div>
+                                    <div class="postit-card ${theme.card} relative flex flex-col justify-between group min-h-[220px] sm:min-h-[240px]"
+                                        draggable="true" data-index="${idx}" data-postit-id="${p.id}">
+                                        <!-- Faixa superior tipo bloco de anotações MAIOR -->
+                                        <div class="absolute top-0 left-0 right-0 h-3.5 rounded-t-[1.35rem] ${theme.strip}"></div>
 
-                                        <!-- Cabeçalho do Post-it com pino e paleta -->
-                                        <div class="flex items-center justify-between pt-1.5 pb-2">
-                                            <div class="flex items-center gap-1.5 ${theme.pin}">
-                                                <i class="fa-solid fa-thumbtack text-xs"></i>
-                                                <span class="text-[10px] font-bold uppercase tracking-wider opacity-75">${theme.name}</span>
+                                        <!-- Cabeçalho do Post-it com grip de arrastar, pino e paleta -->
+                                        <div class="flex items-center justify-between pt-2 pb-2.5">
+                                            <div class="flex items-center gap-2">
+                                                <div class="postit-drag-handle p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing transition rounded-lg hover:bg-black/5 dark:hover:bg-white/10" title="Arraste para reorganizar">
+                                                    <i class="fa-solid fa-grip-vertical text-sm"></i>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 ${theme.pin}">
+                                                    <i class="fa-solid fa-thumbtack text-sm"></i>
+                                                    <span class="text-xs font-black uppercase tracking-wider opacity-80">${theme.name}</span>
+                                                </div>
                                             </div>
 
-                                            <div class="flex items-center gap-1.5">
-                                                <!-- Seletor de cores -->
-                                                <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                                            <div class="flex items-center gap-2">
+                                                <!-- Seletor de cores ampliado -->
+                                                <div class="flex items-center gap-1.5 opacity-85 group-hover:opacity-100 transition-opacity">
                                                     ${Object.keys(postitThemes).map(cKey => `
-                                                        <button type="button" class="postit-color-btn w-3.5 h-3.5 rounded-full ${postitThemes[cKey].dot} hover:scale-125 transition-transform ${p.color === cKey ? 'ring-2 ring-slate-800 dark:ring-white scale-110' : ''}"
+                                                        <button type="button" class="postit-color-btn w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full ${postitThemes[cKey].dot} hover:scale-125 transition-transform ${p.color === cKey ? 'ring-2 ring-slate-800 dark:ring-white scale-110 shadow-sm' : ''}"
                                                             data-color="${cKey}" data-postit-id="${p.id}" title="Cor: ${postitThemes[cKey].name}"></button>
                                                     `).join('')}
                                                 </div>
 
-                                                <!-- Botão Excluir -->
-                                                <button type="button" class="postit-delete-btn ml-1 p-1 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition"
+                                                <!-- Botão Excluir ampliado -->
+                                                <button type="button" class="postit-delete-btn ml-1 p-1.5 rounded-xl text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                                                     data-postit-id="${p.id}" title="Excluir lembrete">
-                                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                                    <i class="fa-solid fa-trash-can text-sm"></i>
                                                 </button>
                                             </div>
                                         </div>
 
-                                        <!-- Campo de texto auto-salvável com smooth typing -->
+                                        <!-- Campo de texto auto-salvável com tipografia ampliada e smooth typing -->
                                         <div class="flex-1 py-1">
-                                            <textarea class="postit-textarea w-full bg-transparent border-none outline-none resize-none text-xs sm:text-sm font-medium leading-relaxed custom-scrollbar ${theme.placeholder}"
-                                                rows="4" placeholder="Escreva seu lembrete aqui..." data-postit-id="${p.id}">${safeText}</textarea>
+                                            <textarea class="postit-textarea w-full bg-transparent border-none outline-none resize-none text-sm sm:text-base font-medium leading-relaxed custom-scrollbar ${theme.placeholder}"
+                                                rows="5" placeholder="Escreva seu lembrete aqui..." data-postit-id="${p.id}">${safeText}</textarea>
                                         </div>
 
                                         <!-- Rodapé com data/hora e indicador de salvamento automático -->
-                                        <div class="flex items-center justify-between pt-2 border-t border-black/5 dark:border-white/5 text-[10px] opacity-60 font-semibold">
+                                        <div class="flex items-center justify-between pt-2.5 border-t border-black/5 dark:border-white/5 text-[11px] opacity-70 font-bold">
                                             <span>${p.updatedAt || 'Lembrete'}</span>
-                                            <span class="italic"><i class="fa-solid fa-floppy-disk text-[9px] mr-0.5"></i> Auto-salvo</span>
+                                            <span class="italic"><i class="fa-solid fa-floppy-disk text-[10px] mr-1"></i> Auto-salvo</span>
                                         </div>
                                     </div>
                                 `;
@@ -32654,6 +32696,61 @@ Object.assign(app.ui, {
                                         savePostits();
                                         const timeSpan = textarea.closest('.postit-card').querySelector('.border-t span');
                                         if (timeSpan) timeSpan.textContent = note.updatedAt;
+                                    }
+                                });
+                            });
+
+                            // Drag and Drop para reorganizar
+                            let draggedIdx = null;
+                            postitsGrid.querySelectorAll('.postit-card').forEach(card => {
+                                card.addEventListener('dragstart', (e) => {
+                                    draggedIdx = Number(card.getAttribute('data-index'));
+                                    card.classList.add('is-dragging');
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    try { e.dataTransfer.setData('text/plain', String(draggedIdx)); } catch (err) {}
+                                });
+
+                                card.addEventListener('dragend', () => {
+                                    card.classList.remove('is-dragging');
+                                    postitsGrid.querySelectorAll('.postit-card').forEach(c => {
+                                        c.classList.remove('drag-over-above', 'drag-over-below');
+                                    });
+                                });
+
+                                card.addEventListener('dragover', (e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                    const rect = card.getBoundingClientRect();
+                                    const midY = rect.top + (rect.height / 2);
+                                    if (e.clientY < midY) {
+                                        card.classList.add('drag-over-above');
+                                        card.classList.remove('drag-over-below');
+                                    } else {
+                                        card.classList.add('drag-over-below');
+                                        card.classList.remove('drag-over-above');
+                                    }
+                                });
+
+                                card.addEventListener('dragleave', () => {
+                                    card.classList.remove('drag-over-above', 'drag-over-below');
+                                });
+
+                                card.addEventListener('drop', (e) => {
+                                    e.preventDefault();
+                                    card.classList.remove('drag-over-above', 'drag-over-below');
+                                    const targetIdx = Number(card.getAttribute('data-index'));
+                                    if (draggedIdx !== null && !isNaN(targetIdx) && draggedIdx !== targetIdx) {
+                                        const itemToMove = userPostits.splice(draggedIdx, 1)[0];
+                                        const rect = card.getBoundingClientRect();
+                                        const midY = rect.top + (rect.height / 2);
+                                        let insertAt = targetIdx;
+                                        if (e.clientY >= midY && targetIdx < draggedIdx) {
+                                            insertAt = targetIdx + 1;
+                                        }
+                                        userPostits.splice(insertAt, 0, itemToMove);
+                                        savePostits();
+                                        renderPostits();
+                                        app.ui.showNotification("Lembretes reorganizados!", "info", 1500);
                                     }
                                 });
                             });
@@ -32688,6 +32785,28 @@ Object.assign(app.ui, {
                                 });
                             });
                         };
+
+                        // Seletor de Estilos: Tortinho | Reto | Balançando
+                        container.querySelectorAll('.postit-style-btn').forEach(btn => {
+                            btn.onclick = (e) => {
+                                e.stopPropagation();
+                                const style = btn.getAttribute('data-style');
+                                if (style && style !== userPostitStyle) {
+                                    userPostitStyle = style;
+                                    try { localStorage.setItem(postitStyleKey, style); } catch (err) {}
+                                    container.querySelectorAll('.postit-style-btn').forEach(b => {
+                                        if (b.getAttribute('data-style') === style) {
+                                            b.className = 'postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm';
+                                        } else {
+                                            b.className = 'postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all text-slate-500 hover:text-slate-800 dark:hover:text-slate-200';
+                                        }
+                                    });
+                                    renderPostits();
+                                    const styleLabels = { tortinho: 'Tortinho', reto: 'Reto', balancando: 'Balançando' };
+                                    app.ui.showNotification(`Estilo: ${styleLabels[style] || style}!`, "info", 1500);
+                                }
+                            };
+                        });
 
                         const addPostit = () => {
                             const colors = ['yellow', 'green', 'blue', 'rose', 'purple'];
@@ -38538,7 +38657,7 @@ app.duolingo = {
                 }
             });
 
-            // Suporte nativo para Ctrl+P (beforeprint / afterprint) em Analítico Operação e demais abas
+            // Suporte nativo para Ctrl+P (beforeprint / afterprint) em Apresentação de Resultados, Analítico Operação e demais abas
             window.addEventListener('beforeprint', () => {
                 if (document.getElementById('diploma-modal')) return;
                 window._wasDarkBeforePrint = document.documentElement.classList.contains('dark');
@@ -38553,10 +38672,15 @@ app.duolingo = {
                 document.querySelectorAll('#content-container .scroll-reveal-card, #content-container .reveal-item').forEach(el => {
                     el.classList.add('is-visible', 'show-item');
                 });
-                const analiseContainer = document.getElementById('view-container-analise_csv_dinamico');
+                const analiseContainer = document.getElementById('view-container-analise_csv_dinamico') || document.getElementById('area-apresentacao');
                 if (analiseContainer && !analiseContainer.classList.contains('pdf-clean-mode')) {
                     analiseContainer.classList.add('pdf-clean-mode');
                     window._addedPdfCleanModeOnPrint = true;
+                }
+                if (typeof Chart !== 'undefined' && Chart.instances) {
+                    Object.values(Chart.instances).forEach(c => {
+                        try { c.resize(); } catch (e) {}
+                    });
                 }
             });
 
@@ -38570,7 +38694,7 @@ app.duolingo = {
                     window._detailsOpenedBeforePrint = [];
                 }
                 if (window._addedPdfCleanModeOnPrint) {
-                    const analiseContainer = document.getElementById('view-container-analise_csv_dinamico');
+                    const analiseContainer = document.getElementById('view-container-analise_csv_dinamico') || document.getElementById('area-apresentacao');
                     if (analiseContainer) analiseContainer.classList.remove('pdf-clean-mode');
                     window._addedPdfCleanModeOnPrint = false;
                 }

@@ -372,14 +372,16 @@
     body:not(:has(#diploma-modal)) .parallax-layer,
     body:not(:has(#diploma-modal)) #particles-js,
     body:not(:has(#diploma-modal)) #btn-sair-apresentacao,
-    body:not(:has(#diploma-modal)) .hideable-box,
     body:not(:has(#diploma-modal)) .hidden-in-print {
         display: none !important;
     }
     body:not(:has(#diploma-modal)) #view-app,
     body:not(:has(#diploma-modal)) main,
     body:not(:has(#diploma-modal)) #content-container,
-    body:not(:has(#diploma-modal)) #view-container-analise_csv_dinamico {
+    body:not(:has(#diploma-modal)) #view-container-analise_csv_dinamico,
+    body:not(:has(#diploma-modal)) #view-container-analitico_visao_geral,
+    body:not(:has(#diploma-modal)) #view-container-painel_executivo_qualidade,
+    body:not(:has(#diploma-modal)) #area-apresentacao {
         display: block !important;
         visibility: visible !important;
         position: static !important;
@@ -390,6 +392,22 @@
         padding: 0 !important;
         margin: 0 !important;
         overflow: visible !important;
+    }
+    /* Garante que cards e blocos analíticos da apresentação apareçam 100% no Ctrl+P */
+    body:not(:has(#diploma-modal)) .hideable-box,
+    .pdf-clean-mode .hideable-box {
+        visibility: visible !important;
+        opacity: 1 !important;
+        overflow: visible !important;
+        max-height: none !important;
+    }
+    /* Oculta botões e controles flutuantes no modo impressão/apresentação */
+    body:not(:has(#diploma-modal)) .pdf-clean-mode button,
+    body:not(:has(#diploma-modal)) .pdf-clean-mode input[type="file"],
+    body:not(:has(#diploma-modal)) .pdf-clean-mode input[type="color"],
+    body:not(:has(#diploma-modal)) .pdf-clean-mode #apresentacao-topo-actions,
+    body:not(:has(#diploma-modal)) .pdf-clean-mode .group\/apres-filter {
+        display: none !important;
     }
     /* Garante que cards com animação de scroll (.scroll-reveal-card e .reveal-item) apareçam 100% no Ctrl+P */
     body:not(:has(#diploma-modal)) .scroll-reveal-card,
@@ -774,32 +792,113 @@ input:focus, textarea:focus, select:focus {
     border-color: #c026d3;
 }
 
-/* Post-its & Lembretes Rápidos (Início) */
+/* Post-its & Lembretes Rápidos (Início) - MAIORES E MAIS DESTACADOS */
 .postit-card {
     position: relative;
-    border-radius: 1.15rem;
-    padding: 1.1rem 1rem 0.85rem 1rem;
-    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    border-radius: 1.4rem;
+    padding: 1.35rem 1.25rem 1rem 1.25rem;
+    box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.08), 0 3px 8px -1px rgba(0, 0, 0, 0.05);
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    transform-origin: top center;
+    transform-origin: 50% 12px;
+    cursor: default;
 }
-.postit-card:nth-child(even) {
-    transform: rotate(0.65deg);
+.postit-drag-handle {
+    cursor: grab;
+    touch-action: none;
 }
-.postit-card:nth-child(odd) {
-    transform: rotate(-0.65deg);
+.postit-drag-handle:active {
+    cursor: grabbing;
 }
-.postit-card:hover {
-    transform: rotate(0deg) translateY(-3px) scale(1.015);
-    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.12), 0 4px 10px -2px rgba(0, 0, 0, 0.06);
+.postit-card.is-dragging {
+    opacity: 0.35 !important;
+    transform: scale(0.96) !important;
+    border-style: dashed !important;
+}
+.postit-card.drag-over-above {
+    border-top: 3px solid #6366f1 !important;
+}
+.postit-card.drag-over-below {
+    border-bottom: 3px solid #6366f1 !important;
+}
+
+/* Modos de Exibição dos Post-its */
+/* 1. Modo Tortinho (Inclinado natural) */
+.postit-mode-tortinho .postit-card:nth-child(even) {
+    transform: rotate(0.85deg);
+}
+.postit-mode-tortinho .postit-card:nth-child(odd) {
+    transform: rotate(-0.85deg);
+}
+.postit-mode-tortinho .postit-card:hover {
+    transform: rotate(0deg) translateY(-4px) scale(1.02);
+    box-shadow: 0 14px 28px -4px rgba(0, 0, 0, 0.14);
     z-index: 10;
 }
+
+/* 2. Modo Reto (Alinhado) */
+.postit-mode-reto .postit-card {
+    transform: none !important;
+}
+.postit-mode-reto .postit-card:hover {
+    transform: translateY(-4px) scale(1.015) !important;
+    box-shadow: 0 14px 28px -4px rgba(0, 0, 0, 0.14);
+    z-index: 10;
+}
+
+/* 3. Modo Balançando (Flutuante / Pêndulo suave sem cortar bordas) */
+.postit-mode-balancando .postit-card {
+    transform-origin: 50% 12px;
+    animation: postitSway 3.8s ease-in-out infinite alternate;
+}
+.postit-mode-balancando .postit-card:nth-child(even) {
+    animation-delay: -1.9s;
+    animation-duration: 4.4s;
+}
+.postit-mode-balancando .postit-card:nth-child(3n) {
+    animation-delay: -1s;
+    animation-duration: 3.4s;
+}
+.postit-mode-balancando .postit-card:hover {
+    animation-play-state: paused;
+    transform: scale(1.02) translateY(-4px) !important;
+    z-index: 10;
+}
+
+@keyframes postitSway {
+    0% {
+        transform: rotate(-0.9deg) translateY(0px);
+    }
+    50% {
+        transform: rotate(0.9deg) translateY(-2px);
+    }
+    100% {
+        transform: rotate(-0.9deg) translateY(0px);
+    }
+}
+
+/* Correção Definitiva para Modo Escuro e Tipografia Ampliada nos Post-its */
 .postit-textarea {
     resize: none;
     font-family: inherit;
+    background: transparent !important;
+    width: 100%;
+    color: inherit !important;
+    font-size: 0.95rem;
+    line-height: 1.6;
 }
 .postit-textarea:focus {
     outline: none;
 }
+.dark .postit-card {
+    box-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.55), 0 3px 10px -1px rgba(0, 0, 0, 0.35) !important;
+}
+.dark .postit-card .postit-textarea {
+    color: #f8fafc !important;
+    font-weight: 500;
+}
+.dark .postit-card .postit-textarea::placeholder {
+    color: rgba(248, 250, 252, 0.45) !important;
+}
+
 
 
