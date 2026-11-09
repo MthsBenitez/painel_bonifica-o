@@ -19935,6 +19935,23 @@ storage: {
                     this._refreshComMemoriaDeScroll();
                 },
 
+                toggleQuadranteFiltro(quadrante) {
+                    if (!this.analiseFiltroQuadrante) this.analiseFiltroQuadrante = [];
+                    if (this.analiseFiltroQuadrante.includes(quadrante)) {
+                        this.analiseFiltroQuadrante = this.analiseFiltroQuadrante.filter(q => q !== quadrante);
+                    } else {
+                        this.analiseFiltroQuadrante.push(quadrante);
+                    }
+                    app.admin.gerarInteligenciaCSV();
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                setEvolutivoModo(modo) {
+                    this.evolutivoModo = modo;
+                    app.admin.gerarInteligenciaCSV();
+                    this._refreshComMemoriaDeScroll();
+                },
+
                 toggleAssuntoFiltro(assunto) {
                     if (!this.analiseFiltroAssunto) this.analiseFiltroAssunto = [];
                     if (this.analiseFiltroAssunto.includes(assunto)) {
@@ -20786,7 +20803,7 @@ storage: {
                             canal: 'Auditoria & Feedback de Qualidade',
                             tipo: 'Auditoria Dirigida + Calibração Individual',
                             acao: 'Auditoria Dirigida de Amostras + Feedback Técnico de Conformidade',
-                            regra: 'Pleno ou Veterano (> 180 dias) com 1 ou mais Falhas Críticas no período',
+                            regra: 'Pleno ou Veterano (> 180 dias) com Falha Crítica como ofensor dominante (sem queda brusca >= 15% e sem predominância crônica de desvios em Q3/Q4)',
                             explicacao: 'Operador experiente que já domina a rotina, mas cometeu erro que zera a monitoria. Não é falta de treinamento inicial: indica atalho operacional, vício de atendimento ou descumprimento de regra inegociável.',
                             papelEquipe: 'A Qualidade assume porque o operador já conhece o processo: audita novas ligações dele e aplica feedback técnico focado no critério crítico descumprido.',
                             icon: 'fa-triangle-exclamation',
@@ -20801,7 +20818,7 @@ storage: {
                             canal: 'Multiplicador / Instrutor de Treinamento',
                             tipo: 'Simulação Prática em Espelho',
                             acao: 'Intervenção Técnica de Segurança + Simulação Assistida em Espelho',
-                            regra: 'Ramp-Up ou Júnior (até 180 dias) com 1 ou mais Falhas Críticas no período',
+                            regra: 'Ramp-Up ou Júnior (até 180 dias) com Falha Crítica como ofensor principal na curva inicial',
                             explicacao: 'Operador novato que errou um item crítico de segurança ou conformidade porque ainda está consolidando o que aprendeu na formação inicial.',
                             papelEquipe: 'O Treinamento assume porque a causa é curva de aprendizagem: o multiplicador senta ao lado (ou em espelho) para simular o passo a passo seguro.',
                             icon: 'fa-shield-halved',
@@ -20815,10 +20832,10 @@ storage: {
                             equipeKey: 'qualidade',
                             canal: 'Monitoria Diagnóstica da Qualidade',
                             tipo: 'Diagnóstico Comparativo 1:1',
-                            acao: 'Diagnóstico Comparativo (Mês Anterior vs. Atual) + Feedback Calibrado de Critérios',
-                            regra: 'Queda de nota igual ou superior a 15% contra o mês anterior (sem falha crítica)',
-                            explicacao: 'Operador que entregava nota boa e sofreu uma queda brusca de um mês para o outro. Sinaliza dúvida em mudança recente de script/fluxo ou perda de atenção em itens de peso alto.',
-                            papelEquipe: 'A Qualidade assume para comparar as fichas anteriores com as atuais, identificar exatamente qual pergunta puxou a nota para baixo e realinhar o critério.',
+                            acao: 'Diagnóstico Comparativo (Período Anterior vs. Atual) + Feedback Calibrado de Critérios',
+                            regra: 'Queda brusca igual ou superior a 15% na nota em relação ao período anterior (independente de ter ocorrido falha crítica na queda)',
+                            explicacao: 'Operador que entregava nota boa e sofreu uma queda brusca de um ciclo/mês para o outro (como -15% ou -23%). O fenômeno primário é a perda repentina de padrão, mesmo que uma falha crítica tenha acontecido durante a oscilação.',
+                            papelEquipe: 'A Qualidade assume para comparar as fichas anteriores com as atuais, identificar o que gatilhou a ruptura e realinhar os critérios.',
                             icon: 'fa-arrow-trend-down',
                             cor: 'rose'
                         },
@@ -20831,8 +20848,8 @@ storage: {
                             canal: 'Sala de Treinamento / Laboratório',
                             tipo: 'Reciclagem Inicial em Sala',
                             acao: 'Reciclagem Prática sobre Ofensores de Processo (Fraseologia, Mudo, Registro)',
-                            regra: 'Ramp-Up ou Júnior (até 180 dias) posicionado nos quadrantes Q3 ou Q4 (sem falha crítica)',
-                            explicacao: 'Novato que não cometeu falha grave, mas está com nota baixa (Q3/Q4) por acumular desvios processuais de execução (controle de mudo, sondagem, descrição no sistema).',
+                            regra: 'Ramp-Up ou Júnior (até 180 dias) nos quadrantes Q3 ou Q4 onde desvios processuais são o ofensor dominante',
+                            explicacao: 'Novato posicionado em Q3/Q4 por acumular desvios processuais de execução (controle de mudo, sondagem, descrição no sistema) que mostram lacuna da formação inicial.',
                             papelEquipe: 'O Treinamento assume levando o operador para oficina prática em sala com exercícios nos itens do formulário em que ele mais perdeu ponto.',
                             icon: 'fa-chalkboard-user',
                             cor: 'amber'
@@ -20846,8 +20863,8 @@ storage: {
                             canal: 'Oficina de Atualização do Treinamento',
                             tipo: 'Oficina de Reciclagem de Processo',
                             acao: 'Oficina de Atualização Técnica e Correção de Vícios Processuais em Sala',
-                            regra: 'Pleno ou Veterano (> 180 dias) nos quadrantes Q3 ou Q4 por desvios processuais (sem falha crítica e sem queda brusca >= 15%)',
-                            explicacao: 'Operador antigo estagnado em nota baixa (Q3/Q4) por repetir erros de roteiro, registro ou sistema ao longo do tempo.',
+                            regra: 'Pleno ou Veterano (> 180 dias) estagnado em Q3 ou Q4 com predomínio de desvios processuais recorrentes (sem queda brusca >= 15%)',
+                            explicacao: 'Operador antigo posicionado em nota baixa (Q3/Q4) por acumular erros sistemáticos de roteiro, registro ou sistema ao longo do tempo — mesmo que também tenha ocorrido falha isolada.',
                             papelEquipe: 'O Treinamento assume para aplicar reciclagem de atualização técnica e corrigir o passo a passo operacional na prática.',
                             icon: 'fa-rotate',
                             cor: 'purple'
@@ -20880,6 +20897,7 @@ storage: {
                     const mesesAll = data.mesesDisponiveis || [];
                     const fMes = (this.analiseFiltroMes || []).filter(m => m);
                     const mesesBase = fMes.length > 0 ? mesesAll.filter(m => fMes.includes(m)) : mesesAll;
+                    const ciclosAll = (data.ciclosDisponiveis || []).slice().sort((a, b) => parseInt(a) - parseInt(b));
 
                     const lista = [];
                     let desligadosExcluidos = 0;
@@ -20901,7 +20919,7 @@ storage: {
                         const faixa = diasNum > mc.m3 ? 'Veterano' : (diasNum > mc.m2 ? 'Pleno' : (diasNum > mc.m1 ? 'Júnior' : 'Ramp-Up'));
                         const tempoTxt = app.utils.formatTempoCasa(diasNum);
 
-                        // 2) DESEMPENHO E TENDÊNCIA (último mês com dado x mês anterior)
+                        // 2) DESEMPENHO E TENDÊNCIA (compara último mês vs anterior; se houver apenas 1 mês, compara metade final vs metade inicial dos ciclos do operador)
                         const hist = (data.operadoresEvolutivo && data.operadoresEvolutivo[nome]) || {};
                         const mesesComDado = mesesBase.filter(m => hist[m] && hist[m].count > 0);
                         let nota = parseFloat(op.media) || 0;
@@ -20917,41 +20935,115 @@ storage: {
                                 if (notaAnterior > 0) variacao = ((nota - notaAnterior) / notaAnterior) * 100;
                             }
                         }
-                        nota = parseFloat(nota.toFixed(1));
+                        // Fallback por ciclo/semana quando o operador tem apenas 1 mês mas múltiplos ciclos (S23 a S44)
+                        if (notaAnterior === null && data.operadoresCicloEvolutivo && data.operadoresCicloEvolutivo[nome]) {
+                            const cHist = data.operadoresCicloEvolutivo[nome];
+                            const wksOp = ciclosAll.filter(w => cHist[w] && cHist[w].count > 0);
+                            if (wksOp.length >= 2) {
+                                const mid = Math.floor(wksOp.length / 2);
+                                const iniWks = wksOp.slice(0, mid);
+                                const fimWks = wksOp.slice(mid);
+                                const somaIni = iniWks.reduce((acc, w) => acc + cHist[w].soma, 0);
+                                const cntIni = iniWks.reduce((acc, w) => acc + cHist[w].count, 0);
+                                const somaFim = fimWks.reduce((acc, w) => acc + cHist[w].soma, 0);
+                                const cntFim = fimWks.reduce((acc, w) => acc + cHist[w].count, 0);
+                                if (cntIni > 0 && cntFim > 0) {
+                                    notaAnterior = somaIni / cntIni;
+                                    const notaRecenteCiclo = somaFim / cntFim;
+                                    if (notaAnterior > 0) variacao = ((notaRecenteCiclo - notaAnterior) / notaAnterior) * 100;
+                                }
+                            }
+                        }
+                        nota = parseFloat((parseFloat(op.media) || nota).toFixed(1));
                         variacao = parseFloat(variacao.toFixed(1));
                         notaAnterior = notaAnterior === null ? null : parseFloat(notaAnterior.toFixed(1));
                         const quadrante = nota >= qc.q1 ? 'Q1' : (nota >= qc.q2 ? 'Q2' : (nota >= qc.q3 ? 'Q3' : 'Q4'));
 
-                        // 3) TIPOLOGIA DE OFENSORES (Falhas Críticas vs. Desvios Processuais)
+                        // 3) TIPOLOGIA DE OFENSORES (Falhas Críticas vs. Desvios Processuais) + Cálculo de Nota Sem Falha Crítica (para What-If)
                         const crit = {}; const desv = {};
-                        (op.avaliacoes || []).forEach(av => (av.perguntas || []).forEach(p => {
-                            const a = norm(p.a);
-                            const isSim = a === 'SIM' || a === 'S' || a.startsWith('SIM ');
-                            const isNao = a === 'NAO' || a === 'N' || a.startsWith('NAO');
-                            const item = limpaItem(p.q);
-                            if ((p.p === 100 || p.p === 0) && isSim) crit[item] = (crit[item] || 0) + 1;
-                            else if (p.p !== 100 && p.p !== 0 && isNao) desv[item] = (desv[item] || 0) + 1;
-                        }));
+                        let ligsZeradasPorCritica = 0;
+                        let somaNotasSemCritica = 0;
+                        let qtdNotasSemCritica = 0;
+                        (op.avaliacoes || []).forEach(av => {
+                            let teveCriticaNaLig = false;
+                            let somaPesosPerdidosComuns = 0;
+                            (av.perguntas || []).forEach(p => {
+                                const a = norm(p.a);
+                                const isSim = a === 'SIM' || a === 'S' || a.startsWith('SIM ');
+                                const isNao = a === 'NAO' || a === 'N' || a.startsWith('NAO');
+                                const item = limpaItem(p.q);
+                                if ((p.p === 100 || p.p === 0) && isSim) {
+                                    crit[item] = (crit[item] || 0) + 1;
+                                    teveCriticaNaLig = true;
+                                } else if (p.p !== 100 && p.p !== 0 && isNao) {
+                                    desv[item] = (desv[item] || 0) + 1;
+                                    somaPesosPerdidosComuns += (parseFloat(p.p) || 0);
+                                }
+                            });
+                            if (teveCriticaNaLig || av.nota === 0) {
+                                ligsZeradasPorCritica++;
+                                const notaReconstruida = Math.max(qc.q2, Math.min(100, 100 - somaPesosPerdidosComuns));
+                                somaNotasSemCritica += notaReconstruida;
+                                qtdNotasSemCritica++;
+                            } else {
+                                somaNotasSemCritica += (parseFloat(av.nota) || 0);
+                                qtdNotasSemCritica++;
+                            }
+                        });
+                        const mediaSemCritica = qtdNotasSemCritica > 0 ? parseFloat((somaNotasSemCritica / qtdNotasSemCritica).toFixed(1)) : Math.max(nota, qc.q2);
                         const toArr = o => Object.entries(o).map(([item, ocorrencias]) => ({ item, ocorrencias })).sort((x, y) => y.ocorrencias - x.ocorrencias);
                         const falhas_criticas = toArr(crit);
                         const desvios_processuais = toArr(desv);
+                        const totCrit = falhas_criticas.reduce((s, f) => s + f.ocorrencias, 0);
+                        const totDesv = desvios_processuais.reduce((s, f) => s + f.ocorrencias, 0);
 
-                        // MATRIZ DE CRUZAMENTO LÓGICO (100% Qualidade & Treinamento, sem cálculo de backlog de feedback)
+                        // 4) MATRIZ INTELIGENTE POR CAUSA-RAIZ DOMINANTE (Fim do Funil Binário!)
+                        // Falha Crítica não canibaliza mais Alerta de Ruptura nem Reciclagem/Gap quando o fenômeno primário é queda brusca ou desvio crônico de Q3/Q4.
                         const veterano = faixa === 'Pleno' || faixa === 'Veterano';
-                        const regras = [];
-                        if (falhas_criticas.length > 0) regras.push(veterano ? 'RISCO_OPERACIONAL_VETERANO' : 'FALHA_CRITICA_RAMP_UP');
-                        if (variacao <= -15 && falhas_criticas.length === 0) regras.push('ALERTA_RUPTURA');
-                        if ((faixa === 'Ramp-Up' || faixa === 'Júnior') && (quadrante === 'Q3' || quadrante === 'Q4')) regras.push('GAP_TREINAMENTO_INICIAL');
-                        if (veterano && (quadrante === 'Q3' || quadrante === 'Q4') && falhas_criticas.length === 0) regras.push('RECICLAGEM_PROCESSUAL_VETERANO');
-                        if (quadrante === 'Q1' && nota >= 95 && falhas_criticas.length === 0) regras.push('REFERENCIA_BOAS_PRATICAS');
+                        const emQ3Q4 = quadrante === 'Q3' || quadrante === 'Q4';
+                        const temRuptura = variacao <= -15;
+                        const temCritica = totCrit > 0;
+                        const desviosDominam = totDesv > 0 && (totCrit === 0 || (totDesv >= 2 && totDesv > totCrit));
 
-                        const perfil = regras.length > 0 ? regras[0] : 'ESTAVEL';
+                        // Coleta todos os sinais detectados para transparência total
+                        const todosSinais = [];
+                        if (temRuptura) todosSinais.push('ALERTA_RUPTURA');
+                        if (veterano && emQ3Q4 && (totDesv > 0 || !temCritica)) todosSinais.push('RECICLAGEM_PROCESSUAL_VETERANO');
+                        if (!veterano && emQ3Q4 && (totDesv > 0 || !temCritica)) todosSinais.push('GAP_TREINAMENTO_INICIAL');
+                        if (temCritica) todosSinais.push(veterano ? 'RISCO_OPERACIONAL_VETERANO' : 'FALHA_CRITICA_RAMP_UP');
+                        if (quadrante === 'Q1' && nota >= 95 && !temCritica && !temRuptura) todosSinais.push('REFERENCIA_BOAS_PRATICAS');
+
+                        // Decisão do Perfil Principal (Causa-Raiz Dominante)
+                        let perfil = 'ESTAVEL';
+                        if (temRuptura) {
+                            // Prioridade 1: Queda brusca (>= 15%) vai para Diagnóstico Comparativo (Qualidade), mesmo que tenha ocorrido falha crítica na queda
+                            perfil = 'ALERTA_RUPTURA';
+                        } else if (!veterano && emQ3Q4 && desviosDominam) {
+                            // Novato em Q3/Q4 onde os desvios processuais superam falhas críticas isoladas -> Sala de Aula (Gap de Curva de Aprendizado)
+                            perfil = 'GAP_TREINAMENTO_INICIAL';
+                        } else if (!veterano && temCritica) {
+                            // Novato cujo problema central é a Falha Crítica -> Simulação em Espelho (Treinamento)
+                            perfil = 'FALHA_CRITICA_RAMP_UP';
+                        } else if (!veterano && emQ3Q4) {
+                            perfil = 'GAP_TREINAMENTO_INICIAL';
+                        } else if (veterano && emQ3Q4 && desviosDominam) {
+                            // Pleno/Veterano estagnado em Q3/Q4 onde desvios de processo dominam -> Reciclagem Técnica (Treinamento)
+                            perfil = 'RECICLAGEM_PROCESSUAL_VETERANO';
+                        } else if (veterano && temCritica) {
+                            // Pleno/Veterano com Falha Crítica dominante -> Auditoria Dirigida (Qualidade)
+                            perfil = 'RISCO_OPERACIONAL_VETERANO';
+                        } else if (veterano && emQ3Q4) {
+                            perfil = 'RECICLAGEM_PROCESSUAL_VETERANO';
+                        } else if (quadrante === 'Q1' && nota >= 95 && !temCritica) {
+                            perfil = 'REFERENCIA_BOAS_PRATICAS';
+                        }
+
+                        const secundarios = todosSinais.filter(s => s !== perfil);
                         const m = meta[perfil] || null;
 
-                        // PAUTA E ROTEIRO (texto pronto para Qualidade ou Treinamento)
+                        // PAUTA E ROTEIRO (texto pronto para Qualidade ou Treinamento, incluindo menção a sinais secundários se existirem)
                         const topCrit = falhas_criticas.slice(0, 2).map(f => `"${f.item}" (${f.ocorrencias}x)`).join('; ');
                         const topDesv = desvios_processuais.slice(0, 3).map(f => `"${f.item}" (${f.ocorrencias}x)`).join('; ');
-                        const totCrit = falhas_criticas.reduce((s, f) => s + f.ocorrencias, 0);
                         const varTxt = (variacao > 0 ? '+' : '') + variacao.toFixed(1) + '%';
                         const quedaTxt = notaAnterior !== null ? `queda de ${notaAnterior} para ${nota} (${varTxt})` : `nota atual ${nota} (${varTxt})`;
                         let pauta = []; let roteiro = '';
@@ -20975,24 +21067,25 @@ storage: {
                         } else if (perfil === 'ALERTA_RUPTURA') {
                             pauta = [
                                 `[Qualidade] Diagnosticar oscilação brusca de nota: ${quedaTxt}`,
-                                desvios_processuais.length ? `Critérios que puxaram a nota para baixo: ${topDesv}` : 'Comparar blocos das fichas do mês anterior com as atuais',
+                                temCritica ? `Atenção: a queda incluiu ${totCrit} falha(s) crítica(s) (${topCrit}) que zerou ligação` : 'Sem falha crítica no período: queda causada por perda de pontos em itens comuns',
+                                desvios_processuais.length ? `Desvios processuais associados: ${topDesv}` : 'Comparar blocos das fichas anteriores com as atuais',
                                 `Operador ${faixa} (${tempoTxt} de casa) atualmente no ${quadrante}`,
                                 'Calibrar entendimento dos itens onde houve perda de pontos e agendar nova monitoria de verificação'
                             ];
-                            roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Sua entrega sempre teve ótimo padrão, mas notamos uma oscilação atípica neste período (${quedaTxt})${desvios_processuais.length ? `, concentrada nos itens: ${topDesv}` : ''}. Trouxemos o comparativo das suas monitorias para revisarmos juntos o que mudou e calibrarmos esses pontos do formulário.`;
+                            roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Sua entrega vinha em ótimo patamar, mas notamos uma oscilação atípica neste período (${quedaTxt})${temCritica ? `, impactada inclusive por falha crítica em ${topCrit}` : ''}${desvios_processuais.length ? ` e descontos em ${topDesv}` : ''}. Trouxemos o comparativo das suas monitorias para revisarmos juntos o que mudou e recuperarmos seu padrão.`;
                         } else if (perfil === 'GAP_TREINAMENTO_INICIAL') {
                             pauta = [
                                 `[Treinamento] Acelerar curva de aprendizado de operador ${faixa} (${tempoTxt}) em ${quadrante} (nota ${nota})`,
-                                desvios_processuais.length ? `Trabalhar em sala os ofensores processuais: ${topDesv}` : 'Reforçar roteiro completo, sistema e fraseologia em sala',
-                                'Exercício prático de preenchimento/fraseologia e controle de tempo em linha',
+                                desvios_processuais.length ? `Trabalhar em sala os ofensores processuais (${totDesv} ocorr.): ${topDesv}` : 'Reforçar roteiro completo, sistema e fraseologia em sala',
+                                temCritica ? `Reforçar também prevenção à falha crítica registrada (${topCrit})` : 'Exercício prático de preenchimento/fraseologia e controle de tempo em linha',
                                 'Comunicar a Qualidade após a reciclagem para priorizar nova monitoria de aferição'
                             ];
                             roteiro = `${primeiro}, aqui é da Equipe de Treinamento. Você está com ${tempoTxt} de casa e nota ${nota} (${quadrante}). Separamos os pontos em que você mais perdeu décimos (${topDesv || 'roteiro e procedimentos do sistema'}) para fazermos uma oficina prática rápida em sala, tirando todas as suas dúvidas de execução.`;
                         } else if (perfil === 'RECICLAGEM_PROCESSUAL_VETERANO') {
                             pauta = [
-                                `[Treinamento] Reciclagem de atualização para operador ${faixa} (${tempoTxt}) em ${quadrante} (nota ${nota})`,
-                                desvios_processuais.length ? `Corrigir recorrência nos itens: ${topDesv}` : 'Revisar atualizações recentes de procedimento e script',
-                                'Oficina prática para eliminar vícios de roteiro, tempo em mudo e registro no sistema',
+                                `[Treinamento] Reciclagem de atualização para operador ${faixa} (${tempoTxt}) estagnado em ${quadrante} (nota ${nota})`,
+                                desvios_processuais.length ? `Corrigir recorrência crônica nos itens (${totDesv} ocorr.): ${topDesv}` : 'Revisar atualizações recentes de procedimento e script',
+                                temCritica ? `Abordar em sala também o ponto crítico ocorrido (${topCrit})` : 'Oficina prática para eliminar vícios de roteiro, tempo em mudo e registro no sistema',
                                 'Solicitar à Qualidade monitoria de acompanhamento pós-reciclagem'
                             ];
                             roteiro = `${primeiro}, aqui é da Equipe de Treinamento. Mesmo com sua experiência de ${tempoTxt} de casa, vimos que sua média ficou em ${nota} (${quadrante}) por descontos recorrentes em ${topDesv || 'itens processuais do formulário'}. Preparamos uma reciclagem objetiva de atualização para alinharmos o passo a passo atual e recuperarmos sua nota para Q1.`;
@@ -21005,13 +21098,15 @@ storage: {
                             roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Parabéns pelo resultado: você alcançou média ${nota} (${quadrante}) sem nenhuma falha crítica! Selecionamos seu atendimento como referência de boas práticas para a Equipe de Treinamento usar como áudio modelo nas turmas.`;
                         }
 
-                        const secundarios = regras.slice(1);
                         lista.push({
                             entrada: {
                                 operador: nome,
                                 tempo_casa_dias: diasNum,
                                 faixa_maturidade: faixa,
                                 nota_atual: nota,
+                                nota_anterior: notaAnterior,
+                                nota_sem_critica: mediaSemCritica,
+                                ligs_zeradas_critica: ligsZeradasPorCritica,
                                 quadrante,
                                 variacao_percentual: variacao,
                                 total_monitorias: op.notas.length,
@@ -21067,6 +21162,381 @@ storage: {
                     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
                 },
 
+                // Seletores sincronizados para evitar conflito entre Filtro de Equipe e Filtro de Perfil
+                selecionarPerfilPrescricao(perfilKey) {
+                    const meta = this.getPrescricaoMeta();
+                    if (!perfilKey || this.prescFiltroPerfil === perfilKey) {
+                        this.prescFiltroPerfil = '';
+                    } else {
+                        this.prescFiltroPerfil = perfilKey;
+                        // Se o filtro de equipe estiver ativo para a outra equipe, sincroniza limpando o conflito
+                        if (this.prescFiltroEquipe && meta[perfilKey] && meta[perfilKey].responsavel !== this.prescFiltroEquipe) {
+                            this.prescFiltroEquipe = '';
+                        }
+                    }
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                selecionarEquipePrescricao(equipeNome) {
+                    const meta = this.getPrescricaoMeta();
+                    if (!equipeNome || this.prescFiltroEquipe === equipeNome) {
+                        this.prescFiltroEquipe = '';
+                    } else {
+                        this.prescFiltroEquipe = equipeNome;
+                        // Se houver um perfil selecionado que pertence à outra equipe, limpa para nunca zerar a tela por conflito
+                        if (this.prescFiltroPerfil && meta[this.prescFiltroPerfil] && meta[this.prescFiltroPerfil].responsavel !== equipeNome) {
+                            this.prescFiltroPerfil = '';
+                        }
+                    }
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                // Classifica o selo resumido ("Qualidade", "Treinamento" ou "Qualidade & Treinamento") e explica o PORQUÊ de cada ofensor
+                getDirecionamentoOfensor(o) {
+                    const novatos = (o.faixas['Ramp-Up'] || 0) + (o.faixas['Júnior'] || 0);
+                    const experientes = (o.faixas['Pleno'] || 0) + (o.faixas['Veterano'] || 0);
+                    let selo = 'Qualidade & Treinamento';
+                    let corSelo = 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800';
+                    let icone = 'fa-people-arrows';
+                    let motivo = '';
+
+                    if (o.tipo === 'Crítica' && experientes > 0 && (novatos === 0 || experientes >= novatos * 2)) {
+                        selo = 'Qualidade';
+                        corSelo = 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800';
+                        icone = 'fa-magnifying-glass-chart';
+                        motivo = `Concentrado em experientes (${experientes} Pleno/Veterano vs. ${novatos} Novato). Como já dominam o processo e zeraram a ligação em item crítico, não é falta de treinamento inicial: exige auditoria dirigida e calibração de conformidade pela Qualidade.`;
+                    } else if (novatos > 0 && (experientes === 0 || novatos >= experientes * 2)) {
+                        selo = 'Treinamento';
+                        corSelo = 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800';
+                        icone = 'fa-graduation-cap';
+                        motivo = o.tipo === 'Crítica'
+                            ? `Concentrado na curva inicial (${novatos} Ramp-Up/Júnior vs. ${experientes} Pleno/Vet). Indica falha de segurança na fase de assimilação, exigindo simulação assistida em espelho pelo Treinamento.`
+                            : `Concentrado em novatos (${novatos} Ramp-Up/Júnior vs. ${experientes} Pleno/Vet). Indica lacuna da formação inicial (roteiro/sistema), exigindo oficina prática em sala pelo Treinamento.`;
+                    } else if (novatos > 0 && experientes > 0) {
+                        selo = 'Qualidade & Treinamento';
+                        corSelo = 'bg-gradient-to-r from-blue-100 to-purple-100 text-indigo-800 dark:from-blue-900/40 dark:to-purple-900/40 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700';
+                        icone = 'fa-handshake-angle';
+                        motivo = `Erro dividido entre novatos (${novatos} op.) e experientes (${experientes} op.). O Treinamento atua na reciclagem prática/espelho para corrigir a execução e a Qualidade atua na calibração e auditoria dirigida dos veteranos.`;
+                    } else {
+                        selo = 'Qualidade & Treinamento';
+                        corSelo = 'bg-gradient-to-r from-blue-100 to-purple-100 text-indigo-800 dark:from-blue-900/40 dark:to-purple-900/40 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700';
+                        icone = 'fa-handshake-angle';
+                        motivo = `Desvio processual recorrente em veteranos (${experientes} Pleno/Vet). O Treinamento aplica oficina de atualização para remover vícios de rotina e a Qualidade realiza monitoria pós-sala para validar a aderência.`;
+                    }
+                    return { selo, corSelo, icone, motivo, novatos, experientes };
+                },
+
+                // Modal interativo para inspecionar qualquer grupo, perfil, célula de maturidade ou item ofensor em "Onde Agir"
+                openOndeAgirModal(tipoFiltro, valor1Encoded, valor2Encoded) {
+                    const lista = this._prescCache || [];
+                    const meta = this.getPrescricaoMeta();
+                    const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
+                    const val1 = valor1Encoded ? decodeURIComponent(valor1Encoded) : '';
+                    const val2 = valor2Encoded ? decodeURIComponent(valor2Encoded) : '';
+
+                    let filtrados = [];
+                    let titulo = 'Operadores Selecionados';
+                    let subtitulo = '';
+                    let corTema = 'indigo';
+
+                    if (tipoFiltro === 'equipe') {
+                        filtrados = lista.filter(p => p.acao_prescritiva && p.acao_prescritiva.responsavel_execucao === val1);
+                        titulo = `${val1} — Fila Completa de Atuação`;
+                        subtitulo = `Operadores ativos na Base de RH direcionados exclusivamente para a ${val1}.`;
+                        corTema = val1 === 'Equipe de Qualidade' ? 'blue' : 'purple';
+                    } else if (tipoFiltro === 'perfil') {
+                        const m = meta[val1] || {};
+                        filtrados = lista.filter(p => p.diagnostico.perfil_identificado === val1);
+                        titulo = `${m.label || val1}`;
+                        subtitulo = `${m.responsavel || ''} • SLA ${m.sla || '-'}h • Critério: ${m.regra || ''}`;
+                        corTema = m.responsavel === 'Equipe de Qualidade' ? 'blue' : 'purple';
+                    } else if (tipoFiltro === 'celula') {
+                        const m = meta[val2] || {};
+                        filtrados = lista.filter(p => p.entrada.faixa_maturidade === val1 && p.diagnostico.perfil_identificado === val2);
+                        titulo = `${val1} × ${m.label || val2}`;
+                        subtitulo = `Cruzamento do Mapa de Calor: Operadores ativos na faixa ${val1} enquadrados em ${m.label || val2} (${m.responsavel || ''}).`;
+                        corTema = m.responsavel === 'Equipe de Qualidade' ? 'blue' : 'purple';
+                    } else if (tipoFiltro === 'faixa_ativos') {
+                        filtrados = lista.filter(p => p.entrada.faixa_maturidade === val1);
+                        titulo = `Maturidade: ${val1} (Ativos RH)`;
+                        subtitulo = `Todos os operadores ativos na faixa ${val1} e seus respectivos diagnósticos.`;
+                    } else if (tipoFiltro === 'tema_equipe') {
+                        // val1 = Equipe ('Equipe de Qualidade' ou 'Equipe de Treinamento'), val2 = 'Falha Crítica|Item' ou 'Desvio Processual|Item'
+                        const [tp, ...rest] = val2.split('|');
+                        const itemNome = rest.join('|');
+                        filtrados = lista.filter(p => {
+                            if (!p.acao_prescritiva || p.acao_prescritiva.responsavel_execucao !== val1) return false;
+                            if (p.diagnostico.perfil_identificado === 'REFERENCIA_BOAS_PRATICAS') return false;
+                            const arr = tp === 'Falha Crítica' ? p.entrada.falhas_criticas : p.entrada.desvios_processuais;
+                            return arr.some(f => f.item === itemNome);
+                        });
+                        titulo = `${val1} • Critério: ${itemNome}`;
+                        subtitulo = `Operadores da fila da ${val1} que tiveram desconto em [${tp}] "${itemNome}".`;
+                        corTema = val1 === 'Equipe de Qualidade' ? 'blue' : 'purple';
+                    } else if (tipoFiltro === 'ofensor') {
+                        // val1 = 'Crítica' ou 'Desvio', val2 = item
+                        filtrados = lista.filter(p => {
+                            const arr = val1 === 'Crítica' ? p.entrada.falhas_criticas : p.entrada.desvios_processuais;
+                            return arr.some(f => f.item === val2);
+                        });
+                        titulo = `Ofensor [${val1}]: ${val2}`;
+                        subtitulo = `Operadores ativos na Base de RH que cometeram este ofensor no período analisado.`;
+                        corTema = val1 === 'Crítica' ? 'red' : 'orange';
+                    }
+
+                    this._modalOndeAgirLista = filtrados;
+                    this._modalOndeAgirTitulo = titulo;
+
+                    const quadCor = { Q1: 'text-green-600 bg-green-100 dark:bg-green-900/30', Q2: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30', Q3: 'text-orange-600 bg-orange-100 dark:bg-orange-900/30', Q4: 'text-red-600 bg-red-100 dark:bg-red-900/30' };
+                    const gravCor = { CRITICO: 'bg-red-100 text-red-700 border-red-200', ALTO: 'bg-orange-100 text-orange-700 border-orange-200', MEDIO: 'bg-amber-100 text-amber-700 border-amber-200', BAIXO: 'bg-emerald-100 text-emerald-700 border-emerald-200', NENHUMA: 'bg-slate-100 text-slate-600 border-slate-200' };
+
+                    let html = `
+                        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-200 dark:border-slate-700">
+                            <div class="text-xs text-slate-600 dark:text-slate-300 flex-1">${esc(subtitulo)}</div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-black px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">${filtrados.length} operador(es)</span>
+                                ${filtrados.length > 0 ? `<button onclick="app.ui.exportarModalOndeAgirXLSX()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-file-excel"></i> Baixar XLSX deste Grupo</button>` : ''}
+                            </div>
+                        </div>
+                        <div class="space-y-2.5 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+                    `;
+
+                    if (filtrados.length === 0) {
+                        html += `<div class="text-center text-slate-400 italic p-8 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">Nenhum operador ativo enquadrado neste recorte.</div>`;
+                    } else {
+                        filtrados.forEach((p, idx) => {
+                            const e = p.entrada;
+                            const d = p.diagnostico;
+                            const a = p.acao_prescritiva;
+                            const m = meta[d.perfil_identificado] || { label: 'Estável (Sem Intervenção)', responsavel: 'Operação Estável' };
+                            const varCor = e.variacao_percentual <= -15 ? 'text-red-600' : (e.variacao_percentual < 0 ? 'text-orange-500' : 'text-emerald-600');
+                            const critStr = e.falhas_criticas.map(f => `${f.item} (${f.ocorrencias}x)`).join('; ');
+                            const desvStr = e.desvios_processuais.slice(0, 3).map(f => `${f.item} (${f.ocorrencias}x)`).join('; ');
+                            html += `
+                                <div class="bg-slate-50 dark:bg-slate-900/70 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 transition-all">
+                                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-black flex items-center justify-center">${idx + 1}</span>
+                                            <div>
+                                                <div class="font-black text-slate-800 dark:text-white text-sm">${esc(e.operador)}</div>
+                                                <div class="text-[11px] text-slate-500">${e.faixa_maturidade} (${app.utils.formatTempoCasa(e.tempo_casa_dias)}) &bull; ${e.total_monitorias} monitoria(s)</div>
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-wrap items-center gap-1.5">
+                                            <span class="text-[10px] font-black px-2 py-0.5 rounded border ${gravCor[d.gravidade] || gravCor.NENHUMA}">${d.gravidade}</span>
+                                            <span class="text-[10px] font-black px-2 py-0.5 rounded ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
+                                            <span class="text-xs font-black ${varCor}">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</span>
+                                            <button onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(e.operador)}'), 220)" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold shadow-xs"><i class="fa-solid fa-eye mr-1"></i>Ver Fichas</button>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700/70">
+                                        <div>
+                                            <span class="font-black uppercase text-[9px] text-indigo-600 dark:text-indigo-400 block">${esc(m.responsavel)} &bull; ${esc(m.label)}</span>
+                                            <span class="text-slate-700 dark:text-slate-200 font-semibold">${esc(a ? a.acao : 'Manter acompanhamento de rotina')}</span>
+                                        </div>
+                                        <div class="space-y-0.5">
+                                            ${critStr ? `<div class="text-red-600 dark:text-red-400 truncate" title="${esc(critStr)}"><strong>Críticas:</strong> ${esc(critStr)}</div>` : ''}
+                                            ${desvStr ? `<div class="text-orange-600 dark:text-orange-400 truncate" title="${esc(desvStr)}"><strong>Desvios:</strong> ${esc(desvStr)}</div>` : ''}
+                                            ${!critStr && !desvStr ? `<div class="text-emerald-600 font-bold">Zero falhas críticas e zero desvios processuais</div>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    html += `</div>`;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users-viewfinder text-${corTema}-600 mr-2"></i> ${esc(titulo)}`;
+                    document.getElementById('modal-content').innerHTML = html;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-sm transition-colors">Fechar</button>`;
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-2xl', 'max-w-3xl', 'max-w-5xl', 'max-w-lg');
+                    modalBox.classList.add('max-w-4xl');
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                exportarModalOndeAgirXLSX() {
+                    const arr = this._modalOndeAgirLista || [];
+                    if (!arr.length) return;
+                    this.exportarPlanoOndeAgirXLSX('custom', arr, this._modalOndeAgirTitulo || 'Grupo_Selecionado');
+                },
+
+                // Exporta planilha .XLSX completa, visualmente organizada em 4 abas e pronta para envio à Equipe de Qualidade ou Treinamento
+                exportarPlanoOndeAgirXLSX(escopo, customList, customTitle) {
+                    const listaCompleta = this._prescCache || [];
+                    if (!listaCompleta.length) return;
+                    const meta = this.getPrescricaoMeta();
+
+                    let baseOps = [];
+                    let nomeArquivo = 'Plano_Acao_Qualidade_e_Treinamento.xlsx';
+                    let tituloEscopo = 'PLANO INTEGRADO — EQUIPE DE QUALIDADE & EQUIPE DE TREINAMENTO';
+
+                    if (escopo === 'qualidade') {
+                        baseOps = listaCompleta.filter(p => p.acao_prescritiva && p.acao_prescritiva.responsavel_execucao === 'Equipe de Qualidade');
+                        nomeArquivo = 'Plano_Acao_Equipe_QUALIDADE.xlsx';
+                        tituloEscopo = 'PLANO DE TRABALHO — EQUIPE DE QUALIDADE (AUDITORIA, RUPTURA E BENCHMARK)';
+                    } else if (escopo === 'treinamento') {
+                        baseOps = listaCompleta.filter(p => p.acao_prescritiva && p.acao_prescritiva.responsavel_execucao === 'Equipe de Treinamento');
+                        nomeArquivo = 'Plano_Acao_Equipe_TREINAMENTO.xlsx';
+                        tituloEscopo = 'PLANO DE TRABALHO — EQUIPE DE TREINAMENTO (ESPELHO, CURVA INICIAL E RECICLAGEM)';
+                    } else if (escopo === 'custom' && Array.isArray(customList)) {
+                        baseOps = customList;
+                        const slug = String(customTitle || 'Grupo').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+                        nomeArquivo = `Lista_Onde_Agir_${slug || 'Grupo'}.xlsx`;
+                        tituloEscopo = `RECORTE ESPECÍFICO — ${customTitle || 'Operadores Selecionados'}`;
+                    } else {
+                        baseOps = listaCompleta.filter(p => p.acao_prescritiva);
+                    }
+
+                    if (baseOps.length === 0) {
+                        alert('Não há operadores enquadrados neste filtro para exportar.');
+                        return;
+                    }
+
+                    // ABA 1: RESUMO EXECUTIVO & REGRAS DE DIRECIONAMENTO
+                    const contPorPerfil = {};
+                    baseOps.forEach(p => {
+                        const k = p.diagnostico.perfil_identificado;
+                        contPorPerfil[k] = (contPorPerfil[k] || 0) + 1;
+                    });
+                    const rowsResumo = [
+                        { "Indicador / Perfil de Atuação": tituloEscopo, "Equipe Responsável": "", "Gravidade": "", "Prazo SLA": "", "Qtd Operadores Ativos": baseOps.length, "Por que entrar em ação (Critério de Negócio)": "Considera apenas operadores ativos na Base de RH", "O que a equipe deve fazer na prática": "" }
+                    ];
+                    Object.keys(meta).forEach(k => {
+                        const m = meta[k];
+                        const qtd = contPorPerfil[k] || 0;
+                        if (escopo === 'qualidade' && m.responsavel !== 'Equipe de Qualidade') return;
+                        if (escopo === 'treinamento' && m.responsavel !== 'Equipe de Treinamento') return;
+                        rowsResumo.push({
+                            "Indicador / Perfil de Atuação": m.label,
+                            "Equipe Responsável": m.responsavel,
+                            "Gravidade": m.gravidade,
+                            "Prazo SLA": `${m.sla} horas`,
+                            "Qtd Operadores Ativos": qtd,
+                            "Por que entrar em ação (Critério de Negócio)": m.regra,
+                            "O que a equipe deve fazer na prática": `${m.acao} (${m.papelEquipe})`
+                        });
+                    });
+
+                    // ABA 2: FILA NOMINAL DETALHADA DE OPERADORES E ROTEIROS
+                    const rowsFila = baseOps.map((p, idx) => {
+                        const e = p.entrada;
+                        const d = p.diagnostico;
+                        const a = p.acao_prescritiva;
+                        const m = meta[d.perfil_identificado] || {};
+                        const secund = (p.sinais_secundarios || []).map(s => meta[s] ? meta[s].label : s).join(' | ');
+                        return {
+                            "Ordem Prioridade": idx + 1,
+                            "Urgência / Gravidade": d.gravidade,
+                            "SLA Máximo (Horas)": d.sla_resolucao_horas ? `${d.sla_resolucao_horas}h` : '-',
+                            "Equipe Responsável": a ? a.responsavel_execucao : 'Estável',
+                            "Perfil de Intervenção": m.label || d.perfil_identificado,
+                            "Motivo do Enquadramento": m.regra || 'Operador estável no período',
+                            "Operador (Ativo RH)": e.operador,
+                            "Tempo de Casa (Dias)": e.tempo_casa_dias,
+                            "Tempo de Casa (Formatado)": app.utils.formatTempoCasa(e.tempo_casa_dias),
+                            "Faixa de Maturidade": e.faixa_maturidade,
+                            "Quadrante Atual": e.quadrante,
+                            "Nota Média Atual": e.nota_atual,
+                            "Nota Período Anterior": e.nota_anterior !== null ? e.nota_anterior : 'Sem histórico anterior',
+                            "Variação (%)": `${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%`,
+                            "Qtd Monitorias": e.total_monitorias,
+                            "Ligações Zeradas (Crítica)": e.ligs_zeradas_critica || 0,
+                            "Nota Simulada Sem Crítica": e.nota_sem_critica || e.nota_atual,
+                            "O Que Fazer (Ação Prescrita)": a ? a.acao : '-',
+                            "Formato / Canal": a ? `${a.tipo_intervencao} (${a.canal})` : '-',
+                            "Falhas Críticas Cometidas": e.falhas_criticas.map(f => `${f.item} (${f.ocorrencias}x)`).join(' ; ') || 'Nenhuma',
+                            "Desvios Processuais Cometidos": e.desvios_processuais.map(f => `${f.item} (${f.ocorrencias}x)`).join(' ; ') || 'Nenhum',
+                            "Pauta Obrigatória (Checklist)": a ? a.pauta_obrigatoria.join(' | ') : '-',
+                            "Roteiro Pronto para Aplicação": a ? a.roteiro_sugerido : '-',
+                            "Outros Sinais Detectados": secund || 'Nenhum'
+                        };
+                    });
+
+                    // ABA 3: PAUTA DE OFENSORES & ITENS DO FORMULÁRIO
+                    const mapOf = {};
+                    baseOps.forEach(p => {
+                        [['Crítica', p.entrada.falhas_criticas], ['Desvio', p.entrada.desvios_processuais]].forEach(([tipo, arr]) => {
+                            arr.forEach(f => {
+                                const k = tipo + '|' + f.item;
+                                if (!mapOf[k]) mapOf[k] = { tipo, item: f.item, total: 0, ops: 0, nomes: [], faixas: { 'Ramp-Up': 0, 'Júnior': 0, 'Pleno': 0, 'Veterano': 0 } };
+                                mapOf[k].total += f.ocorrencias;
+                                mapOf[k].ops++;
+                                mapOf[k].faixas[p.entrada.faixa_maturidade] = (mapOf[k].faixas[p.entrada.faixa_maturidade] || 0) + 1;
+                                mapOf[k].nomes.push(`${p.entrada.operador} (${p.entrada.faixa_maturidade} - ${f.ocorrencias}x)`);
+                            });
+                        });
+                    });
+                    const rowsOfensores = Object.values(mapOf)
+                        .sort((a, b) => (b.tipo === 'Crítica') - (a.tipo === 'Crítica') || b.ops - a.ops || b.total - a.total)
+                        .map(o => {
+                            const dir = this.getDirecionamentoOfensor(o);
+                            return {
+                                "Tipo de Erro": o.tipo === 'Crítica' ? 'FALHA CRÍTICA (Zera Ligação)' : 'DESVIO PROCESSUAL (Desconto)',
+                                "Pergunta / Item do Formulário": o.item,
+                                "Selo Responsável": dir.selo,
+                                "Por que esta equipe cuida deste item": dir.motivo,
+                                "Operadores Impactados": o.ops,
+                                "Total de Ocorrências": o.total,
+                                "Ramp-Up (≤90d)": o.faixas['Ramp-Up'] || 0,
+                                "Júnior (91-180d)": o.faixas['Júnior'] || 0,
+                                "Pleno (181-365d)": o.faixas['Pleno'] || 0,
+                                "Veterano (>365d)": o.faixas['Veterano'] || 0,
+                                "Lista Nominal dos Operadores": o.nomes.join(' | ')
+                            };
+                        });
+
+                    // ABA 4: PLANILHA DE CONTROLE E RETORNO DA EXECUÇÃO (Checklist para preenchimento da equipe)
+                    const rowsControle = baseOps.map((p, idx) => {
+                        const e = p.entrada;
+                        const d = p.diagnostico;
+                        const a = p.acao_prescritiva;
+                        const m = meta[d.perfil_identificado] || {};
+                        return {
+                            "Prioridade": idx + 1,
+                            "Operador": e.operador,
+                            "Maturidade": `${e.faixa_maturidade} (${app.utils.formatTempoCasa(e.tempo_casa_dias)})`,
+                            "Nota Atual": e.nota_atual,
+                            "Quadrante": e.quadrante,
+                            "Equipe Responsável": a ? a.responsavel_execucao : 'Estável',
+                            "Perfil": m.label || d.perfil_identificado,
+                            "Ação a Executar": a ? a.acao : '-',
+                            "Prazo SLA": d.sla_resolucao_horas ? `${d.sla_resolucao_horas}h` : '-',
+                            "Status da Tratativa": "PENDENTE",
+                            "Multiplicador / Auditor Responsável": "",
+                            "Data da Aplicação": "",
+                            "Nota na Monitoria Pós-Ação": "",
+                            "Observações e Evidências da Tratativa": ""
+                        };
+                    });
+
+                    const wb = XLSX.utils.book_new();
+                    const ws1 = XLSX.utils.json_to_sheet(rowsResumo);
+                    ws1['!cols'] = [{ wch: 38 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 62 }, { wch: 70 }];
+                    XLSX.utils.book_append_sheet(wb, ws1, "1_Resumo_Direcionamento");
+
+                    const ws2 = XLSX.utils.json_to_sheet(rowsFila);
+                    ws2['!cols'] = [
+                        { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 34 }, { wch: 52 },
+                        { wch: 34 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
+                        { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 45 },
+                        { wch: 36 }, { wch: 48 }, { wch: 48 }, { wch: 65 }, { wch: 80 }, { wch: 32 }
+                    ];
+                    XLSX.utils.book_append_sheet(wb, ws2, "2_Fila_Operadores_Roteiro");
+
+                    if (rowsOfensores.length > 0) {
+                        const ws3 = XLSX.utils.json_to_sheet(rowsOfensores);
+                        ws3['!cols'] = [{ wch: 26 }, { wch: 52 }, { wch: 26 }, { wch: 70 }, { wch: 20 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 80 }];
+                        XLSX.utils.book_append_sheet(wb, ws3, "3_Pauta_Ofensores_Itens");
+                    }
+
+                    const ws4 = XLSX.utils.json_to_sheet(rowsControle);
+                    ws4['!cols'] = [{ wch: 12 }, { wch: 34 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 32 }, { wch: 45 }, { wch: 12 }, { wch: 18 }, { wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 45 }];
+                    XLSX.utils.book_append_sheet(wb, ws4, "4_Controle_Execucao");
+
+                    XLSX.writeFile(wb, nomeArquivo);
+                },
+
                 renderPrescricaoCapitulos(data, renderChapterTitle) {
                     let lista = [];
                     try { lista = this.buildPrescricoesOperacionais(data); } catch (e) { console.error('Erro no motor de prescrição', e); return ''; }
@@ -21108,7 +21578,7 @@ storage: {
                     // ---------- CAPÍTULO A: PRESCRIÇÃO OPERACIONAL ----------
                     let h = renderChapterTitle('Prescrição Operacional', 'Diagnóstico automático apenas dos operadores ativos na Base de RH, separando com clareza o que é atuação da Equipe de Qualidade e o que é atuação da Equipe de Treinamento.', 'fa-stethoscope', 'rose');
 
-                    // Resumo de ativos vs desligados + filtro rápido por equipe
+                    // Resumo de ativos vs desligados + filtro rápido por equipe (sincronizado sem conflito)
                     h += `<div class="hideable-box mb-6 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                         <div class="flex flex-wrap items-center justify-between gap-4">
                             <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">
@@ -21116,55 +21586,22 @@ storage: {
                                 Do total ativo, <strong class="text-slate-800 dark:text-white">${acionaveis.length}</strong> possuem prescrição (<strong class="text-blue-600 dark:text-blue-400">${acoesQualidade.length} para a Equipe de Qualidade</strong> e <strong class="text-purple-600 dark:text-purple-400">${acoesTreinamento.length} para a Equipe de Treinamento</strong>) e <strong>${estaveis}</strong> estão estáveis (Q1/Q2 sem falha crítica e sem queda brusca).
                             </div>
                             <div class="flex flex-wrap items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                <button onclick="app.ui.prescFiltroEquipe=''; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${!filtroEq ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}">Todas (${acionaveis.length})</button>
-                                <button onclick="app.ui.prescFiltroEquipe='${filtroEq === 'Equipe de Qualidade' ? '' : 'Equipe de Qualidade'}'; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Qualidade' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'}"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i> Qualidade (${acoesQualidade.length})</button>
-                                <button onclick="app.ui.prescFiltroEquipe='${filtroEq === 'Equipe de Treinamento' ? '' : 'Equipe de Treinamento'}'; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Treinamento' ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}"><i class="fa-solid fa-graduation-cap mr-1"></i> Treinamento (${acoesTreinamento.length})</button>
-                                <button onclick="app.ui.exportarPrescricoesJSON()" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-black dark:bg-slate-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-code mr-1"></i> Exportar JSON</button>
+                                <button onclick="app.ui.prescFiltroEquipe=''; app.ui.prescFiltroPerfil=''; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${!filtroEq && !filtro ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}">Todas (${acionaveis.length})</button>
+                                <button onclick="app.ui.selecionarEquipePrescricao('Equipe de Qualidade')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Qualidade' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'}"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i> Qualidade (${acoesQualidade.length})</button>
+                                <button onclick="app.ui.selecionarEquipePrescricao('Equipe de Treinamento')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Treinamento' ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}"><i class="fa-solid fa-graduation-cap mr-1"></i> Treinamento (${acoesTreinamento.length})</button>
+                                <button onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-excel mr-1"></i> Exportar XLSX</button>
+                                <button onclick="app.ui.exportarPrescricoesJSON()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-black dark:bg-slate-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-code mr-1"></i> JSON</button>
                             </div>
                         </div>
                     </div>`;
 
-                    // Guia Didático: O que é cada Perfil de Intervenção?
-                    h += `<details class="hideable-box mb-6 glass-card rounded-3xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm overflow-hidden group" open>
-                        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden p-5 md:p-6 flex items-center justify-between gap-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-sm shrink-0"><i class="fa-solid fa-circle-question"></i></div>
-                                <div>
-                                    <h3 class="text-sm md:text-base font-black text-slate-800 dark:text-white">O que são os Perfis de Intervenção e como cada equipe atua?</h3>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400">Cada operador ativo é classificado automaticamente cruzando <strong>Tempo de Casa (RH)</strong> + <strong>Quadrante/Nota</strong> + <strong>Variação Mensal</strong> + <strong>Tipo de Erro</strong>. Veja abaixo o significado de cada perfil:</p>
-                                </div>
-                            </div>
-                            <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
-                        </summary>
-                        <div class="p-5 md:p-6 pt-0 border-t border-indigo-100 dark:border-indigo-900/40 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
-                            ${Object.keys(meta).map(k => {
-                                const m = meta[k];
-                                const isQual = m.responsavel === 'Equipe de Qualidade';
-                                return `<div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-2 shadow-xs">
-                                    <div>
-                                        <div class="flex items-center justify-between gap-2 mb-2">
-                                            <span class="text-[10px] font-black px-2.5 py-0.5 rounded-md ${equipeBadge[m.responsavel]}"><i class="fa-solid ${isQual ? 'fa-magnifying-glass-chart' : 'fa-graduation-cap'} mr-1"></i>${m.responsavel}</span>
-                                            <span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade} &bull; ${m.sla}h</span>
-                                        </div>
-                                        <div class="font-black text-slate-800 dark:text-white text-xs md:text-sm mb-1"><i class="fa-solid ${m.icon} text-${m.cor}-500 mr-1.5"></i>${m.label}</div>
-                                        <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-900/20 px-2.5 py-1 rounded-lg mb-2">Quando ativa: ${esc(m.regra)}</div>
-                                        <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed mb-2">${esc(m.explicacao)}</p>
-                                    </div>
-                                    <div class="text-[11px] text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 leading-snug">
-                                        <strong class="block text-[10px] uppercase tracking-wider ${isQual ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'} mb-0.5">O que a ${m.responsavel} faz:</strong>
-                                        ${esc(m.papelEquipe)}
-                                    </div>
-                                </div>`;
-                            }).join('')}
-                        </div>
-                    </details>`;
-
-                    // Cards por perfil (clicáveis para filtrar)
-                    h += `<div class="hideable-box grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">`;
+                    // 6 BLOCOS DE PERFIL INTERATIVOS (Ao clicar em um bloco, filtra sem conflito e abre a explicação logo abaixo!)
+                    h += `<div class="hideable-box grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-4">`;
                     Object.keys(meta).forEach(k => {
                         const m = meta[k]; const n = contPerfil[k] || 0; const ativo = filtro === k;
                         const isQual = m.responsavel === 'Equipe de Qualidade';
-                        h += `<div onclick="app.ui.prescFiltroPerfil='${ativo ? '' : k}'; app.ui._refreshComMemoriaDeScroll()" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 border ${ativo ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-slate-200 dark:border-slate-700'} shadow-sm hover:-translate-y-1 hover:shadow-md transition-all flex flex-col justify-between">
+                        const dimmed = (filtro && !ativo) || (filtroEq && m.responsavel !== filtroEq);
+                        h += `<div onclick="app.ui.selecionarPerfilPrescricao('${k}')" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 border-2 ${ativo ? 'border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-500/20 -translate-y-1 shadow-lg' : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'} ${dimmed ? 'opacity-60 hover:opacity-100' : ''} shadow-sm hover:-translate-y-1 hover:shadow-md transition-all flex flex-col justify-between relative">
                             <div>
                                 <div class="flex items-center justify-between mb-2"><i class="fa-solid ${m.icon} text-${m.cor}-500 text-lg"></i><span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade}</span></div>
                                 <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${n}</div>
@@ -21172,11 +21609,84 @@ storage: {
                             </div>
                             <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
                                 <span class="inline-block text-[9px] font-black px-2 py-0.5 rounded ${isQual ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}">${m.responsavel}</span>
-                                <div class="text-[10px] text-slate-400 mt-1">SLA ${m.sla}h</div>
+                                <div class="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                                    <span>SLA ${m.sla}h</span>
+                                    <span class="font-bold text-indigo-500">${ativo ? 'Selecionado ✓' : 'Ver motivo →'}</span>
+                                </div>
                             </div>
                         </div>`;
                     });
                     h += `</div>`;
+
+                    // PAINEL EXPLICATIVO CONTEXTUAL LOGO ABAIXO DOS 6 BLOCOS
+                    if (filtro && meta[filtro]) {
+                        const mSel = meta[filtro];
+                        const isQualSel = mSel.responsavel === 'Equipe de Qualidade';
+                        const qtdSel = contPerfil[filtro] || 0;
+                        h += `<div class="hideable-box mb-8 rounded-3xl p-5 md:p-6 border-2 ${isQualSel ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/25' : 'border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-950/25'} shadow-sm transition-all">
+                            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b ${isQualSel ? 'border-blue-200/70 dark:border-blue-800/60' : 'border-purple-200/70 dark:border-purple-800/60'}">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-11 h-11 rounded-2xl ${isQualSel ? 'bg-blue-600' : 'bg-purple-600'} text-white flex items-center justify-center text-lg shadow-sm shrink-0"><i class="fa-solid ${mSel.icon}"></i></div>
+                                    <div>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="text-[10px] font-black px-2.5 py-0.5 rounded-md ${equipeBadge[mSel.responsavel]}">${mSel.responsavel}</span>
+                                            <span class="text-[10px] font-black px-2 py-0.5 rounded-md border ${gravCor[mSel.gravidade]}">Prioridade ${mSel.gravidade} &bull; SLA ${mSel.sla}h</span>
+                                            <span class="text-xs font-black text-slate-700 dark:text-slate-200">${qtdSel} operador(es) neste perfil</span>
+                                        </div>
+                                        <h3 class="text-base md:text-lg font-black text-slate-800 dark:text-white mt-1">${esc(mSel.label)}</h3>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
+                                    ${qtdSel > 0 ? `<button onclick="app.ui.openOndeAgirModal('perfil', '${encodeURIComponent(filtro)}')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:border-indigo-400 shadow-xs"><i class="fa-solid fa-table-list mr-1"></i> Ver resumo em modal</button>` : ''}
+                                    <button onclick="app.ui.selecionarPerfilPrescricao('')" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-black text-white dark:bg-slate-700 text-xs font-bold"><i class="fa-solid fa-xmark mr-1"></i> Mostrar todos os perfis</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                                <div class="bg-white dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1"><i class="fa-solid fa-magnifying-glass mr-1"></i>1. Por que o operador está neste bloco?</div>
+                                    <div class="font-bold text-slate-800 dark:text-white mb-1.5">${esc(mSel.regra)}</div>
+                                    <p class="text-slate-600 dark:text-slate-300 leading-relaxed">${esc(mSel.explicacao)}</p>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-black uppercase tracking-wider ${isQualSel ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'} mb-1"><i class="fa-solid fa-user-shield mr-1"></i>2. Por que é a ${esc(mSel.responsavel)} que atua?</div>
+                                    <p class="text-slate-700 dark:text-slate-200 leading-relaxed font-medium">${esc(mSel.papelEquipe)}</p>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1"><i class="fa-solid fa-clipboard-check mr-1"></i>3. O que pôr em prática agora?</div>
+                                    <div class="font-black text-slate-800 dark:text-white mb-1">${esc(mSel.acao)}</div>
+                                    <div class="text-slate-500 dark:text-slate-400"><strong>Formato:</strong> ${esc(mSel.tipo)}<br><strong>Canal:</strong> ${esc(mSel.canal)}<br><strong>Prazo máximo:</strong> até ${mSel.sla} horas</div>
+                                </div>
+                            </div>
+                        </div>`;
+                    } else {
+                        h += `<div class="hideable-box mb-6 px-4 py-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/50 flex flex-wrap items-center justify-between gap-3 text-xs">
+                            <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200">
+                                <span class="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xs shrink-0"><i class="fa-solid fa-hand-pointer"></i></span>
+                                <span><strong>Dica de leitura:</strong> Clique em qualquer um dos <strong>6 blocos acima</strong> para filtrar os operadores daquele perfil e ver logo aqui abaixo <strong>o motivo de estarem lá</strong> e <strong>o que a equipe deve fazer</strong>.</span>
+                            </div>
+                            <button onclick="app.ui.prescGuiaTodosAberto = !app.ui.prescGuiaTodosAberto; app.ui._refreshComMemoriaDeScroll()" class="text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ${this.analiseEditMode ? 'hidden' : ''}">
+                                <i class="fa-solid ${this.prescGuiaTodosAberto ? 'fa-chevron-up' : 'fa-book-open'} mr-1"></i>${this.prescGuiaTodosAberto ? 'Ocultar resumo dos 6 perfis' : 'Ver tabela resumo dos 6 perfis'}
+                            </button>
+                        </div>`;
+                        if (this.prescGuiaTodosAberto) {
+                            h += `<div class="hideable-box mb-8 glass-card rounded-3xl p-4 md:p-5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead><tr class="text-[10px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-2 pr-2">Perfil</th><th class="py-2 px-2">Equipe</th><th class="py-2 px-2">Motivo de estar no perfil (Regra)</th><th class="py-2 pl-2">O que fazer na prática</th></tr></thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                        ${Object.keys(meta).map(k => {
+                                            const m = meta[k];
+                                            return `<tr onclick="app.ui.selecionarPerfilPrescricao('${k}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                                                <td class="py-2.5 pr-2 font-black text-slate-800 dark:text-white whitespace-nowrap"><i class="fa-solid ${m.icon} text-${m.cor}-500 mr-1.5"></i>${esc(m.label)} (${contPerfil[k] || 0})</td>
+                                                <td class="py-2.5 px-2 whitespace-nowrap"><span class="text-[10px] font-black px-2 py-0.5 rounded ${equipeBadge[m.responsavel]}">${m.responsavel}</span></td>
+                                                <td class="py-2.5 px-2 text-slate-600 dark:text-slate-300">${esc(m.regra)}</td>
+                                                <td class="py-2.5 pl-2 text-slate-700 dark:text-slate-200 font-semibold">${esc(m.acao)} <span class="text-[10px] text-slate-400">(SLA ${m.sla}h)</span></td>
+                                            </tr>`;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>`;
+                        }
+                    }
 
                     // Fila priorizada de intervenções
                     const visiveis = acionaveis
@@ -21236,7 +21746,23 @@ storage: {
                     }
 
                     // ---------- CAPÍTULO B: ONDE AGIR (QUALIDADE vs. TREINAMENTO) ----------
-                    h += renderChapterTitle('Onde Agir: Qualidade vs. Treinamento', 'Divisão clara do plano de trabalho entre a Equipe de Qualidade e a Equipe de Treinamento considerando apenas operadores ativos na Base de RH.', 'fa-bullseye', 'indigo');
+                    h += renderChapterTitle('Onde Agir: Qualidade vs. Treinamento', 'Divisão clara do plano de trabalho entre a Equipe de Qualidade e a Equipe de Treinamento. Clique em qualquer grupo, critério ou número para ver os operadores e baixe o XLSX detalhado para enviar às equipes.', 'fa-bullseye', 'indigo');
+
+                    // Barra de Exportação XLSX Direta para Equipe de Qualidade e Equipe de Treinamento
+                    h += `<div class="hideable-box mb-6 glass-card rounded-3xl p-4 md:p-5 border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 flex flex-wrap items-center justify-between gap-4 ${this.analiseEditMode ? 'hidden' : ''}">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm shrink-0"><i class="fa-solid fa-file-excel"></i></div>
+                            <div>
+                                <h4 class="text-xs md:text-sm font-black text-slate-800 dark:text-white">Encaminhar Plano de Ação em Excel (.XLSX) para as Equipes</h4>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Gera planilha organizada em 4 abas (Resumo & SLAs, Fila Nominal com Roteiro Pronto, Pauta de Ofensores e Checklist de Controle de Execução).</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('qualidade')" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-file-excel"></i> Baixar XLSX — Equipe Qualidade (${acoesQualidade.length})</button>
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('treinamento')" class="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-file-excel"></i> Baixar XLSX — Equipe Treinamento (${acoesTreinamento.length})</button>
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-download"></i> Plano Completo (.XLSX)</button>
+                        </div>
+                    </div>`;
 
                     // Agrupamento de temas/ofensores específicos para a fila da Qualidade e para a fila do Treinamento
                     const agregarTemas = (arrOps) => {
@@ -21259,7 +21785,7 @@ storage: {
                     const temasQualidade = agregarTemas(acoesQualidade.filter(p => p.diagnostico.perfil_identificado !== 'REFERENCIA_BOAS_PRATICAS'));
                     const temasTreinamento = agregarTemas(acoesTreinamento);
 
-                    // Painel Lado a Lado: O que a Equipe de Qualidade vai trabalhar vs. O que a Equipe de Treinamento vai trabalhar
+                    // Painel Lado a Lado: O que a Equipe de Qualidade vai trabalhar vs. O que a Equipe de Treinamento vai trabalhar (100% clicável!)
                     h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                         <!-- BLOCO EQUIPE DE QUALIDADE -->
                         <div class="hideable-box glass-card rounded-3xl p-6 border-2 border-blue-200 dark:border-blue-800/70 bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
@@ -21272,9 +21798,9 @@ storage: {
                                             <h3 class="text-lg font-black text-slate-800 dark:text-white">O que a Equipe de Qualidade vai trabalhar</h3>
                                         </div>
                                     </div>
-                                    <div class="text-right">
+                                    <div onclick="app.ui.openOndeAgirModal('equipe', '${encodeURIComponent('Equipe de Qualidade')}')" class="text-right cursor-pointer px-3 py-1.5 rounded-2xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 transition-all" title="Clique para ver os ${acoesQualidade.length} operadores da Qualidade">
                                         <div class="text-3xl font-black text-blue-600 dark:text-blue-400 tabular-nums">${acoesQualidade.length}</div>
-                                        <div class="text-[10px] font-bold uppercase text-slate-400">Operadores</div>
+                                        <div class="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-300"><i class="fa-solid fa-users mr-1"></i>Ver Operadores</div>
                                     </div>
                                 </div>
                                 <div class="text-xs text-slate-600 dark:text-slate-300 bg-blue-50/70 dark:bg-blue-950/30 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/50 mb-4 leading-relaxed">
@@ -21282,23 +21808,26 @@ storage: {
                                     Porque envolvem operadores que <strong>já passaram pela formação inicial</strong> e cometeram erro crítico de conformidade, operadores que sofreram <strong>queda atípica de nota (&ge; 15%)</strong> exigindo comparação técnica das monitorias, ou operadores <strong>Q1 (&ge; 95)</strong> para curadoria de ligações modelo.
                                 </div>
                                 <div class="space-y-2.5 mb-5">
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 mr-2">SLA 24h</span><strong class="text-xs text-slate-800 dark:text-white">Auditoria Dirigida + Feedback de Conformidade</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) que cometeram Falha Crítica</div></div>
-                                        <span class="text-lg font-black text-red-600 tabular-nums">${contPerfil.RISCO_OPERACIONAL_VETERANO || 0}</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'RISCO_OPERACIONAL_VETERANO')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 dark:hover:bg-blue-950/30 border border-slate-200/70 hover:border-blue-400 dark:border-slate-700 transition-all">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 mr-2">SLA 24h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-blue-600">Auditoria Dirigida + Feedback de Conformidade</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) que cometeram Falha Crítica &bull; <span class="text-blue-600 font-semibold">Clique para listar</span></div></div>
+                                        <span class="text-lg font-black text-red-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.RISCO_OPERACIONAL_VETERANO || 0} op.</span>
                                     </div>
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white">Diagnóstico Comparativo 1:1 (Queda Brusca)</strong><div class="text-[11px] text-slate-500 mt-0.5">Operadores com queda &ge; 15% na nota em relação ao mês anterior</div></div>
-                                        <span class="text-lg font-black text-orange-500 tabular-nums">${contPerfil.ALERTA_RUPTURA || 0}</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'ALERTA_RUPTURA')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 dark:hover:bg-blue-950/30 border border-slate-200/70 hover:border-blue-400 dark:border-slate-700 transition-all">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-blue-600">Diagnóstico Comparativo 1:1 (Queda Brusca)</strong><div class="text-[11px] text-slate-500 mt-0.5">Operadores com queda &ge; 15% na nota em relação ao mês anterior &bull; <span class="text-blue-600 font-semibold">Clique para listar</span></div></div>
+                                        <span class="text-lg font-black text-orange-500 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.ALERTA_RUPTURA || 0} op.</span>
                                     </div>
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 mr-2">SLA 120h</span><strong class="text-xs text-slate-800 dark:text-white">Curadoria e Extração de Áudio Modelo</strong><div class="text-[11px] text-slate-500 mt-0.5">Destaques Q1 (nota &ge; 95 sem falha crítica) para enviar ao Treinamento</div></div>
-                                        <span class="text-lg font-black text-emerald-600 tabular-nums">${contPerfil.REFERENCIA_BOAS_PRATICAS || 0}</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'REFERENCIA_BOAS_PRATICAS')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 dark:hover:bg-blue-950/30 border border-slate-200/70 hover:border-blue-400 dark:border-slate-700 transition-all">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 mr-2">SLA 120h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-blue-600">Curadoria e Extração de Áudio Modelo</strong><div class="text-[11px] text-slate-500 mt-0.5">Destaques Q1 (nota &ge; 95 sem falha crítica) para enviar ao Treinamento &bull; <span class="text-blue-600 font-semibold">Clique para listar</span></div></div>
+                                        <span class="text-lg font-black text-emerald-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.REFERENCIA_BOAS_PRATICAS || 0} op.</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
-                                <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2"><i class="fa-solid fa-crosshairs mr-1"></i>Critérios prioritários para foco das auditorias da Qualidade</div>
-                                ${temasQualidade.length ? `<ul class="space-y-1.5 text-xs">${temasQualidade.map(t => `<li class="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-lg"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-orange-500'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-slate-500 shrink-0">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma falha crítica ou ruptura ativa para auditoria corretiva.</div>`}
+                                <div class="flex items-center justify-between gap-2 mb-2">
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400"><i class="fa-solid fa-crosshairs mr-1"></i>Critérios prioritários para foco das auditorias da Qualidade</div>
+                                    <button onclick="app.ui.exportarPlanoOndeAgirXLSX('qualidade')" class="text-[10px] font-black text-blue-600 dark:text-blue-400 hover:underline ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-excel mr-1"></i>Baixar XLSX Qualidade</button>
+                                </div>
+                                ${temasQualidade.length ? `<ul class="space-y-1.5 text-xs">${temasQualidade.map(t => `<li onclick="app.ui.openOndeAgirModal('tema_equipe', '${encodeURIComponent('Equipe de Qualidade')}', '${encodeURIComponent(t.tipo + '|' + t.item)}')" class="cursor-pointer flex items-center justify-between gap-2 bg-slate-50 hover:bg-blue-50 dark:bg-slate-900/40 dark:hover:bg-blue-950/40 px-3 py-1.5 rounded-lg border border-transparent hover:border-blue-300 transition-all"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-orange-500'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-blue-600 dark:text-blue-400 shrink-0 underline">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma falha crítica ou ruptura ativa para auditoria corretiva.</div>`}
                             </div>
                         </div>
 
@@ -21313,9 +21842,9 @@ storage: {
                                             <h3 class="text-lg font-black text-slate-800 dark:text-white">O que a Equipe de Treinamento vai trabalhar</h3>
                                         </div>
                                     </div>
-                                    <div class="text-right">
+                                    <div onclick="app.ui.openOndeAgirModal('equipe', '${encodeURIComponent('Equipe de Treinamento')}')" class="text-right cursor-pointer px-3 py-1.5 rounded-2xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 transition-all" title="Clique para ver os ${acoesTreinamento.length} operadores do Treinamento">
                                         <div class="text-3xl font-black text-purple-600 dark:text-purple-400 tabular-nums">${acoesTreinamento.length}</div>
-                                        <div class="text-[10px] font-bold uppercase text-slate-400">Operadores</div>
+                                        <div class="text-[10px] font-bold uppercase text-purple-600 dark:text-purple-300"><i class="fa-solid fa-users mr-1"></i>Ver Operadores</div>
                                     </div>
                                 </div>
                                 <div class="text-xs text-slate-600 dark:text-slate-300 bg-purple-50/70 dark:bg-purple-950/30 p-3.5 rounded-2xl border border-purple-100 dark:border-purple-900/50 mb-4 leading-relaxed">
@@ -21323,23 +21852,26 @@ storage: {
                                     Porque envolvem <strong>lacuna de aprendizagem em novatos</strong> (Ramp-Up e Júnior até 180 dias que erraram item crítico ou ficaram em Q3/Q4) ou <strong>reciclagem prática de processo</strong> para Plenos e Veteranos estagnados em Q3/Q4 por erros repetitivos de roteiro/sistema.
                                 </div>
                                 <div class="space-y-2.5 mb-5">
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white">Simulação em Espelho + Intervenção de Segurança</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) que cometeram Falha Crítica</div></div>
-                                        <span class="text-lg font-black text-orange-500 tabular-nums">${contPerfil.FALHA_CRITICA_RAMP_UP || 0}</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'FALHA_CRITICA_RAMP_UP')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 dark:hover:bg-purple-950/30 border border-slate-200/70 hover:border-purple-400 dark:border-slate-700 transition-all">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-purple-600">Simulação em Espelho + Intervenção de Segurança</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) que cometeram Falha Crítica &bull; <span class="text-purple-600 font-semibold">Clique para listar</span></div></div>
+                                        <span class="text-lg font-black text-orange-500 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.FALHA_CRITICA_RAMP_UP || 0} op.</span>
                                     </div>
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white">Reciclagem Inicial em Sala (Curva de Aprendizado)</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) posicionados em Q3 ou Q4</div></div>
-                                        <span class="text-lg font-black text-amber-600 tabular-nums">${contPerfil.GAP_TREINAMENTO_INICIAL || 0}</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'GAP_TREINAMENTO_INICIAL')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 dark:hover:bg-purple-950/30 border border-slate-200/70 hover:border-purple-400 dark:border-slate-700 transition-all">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-purple-600">Reciclagem Inicial em Sala (Curva de Aprendizado)</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) posicionados em Q3 ou Q4 &bull; <span class="text-purple-600 font-semibold">Clique para listar</span></div></div>
+                                        <span class="text-lg font-black text-amber-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.GAP_TREINAMENTO_INICIAL || 0} op.</span>
                                     </div>
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white">Oficina de Atualização Processual em Sala</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) estagnados em Q3 ou Q4 por desvios de processo</div></div>
-                                        <span class="text-lg font-black text-purple-600 tabular-nums">${contPerfil.RECICLAGEM_PROCESSUAL_VETERANO || 0}</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'RECICLAGEM_PROCESSUAL_VETERANO')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 dark:hover:bg-purple-950/30 border border-slate-200/70 hover:border-purple-400 dark:border-slate-700 transition-all">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-purple-600">Oficina de Atualização Processual em Sala</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) estagnados em Q3 ou Q4 por desvios de processo &bull; <span class="text-purple-600 font-semibold">Clique para listar</span></div></div>
+                                        <span class="text-lg font-black text-purple-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.RECICLAGEM_PROCESSUAL_VETERANO || 0} op.</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
-                                <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400 mb-2"><i class="fa-solid fa-book-open mr-1"></i>Conteúdos obrigatórios para a pauta de sala do Treinamento</div>
-                                ${temasTreinamento.length ? `<ul class="space-y-1.5 text-xs">${temasTreinamento.map(t => `<li class="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-lg"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-purple-600'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-slate-500 shrink-0">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma demanda pendente para sala de treinamento neste filtro.</div>`}
+                                <div class="flex items-center justify-between gap-2 mb-2">
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400"><i class="fa-solid fa-book-open mr-1"></i>Conteúdos obrigatórios para a pauta de sala do Treinamento</div>
+                                    <button onclick="app.ui.exportarPlanoOndeAgirXLSX('treinamento')" class="text-[10px] font-black text-purple-600 dark:text-purple-400 hover:underline ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-excel mr-1"></i>Baixar XLSX Treinamento</button>
+                                </div>
+                                ${temasTreinamento.length ? `<ul class="space-y-1.5 text-xs">${temasTreinamento.map(t => `<li onclick="app.ui.openOndeAgirModal('tema_equipe', '${encodeURIComponent('Equipe de Treinamento')}', '${encodeURIComponent(t.tipo + '|' + t.item)}')" class="cursor-pointer flex items-center justify-between gap-2 bg-slate-50 hover:bg-purple-50 dark:bg-slate-900/40 dark:hover:bg-purple-950/40 px-3 py-1.5 rounded-lg border border-transparent hover:border-purple-300 transition-all"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-purple-600'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-purple-600 dark:text-purple-400 shrink-0 underline">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma demanda pendente para sala de treinamento neste filtro.</div>`}
                             </div>
                         </div>
                     </div>`;
@@ -21353,14 +21885,14 @@ storage: {
 
                     h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-6 overflow-x-auto">
                         <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-table-cells text-indigo-500 mr-2"></i> Mapa de Calor: Maturidade (Ativos RH) x Perfil de Intervenção</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Cruza o tempo de empresa dos operadores ativos com cada perfil de intervenção, mostrando onde estão concentradas as demandas de <strong>Qualidade</strong> e de <strong>Treinamento</strong>.</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Cruza o tempo de empresa dos operadores ativos com cada perfil de intervenção. <strong>Clique em qualquer célula com número</strong> para abrir os operadores daquele cruzamento.</p>
                         <table class="w-full text-center text-xs border-separate border-spacing-1">
-                            <thead><tr><th class="text-left text-[10px] uppercase text-slate-400 p-2">Faixa (Ativos)</th>${perfisKeys.map(k => `<th class="text-[9px] uppercase font-black text-slate-500 dark:text-slate-400 p-2 leading-tight">${meta[k].label}<span class="block text-[8px] font-bold ${meta[k].responsavel === 'Equipe de Qualidade' ? 'text-blue-500' : 'text-purple-500'} mt-0.5">${meta[k].responsavel}</span></th>`).join('')}<th class="text-[10px] uppercase text-slate-400 p-2">Ativos na Faixa</th></tr></thead>
-                            <tbody>${faixas.map(f => `<tr><td class="text-left font-black text-slate-700 dark:text-slate-200 p-2">${f}</td>${perfisKeys.map(k => { const n = matriz[f][k]; const al = n === 0 ? 0 : (0.15 + 0.7 * n / maxCel); return `<td class="rounded-lg p-3 font-black tabular-nums ${n ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}" style="background: rgba(99,102,241,${al.toFixed(2)})">${n || '-'}</td>`; }).join('')}<td class="font-bold text-slate-500 p-2">${totalFaixa[f]}</td></tr>`).join('')}</tbody>
+                            <thead><tr><th class="text-left text-[10px] uppercase text-slate-400 p-2">Faixa (Ativos)</th>${perfisKeys.map(k => `<th onclick="app.ui.openOndeAgirModal('perfil', '${k}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg text-[9px] uppercase font-black text-slate-500 dark:text-slate-400 p-2 leading-tight">${meta[k].label}<span class="block text-[8px] font-bold ${meta[k].responsavel === 'Equipe de Qualidade' ? 'text-blue-500' : 'text-purple-500'} mt-0.5">${meta[k].responsavel}</span></th>`).join('')}<th class="text-[10px] uppercase text-slate-400 p-2">Ativos na Faixa</th></tr></thead>
+                            <tbody>${faixas.map(f => `<tr><td onclick="app.ui.openOndeAgirModal('faixa_ativos', '${encodeURIComponent(f)}')" class="cursor-pointer text-left font-black text-slate-700 dark:text-slate-200 hover:text-indigo-600 p-2">${f}</td>${perfisKeys.map(k => { const n = matriz[f][k]; const al = n === 0 ? 0 : (0.15 + 0.7 * n / maxCel); return `<td ${n ? `onclick="app.ui.openOndeAgirModal('celula', '${encodeURIComponent(f)}', '${k}')"` : ''} class="rounded-lg p-3 font-black tabular-nums ${n ? 'cursor-pointer hover:ring-2 hover:ring-indigo-500 text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}" style="background: rgba(99,102,241,${al.toFixed(2)})">${n ? `${n} op.` : '-'}</td>`; }).join('')}<td onclick="app.ui.openOndeAgirModal('faixa_ativos', '${encodeURIComponent(f)}')" class="cursor-pointer font-bold text-indigo-600 dark:text-indigo-400 hover:underline p-2">${totalFaixa[f]} op.</td></tr>`).join('')}</tbody>
                         </table>
                     </div>`;
 
-                    // Ofensores cruzados com maturidade (apenas ativos RH) e direcionamento automático Qualidade vs Treinamento
+                    // Ofensores cruzados com maturidade (apenas ativos RH), Selo Resumido ("Qualidade", "Treinamento" ou "Qualidade & Treinamento") e explicação do PORQUÊ
                     const ofMap = {};
                     lista.forEach(p => {
                         [['Crítica', p.entrada.falhas_criticas], ['Desvio', p.entrada.desvios_processuais]].forEach(([tipo, arr]) => arr.forEach(f => {
@@ -21373,34 +21905,581 @@ storage: {
                     const ofArr = Object.values(ofMap).sort((a, b) => (b.tipo === 'Crítica') - (a.tipo === 'Crítica') || b.total - a.total).slice(0, 10);
 
                     h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-8 overflow-x-auto">
-                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-magnifying-glass-chart text-indigo-500 mr-2"></i> Ofensores x Maturidade (Quem atua em cada item do formulário)</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Mostra em qual faixa de maturidade cada erro se concentra entre os ativos e define automaticamente se a tratativa principal é da <strong>Equipe de Treinamento</strong> ou da <strong>Equipe de Qualidade</strong>.</p>
+                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-magnifying-glass-chart text-indigo-500 mr-2"></i> Ofensores x Maturidade (Quem atua em cada item do formulário e Por Quê)</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Cruza a maturidade dos operadores que erraram cada pergunta para definir o selo <strong>Qualidade</strong>, <strong>Treinamento</strong> ou <strong>Qualidade &amp; Treinamento</strong> e explicar o motivo. <strong>Clique em qualquer linha</strong> para ver quem são os operadores.</p>
                         <table class="w-full text-left text-xs">
-                            <thead><tr class="text-[10px] uppercase text-slate-400"><th class="py-2 pr-2">Ofensor (Pergunta do Formulário)</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Ativos Impactados</th><th class="py-2 px-2">Concentração por Maturidade</th><th class="py-2 pl-2">Direcionamento Recomendado</th></tr></thead>
+                            <thead><tr class="text-[10px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-2 pr-2">Ofensor (Pergunta do Formulário)</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Ativos Impactados</th><th class="py-2 px-2">Concentração por Maturidade</th><th class="py-2 pl-2 min-w-[290px]">Selo Responsável &amp; Por que cuida deste item</th></tr></thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">${ofArr.length ? ofArr.map(o => {
-                                const novatos = (o.faixas['Ramp-Up'] || 0) + (o.faixas['Júnior'] || 0);
-                                const experientes = (o.faixas['Pleno'] || 0) + (o.faixas['Veterano'] || 0);
-                                let acaoItem = '';
-                                if (o.tipo === 'Crítica' && experientes >= novatos) {
-                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"><i class="fa-solid fa-magnifying-glass-chart"></i> Equipe de Qualidade: Auditoria &amp; Calibração Crítica</span>`;
-                                } else if (o.tipo === 'Crítica' && novatos > experientes) {
-                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"><i class="fa-solid fa-graduation-cap"></i> Equipe de Treinamento: Simulação em Espelho</span>`;
-                                } else if (novatos >= experientes) {
-                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"><i class="fa-solid fa-graduation-cap"></i> Equipe de Treinamento: Reforço na Formação / Sala</span>`;
-                                } else {
-                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"><i class="fa-solid fa-rotate"></i> Treinamento (Reciclagem) + Qualidade (Monitoria)</span>`;
-                                }
-                                return `<tr>
-                                    <td class="py-2.5 pr-2 text-slate-700 dark:text-slate-200 leading-snug"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
-                                    <td class="py-2.5 px-2 text-center font-black">${o.total}x</td>
-                                    <td class="py-2.5 px-2 text-center font-bold">${o.ops} op.</td>
-                                    <td class="py-2.5 px-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
-                                    <td class="py-2.5 pl-2">${acaoItem}</td>
+                                const dir = this.getDirecionamentoOfensor(o);
+                                return `<tr onclick="app.ui.openOndeAgirModal('ofensor', '${encodeURIComponent(o.tipo)}', '${encodeURIComponent(o.item)}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                                    <td class="py-3 pr-2 text-slate-700 dark:text-slate-200 leading-snug font-medium"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1.5 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
+                                    <td class="py-3 px-2 text-center font-black tabular-nums">${o.total}x</td>
+                                    <td class="py-3 px-2 text-center"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 font-black hover:bg-indigo-100">${o.ops} op. <i class="fa-solid fa-up-right-from-square text-[9px]"></i></span></td>
+                                    <td class="py-3 px-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
+                                    <td class="py-3 pl-2">
+                                        <span class="inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-md ${dir.corSelo}"><i class="fa-solid ${dir.icone}"></i> ${dir.selo}</span>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug"><strong>Por quê:</strong> ${esc(dir.motivo)}</div>
+                                    </td>
                                 </tr>`;
                             }).join('') : '<tr><td colspan="5" class="py-4 italic text-slate-400">Nenhum ofensor identificado entre os operadores ativos.</td></tr>'}</tbody>
                         </table>
                     </div>`;
+
+                    // ---------- CAPÍTULO C: SIMULADOR DE GANHO POTENCIAL (LABORATÓRIO INTERATIVO "WHAT-IF") ----------
+                    const qcSim = this.getQuadCfg();
+                    const wi = this.getWhatIfCfg(qcSim);
+                    const fCrit = Math.max(0, Math.min(1, wi.eficCriticas / 100));
+                    const fRupt = Math.max(0, Math.min(1, wi.eficRuptura / 100));
+                    const fAder = Math.max(0, Math.min(1, wi.aderenciaGeral / 100));
+                    const metaNov = Number(wi.metaNovatos || 82);
+                    const metaVet = Number(wi.metaVeteranos || 85);
+                    const bonusQ2Val = Number(wi.bonusQ2 || 0);
+                    const metaDir = Number(wi.metaDiretoria || 85);
+
+                    const rankTodos = data.rankOperadores || [];
+                    const nTotalOps = rankTodos.length || 1;
+                    const somaAtualTodos = rankTodos.reduce((s, o) => s + (parseFloat(o.media) || 0), 0);
+                    const mediaGlobalAtual = somaAtualTodos / nTotalOps;
+
+                    const somaAtualAtivos = lista.reduce((s, p) => s + (p.entrada.nota_atual || 0), 0);
+                    const mediaAtivosAtual = lista.length > 0 ? (somaAtualAtivos / lista.length) : mediaGlobalAtual;
+
+                    const quadAtivosAntes = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 };
+                    const quadAtivosDepois = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 };
+                    const classificarQuad = (nVal) => nVal >= qcSim.q1 ? 'Q1' : (nVal >= qcSim.q2 ? 'Q2' : (nVal >= qcSim.q3 ? 'Q3' : 'Q4'));
+
+                    // Acumuladores das 5 alavancas independentes
+                    let somaAlavCritica = 0;
+                    let somaAlavRuptura = 0;
+                    let somaAlavNovatos = 0;
+                    let somaAlavVeteranos = 0;
+                    let somaAlavQ2 = 0;
+                    let cntAlavCritica = 0, cntAlavRuptura = 0, cntAlavNovatos = 0, cntAlavVeteranos = 0, cntAlavQ2 = 0;
+                    let totalLigsZeradasRecup = 0;
+
+                    let ganhoSomaQualidade = 0;
+                    let ganhoSomaTreinamento = 0;
+                    let opsImpactadosQual = 0;
+                    let opsImpactadosTrein = 0;
+
+                    const todosSimulados = [];
+                    lista.forEach(p => {
+                        const e = p.entrada;
+                        const perf = p.diagnostico.perfil_identificado;
+                        const nAtual = e.nota_atual || 0;
+                        const qAnt = classificarQuad(nAtual);
+                        quadAtivosAntes[qAnt]++;
+
+                        const isNovato = e.faixa_maturidade === 'Ramp-Up' || e.faixa_maturidade === 'Júnior';
+                        const perfilAtivo = wi.perfisAtivos[perf] !== false;
+                        const opIncluido = !wi.opsExcluidos[e.operador];
+                        const podeSimular = perfilAtivo && opIncluido;
+
+                        let gCrit = 0, gRupt = 0, gNov = 0, gVet = 0, gQ2 = 0;
+                        let frente = (p.acao_prescritiva && p.acao_prescritiva.responsavel_execucao === 'Equipe de Qualidade') ? 'qualidade' : (p.acao_prescritiva ? 'treinamento' : 'estavel');
+                        let explicacaoGanho = [];
+
+                        if (podeSimular) {
+                            // 1) Ganho por Neutralização de Falhas Críticas (se teve ligação zerada por falha crítica)
+                            const notaSemCrit = e.nota_sem_critica || nAtual;
+                            if ((e.ligs_zeradas_critica > 0 || e.falhas_criticas.length > 0) && notaSemCrit > nAtual) {
+                                gCrit = (notaSemCrit - nAtual) * fCrit * fAder;
+                                if (gCrit > 0.05) {
+                                    explicacaoGanho.push(`Sem falha crítica: +${gCrit.toFixed(1)}`);
+                                    totalLigsZeradasRecup += (e.ligs_zeradas_critica || 1);
+                                }
+                            }
+                            const baseAposCrit = nAtual + gCrit;
+
+                            // 2) Ganho por Reversão de Queda Brusca (Alerta de Ruptura)
+                            if (perf === 'ALERTA_RUPTURA' && e.nota_anterior && e.nota_anterior > baseAposCrit) {
+                                gRupt = (e.nota_anterior - baseAposCrit) * fRupt * fAder;
+                                if (gRupt > 0.05) explicacaoGanho.push(`Recup. histórico (${e.nota_anterior}): +${gRupt.toFixed(1)}`);
+                            }
+                            const baseAposRupt = baseAposCrit + gRupt;
+
+                            // 3) Ganho por Meta Pós-Treinamento de Novatos (Ramp-Up/Júnior em Q3/Q4 ou Falha Crítica Ramp-Up)
+                            if (isNovato && (perf === 'GAP_TREINAMENTO_INICIAL' || perf === 'FALHA_CRITICA_RAMP_UP' || qAnt === 'Q3' || qAnt === 'Q4') && metaNov > baseAposRupt) {
+                                gNov = (metaNov - baseAposRupt) * fAder;
+                                if (gNov > 0.05) explicacaoGanho.push(`Piso Novato (${metaNov}): +${gNov.toFixed(1)}`);
+                            }
+
+                            // 4) Ganho por Meta Pós-Reciclagem de Experientes (Pleno/Veterano em Q3/Q4 ou Risco Veterano)
+                            if (!isNovato && (perf === 'RECICLAGEM_PROCESSUAL_VETERANO' || perf === 'RISCO_OPERACIONAL_VETERANO' || qAnt === 'Q3' || qAnt === 'Q4') && metaVet > baseAposRupt) {
+                                gVet = (metaVet - baseAposRupt) * fAder;
+                                if (gVet > 0.05) explicacaoGanho.push(`Piso Experiente (${metaVet}): +${gVet.toFixed(1)}`);
+                            }
+
+                            // 5) Bônus Incremental nos Operadores Q2 (Lapidação rumo ao Q1)
+                            if (qAnt === 'Q2' && bonusQ2Val > 0 && (baseAposRupt + gNov + gVet) < 100) {
+                                gQ2 = Math.min(100 - (baseAposRupt + gNov + gVet), bonusQ2Val * fAder);
+                                if (gQ2 > 0.05) explicacaoGanho.push(`Lapidação Q2: +${gQ2.toFixed(1)}`);
+                            }
+                        }
+
+                        const deltaTotalOp = Math.max(0, Math.min(100 - nAtual, gCrit + gRupt + gNov + gVet + gQ2));
+                        const nProj = Math.min(100, nAtual + deltaTotalOp);
+                        const qDep = classificarQuad(nProj);
+                        quadAtivosDepois[qDep]++;
+
+                        if (gCrit > 0.05) { somaAlavCritica += gCrit; cntAlavCritica++; }
+                        if (gRupt > 0.05) { somaAlavRuptura += gRupt; cntAlavRuptura++; }
+                        if (gNov > 0.05) { somaAlavNovatos += gNov; cntAlavNovatos++; }
+                        if (gVet > 0.05) { somaAlavVeteranos += gVet; cntAlavVeteranos++; }
+                        if (gQ2 > 0.05) { somaAlavQ2 += gQ2; cntAlavQ2++; }
+
+                        if (deltaTotalOp > 0.05) {
+                            if (frente === 'qualidade' || (frente === 'estavel' && gQ2 > 0)) {
+                                ganhoSomaQualidade += deltaTotalOp;
+                                opsImpactadosQual++;
+                            } else {
+                                ganhoSomaTreinamento += deltaTotalOp;
+                                opsImpactadosTrein++;
+                            }
+                        }
+
+                        todosSimulados.push({
+                            nome: e.operador,
+                            faixa: e.faixa_maturidade,
+                            tempoDias: e.tempo_casa_dias,
+                            perfilKey: perf,
+                            perfil: meta[perf] ? meta[perf].label : 'Estável (Q1/Q2)',
+                            frente: frente === 'qualidade' ? 'Equipe de Qualidade' : (frente === 'treinamento' ? 'Equipe de Treinamento' : 'Estável / Q2'),
+                            incluido: opIncluido && perfilAtivo,
+                            antes: nAtual,
+                            notaSemCrit: e.nota_sem_critica || nAtual,
+                            notaAnt: e.nota_anterior,
+                            depois: parseFloat(nProj.toFixed(1)),
+                            qAntes: qAnt,
+                            qDepois: qDep,
+                            ganhoOp: parseFloat(deltaTotalOp.toFixed(1)),
+                            impactoGlobal: parseFloat((deltaTotalOp / nTotalOps).toFixed(2)),
+                            impactoAtivos: parseFloat((deltaTotalOp / Math.max(1, lista.length)).toFixed(2)),
+                            detalheAlavancas: explicacaoGanho.join(' | ') || 'Sem variação simulada'
+                        });
+                    });
+
+                    todosSimulados.sort((a, b) => b.ganhoOp - a.ganhoOp || a.antes - b.antes);
+                    this._whatIfCacheOps = todosSimulados;
+
+                    const somaGanhoGeral = somaAlavCritica + somaAlavRuptura + somaAlavNovatos + somaAlavVeteranos + somaAlavQ2;
+                    const ganhoPtsQualGlobal = ganhoSomaQualidade / nTotalOps;
+                    const ganhoPtsTreinGlobal = ganhoSomaTreinamento / nTotalOps;
+                    const ganhoPtsTotalGlobal = somaGanhoGeral / nTotalOps;
+                    const mediaGlobalProjetada = Math.min(100, mediaGlobalAtual + ganhoPtsTotalGlobal);
+
+                    const ganhoPtsAtivos = lista.length > 0 ? (somaGanhoGeral / lista.length) : 0;
+                    const mediaAtivosProjetada = Math.min(100, mediaAtivosAtual + ganhoPtsAtivos);
+
+                    const notaRefMeta = wi.escopoBase === 'ativos' ? mediaAtivosProjetada : mediaGlobalProjetada;
+                    const notaRefAtual = wi.escopoBase === 'ativos' ? mediaAtivosAtual : mediaGlobalAtual;
+                    const diffMetaDir = notaRefMeta - metaDir;
+                    const atingiuMeta = diffMetaDir >= -0.005;
+                    const pctTermometro = Math.max(5, Math.min(100, ((notaRefMeta - 50) / Math.max(1, metaDir - 50)) * 100));
+
+                    this._whatIfResumo = {
+                        mediaGlobalAtual, mediaGlobalProjetada, ganhoPtsTotalGlobal,
+                        mediaAtivosAtual, mediaAtivosProjetada, ganhoPtsAtivos,
+                        metaDir, atingiuMeta, diffMetaDir, wi
+                    };
+
+                    h += renderChapterTitle('Simulador de Ganho Potencial ("What-If")', 'Laboratório interativo de projeção executiva: ajuste as metas, taxas de eficácia, bônus por quadrante e operadores incluídos para descobrir exatamente até onde a nota da operação pode chegar.', 'fa-wand-magic-sparkles', 'teal');
+
+                    h += `<div class="hideable-box glass-card rounded-3xl p-6 md:p-8 border-2 border-teal-200 dark:border-teal-800/60 bg-white dark:bg-slate-800 shadow-sm mb-8">
+                        <!-- TOPO: Presets Rápidos + Botão Exportar Simulação XLSX -->
+                        <div class="flex flex-wrap items-center justify-between gap-4 pb-5 mb-6 border-b border-slate-100 dark:border-slate-700">
+                            <div>
+                                <span class="text-[10px] font-black uppercase tracking-widest text-teal-600 dark:text-teal-400"><i class="fa-solid fa-sliders mr-1"></i>Simulador Estratégico Multivariável ("What-If")</span>
+                                <h3 class="text-lg md:text-xl font-black text-slate-800 dark:text-white mt-0.5">Personalize as Alavancas e Veja Onde a Operação Chega</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Altere livremente os controles abaixo ou teste cenários prontos de 1 clique.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1.5 ${this.analiseEditMode ? 'hidden' : ''}">
+                                <span class="text-[10px] font-black uppercase text-slate-400 mr-1">Cenários:</span>
+                                <button onclick="app.ui.applyWhatIfPreset('conservador')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all">Conservador (50%)</button>
+                                <button onclick="app.ui.applyWhatIfPreset('realista')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 transition-all">Realista (85%)</button>
+                                <button onclick="app.ui.applyWhatIfPreset('otimista')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all">Potencial Máximo (100%)</button>
+                                <button onclick="app.ui.applyWhatIfPreset('so_qualidade')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-all">Só Qualidade</button>
+                                <button onclick="app.ui.applyWhatIfPreset('so_treinamento')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-all">Só Treinamento</button>
+                                <button onclick="app.ui.applyWhatIfPreset('reset')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 transition-all" title="Restaurar valores padrão"><i class="fa-solid fa-rotate-left"></i></button>
+                                <button onclick="app.ui.exportarWhatIfXLSX()" class="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-slate-900 hover:bg-black dark:bg-white dark:text-slate-900 text-white shadow-sm flex items-center gap-1.5 ml-1"><i class="fa-solid fa-file-excel text-emerald-400 dark:text-emerald-600"></i> Exportar Simulação (.XLSX)</button>
+                            </div>
+                        </div>
+
+                        <!-- PAINEL DE CONTROLES CUSTOMIZÁVEIS PELO USUÁRIO (6 Sliders + Escopo + Meta Diretoria) -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 bg-slate-50/90 dark:bg-slate-900/50 p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 ${this.analiseEditMode ? 'hidden' : ''}">
+                            <!-- Controle 1: Redução de Falhas Críticas -->
+                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-shield-halved text-red-500 mr-1"></i>1. Eliminar Falhas Críticas</span>
+                                    <span class="font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded">${wi.eficCriticas}%</span>
+                                </div>
+                                <input type="range" min="0" max="100" step="5" value="${wi.eficCriticas}" onchange="app.ui.setWhatIfParam('eficCriticas', this.value)" class="w-full accent-red-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>0% (Atual)</span><span>Recupera ligações zeradas</span><span>100%</span></div>
+                            </div>
+
+                            <!-- Controle 2: Recuperação de Queda Brusca (Ruptura) -->
+                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-arrow-trend-up text-orange-500 mr-1"></i>2. Reverter Quedas (Ruptura)</span>
+                                    <span class="font-black text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded">${wi.eficRuptura}%</span>
+                                </div>
+                                <input type="range" min="0" max="100" step="5" value="${wi.eficRuptura}" onchange="app.ui.setWhatIfParam('eficRuptura', this.value)" class="w-full accent-orange-500 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>0%</span><span>Retoma nota do mês anterior</span><span>100%</span></div>
+                            </div>
+
+                            <!-- Controle 3: Nota Alvo Pós-Treinamento Novatos -->
+                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-seedling text-amber-500 mr-1"></i>3. Piso Pós-Sala Novatos (≤180d)</span>
+                                    <span class="font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">${metaNov} pts</span>
+                                </div>
+                                <input type="range" min="70" max="98" step="1" value="${metaNov}" onchange="app.ui.setWhatIfParam('metaNovatos', this.value)" class="w-full accent-amber-500 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>70 pts</span><span>Ramp-Up e Júnior em Q3/Q4</span><span>98 pts</span></div>
+                            </div>
+
+                            <!-- Controle 4: Nota Alvo Pós-Reciclagem Experientes -->
+                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-rotate text-purple-500 mr-1"></i>4. Piso Pós-Reciclagem (>180d)</span>
+                                    <span class="font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">${metaVet} pts</span>
+                                </div>
+                                <input type="range" min="70" max="98" step="1" value="${metaVet}" onchange="app.ui.setWhatIfParam('metaVeteranos', this.value)" class="w-full accent-purple-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>70 pts</span><span>Plenos e Veteranos em Q3/Q4</span><span>98 pts</span></div>
+                            </div>
+
+                            <!-- Controle 5: Ganho Incremental no Q2 rumo ao Q1 -->
+                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-award text-blue-500 mr-1"></i>5. Lapidação Q2 Rumo ao Q1</span>
+                                    <span class="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded">+${bonusQ2Val} pts</span>
+                                </div>
+                                <input type="range" min="0" max="12" step="1" value="${bonusQ2Val}" onchange="app.ui.setWhatIfParam('bonusQ2', this.value)" class="w-full accent-blue-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>+0 pts</span><span>Uso de áudios modelo no Q2</span><span>+12 pts</span></div>
+                            </div>
+
+                            <!-- Controle 6: Taxa Global de Aderência / Execução no SLA -->
+                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-bolt text-teal-500 mr-1"></i>6. Taxa Global de Execução</span>
+                                    <span class="font-black text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded">${wi.aderenciaGeral}%</span>
+                                </div>
+                                <input type="range" min="10" max="100" step="5" value="${wi.aderenciaGeral}" onchange="app.ui.setWhatIfParam('aderenciaGeral', this.value)" class="w-full accent-teal-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>10%</span><span>Aderência geral das equipes</span><span>100%</span></div>
+                            </div>
+                        </div>
+
+                        <!-- BARRA DE FILTRO DE PERFIS ATIVOS NA SIMULAÇÃO + TERMÔMETRO DA META DA DIRETORIA -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
+                            <!-- Chaveamento de Perfis na Simulação -->
+                            <div class="lg:col-span-7 bg-slate-50/70 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2"><i class="fa-solid fa-toggle-on text-indigo-500 mr-1"></i>Ligar / Desligar Perfis na Simulação (Clique para simular isoladamente):</div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${Object.keys(meta).filter(k => k !== 'REFERENCIA_BOAS_PRATICAS').map(k => {
+                                        const m = meta[k];
+                                        const ligado = wi.perfisAtivos[k] !== false;
+                                        return `<button onclick="app.ui.toggleWhatIfPerfil('${k}')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1.5 ${ligado ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 line-through'}"><i class="fa-solid ${ligado ? 'fa-square-check' : 'fa-square'}"></i> ${esc(m.label)} (${contPerfil[k] || 0})</button>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Termômetro da Meta da Diretoria -->
+                            <div class="lg:col-span-5 bg-slate-50/70 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300"><i class="fa-solid fa-flag-checkered text-teal-500 mr-1"></i>Meta Executiva:</span>
+                                        <input type="number" min="60" max="100" step="0.5" value="${metaDir}" onchange="app.ui.setWhatIfParam('metaDiretoria', this.value)" class="w-16 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-black text-center text-slate-800 dark:text-white">
+                                        <span class="text-[10px] font-bold text-slate-400">pts</span>
+                                    </div>
+                                    <div class="flex gap-1">
+                                        <button onclick="app.ui.setWhatIfParam('escopoBase', 'global')" class="px-2 py-0.5 rounded text-[10px] font-bold ${wi.escopoBase !== 'ativos' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500'}">Base Global</button>
+                                        <button onclick="app.ui.setWhatIfParam('escopoBase', 'ativos')" class="px-2 py-0.5 rounded text-[10px] font-bold ${wi.escopoBase === 'ativos' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500'}">Só Ativos RH</button>
+                                    </div>
+                                </div>
+                                <div class="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1.5">
+                                    <div class="h-full rounded-full transition-all ${atingiuMeta ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${pctTermometro.toFixed(0)}%"></div>
+                                </div>
+                                <div class="flex items-center justify-between text-[11px]">
+                                    <span class="text-slate-500">Atual: <strong>${notaRefAtual.toFixed(2)}</strong> &rarr; Projetada: <strong>${notaRefMeta.toFixed(2)}</strong></span>
+                                    <span class="font-black ${atingiuMeta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">${atingiuMeta ? `<i class="fa-solid fa-trophy mr-1"></i>Meta Atingida! (+${Math.abs(diffMetaDir).toFixed(2)} pts)` : `Faltam ${Math.abs(diffMetaDir).toFixed(2)} pts p/ a Meta`}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4 KPIs Executivos do Simulador -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-slate-400"><i class="fa-solid fa-gauge-simple mr-1"></i>Média Atual da Operação</div>
+                                <div class="text-4xl font-black text-slate-800 dark:text-white tabular-nums my-2">${mediaGlobalAtual.toFixed(2)}</div>
+                                <div class="text-[11px] text-slate-500">Média apenas dos ativos RH: <strong>${mediaAtivosAtual.toFixed(2)}</strong></div>
+                            </div>
+
+                            <div class="bg-blue-50/60 dark:bg-blue-950/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800/60 flex flex-col justify-between">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i>Retorno: Frente Qualidade</div>
+                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400 tabular-nums my-2">+${ganhoPtsQualGlobal.toFixed(2)} <span class="text-xs font-bold">pts na global</span></div>
+                                <div class="text-[11px] text-slate-600 dark:text-slate-300">${opsImpactadosQual} op(s) alavancados (auditoria crítica + reversão de ruptura + lapidação Q2)</div>
+                            </div>
+
+                            <div class="bg-purple-50/60 dark:bg-purple-950/20 rounded-2xl p-5 border border-purple-200 dark:border-purple-800/60 flex flex-col justify-between">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400"><i class="fa-solid fa-graduation-cap mr-1"></i>Retorno: Frente Treinamento</div>
+                                <div class="text-3xl font-black text-purple-600 dark:text-purple-400 tabular-nums my-2">+${ganhoPtsTreinGlobal.toFixed(2)} <span class="text-xs font-bold">pts na global</span></div>
+                                <div class="text-[11px] text-slate-600 dark:text-slate-300">${opsImpactadosTrein} op(s) elevados (novatos p/ ${metaNov} pts e veteranos p/ ${metaVet} pts)</div>
+                            </div>
+
+                            <div class="bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-2xl p-5 shadow-md flex flex-col justify-between relative overflow-hidden">
+                                <div class="absolute -right-4 -bottom-4 text-white/10 text-7xl pointer-events-none"><i class="fa-solid fa-rocket"></i></div>
+                                <div class="text-[10px] font-black uppercase tracking-widest text-teal-100">Média Global Projetada (${wi.aderenciaGeral}% exec.)</div>
+                                <div class="flex items-baseline gap-2 my-2">
+                                    <span class="text-4xl font-black tabular-nums">${mediaGlobalProjetada.toFixed(2)}</span>
+                                    <span class="text-xs font-black bg-white/20 px-2 py-0.5 rounded-lg">+${ganhoPtsTotalGlobal.toFixed(2)} pts</span>
+                                </div>
+                                <div class="text-[11px] text-teal-50">Média projetada dos ativos RH: <strong>${mediaAtivosProjetada.toFixed(2)}</strong> (+${ganhoPtsAtivos.toFixed(2)} pts)</div>
+                            </div>
+                        </div>
+
+                        <!-- DECOMPOSIÇÃO MATEMÁTICA POR ALAVANCA (5 Fontes de Ganho) -->
+                        <div class="mb-6 bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700">
+                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-layer-group text-teal-500 mr-1.5"></i>Decomposição do Ganho: De Onde Vem Cada Ponto na Média Global?</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                                ${[
+                                    { titulo: '1. Fim de Falhas Críticas', pts: somaAlavCritica / nTotalOps, ops: cntAlavCritica, det: `${totalLigsZeradasRecup} ligação(ões) zerada(s) recuperada(s)`, cor: 'red' },
+                                    { titulo: '2. Reversão de Rupturas', pts: somaAlavRuptura / nTotalOps, ops: cntAlavRuptura, det: 'Retomada do histórico pré-queda', cor: 'orange' },
+                                    { titulo: '3. Evolução de Novatos', pts: somaAlavNovatos / nTotalOps, ops: cntAlavNovatos, det: `Ramp-Up/Júnior subindo p/ ${metaNov} pts`, cor: 'amber' },
+                                    { titulo: '4. Reciclagem Experientes', pts: somaAlavVeteranos / nTotalOps, ops: cntAlavVeteranos, det: `Pleno/Veterano subindo p/ ${metaVet} pts`, cor: 'purple' },
+                                    { titulo: '5. Lapidação Q2 → Q1', pts: somaAlavQ2 / nTotalOps, ops: cntAlavQ2, det: `Bônus de +${bonusQ2Val} pts no Q2`, cor: 'blue' }
+                                ].map(al => `<div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                    <div class="font-black text-slate-700 dark:text-slate-200 text-[11px]">${al.titulo}</div>
+                                    <div class="text-2xl font-black text-${al.cor}-600 dark:text-${al.cor}-400 tabular-nums my-1">+${al.pts.toFixed(2)} <span class="text-[10px] font-bold">pts</span></div>
+                                    <div class="text-[10px] text-slate-400">${al.ops} op(s) &bull; ${al.det}</div>
+                                </div>`).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Comparativo Antes vs Depois nos Quadrantes + Simulação Individual Clicável por Operador -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            <!-- Migração de Quadrantes -->
+                            <div class="lg:col-span-5 bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700 flex flex-col justify-between">
+                                <div>
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-arrows-turn-to-dots text-teal-500 mr-1.5"></i>Migração Projetada nos Quadrantes (Ativos RH)</h4>
+                                    <div class="grid grid-cols-2 gap-2.5 text-center">
+                                        ${[
+                                            { q: 'Q1', nome: qcSim.nomeQ1 || 'Excelente', cor: 'emerald' },
+                                            { q: 'Q2', nome: qcSim.nomeQ2 || 'Bom', cor: 'blue' },
+                                            { q: 'Q3', nome: qcSim.nomeQ3 || 'Regular', cor: 'orange' },
+                                            { q: 'Q4', nome: qcSim.nomeQ4 || 'Atenção', cor: 'red' }
+                                        ].map(item => {
+                                            const ant = quadAtivosAntes[item.q] || 0;
+                                            const dep = quadAtivosDepois[item.q] || 0;
+                                            const diff = dep - ant;
+                                            return `<div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+                                                <div class="text-[10px] font-black text-${item.cor}-600 dark:text-${item.cor}-400">${item.q} &bull; ${item.nome}</div>
+                                                <div class="flex items-center justify-center gap-2 mt-1.5">
+                                                    <span class="text-sm font-bold text-slate-400 line-through">${ant}</span>
+                                                    <i class="fa-solid fa-arrow-right text-[10px] text-slate-400"></i>
+                                                    <span class="text-2xl font-black text-slate-800 dark:text-white">${dep}</span>
+                                                </div>
+                                                <div class="text-[10px] font-black mt-0.5 ${diff > 0 ? (item.q === 'Q1' || item.q === 'Q2' ? 'text-emerald-600' : 'text-red-500') : (diff < 0 ? (item.q === 'Q3' || item.q === 'Q4' ? 'text-emerald-600' : 'text-orange-500') : 'text-slate-400')}">${diff > 0 ? '+' + diff : (diff === 0 ? '0' : diff)} op(s)</div>
+                                            </div>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    <i class="fa-solid fa-circle-check text-teal-500 mr-1"></i>
+                                    Operadores em quadrante crítico (Q3 + Q4) caem de <strong>${(quadAtivosAntes.Q3 + quadAtivosAntes.Q4)}</strong> para <strong>${(quadAtivosDepois.Q3 + quadAtivosDepois.Q4)}</strong>, enquanto os operadores em alta performance (Q1 + Q2) sobem de <strong>${(quadAtivosAntes.Q1 + quadAtivosAntes.Q2)}</strong> para <strong>${(quadAtivosDepois.Q1 + quadAtivosDepois.Q2)}</strong>.
+                                </div>
+                            </div>
+
+                            <!-- Tabela Interativa por Operador (Marque/Desmarque qualquer operador para simular impacto individual) -->
+                            <div class="lg:col-span-7 bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                    <div>
+                                        <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200"><i class="fa-solid fa-user-check text-indigo-500 mr-1.5"></i>Simulação Individual por Operador (Clique para Incluir/Excluir)</h4>
+                                        <p class="text-[10px] text-slate-400">Desmarque qualquer operador abaixo para testar o impacto exato dele na média global.</p>
+                                    </div>
+                                    <button onclick="app.ui.whatIfVerTodosOps = !app.ui.whatIfVerTodosOps; app.ui._refreshComMemoriaDeScroll()" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline ${this.analiseEditMode ? 'hidden' : ''}">
+                                        ${this.whatIfVerTodosOps ? 'Ver top 10 impactos' : `Ver todos os ${todosSimulados.length} ativos`}
+                                    </button>
+                                </div>
+                                <div class="max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                                    <table class="w-full text-left text-xs">
+                                        <thead><tr class="text-[9px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-1.5 pr-1">Simular</th><th class="py-1.5 px-1">Operador / Perfil</th><th class="py-1.5 px-1 text-center">Atual &rarr; Proj.</th><th class="py-1.5 px-1 text-center">Ganho Op.</th><th class="py-1.5 pl-1 text-right">Impacto Global</th></tr></thead>
+                                        <tbody class="divide-y divide-slate-200/60 dark:divide-slate-700/60">
+                                            ${(this.whatIfVerTodosOps ? todosSimulados : todosSimulados.slice(0, 10)).map(item => `
+                                                <tr class="hover:bg-white dark:hover:bg-slate-800 transition-colors ${!item.incluido ? 'opacity-50' : ''}">
+                                                    <td class="py-2 pr-1 text-center">
+                                                        <input type="checkbox" ${item.incluido ? 'checked' : ''} onchange="app.ui.toggleWhatIfOperador('${encodeURIComponent(item.nome)}')" class="w-4 h-4 accent-teal-600 rounded cursor-pointer">
+                                                    </td>
+                                                    <td class="py-2 px-1">
+                                                        <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(item.nome)}')" class="font-bold text-slate-800 dark:text-white hover:text-indigo-600 cursor-pointer truncate max-w-[200px]">${esc(item.nome)}</div>
+                                                        <div class="text-[10px] text-slate-400">${esc(item.faixa)} &bull; ${esc(item.perfil)}</div>
+                                                    </td>
+                                                    <td class="py-2 px-1 text-center tabular-nums font-bold">
+                                                        <span class="text-slate-500">${item.antes.toFixed(1)}</span> <i class="fa-solid fa-arrow-right text-[9px] text-slate-400 mx-0.5"></i> <span class="font-black text-emerald-600 dark:text-emerald-400">${item.depois.toFixed(1)}</span>
+                                                        <span class="block text-[9px] text-slate-400">${item.qAntes} &rarr; ${item.qDepois}</span>
+                                                    </td>
+                                                    <td class="py-2 px-1 text-center font-black tabular-nums ${item.ganhoOp > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'}">+${item.ganhoOp.toFixed(1)}</td>
+                                                    <td class="py-2 pl-1 text-right font-black tabular-nums ${item.impactoGlobal > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">+${item.impactoGlobal.toFixed(2)} pts</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
                     return h;
+                },
+
+                // Estado e métodos interativos do Simulador What-If Completo
+                getWhatIfCfg(qc) {
+                    const qcRef = qc || this.getQuadCfg();
+                    if (!this.whatIfCfg) {
+                        this.whatIfCfg = {
+                            eficCriticas: 100,
+                            eficRuptura: 85,
+                            metaNovatos: qcRef.q2 || 80,
+                            metaVeteranos: Math.min(95, (qcRef.q2 || 80) + 5),
+                            bonusQ2: 2,
+                            aderenciaGeral: 100,
+                            metaDiretoria: 85,
+                            escopoBase: 'global',
+                            perfisAtivos: {
+                                RISCO_OPERACIONAL_VETERANO: true,
+                                FALHA_CRITICA_RAMP_UP: true,
+                                ALERTA_RUPTURA: true,
+                                GAP_TREINAMENTO_INICIAL: true,
+                                RECICLAGEM_PROCESSUAL_VETERANO: true
+                            },
+                            opsExcluidos: {}
+                        };
+                    }
+                    return this.whatIfCfg;
+                },
+
+                setWhatIfParam(key, val) {
+                    const cfg = this.getWhatIfCfg();
+                    if (key === 'escopoBase') cfg[key] = String(val);
+                    else cfg[key] = Number(val);
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                toggleWhatIfPerfil(perfilKey) {
+                    const cfg = this.getWhatIfCfg();
+                    cfg.perfisAtivos[perfilKey] = cfg.perfisAtivos[perfilKey] === false ? true : false;
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                toggleWhatIfOperador(nomeEncoded) {
+                    const nome = decodeURIComponent(nomeEncoded);
+                    const cfg = this.getWhatIfCfg();
+                    if (cfg.opsExcluidos[nome]) delete cfg.opsExcluidos[nome];
+                    else cfg.opsExcluidos[nome] = true;
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                applyWhatIfPreset(preset) {
+                    const qc = this.getQuadCfg();
+                    const cfg = this.getWhatIfCfg(qc);
+                    cfg.opsExcluidos = {};
+                    Object.keys(cfg.perfisAtivos).forEach(k => { cfg.perfisAtivos[k] = true; });
+
+                    if (preset === 'conservador') {
+                        cfg.eficCriticas = 60;
+                        cfg.eficRuptura = 50;
+                        cfg.metaNovatos = qc.q2 || 80;
+                        cfg.metaVeteranos = qc.q2 || 80;
+                        cfg.bonusQ2 = 0;
+                        cfg.aderenciaGeral = 50;
+                    } else if (preset === 'realista') {
+                        cfg.eficCriticas = 90;
+                        cfg.eficRuptura = 80;
+                        cfg.metaNovatos = (qc.q2 || 80) + 2;
+                        cfg.metaVeteranos = (qc.q2 || 80) + 5;
+                        cfg.bonusQ2 = 2;
+                        cfg.aderenciaGeral = 85;
+                    } else if (preset === 'otimista') {
+                        cfg.eficCriticas = 100;
+                        cfg.eficRuptura = 100;
+                        cfg.metaNovatos = (qc.q2 || 80) + 5;
+                        cfg.metaVeteranos = qc.q1 || 90;
+                        cfg.bonusQ2 = 5;
+                        cfg.aderenciaGeral = 100;
+                    } else if (preset === 'so_qualidade') {
+                        cfg.eficCriticas = 100;
+                        cfg.eficRuptura = 100;
+                        cfg.bonusQ2 = 3;
+                        cfg.aderenciaGeral = 100;
+                        cfg.perfisAtivos.FALHA_CRITICA_RAMP_UP = false;
+                        cfg.perfisAtivos.GAP_TREINAMENTO_INICIAL = false;
+                        cfg.perfisAtivos.RECICLAGEM_PROCESSUAL_VETERANO = false;
+                    } else if (preset === 'so_treinamento') {
+                        cfg.eficCriticas = 100;
+                        cfg.metaNovatos = (qc.q2 || 80) + 4;
+                        cfg.metaVeteranos = (qc.q2 || 80) + 6;
+                        cfg.bonusQ2 = 0;
+                        cfg.aderenciaGeral = 100;
+                        cfg.perfisAtivos.RISCO_OPERACIONAL_VETERANO = false;
+                        cfg.perfisAtivos.ALERTA_RUPTURA = false;
+                    } else if (preset === 'reset') {
+                        this.whatIfCfg = null;
+                        this.getWhatIfCfg(qc);
+                    }
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                exportarWhatIfXLSX() {
+                    const ops = this._whatIfCacheOps || [];
+                    const res = this._whatIfResumo || {};
+                    if (!ops.length) return;
+
+                    const rowsParam = [
+                        { "Parâmetro do Simulador What-If": "Média Global Atual", "Valor Configurado / Resultado": Number(res.mediaGlobalAtual || 0).toFixed(2) },
+                        { "Parâmetro do Simulador What-If": "Média Global Projetada Pós-Plano", "Valor Configurado / Resultado": Number(res.mediaGlobalProjetada || 0).toFixed(2) },
+                        { "Parâmetro do Simulador What-If": "Ganho Total na Média Global (pts)", "Valor Configurado / Resultado": `+${Number(res.ganhoPtsTotalGlobal || 0).toFixed(2)}` },
+                        { "Parâmetro do Simulador What-If": "Média Ativos RH Atual", "Valor Configurado / Resultado": Number(res.mediaAtivosAtual || 0).toFixed(2) },
+                        { "Parâmetro do Simulador What-If": "Média Ativos RH Projetada", "Valor Configurado / Resultado": Number(res.mediaAtivosProjetada || 0).toFixed(2) },
+                        { "Parâmetro do Simulador What-If": "Meta Executiva da Diretoria", "Valor Configurado / Resultado": `${res.metaDir || 85} pts (${res.atingiuMeta ? 'ATINGIDA' : 'PENDENTE'})` },
+                        { "Parâmetro do Simulador What-If": "1. Neutralização de Falhas Críticas (%)", "Valor Configurado / Resultado": `${res.wi?.eficCriticas || 0}%` },
+                        { "Parâmetro do Simulador What-If": "2. Reversão de Quedas Bruscas / Ruptura (%)", "Valor Configurado / Resultado": `${res.wi?.eficRuptura || 0}%` },
+                        { "Parâmetro do Simulador What-If": "3. Nota Alvo Pós-Treinamento Novatos (pts)", "Valor Configurado / Resultado": `${res.wi?.metaNovatos || 80} pts` },
+                        { "Parâmetro do Simulador What-If": "4. Nota Alvo Pós-Reciclagem Experientes (pts)", "Valor Configurado / Resultado": `${res.wi?.metaVeteranos || 85} pts` },
+                        { "Parâmetro do Simulador What-If": "5. Lapidação Incremental Q2 (pts)", "Valor Configurado / Resultado": `+${res.wi?.bonusQ2 || 0} pts` },
+                        { "Parâmetro do Simulador What-If": "6. Taxa Global de Execução / Aderência (%)", "Valor Configurado / Resultado": `${res.wi?.aderenciaGeral || 100}%` }
+                    ];
+
+                    const rowsOps = ops.map((o, i) => ({
+                        "Ordem Impacto": i + 1,
+                        "Incluído na Simulação": o.incluido ? "SIM" : "NÃO",
+                        "Operador (Ativo RH)": o.nome,
+                        "Faixa de Maturidade": o.faixa,
+                        "Tempo de Casa": app.utils.formatTempoCasa(o.tempoDias),
+                        "Frente Responsável": o.frente,
+                        "Perfil de Intervenção": o.perfil,
+                        "Quadrante Atual": o.qAntes,
+                        "Nota Atual": o.antes,
+                        "Nota Simulada Sem Crítica": o.notaSemCrit,
+                        "Nota Mês Anterior": o.notaAnt !== null && o.notaAnt !== undefined ? o.notaAnt : '-',
+                        "Nota Projetada Pós-Ação": o.depois,
+                        "Novo Quadrante Projetado": o.qDepois,
+                        "Ganho no Operador (pts)": `+${o.ganhoOp.toFixed(1)}`,
+                        "Impacto na Média Global (pts)": `+${o.impactoGlobal.toFixed(2)}`,
+                        "Impacto na Média Ativos RH (pts)": `+${o.impactoAtivos.toFixed(2)}`,
+                        "Detalhamento das Alavancas Aplicadas": o.detalheAlavancas
+                    }));
+
+                    const wb = XLSX.utils.book_new();
+                    const ws1 = XLSX.utils.json_to_sheet(rowsParam);
+                    ws1['!cols'] = [{ wch: 46 }, { wch: 30 }];
+                    XLSX.utils.book_append_sheet(wb, ws1, "1_Parametros_e_Resultado");
+
+                    const ws2 = XLSX.utils.json_to_sheet(rowsOps);
+                    ws2['!cols'] = [
+                        { wch: 14 }, { wch: 20 }, { wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 24 },
+                        { wch: 34 }, { wch: 16 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 22 },
+                        { wch: 22 }, { wch: 22 }, { wch: 24 }, { wch: 26 }, { wch: 55 }
+                    ];
+                    XLSX.utils.book_append_sheet(wb, ws2, "2_Simulacao_Por_Operador");
+
+                    XLSX.writeFile(wb, "Simulacao_Potencial_WhatIf_Qualidade_Treinamento.xlsx");
                 },
 
                 getQuadCfg() {
@@ -21670,12 +22749,14 @@ storage: {
                     if(lista.length === 0) {
                         htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador enquadrado neste quadrante.</div>`;
                     } else {
+                        const rhModalLoaded = !!(app.config && app.config.tempoDeCasa && Object.keys(app.config.tempoDeCasa).length > 0);
                         lista.forEach((op, i) => {
+                            const semVinculoRH = rhModalLoaded && (app.utils.getTempoCasaDoOperador(op.nome) === null || app.utils.getTempoCasaDoOperador(op.nome) === undefined);
                             htmlList += `
                                 <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
                                     <div class="flex items-center gap-4">
                                         <div class="w-10 h-10 rounded-full ${bg} ${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50">${i+1}</div>
-                                        <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}</div>
+                                        <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}${semVinculoRH ? '<span class="ml-2 text-[10px] font-medium px-2 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400">s/ vínculo RH</span>' : ''}</div>
                                     </div>
                                     <div class="text-right">
                                         <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-0.5">Média Final</div>
@@ -22201,8 +23282,45 @@ storage: {
                         return;
                     }
 
+                    // --- DETECTOR SUTIL DE OPERADORES INATIVOS / DESLIGADOS (SEM VÍNCULO NA BASE DE RH) ---
+                    const rhBaseCarregada = !!(app.config && app.config.tempoDeCasa && Object.keys(app.config.tempoDeCasa).length > 0);
+                    const isOpInativoRH = (nomeOp) => {
+                        if (!rhBaseCarregada) return false;
+                        const d = app.utils.getTempoCasaDoOperador(nomeOp);
+                        return d === null || d === undefined || isNaN(Number(d));
+                    };
+                    let qtdOpsInativosHist = 0;
+                    let qtdLigsInativosHist = 0;
+                    if (rhBaseCarregada && data && data.rankOperadores) {
+                        data.rankOperadores.forEach(op => {
+                            if (isOpInativoRH(op.nome)) {
+                                qtdOpsInativosHist++;
+                                qtdLigsInativosHist += (op.notas ? op.notas.length : 0);
+                            }
+                        });
+                    }
+                    const renderAlertaSutilInativos = (contextoCurto) => {
+                        if (!rhBaseCarregada || qtdOpsInativosHist === 0) return '';
+                        return `
+                            <div class="hideable-box -mt-7 mb-5 flex justify-center">
+                                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100/80 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/70 text-[11px] text-slate-500 dark:text-slate-400">
+                                    <i class="fa-solid fa-user-clock text-slate-400 text-[10px]"></i>
+                                    <span>Nota histórica (${contextoCurto}): contabiliza <strong>${qtdOpsInativosHist}</strong> operador(es) sem vínculo ativo na Base de RH (inativos/desligados &bull; ${qtdLigsInativosHist} ligs.), preservados para fidelidade histórica.</span>
+                                </div>
+                            </div>
+                        `;
+                    };
+
                     // FILTROS COM VISUAL DE PÍLULAS CLICÁVEIS E GHOST BUTTON NA APRESENTAÇÃO
                     if (mainData && mainData.relatorios && mainData.relatorios.length > 0) {
+                        const qcFiltroTop = app.ui.getQuadCfg();
+                        const fmtLimFiltro = (n) => (Math.round(n * 10) / 10).toString();
+                        const quadPillsCfg = [
+                            { id: 'Q1', label: `Q1 · ${qcFiltroTop.nomeQ1 || 'Excelente'} (≥${fmtLimFiltro(qcFiltroTop.q1)})`, activeCls: 'bg-emerald-600 text-white border-emerald-600 shadow-md transform -translate-y-0.5', hoverCls: 'hover:border-emerald-400 dark:hover:border-emerald-500' },
+                            { id: 'Q2', label: `Q2 · ${qcFiltroTop.nomeQ2 || 'Bom'} (${fmtLimFiltro(qcFiltroTop.q2)}-${fmtLimFiltro(qcFiltroTop.q1 - 0.1)})`, activeCls: 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5', hoverCls: 'hover:border-blue-400 dark:hover:border-blue-500' },
+                            { id: 'Q3', label: `Q3 · ${qcFiltroTop.nomeQ3 || 'Regular'} (${fmtLimFiltro(qcFiltroTop.q3)}-${fmtLimFiltro(qcFiltroTop.q2 - 0.1)})`, activeCls: 'bg-orange-500 text-white border-orange-500 shadow-md transform -translate-y-0.5', hoverCls: 'hover:border-orange-400 dark:hover:border-orange-500' },
+                            { id: 'Q4', label: `Q4 · ${qcFiltroTop.nomeQ4 || 'Atenção'} (<${fmtLimFiltro(qcFiltroTop.q3)})`, activeCls: 'bg-red-600 text-white border-red-600 shadow-md transform -translate-y-0.5', hoverCls: 'hover:border-red-400 dark:hover:border-red-500' }
+                        ];
                         html += `
                         <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999] group/apres-filter' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
                             
@@ -22218,12 +23336,15 @@ storage: {
                                 <div class="flex justify-between items-center mb-4">
                                     <h3 class="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><i class="fa-solid fa-filter text-blue-500"></i> Controles e Filtros</h3>
                                     <div class="flex gap-2">
+                                        ${(app.ui.analiseFiltroQuadrante && app.ui.analiseFiltroQuadrante.length > 0) || (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.length > 0) || (app.ui.analiseFiltroCiclo && app.ui.analiseFiltroCiclo.length > 0) || (app.ui.analiseFiltroMaturidade && app.ui.analiseFiltroMaturidade.length > 0) || (app.ui.analiseFiltroRelatorio && app.ui.analiseFiltroRelatorio.length > 0) || app.ui.analiseFiltroCargo ? `
+                                        <button onclick="app.ui.analiseFiltroCargo=''; app.ui.analiseFiltroRelatorio=[]; app.ui.analiseFiltroMes=[]; app.ui.analiseFiltroCiclo=[]; app.ui.analiseFiltroMaturidade=[]; app.ui.analiseFiltroQuadrante=[]; app.ui.analiseFiltroAssunto=[]; app.admin.gerarInteligenciaCSV(); app.ui._refreshComMemoriaDeScroll()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-rotate-left mr-1"></i> Limpar Filtros</button>
+                                        ` : ''}
                                         <button onclick="app.ui.openGerenciarBasesModal()" class="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-database mr-1"></i> Gerenciar Bases</button>
-                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui._refreshComMemoriaDeScroll()', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroQuadrante = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui._refreshComMemoriaDeScroll()', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
                                     </div>
                                 </div>
                                 
-                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-5">
                                     <div>
                                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtro de Cargo:</div>
                                         <div class="flex flex-wrap gap-2">
@@ -22244,7 +23365,7 @@ storage: {
                                     </div>
                                     <div>
                                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Ciclo de Qualidade (Semana):</div>
-                                        <div class="flex flex-wrap gap-2">
+                                        <div class="flex flex-wrap gap-2 max-h-20 overflow-y-auto custom-scrollbar pr-1">
                                             ${(data.ciclosDisponiveis || []).map(c => {
                                                 const isActive = app.ui.analiseFiltroCiclo && app.ui.analiseFiltroCiclo.includes(c);
                                                 const btnClass = isActive ? 'bg-orange-500 text-white border-orange-500 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500';
@@ -22264,6 +23385,16 @@ storage: {
                                         </div>
                                     </div>
                                     <div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Quadrante (Média de Nota):</div>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            ${quadPillsCfg.map(qp => {
+                                                const isActive = app.ui.analiseFiltroQuadrante && app.ui.analiseFiltroQuadrante.includes(qp.id);
+                                                const btnClass = isActive ? qp.activeCls : `bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 ${qp.hoverCls}`;
+                                                return `<button onclick="app.ui.toggleQuadranteFiltro('${qp.id}')" class="px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}" title="Filtrar operadores com média no ${qp.label}">${qp.label}</button>`;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                    <div>
                                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar Formulários / Setores:</div>
                                         <div class="flex flex-wrap gap-2">
                                             ${mainData.relatorios.map(r => {
@@ -22275,7 +23406,7 @@ storage: {
                                     </div>
 
                                     ${data.assuntosDisponiveis && data.assuntosDisponiveis.length > 0 ? `
-                                    <div class="xl:col-span-5">
+                                    <div class="xl:col-span-6">
                                         <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Filtrar por Assunto / Tema:</div>
                                         <div class="flex flex-wrap gap-2 max-h-20 overflow-y-auto custom-scrollbar pr-2">
                                             ${data.assuntosDisponiveis.map(a => {
@@ -22328,6 +23459,7 @@ storage: {
                     
                     html += `
                         ${renderChapterTitle('Visão Executiva', 'Indicadores chave de performance (KPIs) e resumos métricos globais da operação no período.', 'fa-chart-pie', 'blue')}
+                        ${renderAlertaSutilInativos('Visão Executiva')}
                         <!-- DASHBOARD CARDS MESTRES -->
                         <div class="hideable-box relative grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 mb-8">
                             ${btnHideCode}${renderDashCard('totalLinhas', 'fa-headphones text-blue-500', 'Total Analisado', `${data.totalLinhas} <span class="text-xs font-medium text-slate-400 ml-1">Ligs.</span>`, `Universo de ${totalPerguntasGlobais} perguntas validadas.`, 'bg-blue-500', data.comments?.totalLinhas)}
@@ -22342,6 +23474,7 @@ storage: {
                         </div>
 
                         ${renderChapterTitle('Engajamento & Qualidade', 'Mapeamento da entrega de feedbacks e saúde da comunicação direta entre gestão e operação.', 'fa-comments', 'emerald')}
+                        ${renderAlertaSutilInativos('Engajamento & Feedbacks')}
                         <!-- GESTÃO E GRÁFICO DE FEEDBACKS -->
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 animate-fade-in">
                             <!-- Cards Interativos de Feedback -->
@@ -22388,17 +23521,109 @@ storage: {
                             </div>
                         </div>
                     `;
-                    // --- RESTAURAÇÃO: GRÁFICO EVOLUTIVO DE VOLTA À TELA ---
-                    if (data.mesesDisponiveis && data.mesesDisponiveis.length > 1) {
+                    // --- CAPÍTULO 3: EVOLUÇÃO HISTÓRICA (SEMANAS/CICLOS S23..S44 + MESES + CURVA SVG/CHART.JS) ---
+                    const temEvolucaoMes = data.mesesDisponiveis && data.mesesDisponiveis.length > 1;
+                    const temEvolucaoCiclo = data.evolutivoCicloLabels && data.evolutivoCicloLabels.length > 1;
+                    if (temEvolucaoMes || temEvolucaoCiclo || (data.evolutivoChartLabels && data.evolutivoChartLabels.length > 0)) {
+                        const modoEvolAtivo = data.evolutivoModoAtivo || (temEvolucaoCiclo ? 'ciclo' : 'mes');
+                        const evolLabels = data.evolutivoChartLabels || [];
+                        const evolVals = (data.evolutivoChartData || []).map(v => parseFloat(v) || 0);
+                        const evolNums = evolVals.filter(v => v > 0);
+                        const evolMin = evolNums.length ? Math.min(...evolNums) : 0;
+                        const evolMax = evolNums.length ? Math.max(...evolNums) : 100;
+                        const evolAmplitude = evolNums.length > 1 ? (evolMax - evolMin).toFixed(1) : '0.0';
+                        const evolVarTotal = (evolVals.length > 1 && evolVals[0] > 0) ? (((evolVals[evolVals.length - 1] - evolVals[0]) / evolVals[0]) * 100).toFixed(1) : '0.0';
+
+                        // Gera um gráfico SVG vetorial embutido (garante linha histórica visível instantaneamente na tela e no PDF, além do Chart.js interativo)
+                        let svgCurvaHtml = '';
+                        if (evolLabels.length >= 1) {
+                            const ptsLabel = evolLabels.length === 1 ? [evolLabels[0], evolLabels[0]] : evolLabels;
+                            const ptsVal = evolVals.length === 1 ? [evolVals[0], evolVals[0]] : evolVals;
+                            const wSvg = 760, hSvg = 240, padL = 44, padR = 24, padT = 26, padB = 34;
+                            const yMinSvg = Math.max(0, Math.floor((Math.min(...ptsVal) - 8) / 5) * 5);
+                            const yMaxSvg = 100;
+                            const spanY = Math.max(10, yMaxSvg - yMinSvg);
+                            const xAt = (i) => padL + (ptsLabel.length > 1 ? (i / (ptsLabel.length - 1)) * (wSvg - padL - padR) : (wSvg - padL - padR) / 2);
+                            const yAt = (v) => padT + (1 - ((v - yMinSvg) / spanY)) * (hSvg - padT - padB);
+                            const coords = ptsVal.map((v, i) => ({ x: xAt(i), y: yAt(v), v, lbl: ptsLabel[i] }));
+                            const polyPts = coords.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                            const areaPts = `${coords[0].x.toFixed(1)},${(hSvg - padB).toFixed(1)} ${polyPts} ${coords[coords.length - 1].x.toFixed(1)},${(hSvg - padB).toFixed(1)}`;
+                            const gridSteps = [yMinSvg, Math.round(yMinSvg + spanY * 0.5), yMaxSvg];
+                            const stepLabelEvery = coords.length > 14 ? 2 : 1;
+                            svgCurvaHtml = `
+                                <svg viewBox="0 0 ${wSvg} ${hSvg}" class="w-full h-56 select-none overflow-visible">
+                                    <defs>
+                                        <linearGradient id="evolGradArea" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="#6366f1" stop-opacity="0.32"/>
+                                            <stop offset="100%" stop-color="#6366f1" stop-opacity="0.02"/>
+                                        </linearGradient>
+                                    </defs>
+                                    ${gridSteps.map(gv => {
+                                        const gy = yAt(gv).toFixed(1);
+                                        return `<g>
+                                            <line x1="${padL}" y1="${gy}" x2="${wSvg - padR}" y2="${gy}" stroke="currentColor" class="text-slate-200 dark:text-slate-700" stroke-dasharray="4 4" stroke-width="1"/>
+                                            <text x="${padL - 8}" y="${Number(gy) + 4}" text-anchor="end" class="fill-slate-400 text-[10px] font-bold">${gv}%</text>
+                                        </g>`;
+                                    }).join('')}
+                                    <polygon points="${areaPts}" fill="url(#evolGradArea)"/>
+                                    <polyline fill="none" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" points="${polyPts}"/>
+                                    ${coords.map((p, idx) => `
+                                        <g>
+                                            <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="#ffffff" stroke="#6366f1" stroke-width="3"/>
+                                            ${(idx % stepLabelEvery === 0 || idx === coords.length - 1) ? `<text x="${p.x.toFixed(1)}" y="${(p.y - 10).toFixed(1)}" text-anchor="middle" class="fill-indigo-600 dark:fill-indigo-300 text-[10px] font-black">${p.v.toFixed(1)}</text>` : ''}
+                                            ${(idx % stepLabelEvery === 0 || idx === coords.length - 1) ? `<text x="${p.x.toFixed(1)}" y="${hSvg - 10}" text-anchor="middle" class="fill-slate-500 dark:fill-slate-400 text-[10px] font-bold">${p.lbl}</text>` : ''}
+                                        </g>
+                                    `).join('')}
+                                </svg>
+                            `;
+                        }
+
                         html += renderChapterTitle('Evolução Histórica', 'Análise gráfica da curva de melhoria contínua e identificação dos destaques de alta ou queda.', 'fa-arrow-trend-up', 'indigo');
+                        html += renderAlertaSutilInativos('Evolução Histórica');
                         html += `
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
-                                <div class="flex justify-between items-center mb-6">
-                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Evolução da Média & Destaques</h3>
+                                <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+                                    <div>
+                                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Curva de Evolução Temporal (${modoEvolAtivo === 'ciclo' ? `Ciclos Semanais: ${evolLabels[0] || ''} a ${evolLabels[evolLabels.length - 1] || ''}` : `Mensal: ${evolLabels[0] || ''} a ${evolLabels[evolLabels.length - 1] || ''}`}) & Destaques</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Acompanhe a linha histórica de nota média e a volatilidade operacional entre os ciclos/períodos avaliados.</p>
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
+                                        ${temEvolucaoCiclo ? `<button onclick="app.ui.setEvolutivoModo('ciclo')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${modoEvolAtivo === 'ciclo' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}"><i class="fa-solid fa-calendar-week mr-1"></i> Por Ciclo (${data.evolutivoCicloLabels[0]} a ${data.evolutivoCicloLabels[data.evolutivoCicloLabels.length - 1]})</button>` : ''}
+                                        ${temEvolucaoMes ? `<button onclick="app.ui.setEvolutivoModo('mes')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${modoEvolAtivo === 'mes' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}"><i class="fa-solid fa-calendar-days mr-1"></i> Por Mês (${data.evolutivoMesLabels.length} meses)</button>` : ''}
+                                    </div>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    <div class="lg:col-span-2 w-full h-full min-h-[320px] relative">
-                                        <canvas id="chart-analise-evolutivo"></canvas>
+                                    <div class="lg:col-span-2 flex flex-col justify-between bg-slate-50/70 dark:bg-slate-900/40 rounded-2xl p-4 md:p-5 border border-slate-200/80 dark:border-slate-700/70">
+                                        <!-- Indicadores de Volatilidade da Curva -->
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                                            <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/70 dark:border-slate-700">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400">Início (${evolLabels[0] || '-'})</div>
+                                                <div class="text-lg font-black text-slate-700 dark:text-slate-200 tabular-nums">${evolVals.length ? evolVals[0].toFixed(1) : '—'}%</div>
+                                            </div>
+                                            <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/70 dark:border-slate-700">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400">Atual (${evolLabels[evolLabels.length - 1] || '-'})</div>
+                                                <div class="text-lg font-black text-indigo-600 dark:text-indigo-400 tabular-nums">${evolVals.length ? evolVals[evolVals.length - 1].toFixed(1) : '—'}%</div>
+                                            </div>
+                                            <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/70 dark:border-slate-700">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400">Tendência no Período</div>
+                                                <div class="text-lg font-black ${parseFloat(evolVarTotal) >= 0 ? 'text-emerald-600' : 'text-red-500'} tabular-nums">${parseFloat(evolVarTotal) > 0 ? '+' : ''}${evolVarTotal}%</div>
+                                            </div>
+                                            <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/70 dark:border-slate-700">
+                                                <div class="text-[9px] uppercase font-bold text-slate-400">Amplitude (Pico - Vale)</div>
+                                                <div class="text-lg font-black text-slate-700 dark:text-slate-200 tabular-nums">${evolAmplitude} pts <span class="text-[10px] font-medium text-slate-400">(${evolMin.toFixed(0)}–${evolMax.toFixed(0)})</span></div>
+                                            </div>
+                                        </div>
+                                        <!-- Gráfico de Linha Interativo (Chart.js) + Curva Vetorial Garantida -->
+                                        <div class="w-full min-h-[250px] relative">
+                                            <canvas id="chart-analise-evolutivo" class="w-full h-64"></canvas>
+                                        </div>
+                                        <div class="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                                            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-between">
+                                                <span><i class="fa-solid fa-wave-square text-indigo-500 mr-1"></i> Espelho Vetorial da Curva (${evolLabels.length} ponto(s) no eixo temporal)</span>
+                                                <span>Valores em % de qualidade</span>
+                                            </div>
+                                            ${svgCurvaHtml}
+                                        </div>
                                     </div>
                                     <div class="lg:col-span-1 flex flex-col gap-6">
                                         <!-- Destaques Positivos -->
@@ -22408,7 +23633,7 @@ storage: {
                                                 ${data.evolutivoPioresIniciais && data.evolutivoPioresIniciais.length > 0 ? data.evolutivoPioresIniciais.map((op, idx) => `
                                                     <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-emerald-100 dark:border-emerald-800/50 cursor-pointer hover:border-emerald-400 hover:-translate-y-0.5 transition-all group">
                                                         <div class="flex justify-between items-center mb-1">
-                                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-emerald-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
+                                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-emerald-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}${isOpInativoRH(op.nome) ? '<span class="ml-1.5 text-[9px] font-normal px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-400" title="Operador sem vínculo ativo na Base de RH (inativo/desligado)">s/ RH</span>' : ''}</span>
                                                             <span class="text-[11px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-1 rounded-lg shrink-0 border border-emerald-200 dark:border-emerald-800">+${(op.inicio > 0 ? (op.diff / op.inicio) * 100 : 0).toFixed(1)}%</span>
                                                         </div>
                                                         <div class="text-[9px] text-slate-500 font-medium">Subiu de <strong class="text-slate-700 dark:text-slate-300">${op.inicio.toFixed(1)}</strong> para <strong class="text-emerald-600">${op.fim.toFixed(1)}</strong></div>
@@ -22423,7 +23648,7 @@ storage: {
                                                 ${data.evolutivoQuedas && data.evolutivoQuedas.length > 0 ? data.evolutivoQuedas.map((op, idx) => `
                                                     <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')" class="flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm border border-red-100 dark:border-red-800/50 cursor-pointer hover:border-red-400 hover:-translate-y-0.5 transition-all group">
                                                         <div class="flex justify-between items-center mb-1">
-                                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-red-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}</span>
+                                                            <span class="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2 group-hover:text-red-600 transition-colors"><span class="text-slate-400 mr-1">${idx+1}.</span>${op.nome}${isOpInativoRH(op.nome) ? '<span class="ml-1.5 text-[9px] font-normal px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-400" title="Operador sem vínculo ativo na Base de RH (inativo/desligado)">s/ RH</span>' : ''}</span>
                                                             <span class="text-[11px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded-lg shrink-0 border border-red-200 dark:border-red-800">${(op.inicio > 0 ? (op.diff / op.inicio) * 100 : 0).toFixed(1)}%</span>
                                                         </div>
                                                         <div class="text-[9px] text-slate-500 font-medium">Caiu de <strong class="text-slate-700 dark:text-slate-300">${op.inicio.toFixed(1)}</strong> para <strong class="text-red-600">${op.fim.toFixed(1)}</strong></div>
@@ -22459,6 +23684,7 @@ storage: {
                         { id: 'Q4', nome: qc.nomeQ4 || 'Atenção', lista: q4, bar: 'bg-red-500', txt: 'text-red-600 dark:text-red-400', faixa: `abaixo de ${fmtLim(qc.q3)}` }
                     ].map(c => {
                         const pct = ((c.lista.length / tOps) * 100).toFixed(1);
+                        const inativosNoQuad = rhBaseCarregada ? c.lista.filter(o => isOpInativoRH(o.nome)).length : 0;
                         return `
                             <div onclick="app.ui.openQuadranteModal('${c.id}')" class="cursor-pointer bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
                                 <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -22470,12 +23696,16 @@ storage: {
                                     <span class="text-xs text-slate-400">operadores · ${pct}%</span>
                                 </div>
                                 <div class="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-3 overflow-hidden"><div class="h-full ${c.bar} rounded-full" style="width:${pct}%"></div></div>
-                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2">Média do grupo: <strong class="${c.txt}">${mediaDe(c.lista)}</strong></div>
+                                <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+                                    <span>Média do grupo: <strong class="${c.txt}">${mediaDe(c.lista)}</strong></span>
+                                    ${inativosNoQuad > 0 ? `<span class="text-[10px] text-slate-400" title="${inativosNoQuad} operador(es) neste quadrante sem vínculo ativo na Base de RH">${inativosNoQuad} s/ RH</span>` : ''}
+                                </div>
                             </div>
                         `;
                     }).join('');
 
                     html += renderChapterTitle('Matriz de Desempenho', 'Classificação dos operadores em quadrantes com base na qualidade técnica para ações de desenvolvimento direcionadas.', 'fa-border-all', 'orange');
+                    html += renderAlertaSutilInativos('Matriz de Desempenho');
                     html += `
                         <div class="hideable-box relative mb-8 animate-fade-in">
                             ${btnHideCode}
@@ -27249,6 +28479,8 @@ storage: {
                         matConfig: matConfigFallback,
                         mesesEvolutivo: {},
                         operadoresEvolutivo: {},
+                        ciclosEvolutivo: {},
+                        operadoresCicloEvolutivo: {},
                         infoData: filtrosMes.length > 0 && filtrosMes[0] !== "" ? filtrosMes.map(m => app.ui.formatMonthLabel(m)).join(', ') : (mesesOrdenados.length > 1 ? 'Visão Evolutiva (Todos)' : (mesesOrdenados[0] ? app.ui.formatMonthLabel(mesesOrdenados[0]) : 'Indefinido')),
                         infoOperacao: filtrosRelatorio.length > 0 && filtrosRelatorio[0] !== "" ? `Filtro Ativo: ${filtrosRelatorio.join(', ')}` : 'Visão Consolidada (Geral)',
                         comments: oldComments,
@@ -27259,6 +28491,67 @@ storage: {
                         notasDistribuicao: {}, // <--- NOVO: Armazena a contagem exata de cada nota
                         assuntosDistribuicao: {} // <--- CORREÇÃO: A "estante" mestra que estava faltando para as caixinhas!
                     };
+
+                    // PRÉ-CÁLCULO DE QUADRANTE POR OPERADOR (quando o filtro de Quadrante de Média de Nota estiver ativo)
+                    const filtrosQuadrante = Array.isArray(app.ui.analiseFiltroQuadrante) ? app.ui.analiseFiltroQuadrante.filter(Boolean) : [];
+                    let opsPermitidosQuadrante = null;
+                    if (filtrosQuadrante.length > 0) {
+                        const qcFiltro = app.ui.getQuadCfg ? app.ui.getQuadCfg() : { q1: 90, q2: 80, q3: 70 };
+                        const somaPre = {};
+                        relatoriosAtivos.forEach(relatorio => {
+                            const rows = relatorio.rows || [];
+                            if (rows.length === 0) return;
+                            const chaves = Object.keys(rows[0]);
+                            const colMonitor = chaves.find(k => ['MONITOR', 'AVALIADOR', 'AUDITOR', 'LOGIN', 'CRIADOR'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('MONITOR') && !k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('DATA') && !k.trim().toUpperCase().includes('STATUS'));
+                            const colNome = chaves.find(k => ['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'FUNCIONARIO', 'FUNCIONÁRIO'].includes(k.trim().toUpperCase())) || chaves.find(k => (k.trim().toUpperCase().includes('NOME') || k.trim().toUpperCase().includes('OPERADOR')) && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('SUPERVISOR')) || chaves[0];
+                            const colDataAudit = chaves.find(k => ['DATA DA MONITORIA', 'DATA AVALIACAO', 'DATA AVALIAÇÃO', 'DATA', 'DT_MONITORIA'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('DATA'));
+                            const colNota = chaves.find(k => ['NOTA', 'PONTUACAO', 'PONTUAÇÃO', 'RESULTADO', 'NOTA FINAL'].includes(k.trim().toUpperCase())) || chaves.find(k => k.trim().toUpperCase().includes('NOTA') && !k.trim().toUpperCase().includes('CLIENTE') && !k.trim().toUpperCase().includes('MAX')) || 'NOTA';
+                            rows.forEach(row => {
+                                const opNome = app.utils.fixEncoding(String(row[colNome] || 'Não Identificado')).trim();
+                                if (opNome.toUpperCase().includes('TOTAL') || opNome === 'Não Identificado') return;
+                                let dtObj = parseDateRobust(row[colDataAudit]);
+                                if (dtObj && !isNaN(dtObj) && (dtObj.getFullYear() > 2030 || dtObj.getFullYear() < 2020)) dtObj = null;
+                                const mesRef = (dtObj && !isNaN(dtObj)) ? dtObj.getFullYear() + '-' + String(dtObj.getMonth() + 1).padStart(2, '0') : null;
+                                const weekStr = dtObj ? app.utils.getWeekNumber(dtObj).toString() : null;
+                                const filtrosCiclo = app.ui.analiseFiltroCiclo || [];
+                                const filtrosMaturidade = app.ui.analiseFiltroMaturidade || [];
+                                const filtrosAssunto = app.ui.analiseFiltroAssunto || [];
+                                const cargoFiltro = app.ui.analiseFiltroCargo || '';
+                                const diasCasa = app.utils.getTempoCasaDoOperador(opNome);
+                                let nivelMatStr = "Não Mapeado";
+                                if (diasCasa !== null) {
+                                    for (let i = 0; i < matConfigFallback.length; i++) {
+                                        if (diasCasa <= matConfigFallback[i].maxDias || i === matConfigFallback.length - 1) {
+                                            nivelMatStr = matConfigFallback[i].nome;
+                                            break;
+                                        }
+                                    }
+                                }
+                                const assuntoBruto = String(row['ASSUNTO'] || row['assunto'] || '').trim();
+                                if (filtrosMes.length > 0 && filtrosMes[0] !== "" && !filtrosMes.includes(mesRef)) return;
+                                if (filtrosCiclo.length > 0 && weekStr && !filtrosCiclo.includes(weekStr)) return;
+                                if (filtrosMaturidade.length > 0 && !filtrosMaturidade.includes(nivelMatStr)) return;
+                                if (cargoFiltro && row['CARGO_AVALIADOR'] && row['CARGO_AVALIADOR'] !== cargoFiltro) return;
+                                if (filtrosAssunto.length > 0 && assuntoBruto && !filtrosAssunto.includes(assuntoBruto)) return;
+                                let monitor = app.utils.fixEncoding((row[colMonitor] || 'Desconhecido').toString().trim());
+                                if (monitor.includes(' - ')) monitor = monitor.split(' - ').slice(1).join(' - ').trim();
+                                if (monitorFiltro && monitor !== monitorFiltro) return;
+                                let nota = 0;
+                                if (row[colNota] !== undefined && row[colNota] !== '') nota = parseFloat(row[colNota].toString().replace(',', '.'));
+                                if (isNaN(nota)) return;
+                                if (!somaPre[opNome]) somaPre[opNome] = { s: 0, c: 0 };
+                                somaPre[opNome].s += nota;
+                                somaPre[opNome].c += 1;
+                            });
+                        });
+                        opsPermitidosQuadrante = new Set();
+                        Object.entries(somaPre).forEach(([opNome, st]) => {
+                            if (st.c <= 0) return;
+                            const m = st.s / st.c;
+                            const q = m >= qcFiltro.q1 ? 'Q1' : (m >= qcFiltro.q2 ? 'Q2' : (m >= qcFiltro.q3 ? 'Q3' : 'Q4'));
+                            if (filtrosQuadrante.includes(q)) opsPermitidosQuadrante.add(opNome);
+                        });
+                    }
                     relatoriosAtivos.forEach(relatorio => {
                         const rows = relatorio.rows;
                         const formNameDisplay = relatorio.nome;
@@ -27351,6 +28644,19 @@ storage: {
                             if (filtrosMaturidade.length > 0 && !filtrosMaturidade.includes(nivelMatStr)) return;
                             if (cargoFiltro && row['CARGO_AVALIADOR'] && row['CARGO_AVALIADOR'] !== cargoFiltro) return; // TRAVA DE SEGURANÇA
                             if (filtrosAssunto.length > 0 && assuntoBruto && !filtrosAssunto.includes(assuntoBruto)) return;
+                            if (opsPermitidosQuadrante && !opsPermitidosQuadrante.has(opNomeDetalhe)) return;
+
+                            // Evolução por Ciclo/Semana (S23 a S44) dentro do recorte filtrado
+                            if (typeof nota === 'number' && !isNaN(nota) && weekStr) {
+                                if (!data.ciclosEvolutivo[weekStr]) data.ciclosEvolutivo[weekStr] = { soma: 0, count: 0, totalLinhas: 0 };
+                                data.ciclosEvolutivo[weekStr].soma += nota;
+                                data.ciclosEvolutivo[weekStr].count++;
+                                data.ciclosEvolutivo[weekStr].totalLinhas++;
+                                if (!data.operadoresCicloEvolutivo[op]) data.operadoresCicloEvolutivo[op] = {};
+                                if (!data.operadoresCicloEvolutivo[op][weekStr]) data.operadoresCicloEvolutivo[op][weekStr] = { soma: 0, count: 0 };
+                                data.operadoresCicloEvolutivo[op][weekStr].soma += nota;
+                                data.operadoresCicloEvolutivo[op][weekStr].count++;
+                            }
 
                             if (assuntoBruto) {
                                 assuntosDisp.add(assuntoBruto);
@@ -27462,34 +28768,65 @@ storage: {
                         });
                     });
 
-                    // CÁLCULO EVOLUTIVO FINAL (Usando o filtro independente novo)
+                    // CÁLCULO EVOLUTIVO FINAL (Suporta série Mensal E série por Ciclo/Semana S23 a S44)
                     let activeMonthsForEvol = (app.ui.evolutivoFiltroMes && app.ui.evolutivoFiltroMes.length > 0) ? data.mesesDisponiveis.filter(m => app.ui.evolutivoFiltroMes.includes(m)) : data.mesesDisponiveis;
-                    
+                    const ciclosComDado = Object.keys(data.ciclosEvolutivo || {}).filter(w => data.ciclosEvolutivo[w] && data.ciclosEvolutivo[w].count > 0).sort((a, b) => parseInt(a) - parseInt(b));
+
+                    data.evolutivoMesLabels = activeMonthsForEvol.map(m => app.ui.formatMonthLabel(m));
+                    data.evolutivoMesData = activeMonthsForEvol.map(m => {
+                        if (data.mesesEvolutivo[m] && data.mesesEvolutivo[m].count > 0) return parseFloat((data.mesesEvolutivo[m].soma / data.mesesEvolutivo[m].count).toFixed(2));
+                        return 0;
+                    });
+                    data.evolutivoCicloLabels = ciclosComDado.map(w => 'S' + w);
+                    data.evolutivoCicloData = ciclosComDado.map(w => parseFloat((data.ciclosEvolutivo[w].soma / data.ciclosEvolutivo[w].count).toFixed(2)));
+
+                    let opsComparacao = [];
                     if (activeMonthsForEvol.length > 1) {
                         let mFirst = activeMonthsForEvol[0];
                         let mLast = activeMonthsForEvol[activeMonthsForEvol.length - 1];
-                        let opsComparacao = [];
-
                         Object.keys(data.operadoresEvolutivo).forEach(op => {
+                            if (opsPermitidosQuadrante && !opsPermitidosQuadrante.has(op)) return;
                             const mOp = data.operadoresEvolutivo[op];
-                            if (mOp[mFirst] && mOp[mLast] && mOp[mFirst].count >= 1 && mOp[mLast].count >= 1) { 
+                            if (mOp[mFirst] && mOp[mLast] && mOp[mFirst].count >= 1 && mOp[mLast].count >= 1) {
                                 let nIni = mOp[mFirst].soma / mOp[mFirst].count;
                                 let nFim = mOp[mLast].soma / mOp[mLast].count;
                                 opsComparacao.push({ nome: op, inicio: nIni, fim: nFim, diff: nFim - nIni });
                             }
                         });
-
-                        data.evolutivoPioresIniciais = [...opsComparacao].filter(o => o.diff > 0).sort((a,b) => b.diff - a.diff).slice(0, 5);
-                        data.evolutivoQuedas = [...opsComparacao].filter(o => o.inicio >= 80 && o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
-                        
-                        data.evolutivoChartLabels = activeMonthsForEvol.map(m => app.ui.formatMonthLabel(m));
-                        data.evolutivoChartData = activeMonthsForEvol.map(m => {
-                            if (data.mesesEvolutivo[m] && data.mesesEvolutivo[m].count > 0) return parseFloat((data.mesesEvolutivo[m].soma / data.mesesEvolutivo[m].count).toFixed(2));
-                            return 0;
+                    }
+                    // Se não houver 2+ meses para comparar (ou se opsComparacao ficou vazio), compara o primeiro ciclo vs último ciclo de cada operador!
+                    if (opsComparacao.length === 0 && ciclosComDado.length > 1) {
+                        Object.keys(data.operadoresCicloEvolutivo || {}).forEach(op => {
+                            if (opsPermitidosQuadrante && !opsPermitidosQuadrante.has(op)) return;
+                            const cOp = data.operadoresCicloEvolutivo[op];
+                            const wksOp = ciclosComDado.filter(w => cOp[w] && cOp[w].count >= 1);
+                            if (wksOp.length >= 2) {
+                                const wFirst = wksOp[0];
+                                const wLast = wksOp[wksOp.length - 1];
+                                const nIni = cOp[wFirst].soma / cOp[wFirst].count;
+                                const nFim = cOp[wLast].soma / cOp[wLast].count;
+                                opsComparacao.push({ nome: op, inicio: nIni, fim: nFim, diff: nFim - nIni });
+                            }
                         });
+                    }
+
+                    data.evolutivoPioresIniciais = [...opsComparacao].filter(o => o.diff > 0).sort((a,b) => b.diff - a.diff).slice(0, 5);
+                    data.evolutivoQuedas = [...opsComparacao].filter(o => o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
+
+                    // Escolha inteligente da série principal do gráfico evolutivo (#chart-analise-evolutivo)
+                    const modoPref = app.ui.evolutivoModo || (ciclosComDado.length > activeMonthsForEvol.length && ciclosComDado.length > 1 ? 'ciclo' : (activeMonthsForEvol.length > 1 ? 'mes' : 'ciclo'));
+                    if (modoPref === 'ciclo' && data.evolutivoCicloLabels.length > 0) {
+                        data.evolutivoModoAtivo = 'ciclo';
+                        data.evolutivoChartLabels = data.evolutivoCicloLabels;
+                        data.evolutivoChartData = data.evolutivoCicloData;
+                    } else if (data.evolutivoMesLabels.length > 0) {
+                        data.evolutivoModoAtivo = 'mes';
+                        data.evolutivoChartLabels = data.evolutivoMesLabels;
+                        data.evolutivoChartData = data.evolutivoMesData;
                     } else {
-                        data.evolutivoChartLabels = [];
-                        data.evolutivoChartData = [];
+                        data.evolutivoModoAtivo = 'ciclo';
+                        data.evolutivoChartLabels = data.evolutivoCicloLabels;
+                        data.evolutivoChartData = data.evolutivoCicloData;
                     }
 
                     // Médias globais consolidadas
