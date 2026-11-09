@@ -20770,6 +20770,338 @@ storage: {
                     }
                 },
 
+                // =====================================================================
+                // MOTOR DE PRESCRIÇÃO OPERACIONAL (Quality Action Engine)
+                // Cruza Maturidade x Desempenho/Tendência x Tipologia de Ofensores x Saúde da Gestão
+                // usando apenas os dados já extraídos da base importada (nenhuma coleta nova).
+                // =====================================================================
+                getPrescricaoMeta() {
+                    return {
+                        RISCO_OPERACIONAL_VETERANO: { label: 'Risco Operacional (Pleno/Veterano)', gravidade: 'CRITICO', sla: 24, responsavel: 'Supervisor', canal: 'Supervisor Direto + Coordenação', tipo: 'Alinhamento Disciplinar', acao: 'Auditoria Dirigida + Alinhamento Disciplinar/Formal', icon: 'fa-triangle-exclamation', cor: 'red' },
+                        FALHA_CRITICA_RAMP_UP: { label: 'Falha Crítica (Ramp-Up/Júnior)', gravidade: 'ALTO', sla: 48, responsavel: 'Treinamento', canal: 'Multiplicador de Treinamento', tipo: 'Treinamento Técnico', acao: 'Intervenção Técnica de Segurança + Simulação em Espelho', icon: 'fa-shield-halved', cor: 'orange' },
+                        ALERTA_RUPTURA: { label: 'Alerta de Ruptura', gravidade: 'ALTO', sla: 48, responsavel: 'Supervisor', canal: 'Supervisor Direto', tipo: 'Feedback 1:1', acao: '1:1 Comportamental e Mapeamento de Fatores Externos', icon: 'fa-arrow-trend-down', cor: 'rose' },
+                        GAP_TREINAMENTO_INICIAL: { label: 'Gap de Curva de Aprendizado', gravidade: 'MEDIO', sla: 72, responsavel: 'Treinamento', canal: 'Equipe de Treinamento', tipo: 'Treinamento Técnico', acao: 'Reciclagem em Sala sobre Ofensores de Descrição/Mudo/Fraseologia', icon: 'fa-chalkboard-user', cor: 'amber' },
+                        'BLOQUEIO_GESTÃO': { label: 'Bloqueio de Gestão', gravidade: 'ALTO', sla: 24, responsavel: 'Coordenador', canal: 'Coordenador de Operações', tipo: 'Feedback 1:1', acao: 'Escalonamento de Backlog de Feedbacks com a Coordenação', icon: 'fa-lock', cor: 'purple' },
+                        REFERENCIA_BOAS_PRATICAS: { label: 'Referência de Boas Práticas', gravidade: 'BAIXO', sla: 120, responsavel: 'Qualidade', canal: 'Qualidade / RH', tipo: 'Reconhecimento', acao: 'Extração de Áudio Modelo para Treinamento e Reconhecimento', icon: 'fa-award', cor: 'emerald' }
+                    };
+                },
+
+                buildPrescricoesOperacionais(data) {
+                    const qc = this.getQuadCfg();
+                    const meta = this.getPrescricaoMeta();
+                    const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                    const parseBR = s => { const m = String(s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
+                    const limpaItem = q => String(q || '').replace(/^\[[^\]]*\]\s*/, '').trim();
+                    const titulo = n => String(n || '').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+                    const mesesAll = data.mesesDisponiveis || [];
+                    const fMes = (this.analiseFiltroMes || []).filter(m => m);
+                    const mesesBase = fMes.length > 0 ? mesesAll.filter(m => fMes.includes(m)) : mesesAll;
+
+                    // Data de referência = última data presente na base (mantém o cálculo de backlog coerente com o período importado)
+                    let refDate = null;
+                    Object.values(data.operadores || {}).forEach(op => (op.avaliacoes || []).forEach(a => {
+                        const d = parseBR(a.data);
+                        if (d && (!refDate || d > refDate)) refDate = d;
+                    }));
+
+                    const lista = [];
+                    Object.values(data.operadores || {}).forEach(op => {
+                        const nome = op.nome;
+                        const primeiro = titulo(String(nome).split(' ')[0]);
+
+                        // 1) MATURIDADE
+                        const dias = app.utils.getTempoCasaDoOperador(nome);
+                        const mapeado = dias !== null && dias !== undefined && !isNaN(Number(dias));
+                        const diasNum = mapeado ? Number(dias) : null;
+                        const faixa = mapeado ? (diasNum > 365 ? 'Veterano' : (diasNum > 180 ? 'Pleno' : (diasNum > 90 ? 'Júnior' : 'Ramp-Up'))) : 'Pleno';
+                        const tempoTxt = mapeado ? app.utils.formatTempoCasa(diasNum) : 'tempo de casa não mapeado';
+
+                        // 2) DESEMPENHO E TENDÊNCIA (último mês com dado x mês anterior)
+                        const hist = (data.operadoresEvolutivo && data.operadoresEvolutivo[nome]) || {};
+                        const mesesComDado = mesesBase.filter(m => hist[m] && hist[m].count > 0);
+                        let nota = parseFloat(op.media) || 0;
+                        let notaAnterior = null;
+                        let variacao = 0;
+                        if (mesesComDado.length > 0) {
+                            const mesRef = mesesComDado[mesesComDado.length - 1];
+                            nota = hist[mesRef].soma / hist[mesRef].count;
+                            const anteriores = mesesAll.filter(m => m < mesRef && hist[m] && hist[m].count > 0);
+                            if (anteriores.length > 0) {
+                                const mp = anteriores[anteriores.length - 1];
+                                notaAnterior = hist[mp].soma / hist[mp].count;
+                                if (notaAnterior > 0) variacao = ((nota - notaAnterior) / notaAnterior) * 100;
+                            }
+                        }
+                        nota = parseFloat(nota.toFixed(1));
+                        variacao = parseFloat(variacao.toFixed(1));
+                        notaAnterior = notaAnterior === null ? null : parseFloat(notaAnterior.toFixed(1));
+                        const quadrante = nota >= qc.q1 ? 'Q1' : (nota >= qc.q2 ? 'Q2' : (nota >= qc.q3 ? 'Q3' : 'Q4'));
+
+                        // 3) TIPOLOGIA DE OFENSORES
+                        const crit = {}; const desv = {};
+                        (op.avaliacoes || []).forEach(av => (av.perguntas || []).forEach(p => {
+                            const a = norm(p.a);
+                            const isSim = a === 'SIM' || a === 'S' || a.startsWith('SIM ');
+                            const isNao = a === 'NAO' || a === 'N' || a.startsWith('NAO');
+                            const item = limpaItem(p.q);
+                            if ((p.p === 100 || p.p === 0) && isSim) crit[item] = (crit[item] || 0) + 1;
+                            else if (p.p !== 100 && p.p !== 0 && isNao) desv[item] = (desv[item] || 0) + 1;
+                        }));
+                        const toArr = o => Object.entries(o).map(([item, ocorrencias]) => ({ item, ocorrencias })).sort((x, y) => y.ocorrencias - x.ocorrencias);
+                        const falhas_criticas = toArr(crit);
+                        const desvios_processuais = toArr(desv);
+
+                        // 4) SAÚDE DA GESTÃO (backlog de feedbacks)
+                        const avs = op.avaliacoes || [];
+                        const temStatus = avs.some(a => a.fb);
+                        const pend = avs.filter(a => a.fb === 'monitorado' || a.fb === 'nao_aplicado');
+                        const fbs = op.feedbacks || { aplicado: 0, nao_aplicado: 0, monitorado: 0 };
+                        const feedbacks_pendentes = temStatus ? pend.length : ((fbs.monitorado || 0) + (fbs.nao_aplicado || 0));
+                        let dias_ultimo_feedback = null;
+                        if (refDate) pend.forEach(a => {
+                            const d = parseBR(a.data);
+                            if (d) { const df = Math.floor((refDate - d) / 86400000); if (dias_ultimo_feedback === null || df > dias_ultimo_feedback) dias_ultimo_feedback = df; }
+                        });
+                        if (feedbacks_pendentes === 0) dias_ultimo_feedback = 0;
+
+                        // MATRIZ DE CRUZAMENTO LÓGICO (primeira regra verdadeira define o perfil; as demais viram sinais secundários)
+                        const veterano = faixa === 'Pleno' || faixa === 'Veterano';
+                        const diasBk = dias_ultimo_feedback === null ? -1 : dias_ultimo_feedback;
+                        const regras = [];
+                        if (falhas_criticas.length > 0) regras.push(veterano ? 'RISCO_OPERACIONAL_VETERANO' : 'FALHA_CRITICA_RAMP_UP');
+                        if (variacao <= -15 && falhas_criticas.length === 0) regras.push('ALERTA_RUPTURA');
+                        if ((faixa === 'Ramp-Up' || faixa === 'Júnior') && (quadrante === 'Q3' || quadrante === 'Q4')) regras.push('GAP_TREINAMENTO_INICIAL');
+                        if (feedbacks_pendentes >= 2 && diasBk >= 5) regras.push('BLOQUEIO_GESTÃO');
+                        if (quadrante === 'Q1' && nota >= 95 && falhas_criticas.length === 0) regras.push('REFERENCIA_BOAS_PRATICAS');
+
+                        const perfil = regras.length > 0 ? regras[0] : 'ESTAVEL';
+                        const m = meta[perfil] || null;
+
+                        // PAUTA E ROTEIRO (texto pronto, montado com os números reais do operador)
+                        const topCrit = falhas_criticas.slice(0, 2).map(f => `"${f.item}" (${f.ocorrencias}x)`).join('; ');
+                        const topDesv = desvios_processuais.slice(0, 3).map(f => `"${f.item}" (${f.ocorrencias}x)`).join('; ');
+                        const totCrit = falhas_criticas.reduce((s, f) => s + f.ocorrencias, 0);
+                        const varTxt = (variacao > 0 ? '+' : '') + variacao.toFixed(1) + '%';
+                        const quedaTxt = notaAnterior !== null ? `queda de ${notaAnterior} para ${nota} (${varTxt})` : `nota atual ${nota} (${varTxt})`;
+                        let pauta = []; let roteiro = '';
+                        if (perfil === 'RISCO_OPERACIONAL_VETERANO') {
+                            pauta = [`Falha(s) crítica(s) registrada(s): ${topCrit}`, `Perfil ${faixa} (${tempoTxt}): conhecimento do processo incompatível com falha crítica`, `Nota atual ${nota} (${quadrante}) e variação ${varTxt} frente ao mês anterior`, 'Auditar as próximas monitorias do operador de forma dirigida até confirmar o retorno ao padrão', 'Registrar o alinhamento formal com ciência do operador, do supervisor e da coordenação'];
+                            roteiro = `${primeiro}, identificamos ${totCrit} ocorrência(s) de falha crítica nas monitorias recentes, com destaque para ${topCrit}. Com ${tempoTxt} de casa, você conhece bem o processo, por isso precisamos entender o que aconteceu e formalizar este alinhamento. Suas próximas ligações serão acompanhadas de perto até confirmarmos o retorno ao padrão esperado. Quero ouvir você: houve algum fator que levou a isso?`;
+                        } else if (perfil === 'FALHA_CRITICA_RAMP_UP') {
+                            pauta = [`Falha(s) crítica(s) registrada(s): ${topCrit}`, `Perfil ${faixa} (${tempoTxt}): ainda em consolidação do processo`, `Nota atual ${nota} (${quadrante})`, 'Simulação em espelho: refazer o atendimento correto ao lado do multiplicador', 'Checklist de segurança do atendimento revisado e assinado'];
+                            roteiro = `${primeiro}, nas últimas monitorias apareceu ${topCrit}. Isso é natural na fase de aprendizado, mas é um ponto de segurança e precisa ser corrigido agora. Vamos fazer uma simulação em espelho: você atende e o multiplicador acompanha, e depois revisamos juntos cada etapa do checklist até você se sentir seguro.`;
+                        } else if (perfil === 'ALERTA_RUPTURA') {
+                            pauta = [`Variação de performance: ${quedaTxt}`, desvios_processuais.length ? `Desvios mais recorrentes: ${topDesv}` : 'Sem desvio processual dominante: investigar fatores externos', `Histórico: ${faixa} (${tempoTxt}) com ${quadrante} no período`, 'Mapear mudança de rotina, desgaste, escala, ferramenta ou fator pessoal', 'Combinar plano de retomada com data de reavaliação'];
+                            roteiro = `${primeiro}, sua entrega técnica sempre foi uma referência, mas identificamos uma oscilação atípica: ${quedaTxt}${desvios_processuais.length ? `, com destaque para ${topDesv}` : ''}. Queremos entender se houve alguma mudança de rotina, desgaste operacional ou dificuldade com ferramentas para restabelecermos seu padrão. Como podemos te ajudar?`;
+                        } else if (perfil === 'GAP_TREINAMENTO_INICIAL') {
+                            pauta = [`Perfil ${faixa} (${tempoTxt}) em ${quadrante} com nota ${nota}`, desvios_processuais.length ? `Ofensores prioritários: ${topDesv}` : 'Sem ofensor dominante: reforçar o processo completo', 'Reciclagem em sala com exemplos reais de ligações monitoradas', 'Reavaliar com nova monitoria após a reciclagem'];
+                            roteiro = `${primeiro}, sua nota atual é ${nota} e ainda estamos na fase de consolidação do processo. Os pontos que mais pesam são ${topDesv || 'a aderência ao processo completo'}. Vamos encaixar você na próxima turma de reciclagem em sala, com casos reais, e depois monitoramos novamente para medir a evolução.`;
+                        } else if (perfil === 'BLOQUEIO_GESTÃO') {
+                            pauta = [`${feedbacks_pendentes} feedback(s) pendente(s) com o backlog mais antigo em ${dias_ultimo_feedback} dia(s)`, `Operador ${quadrante} com nota ${nota} (${varTxt})`, 'Identificar o motivo do atraso: agenda, escala, volume ou priorização', 'Definir data limite e responsável para zerar o backlog'];
+                            roteiro = `Coordenação, o operador ${titulo(nome)} acumula ${feedbacks_pendentes} feedbacks pendentes e o mais antigo já tem ${dias_ultimo_feedback} dias. Precisamos escalonar este backlog: quem do time assume, em qual data zeramos e o que está impedindo a execução hoje?`;
+                        } else if (perfil === 'REFERENCIA_BOAS_PRATICAS') {
+                            pauta = [`Nota ${nota} em ${quadrante} sem nenhuma falha crítica`, `${op.notas.length} monitoria(s) analisada(s) no período`, 'Selecionar uma ligação modelo para a biblioteca de treinamento', 'Reconhecimento formal e alinhamento com RH sobre retenção'];
+                            roteiro = `${primeiro}, parabéns: sua nota é ${nota} e você está sem falhas críticas no período. Queremos usar uma das suas ligações como modelo nos treinamentos e registrar este reconhecimento. Você topa compartilhar o que faz de diferente no seu atendimento?`;
+                        }
+
+                        const secundarios = regras.slice(1);
+                        lista.push({
+                            entrada: { operador: nome, tempo_casa_dias: diasNum, faixa_maturidade: faixa, maturidade_mapeada: mapeado, nota_atual: nota, quadrante, variacao_percentual: variacao, total_monitorias: op.notas.length, feedbacks_pendentes, dias_ultimo_feedback, falhas_criticas, desvios_processuais },
+                            diagnostico: { operador: nome, perfil_identificado: perfil, gravidade: m ? m.gravidade : 'NENHUMA', sla_resolucao_horas: m ? m.sla : null },
+                            acao_prescritiva: m ? { responsavel_execucao: m.responsavel, tipo_intervencao: m.tipo, acao: m.acao, canal: m.canal, pauta_obrigatoria: pauta, roteiro_sugerido: roteiro } : null,
+                            sinais_secundarios: secundarios
+                        });
+                    });
+
+                    const rank = { CRITICO: 0, ALTO: 1, MEDIO: 2, BAIXO: 3, NENHUMA: 4 };
+                    lista.sort((a, b) => (rank[a.diagnostico.gravidade] - rank[b.diagnostico.gravidade]) || ((a.diagnostico.sla_resolucao_horas || 999) - (b.diagnostico.sla_resolucao_horas || 999)) || (a.entrada.nota_atual - b.entrada.nota_atual));
+                    return lista;
+                },
+
+                copiarRoteiroPrescricao(idx, btn) {
+                    const p = (this._prescCache || [])[idx];
+                    if (!p || !p.acao_prescritiva) return;
+                    const txt = `${p.diagnostico.operador} - ${p.diagnostico.perfil_identificado} (${p.diagnostico.gravidade}, SLA ${p.diagnostico.sla_resolucao_horas}h)\nPauta:\n- ${p.acao_prescritiva.pauta_obrigatoria.join('\n- ')}\n\nRoteiro:\n${p.acao_prescritiva.roteiro_sugerido}`;
+                    const ok = () => { if (btn) { const old = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copiado'; setTimeout(() => { btn.innerHTML = old; }, 1600); } };
+                    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok).catch(() => {});
+                    else { const t = document.createElement('textarea'); t.value = txt; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); ok(); } catch (e) {} t.remove(); }
+                },
+
+                exportarPrescricoesJSON() {
+                    const lista = this._prescCache || [];
+                    if (lista.length === 0) return;
+                    const payload = lista.filter(p => p.acao_prescritiva).map(p => ({ entrada: p.entrada, diagnostico: p.diagnostico, acao_prescritiva: p.acao_prescritiva, sinais_secundarios: p.sinais_secundarios }));
+                    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'prescricoes_operacionais.json';
+                    document.body.appendChild(a); a.click(); a.remove();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                },
+
+                renderPrescricaoCapitulos(data, renderChapterTitle) {
+                    let lista = [];
+                    try { lista = this.buildPrescricoesOperacionais(data); } catch (e) { console.error('Erro no motor de prescrição', e); return ''; }
+                    this._prescCache = lista;
+                    if (lista.length === 0) return '';
+                    const meta = this.getPrescricaoMeta();
+                    const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
+                    const acionaveis = lista.filter(p => p.acao_prescritiva);
+                    const estaveis = lista.length - acionaveis.length;
+                    const gravCor = { CRITICO: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800', ALTO: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800', MEDIO: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800', BAIXO: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
+                    const quadCor = { Q1: 'text-green-600 bg-green-100 dark:bg-green-900/30', Q2: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30', Q3: 'text-orange-600 bg-orange-100 dark:bg-orange-900/30', Q4: 'text-red-600 bg-red-100 dark:bg-red-900/30' };
+                    const filtro = this.prescFiltroPerfil || '';
+                    const contPerfil = {};
+                    acionaveis.forEach(p => { contPerfil[p.diagnostico.perfil_identificado] = (contPerfil[p.diagnostico.perfil_identificado] || 0) + 1; });
+                    const criticos24 = acionaveis.filter(p => p.diagnostico.sla_resolucao_horas <= 24).length;
+
+                    // ---------- CAPÍTULO A: PRESCRIÇÃO ----------
+                    let h = renderChapterTitle('Prescrição Operacional', 'Cruzamento automático de maturidade, desempenho, ofensores e saúde da gestão para indicar quem precisa de ação, qual ação, quem executa e em quanto tempo.', 'fa-stethoscope', 'rose');
+
+                    h += `<div class="hideable-box mb-6 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">
+                                <strong class="text-slate-800 dark:text-white">${acionaveis.length} de ${lista.length}</strong> operadores exigem alguma ação, sendo <strong class="text-red-600">${criticos24}</strong> com prazo de até 24h. ${estaveis} operador(es) estão estáveis, sem prescrição.
+                                <span class="block text-[11px] text-slate-400 mt-1">Quadrante e nota usam o último mês com dados; a variação compara com o mês anterior. O backlog de feedback é a idade da monitoria mais antiga ainda pendente, contada até a última data da base.</span>
+                            </div>
+                            <div class="flex gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
+                                <button onclick="app.ui.exportarPrescricoesJSON()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-black dark:bg-slate-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-code mr-1"></i> Exportar JSON</button>
+                            </div>
+                        </div>
+                    </div>`;
+
+                    // Cards por perfil (clicáveis para filtrar)
+                    h += `<div class="hideable-box grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">`;
+                    Object.keys(meta).forEach(k => {
+                        const m = meta[k]; const n = contPerfil[k] || 0; const ativo = filtro === k;
+                        h += `<div onclick="app.ui.prescFiltroPerfil='${ativo ? '' : k}'; app.ui._refreshComMemoriaDeScroll()" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 border ${ativo ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-slate-200 dark:border-slate-700'} shadow-sm hover:-translate-y-1 hover:shadow-md transition-all">
+                            <div class="flex items-center justify-between mb-2"><i class="fa-solid ${m.icon} text-${m.cor}-500 text-lg"></i><span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade}</span></div>
+                            <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${n}</div>
+                            <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 leading-tight mt-1 min-h-[28px]">${m.label}</div>
+                            <div class="text-[10px] text-slate-400 mt-1">SLA ${m.sla}h &bull; ${m.responsavel}</div>
+                        </div>`;
+                    });
+                    h += `</div>`;
+
+                    // Fila priorizada de intervenções
+                    const visiveis = acionaveis.map((p, i) => ({ p, i: lista.indexOf(p) })).filter(x => !filtro || x.p.diagnostico.perfil_identificado === filtro);
+                    const limite = (this.prescExpandida || this.analiseEditMode) ? 9999 : 8;
+                    h += `<div class="space-y-3 mb-4">`;
+                    if (visiveis.length === 0) h += `<div class="text-center text-slate-400 italic p-8 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">Nenhum operador neste perfil.</div>`;
+                    visiveis.forEach((x, pos) => {
+                        const p = x.p; const e = p.entrada; const d = p.diagnostico; const a = p.acao_prescritiva; const m = meta[d.perfil_identificado];
+                        const varCor = e.variacao_percentual <= -15 ? 'text-red-600' : (e.variacao_percentual < 0 ? 'text-orange-500' : 'text-emerald-600');
+                        const lstOf = (arr, vazio) => arr.length ? arr.slice(0, 5).map(f => `<li class="flex justify-between gap-3"><span class="leading-snug">${esc(f.item)}</span><span class="font-black shrink-0">${f.ocorrencias}x</span></li>`).join('') : `<li class="italic text-slate-400">${vazio}</li>`;
+                        h += `<details class="hideable-box group bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden ${pos >= limite ? 'hidden print:block' : ''}">
+                            <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden p-4 md:p-5 flex flex-wrap items-center gap-3">
+                                <span class="text-[10px] font-black px-2.5 py-1 rounded-md border ${gravCor[d.gravidade]}">${d.gravidade}</span>
+                                <span class="font-black text-slate-800 dark:text-white text-sm flex-1 min-w-[180px]">${esc(e.operador)}<span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">${m.label}</span></span>
+                                <span class="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${e.faixa_maturidade}${e.maturidade_mapeada ? '' : ' (sem RH)'}</span>
+                                <span class="text-[10px] font-black px-2 py-1 rounded-md ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
+                                <span class="text-xs font-black ${varCor} tabular-nums">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</span>
+                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-clock mr-1"></i>${d.sla_resolucao_horas}h &bull; ${a.responsavel_execucao}</span>
+                                <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
+                            </summary>
+                            <div class="p-4 md:p-6 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/30 grid grid-cols-1 lg:grid-cols-3 gap-5 text-xs">
+                                <div class="space-y-3">
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Ação prescrita</div><div class="font-bold text-slate-800 dark:text-white text-sm leading-snug">${esc(a.acao)}</div><div class="text-slate-500 mt-1">${esc(a.tipo_intervencao)} &bull; Canal: ${esc(a.canal)}</div></div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Tempo de casa</div><div class="font-black text-slate-700 dark:text-slate-200">${e.maturidade_mapeada ? app.utils.formatTempoCasa(e.tempo_casa_dias) : 'Não mapeado'}</div></div>
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Monitorias</div><div class="font-black text-slate-700 dark:text-slate-200">${e.total_monitorias}</div></div>
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Feedbacks pend.</div><div class="font-black ${e.feedbacks_pendentes > 0 ? 'text-orange-500' : 'text-emerald-600'}">${e.feedbacks_pendentes}</div></div>
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Backlog mais antigo</div><div class="font-black text-slate-700 dark:text-slate-200">${e.dias_ultimo_feedback === null ? 'n/d' : e.dias_ultimo_feedback + ' dia(s)'}</div></div>
+                                    </div>
+                                    ${p.sinais_secundarios.length ? `<div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Sinais adicionais</div><div class="flex flex-wrap gap-1">${p.sinais_secundarios.map(s => `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${meta[s].label}</span>`).join('')}</div></div>` : ''}
+                                </div>
+                                <div class="space-y-3">
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-red-500 mb-1">Falhas críticas</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.falhas_criticas, 'Nenhuma no período')}</ul></div>
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-1">Desvios processuais</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.desvios_processuais, 'Nenhum no período')}</ul></div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Pauta obrigatória</div><ul class="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-300">${a.pauta_obrigatoria.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Roteiro sugerido</div><p class="text-slate-600 dark:text-slate-300 leading-relaxed italic bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">${esc(a.roteiro_sugerido)}</p></div>
+                                    <div class="flex gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
+                                        <button onclick="app.ui.copiarRoteiroPrescricao(${x.i}, this)" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 font-bold hover:bg-indigo-100"><i class="fa-solid fa-copy mr-1"></i> Copiar roteiro</button>
+                                        <button onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(e.operador)}')" class="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 font-bold hover:bg-blue-100"><i class="fa-solid fa-eye mr-1"></i> Detalhar operador</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>`;
+                    });
+                    h += `</div>`;
+                    if (visiveis.length > 8 && !this.analiseEditMode) {
+                        h += `<button onclick="app.ui.prescExpandida = !app.ui.prescExpandida; app.ui._refreshComMemoriaDeScroll()" class="hideable-box w-full py-3 mb-8 text-sm font-bold text-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors">${this.prescExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver apenas as 8 mais urgentes' : `<i class="fa-solid fa-chevron-down mr-2"></i> Ver todas as ${visiveis.length} intervenções`}</button>`;
+                    }
+
+                    // ---------- CAPÍTULO B: ONDE AGIR ----------
+                    h += renderChapterTitle('Onde Agir: Mapa de Intervenção', 'Cruza perfis de risco com maturidade, ofensores e carga por responsável para mostrar onde concentrar treinamento, gestão e reconhecimento.', 'fa-bullseye', 'indigo');
+                    const faixas = ['Ramp-Up', 'Júnior', 'Pleno', 'Veterano'];
+                    const perfisKeys = Object.keys(meta);
+                    const matriz = {}; faixas.forEach(f => { matriz[f] = {}; perfisKeys.forEach(k => { matriz[f][k] = 0; }); });
+                    const totalFaixa = {}; faixas.forEach(f => { totalFaixa[f] = lista.filter(p => p.entrada.faixa_maturidade === f).length; });
+                    acionaveis.forEach(p => { matriz[p.entrada.faixa_maturidade][p.diagnostico.perfil_identificado]++; });
+                    const maxCel = Math.max(1, ...faixas.flatMap(f => perfisKeys.map(k => matriz[f][k])));
+
+                    h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-6 overflow-x-auto">
+                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-table-cells text-indigo-500 mr-2"></i> Maturidade x Perfil de Intervenção</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Quanto mais escura a célula, mais operadores. Mostra se o problema está concentrado em quem acabou de entrar ou em quem já deveria dominar o processo.</p>
+                        <table class="w-full text-center text-xs border-separate border-spacing-1">
+                            <thead><tr><th class="text-left text-[10px] uppercase text-slate-400 p-2">Faixa</th>${perfisKeys.map(k => `<th class="text-[9px] uppercase font-black text-slate-500 dark:text-slate-400 p-2 leading-tight">${meta[k].label}</th>`).join('')}<th class="text-[10px] uppercase text-slate-400 p-2">Equipe</th></tr></thead>
+                            <tbody>${faixas.map(f => `<tr><td class="text-left font-black text-slate-700 dark:text-slate-200 p-2">${f}</td>${perfisKeys.map(k => { const n = matriz[f][k]; const al = n === 0 ? 0 : (0.15 + 0.7 * n / maxCel); return `<td class="rounded-lg p-3 font-black tabular-nums ${n ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}" style="background: rgba(99,102,241,${al.toFixed(2)})">${n || '-'}</td>`; }).join('')}<td class="font-bold text-slate-500 p-2">${totalFaixa[f]}</td></tr>`).join('')}</tbody>
+                        </table>
+                    </div>`;
+
+                    // Carga por responsável x SLA
+                    const resp = {};
+                    acionaveis.forEach(p => {
+                        const r = p.acao_prescritiva.responsavel_execucao;
+                        if (!resp[r]) resp[r] = { total: 0, s24: 0, s48: 0, s72: 0, s120: 0, criticos: 0 };
+                        resp[r].total++;
+                        const s = p.diagnostico.sla_resolucao_horas;
+                        resp[r][s <= 24 ? 's24' : (s <= 48 ? 's48' : (s <= 72 ? 's72' : 's120'))]++;
+                        if (p.diagnostico.gravidade === 'CRITICO') resp[r].criticos++;
+                    });
+                    const respArr = Object.entries(resp).sort((a, b) => b[1].total - a[1].total);
+                    const maxResp = Math.max(1, ...respArr.map(r => r[1].total));
+
+                    // Ofensores cruzados com maturidade
+                    const ofMap = {};
+                    acionaveis.concat(lista.filter(p => !p.acao_prescritiva)).forEach(p => {
+                        [['Crítica', p.entrada.falhas_criticas], ['Desvio', p.entrada.desvios_processuais]].forEach(([tipo, arr]) => arr.forEach(f => {
+                            const key = tipo + '|' + f.item;
+                            if (!ofMap[key]) ofMap[key] = { tipo, item: f.item, total: 0, ops: 0, faixas: {} };
+                            ofMap[key].total += f.ocorrencias; ofMap[key].ops++;
+                            ofMap[key].faixas[p.entrada.faixa_maturidade] = (ofMap[key].faixas[p.entrada.faixa_maturidade] || 0) + 1;
+                        }));
+                    });
+                    const ofArr = Object.values(ofMap).sort((a, b) => (b.tipo === 'Crítica') - (a.tipo === 'Crítica') || b.total - a.total).slice(0, 8);
+
+                    h += `<div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
+                        <div class="hideable-box lg:col-span-2 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+                            <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-user-gear text-indigo-500 mr-2"></i> Carga por Responsável</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Quem precisa agir e quantas intervenções cabem em cada janela de SLA.</p>
+                            <div class="space-y-4">${respArr.length ? respArr.map(([r, v]) => `<div>
+                                <div class="flex justify-between items-baseline mb-1"><span class="font-black text-sm text-slate-700 dark:text-slate-200">${r}</span><span class="text-xs font-bold text-slate-500">${v.total} ação(ões)${v.criticos ? ` &bull; <span class="text-red-600">${v.criticos} crítica(s)</span>` : ''}</span></div>
+                                <div class="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden"><div class="h-full rounded-full bg-indigo-500" style="width:${(v.total / maxResp * 100).toFixed(0)}%"></div></div>
+                                <div class="flex gap-1.5 mt-1.5 text-[10px] font-bold text-slate-500">${[['24h', v.s24], ['48h', v.s48], ['72h', v.s72], ['120h', v.s120]].map(([l, n]) => `<span class="px-1.5 py-0.5 rounded ${n ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200' : 'opacity-40'}">${l}: ${n}</span>`).join('')}</div>
+                            </div>`).join('') : '<div class="text-xs italic text-slate-400">Sem intervenções pendentes.</div>'}</div>
+                        </div>
+                        <div class="hideable-box lg:col-span-3 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-x-auto">
+                            <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-magnifying-glass-chart text-indigo-500 mr-2"></i> Ofensores x Maturidade</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Em qual faixa cada ofensor se concentra. Concentração em Ramp-Up/Júnior indica treinamento; em Pleno/Veterano indica gestão e disciplina.</p>
+                            <table class="w-full text-left text-xs">
+                                <thead><tr class="text-[10px] uppercase text-slate-400"><th class="py-2 pr-2">Ofensor</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Oper.</th><th class="py-2 pl-2">Concentração</th></tr></thead>
+                                <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">${ofArr.length ? ofArr.map(o => `<tr>
+                                    <td class="py-2 pr-2 text-slate-700 dark:text-slate-200 leading-snug"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
+                                    <td class="py-2 px-2 text-center font-black">${o.total}</td><td class="py-2 px-2 text-center font-bold">${o.ops}</td>
+                                    <td class="py-2 pl-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
+                                </tr>`).join('') : '<tr><td colspan="4" class="py-4 italic text-slate-400">Nenhum ofensor identificado.</td></tr>'}</tbody>
+                            </table>
+                        </div>
+                    </div>`;
+                    return h;
+                },
+
                 getQuadCfg() {
                     const def = { 
                         q1: 90, q2: 80, q3: 70,
@@ -22226,6 +22558,7 @@ storage: {
                             </button>` : ''}
                         </details>
                         
+                        ${this.renderPrescricaoCapitulos(data, renderChapterTitle)}
                         ${renderChapterTitle('Evidências & Fechamento', 'Galeria de intervenções presenciais e consolidação da apresentação para o histórico permanente na nuvem.', 'fa-camera-retro', 'cyan')}
                         <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
                         <div class="mb-8 grid grid-cols-1 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
