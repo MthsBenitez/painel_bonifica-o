@@ -20772,49 +20772,134 @@ storage: {
 
                 // =====================================================================
                 // MOTOR DE PRESCRIÇÃO OPERACIONAL (Quality Action Engine)
-                // Cruza Maturidade x Desempenho/Tendência x Tipologia de Ofensores x Saúde da Gestão
-                // usando apenas os dados já extraídos da base importada (nenhuma coleta nova).
+                // Cruza Maturidade (apenas ativos na Base de RH) x Desempenho/Tendência x Tipologia de Ofensores
+                // Direciona 100% das ações entre Equipe de Qualidade e Equipe de Treinamento.
                 // =====================================================================
                 getPrescricaoMeta() {
                     return {
-                        RISCO_OPERACIONAL_VETERANO: { label: 'Risco Operacional (Pleno/Veterano)', gravidade: 'CRITICO', sla: 24, responsavel: 'Supervisor', canal: 'Supervisor Direto + Coordenação', tipo: 'Alinhamento Disciplinar', acao: 'Auditoria Dirigida + Alinhamento Disciplinar/Formal', icon: 'fa-triangle-exclamation', cor: 'red' },
-                        FALHA_CRITICA_RAMP_UP: { label: 'Falha Crítica (Ramp-Up/Júnior)', gravidade: 'ALTO', sla: 48, responsavel: 'Treinamento', canal: 'Multiplicador de Treinamento', tipo: 'Treinamento Técnico', acao: 'Intervenção Técnica de Segurança + Simulação em Espelho', icon: 'fa-shield-halved', cor: 'orange' },
-                        ALERTA_RUPTURA: { label: 'Alerta de Ruptura', gravidade: 'ALTO', sla: 48, responsavel: 'Supervisor', canal: 'Supervisor Direto', tipo: 'Feedback 1:1', acao: '1:1 Comportamental e Mapeamento de Fatores Externos', icon: 'fa-arrow-trend-down', cor: 'rose' },
-                        GAP_TREINAMENTO_INICIAL: { label: 'Gap de Curva de Aprendizado', gravidade: 'MEDIO', sla: 72, responsavel: 'Treinamento', canal: 'Equipe de Treinamento', tipo: 'Treinamento Técnico', acao: 'Reciclagem em Sala sobre Ofensores de Descrição/Mudo/Fraseologia', icon: 'fa-chalkboard-user', cor: 'amber' },
-                        'BLOQUEIO_GESTÃO': { label: 'Bloqueio de Gestão', gravidade: 'ALTO', sla: 24, responsavel: 'Coordenador', canal: 'Coordenador de Operações', tipo: 'Feedback 1:1', acao: 'Escalonamento de Backlog de Feedbacks com a Coordenação', icon: 'fa-lock', cor: 'purple' },
-                        REFERENCIA_BOAS_PRATICAS: { label: 'Referência de Boas Práticas', gravidade: 'BAIXO', sla: 120, responsavel: 'Qualidade', canal: 'Qualidade / RH', tipo: 'Reconhecimento', acao: 'Extração de Áudio Modelo para Treinamento e Reconhecimento', icon: 'fa-award', cor: 'emerald' }
+                        RISCO_OPERACIONAL_VETERANO: {
+                            label: 'Falha Crítica (Pleno/Veterano)',
+                            gravidade: 'CRITICO',
+                            sla: 24,
+                            responsavel: 'Equipe de Qualidade',
+                            equipeKey: 'qualidade',
+                            canal: 'Auditoria & Feedback de Qualidade',
+                            tipo: 'Auditoria Dirigida + Calibração Individual',
+                            acao: 'Auditoria Dirigida de Amostras + Feedback Técnico de Conformidade',
+                            regra: 'Pleno ou Veterano (> 180 dias) com 1 ou mais Falhas Críticas no período',
+                            explicacao: 'Operador experiente que já domina a rotina, mas cometeu erro que zera a monitoria. Não é falta de treinamento inicial: indica atalho operacional, vício de atendimento ou descumprimento de regra inegociável.',
+                            papelEquipe: 'A Qualidade assume porque o operador já conhece o processo: audita novas ligações dele e aplica feedback técnico focado no critério crítico descumprido.',
+                            icon: 'fa-triangle-exclamation',
+                            cor: 'red'
+                        },
+                        FALHA_CRITICA_RAMP_UP: {
+                            label: 'Falha Crítica (Ramp-Up/Júnior)',
+                            gravidade: 'ALTO',
+                            sla: 48,
+                            responsavel: 'Equipe de Treinamento',
+                            equipeKey: 'treinamento',
+                            canal: 'Multiplicador / Instrutor de Treinamento',
+                            tipo: 'Simulação Prática em Espelho',
+                            acao: 'Intervenção Técnica de Segurança + Simulação Assistida em Espelho',
+                            regra: 'Ramp-Up ou Júnior (até 180 dias) com 1 ou mais Falhas Críticas no período',
+                            explicacao: 'Operador novato que errou um item crítico de segurança ou conformidade porque ainda está consolidando o que aprendeu na formação inicial.',
+                            papelEquipe: 'O Treinamento assume porque a causa é curva de aprendizagem: o multiplicador senta ao lado (ou em espelho) para simular o passo a passo seguro.',
+                            icon: 'fa-shield-halved',
+                            cor: 'orange'
+                        },
+                        ALERTA_RUPTURA: {
+                            label: 'Alerta de Ruptura (Queda Brusca)',
+                            gravidade: 'ALTO',
+                            sla: 48,
+                            responsavel: 'Equipe de Qualidade',
+                            equipeKey: 'qualidade',
+                            canal: 'Monitoria Diagnóstica da Qualidade',
+                            tipo: 'Diagnóstico Comparativo 1:1',
+                            acao: 'Diagnóstico Comparativo (Mês Anterior vs. Atual) + Feedback Calibrado de Critérios',
+                            regra: 'Queda de nota igual ou superior a 15% contra o mês anterior (sem falha crítica)',
+                            explicacao: 'Operador que entregava nota boa e sofreu uma queda brusca de um mês para o outro. Sinaliza dúvida em mudança recente de script/fluxo ou perda de atenção em itens de peso alto.',
+                            papelEquipe: 'A Qualidade assume para comparar as fichas anteriores com as atuais, identificar exatamente qual pergunta puxou a nota para baixo e realinhar o critério.',
+                            icon: 'fa-arrow-trend-down',
+                            cor: 'rose'
+                        },
+                        GAP_TREINAMENTO_INICIAL: {
+                            label: 'Gap de Curva de Aprendizado',
+                            gravidade: 'MEDIO',
+                            sla: 72,
+                            responsavel: 'Equipe de Treinamento',
+                            equipeKey: 'treinamento',
+                            canal: 'Sala de Treinamento / Laboratório',
+                            tipo: 'Reciclagem Inicial em Sala',
+                            acao: 'Reciclagem Prática sobre Ofensores de Processo (Fraseologia, Mudo, Registro)',
+                            regra: 'Ramp-Up ou Júnior (até 180 dias) posicionado nos quadrantes Q3 ou Q4 (sem falha crítica)',
+                            explicacao: 'Novato que não cometeu falha grave, mas está com nota baixa (Q3/Q4) por acumular desvios processuais de execução (controle de mudo, sondagem, descrição no sistema).',
+                            papelEquipe: 'O Treinamento assume levando o operador para oficina prática em sala com exercícios nos itens do formulário em que ele mais perdeu ponto.',
+                            icon: 'fa-chalkboard-user',
+                            cor: 'amber'
+                        },
+                        RECICLAGEM_PROCESSUAL_VETERANO: {
+                            label: 'Reciclagem Técnica (Pleno/Veterano)',
+                            gravidade: 'MEDIO',
+                            sla: 72,
+                            responsavel: 'Equipe de Treinamento',
+                            equipeKey: 'treinamento',
+                            canal: 'Oficina de Atualização do Treinamento',
+                            tipo: 'Oficina de Reciclagem de Processo',
+                            acao: 'Oficina de Atualização Técnica e Correção de Vícios Processuais em Sala',
+                            regra: 'Pleno ou Veterano (> 180 dias) nos quadrantes Q3 ou Q4 por desvios processuais (sem falha crítica e sem queda brusca >= 15%)',
+                            explicacao: 'Operador antigo estagnado em nota baixa (Q3/Q4) por repetir erros de roteiro, registro ou sistema ao longo do tempo.',
+                            papelEquipe: 'O Treinamento assume para aplicar reciclagem de atualização técnica e corrigir o passo a passo operacional na prática.',
+                            icon: 'fa-rotate',
+                            cor: 'purple'
+                        },
+                        REFERENCIA_BOAS_PRATICAS: {
+                            label: 'Referência de Boas Práticas (Benchmark)',
+                            gravidade: 'BAIXO',
+                            sla: 120,
+                            responsavel: 'Equipe de Qualidade',
+                            equipeKey: 'qualidade',
+                            canal: 'Curadoria Qualidade & Treinamento',
+                            tipo: 'Extração de Áudio Modelo',
+                            acao: 'Curadoria e Extração de Ligação Modelo para Banco de Boas Práticas do Treinamento',
+                            regra: 'Quadrante Q1 com nota >= 95,0 e zero Falhas Críticas no período',
+                            explicacao: 'Operador com domínio exemplar do atendimento, mantendo nota de excelência sem nenhum erro crítico.',
+                            papelEquipe: 'A Qualidade seleciona e valida a melhor ligação deste operador para entregar ao Treinamento como exemplo real em sala de aula.',
+                            icon: 'fa-award',
+                            cor: 'emerald'
+                        }
                     };
                 },
 
                 buildPrescricoesOperacionais(data) {
                     const qc = this.getQuadCfg();
+                    const mc = this.getMatCfg ? this.getMatCfg() : { m1: 90, m2: 180, m3: 365 };
                     const meta = this.getPrescricaoMeta();
                     const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-                    const parseBR = s => { const m = String(s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
                     const limpaItem = q => String(q || '').replace(/^\[[^\]]*\]\s*/, '').trim();
                     const titulo = n => String(n || '').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
                     const mesesAll = data.mesesDisponiveis || [];
                     const fMes = (this.analiseFiltroMes || []).filter(m => m);
                     const mesesBase = fMes.length > 0 ? mesesAll.filter(m => fMes.includes(m)) : mesesAll;
 
-                    // Data de referência = última data presente na base (mantém o cálculo de backlog coerente com o período importado)
-                    let refDate = null;
-                    Object.values(data.operadores || {}).forEach(op => (op.avaliacoes || []).forEach(a => {
-                        const d = parseBR(a.data);
-                        if (d && (!refDate || d > refDate)) refDate = d;
-                    }));
-
                     const lista = [];
-                    Object.values(data.operadores || {}).forEach(op => {
+                    let desligadosExcluidos = 0;
+                    const todosOperadores = Object.values(data.operadores || {});
+
+                    todosOperadores.forEach(op => {
                         const nome = op.nome;
                         const primeiro = titulo(String(nome).split(' ')[0]);
 
-                        // 1) MATURIDADE
+                        // 1) MATURIDADE E FILTRO DE ATIVOS NA BASE DE RH
+                        // Se não consta na Base de RH, já foi desligado e NÃO entra nas prescrições finais
                         const dias = app.utils.getTempoCasaDoOperador(nome);
                         const mapeado = dias !== null && dias !== undefined && !isNaN(Number(dias));
-                        const diasNum = mapeado ? Number(dias) : null;
-                        const faixa = mapeado ? (diasNum > 365 ? 'Veterano' : (diasNum > 180 ? 'Pleno' : (diasNum > 90 ? 'Júnior' : 'Ramp-Up'))) : 'Pleno';
-                        const tempoTxt = mapeado ? app.utils.formatTempoCasa(diasNum) : 'tempo de casa não mapeado';
+                        if (!mapeado) {
+                            desligadosExcluidos++;
+                            return;
+                        }
+                        const diasNum = Number(dias);
+                        const faixa = diasNum > mc.m3 ? 'Veterano' : (diasNum > mc.m2 ? 'Pleno' : (diasNum > mc.m1 ? 'Júnior' : 'Ramp-Up'));
+                        const tempoTxt = app.utils.formatTempoCasa(diasNum);
 
                         // 2) DESEMPENHO E TENDÊNCIA (último mês com dado x mês anterior)
                         const hist = (data.operadoresEvolutivo && data.operadoresEvolutivo[nome]) || {};
@@ -20837,7 +20922,7 @@ storage: {
                         notaAnterior = notaAnterior === null ? null : parseFloat(notaAnterior.toFixed(1));
                         const quadrante = nota >= qc.q1 ? 'Q1' : (nota >= qc.q2 ? 'Q2' : (nota >= qc.q3 ? 'Q3' : 'Q4'));
 
-                        // 3) TIPOLOGIA DE OFENSORES
+                        // 3) TIPOLOGIA DE OFENSORES (Falhas Críticas vs. Desvios Processuais)
                         const crit = {}; const desv = {};
                         (op.avaliacoes || []).forEach(av => (av.perguntas || []).forEach(p => {
                             const a = norm(p.a);
@@ -20851,33 +20936,19 @@ storage: {
                         const falhas_criticas = toArr(crit);
                         const desvios_processuais = toArr(desv);
 
-                        // 4) SAÚDE DA GESTÃO (backlog de feedbacks)
-                        const avs = op.avaliacoes || [];
-                        const temStatus = avs.some(a => a.fb);
-                        const pend = avs.filter(a => a.fb === 'monitorado' || a.fb === 'nao_aplicado');
-                        const fbs = op.feedbacks || { aplicado: 0, nao_aplicado: 0, monitorado: 0 };
-                        const feedbacks_pendentes = temStatus ? pend.length : ((fbs.monitorado || 0) + (fbs.nao_aplicado || 0));
-                        let dias_ultimo_feedback = null;
-                        if (refDate) pend.forEach(a => {
-                            const d = parseBR(a.data);
-                            if (d) { const df = Math.floor((refDate - d) / 86400000); if (dias_ultimo_feedback === null || df > dias_ultimo_feedback) dias_ultimo_feedback = df; }
-                        });
-                        if (feedbacks_pendentes === 0) dias_ultimo_feedback = 0;
-
-                        // MATRIZ DE CRUZAMENTO LÓGICO (primeira regra verdadeira define o perfil; as demais viram sinais secundários)
+                        // MATRIZ DE CRUZAMENTO LÓGICO (100% Qualidade & Treinamento, sem cálculo de backlog de feedback)
                         const veterano = faixa === 'Pleno' || faixa === 'Veterano';
-                        const diasBk = dias_ultimo_feedback === null ? -1 : dias_ultimo_feedback;
                         const regras = [];
                         if (falhas_criticas.length > 0) regras.push(veterano ? 'RISCO_OPERACIONAL_VETERANO' : 'FALHA_CRITICA_RAMP_UP');
                         if (variacao <= -15 && falhas_criticas.length === 0) regras.push('ALERTA_RUPTURA');
                         if ((faixa === 'Ramp-Up' || faixa === 'Júnior') && (quadrante === 'Q3' || quadrante === 'Q4')) regras.push('GAP_TREINAMENTO_INICIAL');
-                        if (feedbacks_pendentes >= 2 && diasBk >= 5) regras.push('BLOQUEIO_GESTÃO');
+                        if (veterano && (quadrante === 'Q3' || quadrante === 'Q4') && falhas_criticas.length === 0) regras.push('RECICLAGEM_PROCESSUAL_VETERANO');
                         if (quadrante === 'Q1' && nota >= 95 && falhas_criticas.length === 0) regras.push('REFERENCIA_BOAS_PRATICAS');
 
                         const perfil = regras.length > 0 ? regras[0] : 'ESTAVEL';
                         const m = meta[perfil] || null;
 
-                        // PAUTA E ROTEIRO (texto pronto, montado com os números reais do operador)
+                        // PAUTA E ROTEIRO (texto pronto para Qualidade ou Treinamento)
                         const topCrit = falhas_criticas.slice(0, 2).map(f => `"${f.item}" (${f.ocorrencias}x)`).join('; ');
                         const topDesv = desvios_processuais.slice(0, 3).map(f => `"${f.item}" (${f.ocorrencias}x)`).join('; ');
                         const totCrit = falhas_criticas.reduce((s, f) => s + f.ocorrencias, 0);
@@ -20885,43 +20956,100 @@ storage: {
                         const quedaTxt = notaAnterior !== null ? `queda de ${notaAnterior} para ${nota} (${varTxt})` : `nota atual ${nota} (${varTxt})`;
                         let pauta = []; let roteiro = '';
                         if (perfil === 'RISCO_OPERACIONAL_VETERANO') {
-                            pauta = [`Falha(s) crítica(s) registrada(s): ${topCrit}`, `Perfil ${faixa} (${tempoTxt}): conhecimento do processo incompatível com falha crítica`, `Nota atual ${nota} (${quadrante}) e variação ${varTxt} frente ao mês anterior`, 'Auditar as próximas monitorias do operador de forma dirigida até confirmar o retorno ao padrão', 'Registrar o alinhamento formal com ciência do operador, do supervisor e da coordenação'];
-                            roteiro = `${primeiro}, identificamos ${totCrit} ocorrência(s) de falha crítica nas monitorias recentes, com destaque para ${topCrit}. Com ${tempoTxt} de casa, você conhece bem o processo, por isso precisamos entender o que aconteceu e formalizar este alinhamento. Suas próximas ligações serão acompanhadas de perto até confirmarmos o retorno ao padrão esperado. Quero ouvir você: houve algum fator que levou a isso?`;
+                            pauta = [
+                                `[Qualidade] Auditar falha(s) crítica(s) registrada(s): ${topCrit}`,
+                                `Operador ${faixa} (${tempoTxt} de casa): já domina o processo, foco em conformidade`,
+                                `Nota atual ${nota} (${quadrante}) e variação ${varTxt} no período`,
+                                'Realizar monitoria dirigida nas próximas ligações para validar a correção imediata',
+                                'Registrar o alinhamento técnico de qualidade com os critérios inegociáveis do formulário'
+                            ];
+                            roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Identificamos ${totCrit} ocorrência(s) de falha crítica nas suas monitorias recentes, especificamente em ${topCrit}. Como você já é ${faixa} (${tempoTxt} de casa) e conhece bem a operação, trouxemos a gravação para calibrarmos juntos esse critério e ajustarmos a rota imediatamente. Vamos ouvir o trecho e alinhar o padrão correto?`;
                         } else if (perfil === 'FALHA_CRITICA_RAMP_UP') {
-                            pauta = [`Falha(s) crítica(s) registrada(s): ${topCrit}`, `Perfil ${faixa} (${tempoTxt}): ainda em consolidação do processo`, `Nota atual ${nota} (${quadrante})`, 'Simulação em espelho: refazer o atendimento correto ao lado do multiplicador', 'Checklist de segurança do atendimento revisado e assinado'];
-                            roteiro = `${primeiro}, nas últimas monitorias apareceu ${topCrit}. Isso é natural na fase de aprendizado, mas é um ponto de segurança e precisa ser corrigido agora. Vamos fazer uma simulação em espelho: você atende e o multiplicador acompanha, e depois revisamos juntos cada etapa do checklist até você se sentir seguro.`;
+                            pauta = [
+                                `[Treinamento] Corrigir falha(s) crítica(s) na curva inicial: ${topCrit}`,
+                                `Operador em fase ${faixa} (${tempoTxt} de casa) com nota ${nota} (${quadrante})`,
+                                'Aplicar simulação prática em espelho com instrutor/multiplicador de treinamento',
+                                'Revisar passo a passo o checklist de segurança antes de liberar para nova bateria de ligações'
+                            ];
+                            roteiro = `${primeiro}, aqui é da Equipe de Treinamento. Vimos que nas últimas monitorias ocorreu ${topCrit}. Como você está com ${tempoTxt} de casa, queremos te dar todo o suporte prático agora: vamos fazer uma simulação em espelho passo a passo para você ganhar total segurança nesse procedimento.`;
                         } else if (perfil === 'ALERTA_RUPTURA') {
-                            pauta = [`Variação de performance: ${quedaTxt}`, desvios_processuais.length ? `Desvios mais recorrentes: ${topDesv}` : 'Sem desvio processual dominante: investigar fatores externos', `Histórico: ${faixa} (${tempoTxt}) com ${quadrante} no período`, 'Mapear mudança de rotina, desgaste, escala, ferramenta ou fator pessoal', 'Combinar plano de retomada com data de reavaliação'];
-                            roteiro = `${primeiro}, sua entrega técnica sempre foi uma referência, mas identificamos uma oscilação atípica: ${quedaTxt}${desvios_processuais.length ? `, com destaque para ${topDesv}` : ''}. Queremos entender se houve alguma mudança de rotina, desgaste operacional ou dificuldade com ferramentas para restabelecermos seu padrão. Como podemos te ajudar?`;
+                            pauta = [
+                                `[Qualidade] Diagnosticar oscilação brusca de nota: ${quedaTxt}`,
+                                desvios_processuais.length ? `Critérios que puxaram a nota para baixo: ${topDesv}` : 'Comparar blocos das fichas do mês anterior com as atuais',
+                                `Operador ${faixa} (${tempoTxt} de casa) atualmente no ${quadrante}`,
+                                'Calibrar entendimento dos itens onde houve perda de pontos e agendar nova monitoria de verificação'
+                            ];
+                            roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Sua entrega sempre teve ótimo padrão, mas notamos uma oscilação atípica neste período (${quedaTxt})${desvios_processuais.length ? `, concentrada nos itens: ${topDesv}` : ''}. Trouxemos o comparativo das suas monitorias para revisarmos juntos o que mudou e calibrarmos esses pontos do formulário.`;
                         } else if (perfil === 'GAP_TREINAMENTO_INICIAL') {
-                            pauta = [`Perfil ${faixa} (${tempoTxt}) em ${quadrante} com nota ${nota}`, desvios_processuais.length ? `Ofensores prioritários: ${topDesv}` : 'Sem ofensor dominante: reforçar o processo completo', 'Reciclagem em sala com exemplos reais de ligações monitoradas', 'Reavaliar com nova monitoria após a reciclagem'];
-                            roteiro = `${primeiro}, sua nota atual é ${nota} e ainda estamos na fase de consolidação do processo. Os pontos que mais pesam são ${topDesv || 'a aderência ao processo completo'}. Vamos encaixar você na próxima turma de reciclagem em sala, com casos reais, e depois monitoramos novamente para medir a evolução.`;
-                        } else if (perfil === 'BLOQUEIO_GESTÃO') {
-                            pauta = [`${feedbacks_pendentes} feedback(s) pendente(s) com o backlog mais antigo em ${dias_ultimo_feedback} dia(s)`, `Operador ${quadrante} com nota ${nota} (${varTxt})`, 'Identificar o motivo do atraso: agenda, escala, volume ou priorização', 'Definir data limite e responsável para zerar o backlog'];
-                            roteiro = `Coordenação, o operador ${titulo(nome)} acumula ${feedbacks_pendentes} feedbacks pendentes e o mais antigo já tem ${dias_ultimo_feedback} dias. Precisamos escalonar este backlog: quem do time assume, em qual data zeramos e o que está impedindo a execução hoje?`;
+                            pauta = [
+                                `[Treinamento] Acelerar curva de aprendizado de operador ${faixa} (${tempoTxt}) em ${quadrante} (nota ${nota})`,
+                                desvios_processuais.length ? `Trabalhar em sala os ofensores processuais: ${topDesv}` : 'Reforçar roteiro completo, sistema e fraseologia em sala',
+                                'Exercício prático de preenchimento/fraseologia e controle de tempo em linha',
+                                'Comunicar a Qualidade após a reciclagem para priorizar nova monitoria de aferição'
+                            ];
+                            roteiro = `${primeiro}, aqui é da Equipe de Treinamento. Você está com ${tempoTxt} de casa e nota ${nota} (${quadrante}). Separamos os pontos em que você mais perdeu décimos (${topDesv || 'roteiro e procedimentos do sistema'}) para fazermos uma oficina prática rápida em sala, tirando todas as suas dúvidas de execução.`;
+                        } else if (perfil === 'RECICLAGEM_PROCESSUAL_VETERANO') {
+                            pauta = [
+                                `[Treinamento] Reciclagem de atualização para operador ${faixa} (${tempoTxt}) em ${quadrante} (nota ${nota})`,
+                                desvios_processuais.length ? `Corrigir recorrência nos itens: ${topDesv}` : 'Revisar atualizações recentes de procedimento e script',
+                                'Oficina prática para eliminar vícios de roteiro, tempo em mudo e registro no sistema',
+                                'Solicitar à Qualidade monitoria de acompanhamento pós-reciclagem'
+                            ];
+                            roteiro = `${primeiro}, aqui é da Equipe de Treinamento. Mesmo com sua experiência de ${tempoTxt} de casa, vimos que sua média ficou em ${nota} (${quadrante}) por descontos recorrentes em ${topDesv || 'itens processuais do formulário'}. Preparamos uma reciclagem objetiva de atualização para alinharmos o passo a passo atual e recuperarmos sua nota para Q1.`;
                         } else if (perfil === 'REFERENCIA_BOAS_PRATICAS') {
-                            pauta = [`Nota ${nota} em ${quadrante} sem nenhuma falha crítica`, `${op.notas.length} monitoria(s) analisada(s) no período`, 'Selecionar uma ligação modelo para a biblioteca de treinamento', 'Reconhecimento formal e alinhamento com RH sobre retenção'];
-                            roteiro = `${primeiro}, parabéns: sua nota é ${nota} e você está sem falhas críticas no período. Queremos usar uma das suas ligações como modelo nos treinamentos e registrar este reconhecimento. Você topa compartilhar o que faz de diferente no seu atendimento?`;
+                            pauta = [
+                                `[Qualidade] Curadoria de excelência: nota ${nota} em ${quadrante} com zero falhas críticas`,
+                                `${op.notas.length} monitoria(s) avaliada(s) para seleção da melhor gravação`,
+                                'Separar ligação modelo e enviar para a Equipe de Treinamento utilizar em sala de aula'
+                            ];
+                            roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Parabéns pelo resultado: você alcançou média ${nota} (${quadrante}) sem nenhuma falha crítica! Selecionamos seu atendimento como referência de boas práticas para a Equipe de Treinamento usar como áudio modelo nas turmas.`;
                         }
 
                         const secundarios = regras.slice(1);
                         lista.push({
-                            entrada: { operador: nome, tempo_casa_dias: diasNum, faixa_maturidade: faixa, maturidade_mapeada: mapeado, nota_atual: nota, quadrante, variacao_percentual: variacao, total_monitorias: op.notas.length, feedbacks_pendentes, dias_ultimo_feedback, falhas_criticas, desvios_processuais },
-                            diagnostico: { operador: nome, perfil_identificado: perfil, gravidade: m ? m.gravidade : 'NENHUMA', sla_resolucao_horas: m ? m.sla : null },
-                            acao_prescritiva: m ? { responsavel_execucao: m.responsavel, tipo_intervencao: m.tipo, acao: m.acao, canal: m.canal, pauta_obrigatoria: pauta, roteiro_sugerido: roteiro } : null,
+                            entrada: {
+                                operador: nome,
+                                tempo_casa_dias: diasNum,
+                                faixa_maturidade: faixa,
+                                nota_atual: nota,
+                                quadrante,
+                                variacao_percentual: variacao,
+                                total_monitorias: op.notas.length,
+                                falhas_criticas,
+                                desvios_processuais
+                            },
+                            diagnostico: {
+                                operador: nome,
+                                perfil_identificado: perfil,
+                                gravidade: m ? m.gravidade : 'NENHUMA',
+                                sla_resolucao_horas: m ? m.sla : null
+                            },
+                            acao_prescritiva: m ? {
+                                responsavel_execucao: m.responsavel,
+                                tipo_intervencao: m.tipo,
+                                acao: m.acao,
+                                canal: m.canal,
+                                pauta_obrigatoria: pauta,
+                                roteiro_sugerido: roteiro
+                            } : null,
                             sinais_secundarios: secundarios
                         });
                     });
 
                     const rank = { CRITICO: 0, ALTO: 1, MEDIO: 2, BAIXO: 3, NENHUMA: 4 };
                     lista.sort((a, b) => (rank[a.diagnostico.gravidade] - rank[b.diagnostico.gravidade]) || ((a.diagnostico.sla_resolucao_horas || 999) - (b.diagnostico.sla_resolucao_horas || 999)) || (a.entrada.nota_atual - b.entrada.nota_atual));
+                    this._prescStats = {
+                        totalBase: todosOperadores.length,
+                        ativosRH: lista.length,
+                        desligadosExcluidos
+                    };
                     return lista;
                 },
 
                 copiarRoteiroPrescricao(idx, btn) {
                     const p = (this._prescCache || [])[idx];
                     if (!p || !p.acao_prescritiva) return;
-                    const txt = `${p.diagnostico.operador} - ${p.diagnostico.perfil_identificado} (${p.diagnostico.gravidade}, SLA ${p.diagnostico.sla_resolucao_horas}h)\nPauta:\n- ${p.acao_prescritiva.pauta_obrigatoria.join('\n- ')}\n\nRoteiro:\n${p.acao_prescritiva.roteiro_sugerido}`;
+                    const txt = `${p.diagnostico.operador} - ${p.diagnostico.perfil_identificado} (${p.acao_prescritiva.responsavel_execucao} | ${p.diagnostico.gravidade} | SLA ${p.diagnostico.sla_resolucao_horas}h)\nPauta:\n- ${p.acao_prescritiva.pauta_obrigatoria.join('\n- ')}\n\nRoteiro:\n${p.acao_prescritiva.roteiro_sugerido}`;
                     const ok = () => { if (btn) { const old = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copiado'; setTimeout(() => { btn.innerHTML = old; }, 1600); } };
                     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok).catch(() => {});
                     else { const t = document.createElement('textarea'); t.value = txt; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); ok(); } catch (e) {} t.remove(); }
@@ -20934,7 +21062,7 @@ storage: {
                     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
-                    a.download = 'prescricoes_operacionais.json';
+                    a.download = 'prescricoes_qualidade_treinamento.json';
                     document.body.appendChild(a); a.click(); a.remove();
                     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
                 },
@@ -20943,51 +21071,120 @@ storage: {
                     let lista = [];
                     try { lista = this.buildPrescricoesOperacionais(data); } catch (e) { console.error('Erro no motor de prescrição', e); return ''; }
                     this._prescCache = lista;
-                    if (lista.length === 0) return '';
+                    const stats = this._prescStats || { totalBase: 0, ativosRH: lista.length, desligadosExcluidos: 0 };
                     const meta = this.getPrescricaoMeta();
                     const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
+
+                    // Caso ainda não haja operadores ativos na Base de RH
+                    if (lista.length === 0) {
+                        if (stats.totalBase === 0) return '';
+                        let hVazio = renderChapterTitle('Prescrição Operacional (Qualidade & Treinamento)', 'Cruzamento exclusivo dos operadores ativos na Base de RH para direcionar o plano de ação da Equipe de Qualidade e da Equipe de Treinamento.', 'fa-stethoscope', 'rose');
+                        hVazio += `<div class="hideable-box mb-8 glass-card rounded-3xl p-6 md:p-8 border border-amber-300 dark:border-amber-700/60 bg-amber-50/60 dark:bg-amber-950/20 text-center">
+                            <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-user-check"></i></div>
+                            <h3 class="text-base font-black text-slate-800 dark:text-white mb-1">Aguardando Vínculo com a Base de RH (Operadores Ativos)</h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
+                                Nesta etapa final de <strong>Prescrição Operacional</strong> e <strong>Onde Agir</strong>, operadores que não constam na Base de RH são considerados <strong>desligados</strong> e não recebem plano de ação (${stats.desligadosExcluidos} operador(es) da planilha sem vínculo ativo no RH). Importe a <strong>Base de RH (Dias)</strong> no botão <em>Importar</em> do topo para gerar as prescrições dos operadores ativos.
+                            </p>
+                        </div>`;
+                        return hVazio;
+                    }
+
                     const acionaveis = lista.filter(p => p.acao_prescritiva);
                     const estaveis = lista.length - acionaveis.length;
                     const gravCor = { CRITICO: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800', ALTO: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800', MEDIO: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800', BAIXO: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
                     const quadCor = { Q1: 'text-green-600 bg-green-100 dark:bg-green-900/30', Q2: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30', Q3: 'text-orange-600 bg-orange-100 dark:bg-orange-900/30', Q4: 'text-red-600 bg-red-100 dark:bg-red-900/30' };
+                    const equipeBadge = {
+                        'Equipe de Qualidade': 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
+                        'Equipe de Treinamento': 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                    };
                     const filtro = this.prescFiltroPerfil || '';
+                    const filtroEq = this.prescFiltroEquipe || '';
                     const contPerfil = {};
                     acionaveis.forEach(p => { contPerfil[p.diagnostico.perfil_identificado] = (contPerfil[p.diagnostico.perfil_identificado] || 0) + 1; });
-                    const criticos24 = acionaveis.filter(p => p.diagnostico.sla_resolucao_horas <= 24).length;
 
-                    // ---------- CAPÍTULO A: PRESCRIÇÃO ----------
-                    let h = renderChapterTitle('Prescrição Operacional', 'Cruzamento automático de maturidade, desempenho, ofensores e saúde da gestão para indicar quem precisa de ação, qual ação, quem executa e em quanto tempo.', 'fa-stethoscope', 'rose');
+                    const acoesQualidade = acionaveis.filter(p => p.acao_prescritiva.responsavel_execucao === 'Equipe de Qualidade');
+                    const acoesTreinamento = acionaveis.filter(p => p.acao_prescritiva.responsavel_execucao === 'Equipe de Treinamento');
 
+                    // ---------- CAPÍTULO A: PRESCRIÇÃO OPERACIONAL ----------
+                    let h = renderChapterTitle('Prescrição Operacional', 'Diagnóstico automático apenas dos operadores ativos na Base de RH, separando com clareza o que é atuação da Equipe de Qualidade e o que é atuação da Equipe de Treinamento.', 'fa-stethoscope', 'rose');
+
+                    // Resumo de ativos vs desligados + filtro rápido por equipe
                     h += `<div class="hideable-box mb-6 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
                             <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">
-                                <strong class="text-slate-800 dark:text-white">${acionaveis.length} de ${lista.length}</strong> operadores exigem alguma ação, sendo <strong class="text-red-600">${criticos24}</strong> com prazo de até 24h. ${estaveis} operador(es) estão estáveis, sem prescrição.
-                                <span class="block text-[11px] text-slate-400 mt-1">Quadrante e nota usam o último mês com dados; a variação compara com o mês anterior. O backlog de feedback é a idade da monitoria mais antiga ainda pendente, contada até a última data da base.</span>
+                                Analisando <strong class="text-emerald-600 dark:text-emerald-400">${stats.ativosRH} operador(es) ativo(s)</strong> na Base de RH${stats.desligadosExcluidos > 0 ? ` (<strong class="text-slate-700 dark:text-slate-200">${stats.desligadosExcluidos} desligado(s)</strong> sem vínculo no RH foram desconsiderados automaticamente destas análises finais)` : ''}.
+                                Do total ativo, <strong class="text-slate-800 dark:text-white">${acionaveis.length}</strong> possuem prescrição (<strong class="text-blue-600 dark:text-blue-400">${acoesQualidade.length} para a Equipe de Qualidade</strong> e <strong class="text-purple-600 dark:text-purple-400">${acoesTreinamento.length} para a Equipe de Treinamento</strong>) e <strong>${estaveis}</strong> estão estáveis (Q1/Q2 sem falha crítica e sem queda brusca).
                             </div>
-                            <div class="flex gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                <button onclick="app.ui.exportarPrescricoesJSON()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-black dark:bg-slate-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-code mr-1"></i> Exportar JSON</button>
+                            <div class="flex flex-wrap items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
+                                <button onclick="app.ui.prescFiltroEquipe=''; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${!filtroEq ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}">Todas (${acionaveis.length})</button>
+                                <button onclick="app.ui.prescFiltroEquipe='${filtroEq === 'Equipe de Qualidade' ? '' : 'Equipe de Qualidade'}'; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Qualidade' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'}"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i> Qualidade (${acoesQualidade.length})</button>
+                                <button onclick="app.ui.prescFiltroEquipe='${filtroEq === 'Equipe de Treinamento' ? '' : 'Equipe de Treinamento'}'; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Treinamento' ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}"><i class="fa-solid fa-graduation-cap mr-1"></i> Treinamento (${acoesTreinamento.length})</button>
+                                <button onclick="app.ui.exportarPrescricoesJSON()" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-black dark:bg-slate-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-code mr-1"></i> Exportar JSON</button>
                             </div>
                         </div>
                     </div>`;
+
+                    // Guia Didático: O que é cada Perfil de Intervenção?
+                    h += `<details class="hideable-box mb-6 glass-card rounded-3xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm overflow-hidden group" open>
+                        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden p-5 md:p-6 flex items-center justify-between gap-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-sm shrink-0"><i class="fa-solid fa-circle-question"></i></div>
+                                <div>
+                                    <h3 class="text-sm md:text-base font-black text-slate-800 dark:text-white">O que são os Perfis de Intervenção e como cada equipe atua?</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">Cada operador ativo é classificado automaticamente cruzando <strong>Tempo de Casa (RH)</strong> + <strong>Quadrante/Nota</strong> + <strong>Variação Mensal</strong> + <strong>Tipo de Erro</strong>. Veja abaixo o significado de cada perfil:</p>
+                                </div>
+                            </div>
+                            <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
+                        </summary>
+                        <div class="p-5 md:p-6 pt-0 border-t border-indigo-100 dark:border-indigo-900/40 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
+                            ${Object.keys(meta).map(k => {
+                                const m = meta[k];
+                                const isQual = m.responsavel === 'Equipe de Qualidade';
+                                return `<div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-2 shadow-xs">
+                                    <div>
+                                        <div class="flex items-center justify-between gap-2 mb-2">
+                                            <span class="text-[10px] font-black px-2.5 py-0.5 rounded-md ${equipeBadge[m.responsavel]}"><i class="fa-solid ${isQual ? 'fa-magnifying-glass-chart' : 'fa-graduation-cap'} mr-1"></i>${m.responsavel}</span>
+                                            <span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade} &bull; ${m.sla}h</span>
+                                        </div>
+                                        <div class="font-black text-slate-800 dark:text-white text-xs md:text-sm mb-1"><i class="fa-solid ${m.icon} text-${m.cor}-500 mr-1.5"></i>${m.label}</div>
+                                        <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-900/20 px-2.5 py-1 rounded-lg mb-2">Quando ativa: ${esc(m.regra)}</div>
+                                        <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed mb-2">${esc(m.explicacao)}</p>
+                                    </div>
+                                    <div class="text-[11px] text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 leading-snug">
+                                        <strong class="block text-[10px] uppercase tracking-wider ${isQual ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'} mb-0.5">O que a ${m.responsavel} faz:</strong>
+                                        ${esc(m.papelEquipe)}
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </details>`;
 
                     // Cards por perfil (clicáveis para filtrar)
                     h += `<div class="hideable-box grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">`;
                     Object.keys(meta).forEach(k => {
                         const m = meta[k]; const n = contPerfil[k] || 0; const ativo = filtro === k;
-                        h += `<div onclick="app.ui.prescFiltroPerfil='${ativo ? '' : k}'; app.ui._refreshComMemoriaDeScroll()" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 border ${ativo ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-slate-200 dark:border-slate-700'} shadow-sm hover:-translate-y-1 hover:shadow-md transition-all">
-                            <div class="flex items-center justify-between mb-2"><i class="fa-solid ${m.icon} text-${m.cor}-500 text-lg"></i><span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade}</span></div>
-                            <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${n}</div>
-                            <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 leading-tight mt-1 min-h-[28px]">${m.label}</div>
-                            <div class="text-[10px] text-slate-400 mt-1">SLA ${m.sla}h &bull; ${m.responsavel}</div>
+                        const isQual = m.responsavel === 'Equipe de Qualidade';
+                        h += `<div onclick="app.ui.prescFiltroPerfil='${ativo ? '' : k}'; app.ui._refreshComMemoriaDeScroll()" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 border ${ativo ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-slate-200 dark:border-slate-700'} shadow-sm hover:-translate-y-1 hover:shadow-md transition-all flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2"><i class="fa-solid ${m.icon} text-${m.cor}-500 text-lg"></i><span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade}</span></div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${n}</div>
+                                <div class="text-[11px] font-black text-slate-700 dark:text-slate-200 leading-tight mt-1 min-h-[28px]">${m.label}</div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                                <span class="inline-block text-[9px] font-black px-2 py-0.5 rounded ${isQual ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}">${m.responsavel}</span>
+                                <div class="text-[10px] text-slate-400 mt-1">SLA ${m.sla}h</div>
+                            </div>
                         </div>`;
                     });
                     h += `</div>`;
 
                     // Fila priorizada de intervenções
-                    const visiveis = acionaveis.map((p, i) => ({ p, i: lista.indexOf(p) })).filter(x => !filtro || x.p.diagnostico.perfil_identificado === filtro);
+                    const visiveis = acionaveis
+                        .map(p => ({ p, i: lista.indexOf(p) }))
+                        .filter(x => (!filtro || x.p.diagnostico.perfil_identificado === filtro) && (!filtroEq || x.p.acao_prescritiva.responsavel_execucao === filtroEq));
                     const limite = (this.prescExpandida || this.analiseEditMode) ? 9999 : 8;
                     h += `<div class="space-y-3 mb-4">`;
-                    if (visiveis.length === 0) h += `<div class="text-center text-slate-400 italic p-8 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">Nenhum operador neste perfil.</div>`;
+                    if (visiveis.length === 0) h += `<div class="text-center text-slate-400 italic p-8 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">Nenhum operador ativo enquadrado neste filtro.</div>`;
                     visiveis.forEach((x, pos) => {
                         const p = x.p; const e = p.entrada; const d = p.diagnostico; const a = p.acao_prescritiva; const m = meta[d.perfil_identificado];
                         const varCor = e.variacao_percentual <= -15 ? 'text-red-600' : (e.variacao_percentual < 0 ? 'text-orange-500' : 'text-emerald-600');
@@ -20996,30 +21193,35 @@ storage: {
                             <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden p-4 md:p-5 flex flex-wrap items-center gap-3">
                                 <span class="text-[10px] font-black px-2.5 py-1 rounded-md border ${gravCor[d.gravidade]}">${d.gravidade}</span>
                                 <span class="font-black text-slate-800 dark:text-white text-sm flex-1 min-w-[180px]">${esc(e.operador)}<span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">${m.label}</span></span>
-                                <span class="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${e.faixa_maturidade}${e.maturidade_mapeada ? '' : ' (sem RH)'}</span>
+                                <span class="text-[10px] font-black px-2.5 py-1 rounded-md ${equipeBadge[a.responsavel_execucao]}">${a.responsavel_execucao}</span>
+                                <span class="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${e.faixa_maturidade} (${app.utils.formatTempoCasa(e.tempo_casa_dias)})</span>
                                 <span class="text-[10px] font-black px-2 py-1 rounded-md ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
                                 <span class="text-xs font-black ${varCor} tabular-nums">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</span>
-                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-clock mr-1"></i>${d.sla_resolucao_horas}h &bull; ${a.responsavel_execucao}</span>
+                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-clock mr-1"></i>SLA ${d.sla_resolucao_horas}h</span>
                                 <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
                             </summary>
                             <div class="p-4 md:p-6 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/30 grid grid-cols-1 lg:grid-cols-3 gap-5 text-xs">
                                 <div class="space-y-3">
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Ação prescrita</div><div class="font-bold text-slate-800 dark:text-white text-sm leading-snug">${esc(a.acao)}</div><div class="text-slate-500 mt-1">${esc(a.tipo_intervencao)} &bull; Canal: ${esc(a.canal)}</div></div>
-                                    <div class="grid grid-cols-2 gap-2">
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Tempo de casa</div><div class="font-black text-slate-700 dark:text-slate-200">${e.maturidade_mapeada ? app.utils.formatTempoCasa(e.tempo_casa_dias) : 'Não mapeado'}</div></div>
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Monitorias</div><div class="font-black text-slate-700 dark:text-slate-200">${e.total_monitorias}</div></div>
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Feedbacks pend.</div><div class="font-black ${e.feedbacks_pendentes > 0 ? 'text-orange-500' : 'text-emerald-600'}">${e.feedbacks_pendentes}</div></div>
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Backlog mais antigo</div><div class="font-black text-slate-700 dark:text-slate-200">${e.dias_ultimo_feedback === null ? 'n/d' : e.dias_ultimo_feedback + ' dia(s)'}</div></div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Ação prescrita (${esc(a.responsavel_execucao)})</div>
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm leading-snug">${esc(a.acao)}</div>
+                                        <div class="text-slate-500 mt-1">${esc(a.tipo_intervencao)} &bull; ${esc(a.canal)}</div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2 bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700"><strong>Por que este perfil:</strong> ${esc(m.regra)}</div>
                                     </div>
-                                    ${p.sinais_secundarios.length ? `<div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Sinais adicionais</div><div class="flex flex-wrap gap-1">${p.sinais_secundarios.map(s => `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${meta[s].label}</span>`).join('')}</div></div>` : ''}
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Tempo de casa</div><div class="font-black text-slate-700 dark:text-slate-200">${app.utils.formatTempoCasa(e.tempo_casa_dias)}</div></div>
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Monitorias</div><div class="font-black text-slate-700 dark:text-slate-200">${e.total_monitorias}</div></div>
+                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Variação Mês</div><div class="font-black ${varCor}">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</div></div>
+                                    </div>
+                                    ${p.sinais_secundarios.length ? `<div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Outros cruzamentos detectados</div><div class="flex flex-wrap gap-1">${p.sinais_secundarios.map(s => `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${meta[s].label}</span>`).join('')}</div></div>` : ''}
                                 </div>
                                 <div class="space-y-3">
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-red-500 mb-1">Falhas críticas</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.falhas_criticas, 'Nenhuma no período')}</ul></div>
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-1">Desvios processuais</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.desvios_processuais, 'Nenhum no período')}</ul></div>
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-red-500 mb-1">Falhas críticas do operador</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.falhas_criticas, 'Nenhuma no período')}</ul></div>
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-1">Desvios processuais do operador</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.desvios_processuais, 'Nenhum no período')}</ul></div>
                                 </div>
                                 <div class="space-y-3">
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Pauta obrigatória</div><ul class="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-300">${a.pauta_obrigatoria.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Roteiro sugerido</div><p class="text-slate-600 dark:text-slate-300 leading-relaxed italic bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">${esc(a.roteiro_sugerido)}</p></div>
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Checklist de execução (${esc(a.responsavel_execucao)})</div><ul class="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-300">${a.pauta_obrigatoria.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
+                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Roteiro pronto para aplicação</div><p class="text-slate-600 dark:text-slate-300 leading-relaxed italic bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">${esc(a.roteiro_sugerido)}</p></div>
                                     <div class="flex gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
                                         <button onclick="app.ui.copiarRoteiroPrescricao(${x.i}, this)" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 font-bold hover:bg-indigo-100"><i class="fa-solid fa-copy mr-1"></i> Copiar roteiro</button>
                                         <button onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(e.operador)}')" class="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 font-bold hover:bg-blue-100"><i class="fa-solid fa-eye mr-1"></i> Detalhar operador</button>
@@ -21033,8 +21235,115 @@ storage: {
                         h += `<button onclick="app.ui.prescExpandida = !app.ui.prescExpandida; app.ui._refreshComMemoriaDeScroll()" class="hideable-box w-full py-3 mb-8 text-sm font-bold text-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors">${this.prescExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver apenas as 8 mais urgentes' : `<i class="fa-solid fa-chevron-down mr-2"></i> Ver todas as ${visiveis.length} intervenções`}</button>`;
                     }
 
-                    // ---------- CAPÍTULO B: ONDE AGIR ----------
-                    h += renderChapterTitle('Onde Agir: Mapa de Intervenção', 'Cruza perfis de risco com maturidade, ofensores e carga por responsável para mostrar onde concentrar treinamento, gestão e reconhecimento.', 'fa-bullseye', 'indigo');
+                    // ---------- CAPÍTULO B: ONDE AGIR (QUALIDADE vs. TREINAMENTO) ----------
+                    h += renderChapterTitle('Onde Agir: Qualidade vs. Treinamento', 'Divisão clara do plano de trabalho entre a Equipe de Qualidade e a Equipe de Treinamento considerando apenas operadores ativos na Base de RH.', 'fa-bullseye', 'indigo');
+
+                    // Agrupamento de temas/ofensores específicos para a fila da Qualidade e para a fila do Treinamento
+                    const agregarTemas = (arrOps) => {
+                        const map = {};
+                        arrOps.forEach(p => {
+                            p.entrada.falhas_criticas.forEach(f => {
+                                const k = 'CRIT|' + f.item;
+                                if (!map[k]) map[k] = { tipo: 'Falha Crítica', item: f.item, ocorrencias: 0, operadores: 0 };
+                                map[k].ocorrencias += f.ocorrencias; map[k].operadores++;
+                            });
+                            p.entrada.desvios_processuais.forEach(f => {
+                                const k = 'DESV|' + f.item;
+                                if (!map[k]) map[k] = { tipo: 'Desvio Processual', item: f.item, ocorrencias: 0, operadores: 0 };
+                                map[k].ocorrencias += f.ocorrencias; map[k].operadores++;
+                            });
+                        });
+                        return Object.values(map).sort((a, b) => (b.tipo === 'Falha Crítica') - (a.tipo === 'Falha Crítica') || b.operadores - a.operadores || b.ocorrencias - a.ocorrencias).slice(0, 5);
+                    };
+
+                    const temasQualidade = agregarTemas(acoesQualidade.filter(p => p.diagnostico.perfil_identificado !== 'REFERENCIA_BOAS_PRATICAS'));
+                    const temasTreinamento = agregarTemas(acoesTreinamento);
+
+                    // Painel Lado a Lado: O que a Equipe de Qualidade vai trabalhar vs. O que a Equipe de Treinamento vai trabalhar
+                    h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <!-- BLOCO EQUIPE DE QUALIDADE -->
+                        <div class="hideable-box glass-card rounded-3xl p-6 border-2 border-blue-200 dark:border-blue-800/70 bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-700">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl shadow-md"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+                                        <div>
+                                            <span class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Frente 1 &bull; Conformidade, Diagnóstico e Benchmark</span>
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">O que a Equipe de Qualidade vai trabalhar</h3>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-3xl font-black text-blue-600 dark:text-blue-400 tabular-nums">${acoesQualidade.length}</div>
+                                        <div class="text-[10px] font-bold uppercase text-slate-400">Operadores</div>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-slate-600 dark:text-slate-300 bg-blue-50/70 dark:bg-blue-950/30 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/50 mb-4 leading-relaxed">
+                                    <strong class="text-blue-800 dark:text-blue-300 block mb-0.5"><i class="fa-solid fa-circle-info mr-1"></i>Por que a Qualidade atua nestes casos?</strong>
+                                    Porque envolvem operadores que <strong>já passaram pela formação inicial</strong> e cometeram erro crítico de conformidade, operadores que sofreram <strong>queda atípica de nota (&ge; 15%)</strong> exigindo comparação técnica das monitorias, ou operadores <strong>Q1 (&ge; 95)</strong> para curadoria de ligações modelo.
+                                </div>
+                                <div class="space-y-2.5 mb-5">
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 mr-2">SLA 24h</span><strong class="text-xs text-slate-800 dark:text-white">Auditoria Dirigida + Feedback de Conformidade</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) que cometeram Falha Crítica</div></div>
+                                        <span class="text-lg font-black text-red-600 tabular-nums">${contPerfil.RISCO_OPERACIONAL_VETERANO || 0}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white">Diagnóstico Comparativo 1:1 (Queda Brusca)</strong><div class="text-[11px] text-slate-500 mt-0.5">Operadores com queda &ge; 15% na nota em relação ao mês anterior</div></div>
+                                        <span class="text-lg font-black text-orange-500 tabular-nums">${contPerfil.ALERTA_RUPTURA || 0}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 mr-2">SLA 120h</span><strong class="text-xs text-slate-800 dark:text-white">Curadoria e Extração de Áudio Modelo</strong><div class="text-[11px] text-slate-500 mt-0.5">Destaques Q1 (nota &ge; 95 sem falha crítica) para enviar ao Treinamento</div></div>
+                                        <span class="text-lg font-black text-emerald-600 tabular-nums">${contPerfil.REFERENCIA_BOAS_PRATICAS || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2"><i class="fa-solid fa-crosshairs mr-1"></i>Critérios prioritários para foco das auditorias da Qualidade</div>
+                                ${temasQualidade.length ? `<ul class="space-y-1.5 text-xs">${temasQualidade.map(t => `<li class="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-lg"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-orange-500'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-slate-500 shrink-0">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma falha crítica ou ruptura ativa para auditoria corretiva.</div>`}
+                            </div>
+                        </div>
+
+                        <!-- BLOCO EQUIPE DE TREINAMENTO -->
+                        <div class="hideable-box glass-card rounded-3xl p-6 border-2 border-purple-200 dark:border-purple-800/70 bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-700">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center text-xl shadow-md"><i class="fa-solid fa-graduation-cap"></i></div>
+                                        <div>
+                                            <span class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400">Frente 2 &bull; Curva de Aprendizado, Simulação e Sala</span>
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">O que a Equipe de Treinamento vai trabalhar</h3>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-3xl font-black text-purple-600 dark:text-purple-400 tabular-nums">${acoesTreinamento.length}</div>
+                                        <div class="text-[10px] font-bold uppercase text-slate-400">Operadores</div>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-slate-600 dark:text-slate-300 bg-purple-50/70 dark:bg-purple-950/30 p-3.5 rounded-2xl border border-purple-100 dark:border-purple-900/50 mb-4 leading-relaxed">
+                                    <strong class="text-purple-800 dark:text-purple-300 block mb-0.5"><i class="fa-solid fa-circle-info mr-1"></i>Por que o Treinamento atua nestes casos?</strong>
+                                    Porque envolvem <strong>lacuna de aprendizagem em novatos</strong> (Ramp-Up e Júnior até 180 dias que erraram item crítico ou ficaram em Q3/Q4) ou <strong>reciclagem prática de processo</strong> para Plenos e Veteranos estagnados em Q3/Q4 por erros repetitivos de roteiro/sistema.
+                                </div>
+                                <div class="space-y-2.5 mb-5">
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white">Simulação em Espelho + Intervenção de Segurança</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) que cometeram Falha Crítica</div></div>
+                                        <span class="text-lg font-black text-orange-500 tabular-nums">${contPerfil.FALHA_CRITICA_RAMP_UP || 0}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white">Reciclagem Inicial em Sala (Curva de Aprendizado)</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) posicionados em Q3 ou Q4</div></div>
+                                        <span class="text-lg font-black text-amber-600 tabular-nums">${contPerfil.GAP_TREINAMENTO_INICIAL || 0}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white">Oficina de Atualização Processual em Sala</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) estagnados em Q3 ou Q4 por desvios de processo</div></div>
+                                        <span class="text-lg font-black text-purple-600 tabular-nums">${contPerfil.RECICLAGEM_PROCESSUAL_VETERANO || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400 mb-2"><i class="fa-solid fa-book-open mr-1"></i>Conteúdos obrigatórios para a pauta de sala do Treinamento</div>
+                                ${temasTreinamento.length ? `<ul class="space-y-1.5 text-xs">${temasTreinamento.map(t => `<li class="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-lg"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-purple-600'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-slate-500 shrink-0">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma demanda pendente para sala de treinamento neste filtro.</div>`}
+                            </div>
+                        </div>
+                    </div>`;
+
                     const faixas = ['Ramp-Up', 'Júnior', 'Pleno', 'Veterano'];
                     const perfisKeys = Object.keys(meta);
                     const matriz = {}; faixas.forEach(f => { matriz[f] = {}; perfisKeys.forEach(k => { matriz[f][k] = 0; }); });
@@ -21043,61 +21352,53 @@ storage: {
                     const maxCel = Math.max(1, ...faixas.flatMap(f => perfisKeys.map(k => matriz[f][k])));
 
                     h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-6 overflow-x-auto">
-                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-table-cells text-indigo-500 mr-2"></i> Maturidade x Perfil de Intervenção</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Quanto mais escura a célula, mais operadores. Mostra se o problema está concentrado em quem acabou de entrar ou em quem já deveria dominar o processo.</p>
+                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-table-cells text-indigo-500 mr-2"></i> Mapa de Calor: Maturidade (Ativos RH) x Perfil de Intervenção</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Cruza o tempo de empresa dos operadores ativos com cada perfil de intervenção, mostrando onde estão concentradas as demandas de <strong>Qualidade</strong> e de <strong>Treinamento</strong>.</p>
                         <table class="w-full text-center text-xs border-separate border-spacing-1">
-                            <thead><tr><th class="text-left text-[10px] uppercase text-slate-400 p-2">Faixa</th>${perfisKeys.map(k => `<th class="text-[9px] uppercase font-black text-slate-500 dark:text-slate-400 p-2 leading-tight">${meta[k].label}</th>`).join('')}<th class="text-[10px] uppercase text-slate-400 p-2">Equipe</th></tr></thead>
+                            <thead><tr><th class="text-left text-[10px] uppercase text-slate-400 p-2">Faixa (Ativos)</th>${perfisKeys.map(k => `<th class="text-[9px] uppercase font-black text-slate-500 dark:text-slate-400 p-2 leading-tight">${meta[k].label}<span class="block text-[8px] font-bold ${meta[k].responsavel === 'Equipe de Qualidade' ? 'text-blue-500' : 'text-purple-500'} mt-0.5">${meta[k].responsavel}</span></th>`).join('')}<th class="text-[10px] uppercase text-slate-400 p-2">Ativos na Faixa</th></tr></thead>
                             <tbody>${faixas.map(f => `<tr><td class="text-left font-black text-slate-700 dark:text-slate-200 p-2">${f}</td>${perfisKeys.map(k => { const n = matriz[f][k]; const al = n === 0 ? 0 : (0.15 + 0.7 * n / maxCel); return `<td class="rounded-lg p-3 font-black tabular-nums ${n ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}" style="background: rgba(99,102,241,${al.toFixed(2)})">${n || '-'}</td>`; }).join('')}<td class="font-bold text-slate-500 p-2">${totalFaixa[f]}</td></tr>`).join('')}</tbody>
                         </table>
                     </div>`;
 
-                    // Carga por responsável x SLA
-                    const resp = {};
-                    acionaveis.forEach(p => {
-                        const r = p.acao_prescritiva.responsavel_execucao;
-                        if (!resp[r]) resp[r] = { total: 0, s24: 0, s48: 0, s72: 0, s120: 0, criticos: 0 };
-                        resp[r].total++;
-                        const s = p.diagnostico.sla_resolucao_horas;
-                        resp[r][s <= 24 ? 's24' : (s <= 48 ? 's48' : (s <= 72 ? 's72' : 's120'))]++;
-                        if (p.diagnostico.gravidade === 'CRITICO') resp[r].criticos++;
-                    });
-                    const respArr = Object.entries(resp).sort((a, b) => b[1].total - a[1].total);
-                    const maxResp = Math.max(1, ...respArr.map(r => r[1].total));
-
-                    // Ofensores cruzados com maturidade
+                    // Ofensores cruzados com maturidade (apenas ativos RH) e direcionamento automático Qualidade vs Treinamento
                     const ofMap = {};
-                    acionaveis.concat(lista.filter(p => !p.acao_prescritiva)).forEach(p => {
+                    lista.forEach(p => {
                         [['Crítica', p.entrada.falhas_criticas], ['Desvio', p.entrada.desvios_processuais]].forEach(([tipo, arr]) => arr.forEach(f => {
                             const key = tipo + '|' + f.item;
-                            if (!ofMap[key]) ofMap[key] = { tipo, item: f.item, total: 0, ops: 0, faixas: {} };
+                            if (!ofMap[key]) ofMap[key] = { tipo, item: f.item, total: 0, ops: 0, faixas: { 'Ramp-Up': 0, 'Júnior': 0, 'Pleno': 0, 'Veterano': 0 } };
                             ofMap[key].total += f.ocorrencias; ofMap[key].ops++;
                             ofMap[key].faixas[p.entrada.faixa_maturidade] = (ofMap[key].faixas[p.entrada.faixa_maturidade] || 0) + 1;
                         }));
                     });
-                    const ofArr = Object.values(ofMap).sort((a, b) => (b.tipo === 'Crítica') - (a.tipo === 'Crítica') || b.total - a.total).slice(0, 8);
+                    const ofArr = Object.values(ofMap).sort((a, b) => (b.tipo === 'Crítica') - (a.tipo === 'Crítica') || b.total - a.total).slice(0, 10);
 
-                    h += `<div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-                        <div class="hideable-box lg:col-span-2 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                            <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-user-gear text-indigo-500 mr-2"></i> Carga por Responsável</h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Quem precisa agir e quantas intervenções cabem em cada janela de SLA.</p>
-                            <div class="space-y-4">${respArr.length ? respArr.map(([r, v]) => `<div>
-                                <div class="flex justify-between items-baseline mb-1"><span class="font-black text-sm text-slate-700 dark:text-slate-200">${r}</span><span class="text-xs font-bold text-slate-500">${v.total} ação(ões)${v.criticos ? ` &bull; <span class="text-red-600">${v.criticos} crítica(s)</span>` : ''}</span></div>
-                                <div class="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden"><div class="h-full rounded-full bg-indigo-500" style="width:${(v.total / maxResp * 100).toFixed(0)}%"></div></div>
-                                <div class="flex gap-1.5 mt-1.5 text-[10px] font-bold text-slate-500">${[['24h', v.s24], ['48h', v.s48], ['72h', v.s72], ['120h', v.s120]].map(([l, n]) => `<span class="px-1.5 py-0.5 rounded ${n ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200' : 'opacity-40'}">${l}: ${n}</span>`).join('')}</div>
-                            </div>`).join('') : '<div class="text-xs italic text-slate-400">Sem intervenções pendentes.</div>'}</div>
-                        </div>
-                        <div class="hideable-box lg:col-span-3 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-x-auto">
-                            <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-magnifying-glass-chart text-indigo-500 mr-2"></i> Ofensores x Maturidade</h3>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Em qual faixa cada ofensor se concentra. Concentração em Ramp-Up/Júnior indica treinamento; em Pleno/Veterano indica gestão e disciplina.</p>
-                            <table class="w-full text-left text-xs">
-                                <thead><tr class="text-[10px] uppercase text-slate-400"><th class="py-2 pr-2">Ofensor</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Oper.</th><th class="py-2 pl-2">Concentração</th></tr></thead>
-                                <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">${ofArr.length ? ofArr.map(o => `<tr>
-                                    <td class="py-2 pr-2 text-slate-700 dark:text-slate-200 leading-snug"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
-                                    <td class="py-2 px-2 text-center font-black">${o.total}</td><td class="py-2 px-2 text-center font-bold">${o.ops}</td>
-                                    <td class="py-2 pl-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
-                                </tr>`).join('') : '<tr><td colspan="4" class="py-4 italic text-slate-400">Nenhum ofensor identificado.</td></tr>'}</tbody>
-                            </table>
-                        </div>
+                    h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-8 overflow-x-auto">
+                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-magnifying-glass-chart text-indigo-500 mr-2"></i> Ofensores x Maturidade (Quem atua em cada item do formulário)</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Mostra em qual faixa de maturidade cada erro se concentra entre os ativos e define automaticamente se a tratativa principal é da <strong>Equipe de Treinamento</strong> ou da <strong>Equipe de Qualidade</strong>.</p>
+                        <table class="w-full text-left text-xs">
+                            <thead><tr class="text-[10px] uppercase text-slate-400"><th class="py-2 pr-2">Ofensor (Pergunta do Formulário)</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Ativos Impactados</th><th class="py-2 px-2">Concentração por Maturidade</th><th class="py-2 pl-2">Direcionamento Recomendado</th></tr></thead>
+                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">${ofArr.length ? ofArr.map(o => {
+                                const novatos = (o.faixas['Ramp-Up'] || 0) + (o.faixas['Júnior'] || 0);
+                                const experientes = (o.faixas['Pleno'] || 0) + (o.faixas['Veterano'] || 0);
+                                let acaoItem = '';
+                                if (o.tipo === 'Crítica' && experientes >= novatos) {
+                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"><i class="fa-solid fa-magnifying-glass-chart"></i> Equipe de Qualidade: Auditoria &amp; Calibração Crítica</span>`;
+                                } else if (o.tipo === 'Crítica' && novatos > experientes) {
+                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"><i class="fa-solid fa-graduation-cap"></i> Equipe de Treinamento: Simulação em Espelho</span>`;
+                                } else if (novatos >= experientes) {
+                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"><i class="fa-solid fa-graduation-cap"></i> Equipe de Treinamento: Reforço na Formação / Sala</span>`;
+                                } else {
+                                    acaoItem = `<span class="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"><i class="fa-solid fa-rotate"></i> Treinamento (Reciclagem) + Qualidade (Monitoria)</span>`;
+                                }
+                                return `<tr>
+                                    <td class="py-2.5 pr-2 text-slate-700 dark:text-slate-200 leading-snug"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
+                                    <td class="py-2.5 px-2 text-center font-black">${o.total}x</td>
+                                    <td class="py-2.5 px-2 text-center font-bold">${o.ops} op.</td>
+                                    <td class="py-2.5 px-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
+                                    <td class="py-2.5 pl-2">${acaoItem}</td>
+                                </tr>`;
+                            }).join('') : '<tr><td colspan="5" class="py-4 italic text-slate-400">Nenhum ofensor identificado entre os operadores ativos.</td></tr>'}</tbody>
+                        </table>
                     </div>`;
                     return h;
                 },
