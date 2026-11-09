@@ -6139,12 +6139,12 @@ storage: {
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
                     { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
-                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
+                    { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -6159,9 +6159,9 @@ storage: {
                     const defaults = {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['home', 'qualidade_treinamento', 'analise_csv_dinamico', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'home', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'qualidade_treinamento', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas'])],
                         'Gerente': allIds
                     };
 
@@ -6177,6 +6177,7 @@ storage: {
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                         if (!base.includes('home')) base.unshift('home');
+                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('qualidade_treinamento')) base.push('qualidade_treinamento');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('caca_palavras')) base.push('caca_palavras');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('palavras_cruzadas')) base.push('palavras_cruzadas');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
@@ -6235,6 +6236,7 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('gestao_equipe')) savedTabs.push('gestao_equipe');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
+                    if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('qualidade_treinamento')) savedTabs.push('qualidade_treinamento');
 
                     // Se o usuário teve suas abas sobrescritas apenas com 'implantacao_ia', restaura os presets do perfil
                     if (savedTabs.length <= 2 && savedTabs.includes('implantacao_ia')) {
@@ -7573,6 +7575,7 @@ storage: {
                             else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
+                            else if(tabId === 'qualidade_treinamento') this.renderView_QualidadeTreinamento(viewDiv);
                             else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
                             else if(tabId === 'impressoes' || tabId === 'gestao_impressoes') this.renderView_Impressoes(viewDiv);
                             else if(tabId === 'dashboard_firebase_dev') { this.abrirModalFirebaseDev(); this.renderTab('dashboard_adm', true); }
@@ -19878,6 +19881,20 @@ storage: {
                 // MEMÓRIA DE ROLAGEM: Preserva o Scroll e Evita a "Piscada" da Tela
                 _refreshComMemoriaDeScroll() {
                     const scrollY = window.scrollY;
+                    const qtBody = document.getElementById('qt-dynamic-body');
+                    if ((app.currentTab === 'qualidade_treinamento' || (qtBody && qtBody.offsetParent !== null)) && qtBody && this._activeQTData) {
+                        qtBody.innerHTML = this.renderQualidadeTreinamentoBody(this._activeQTData);
+                        window.scrollTo({ top: scrollY, behavior: 'instant' });
+                        return;
+                    }
+                    if (app.currentTab === 'qualidade_treinamento') {
+                        const qtContainer = document.getElementById('view-container-qualidade_treinamento');
+                        if (qtContainer) {
+                            this.renderView_QualidadeTreinamento(qtContainer);
+                            window.scrollTo({ top: scrollY, behavior: 'instant' });
+                            return;
+                        }
+                    }
                     const container = document.getElementById('view-container-analise_csv_dinamico');
                     
                     if (container) {
@@ -19887,7 +19904,7 @@ storage: {
                         window.scrollTo({ top: scrollY, behavior: 'instant' });
                     } else {
                         // Fallback de segurança se a tela por algum motivo não existir no HTML ainda
-                        this.renderTab('analise_csv_dinamico', true);
+                        this.renderTab(app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico', true);
                     }
                 },
 
@@ -20908,8 +20925,13 @@ storage: {
                         const primeiro = titulo(String(nome).split(' ')[0]);
 
                         // 1) MATURIDADE E FILTRO DE ATIVOS NA BASE DE RH
-                        // Se não consta na Base de RH, já foi desligado e NÃO entra nas prescrições finais
-                        const dias = app.utils.getTempoCasaDoOperador(nome);
+                        // Se não consta na Base de RH (nem no snapshot salvo junto à apresentação), já foi desligado e NÃO entra nas prescrições finais
+                        let dias = app.utils.getTempoCasaDoOperador(nome);
+                        if ((dias === null || dias === undefined || isNaN(Number(dias))) && data && data.rhSnapshot) {
+                            const kNorm = norm(nome);
+                            if (data.rhSnapshot[nome] !== undefined) dias = data.rhSnapshot[nome];
+                            else if (data.rhSnapshot[kNorm] !== undefined) dias = data.rhSnapshot[kNorm];
+                        }
                         const mapeado = dias !== null && dias !== undefined && !isNaN(Number(dias));
                         if (!mapeado) {
                             desligadosExcluidos++;
@@ -21092,7 +21114,7 @@ storage: {
                         } else if (perfil === 'REFERENCIA_BOAS_PRATICAS') {
                             pauta = [
                                 `[Qualidade] Curadoria de excelência: nota ${nota} em ${quadrante} com zero falhas críticas`,
-                                `${op.notas.length} monitoria(s) avaliada(s) para seleção da melhor gravação`,
+                                `${(op.notas && op.notas.length) || op.count || 0} monitoria(s) avaliada(s) para seleção da melhor gravação`,
                                 'Separar ligação modelo e enviar para a Equipe de Treinamento utilizar em sala de aula'
                             ];
                             roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Parabéns pelo resultado: você alcançou média ${nota} (${quadrante}) sem nenhuma falha crítica! Selecionamos seu atendimento como referência de boas práticas para a Equipe de Treinamento usar como áudio modelo nas turmas.`;
@@ -21109,7 +21131,7 @@ storage: {
                                 ligs_zeradas_critica: ligsZeradasPorCritica,
                                 quadrante,
                                 variacao_percentual: variacao,
-                                total_monitorias: op.notas.length,
+                                total_monitorias: (op.notas && op.notas.length) || op.count || 0,
                                 falhas_criticas,
                                 desvios_processuais
                             },
@@ -21537,10 +21559,12 @@ storage: {
                     XLSX.writeFile(wb, nomeArquivo);
                 },
 
-                renderPrescricaoCapitulos(data, renderChapterTitle) {
+                renderPrescricaoCapitulos(data, renderChapterTitle, modoModulo) {
+                    const mod = modoModulo || this.qtSubTab || 'prescricao';
                     let lista = [];
                     try { lista = this.buildPrescricoesOperacionais(data); } catch (e) { console.error('Erro no motor de prescrição', e); return ''; }
                     this._prescCache = lista;
+                    this._activeQTData = data;
                     const stats = this._prescStats || { totalBase: 0, ativosRH: lista.length, desligadosExcluidos: 0 };
                     const meta = this.getPrescricaoMeta();
                     const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
@@ -21548,19 +21572,22 @@ storage: {
                     // Caso ainda não haja operadores ativos na Base de RH
                     if (lista.length === 0) {
                         if (stats.totalBase === 0) return '';
-                        let hVazio = renderChapterTitle('Prescrição Operacional (Qualidade & Treinamento)', 'Cruzamento exclusivo dos operadores ativos na Base de RH para direcionar o plano de ação da Equipe de Qualidade e da Equipe de Treinamento.', 'fa-stethoscope', 'rose');
-                        hVazio += `<div class="hideable-box mb-8 glass-card rounded-3xl p-6 md:p-8 border border-amber-300 dark:border-amber-700/60 bg-amber-50/60 dark:bg-amber-950/20 text-center">
-                            <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-2xl"><i class="fa-solid fa-user-check"></i></div>
-                            <h3 class="text-base font-black text-slate-800 dark:text-white mb-1">Aguardando Vínculo com a Base de RH (Operadores Ativos)</h3>
-                            <p class="text-xs text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
-                                Nesta etapa final de <strong>Prescrição Operacional</strong> e <strong>Onde Agir</strong>, operadores que não constam na Base de RH são considerados <strong>desligados</strong> e não recebem plano de ação (${stats.desligadosExcluidos} operador(es) da planilha sem vínculo ativo no RH). Importe a <strong>Base de RH (Dias)</strong> no botão <em>Importar</em> do topo para gerar as prescrições dos operadores ativos.
-                            </p>
+                        return `<div class="mb-8 glass-card rounded-2xl p-6 border border-amber-300 dark:border-amber-700/60 bg-amber-50/60 dark:bg-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-user-clock"></i></div>
+                                <div>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white">Importe a Base de RH (Ativos) para liberar os diagnósticos</h3>
+                                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5">Operadores sem vínculo na Base de RH (${stats.desligadosExcluidos}) são considerados desligados e não entram no plano de ação.</p>
+                                </div>
+                            </div>
+                            <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-sm cursor-pointer transition-all shrink-0">
+                                <i class="fa-solid fa-upload"></i> Importar Base RH
+                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                            </label>
                         </div>`;
-                        return hVazio;
                     }
 
                     const acionaveis = lista.filter(p => p.acao_prescritiva);
-                    const estaveis = lista.length - acionaveis.length;
                     const gravCor = { CRITICO: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800', ALTO: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800', MEDIO: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800', BAIXO: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
                     const quadCor = { Q1: 'text-green-600 bg-green-100 dark:bg-green-900/30', Q2: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30', Q3: 'text-orange-600 bg-orange-100 dark:bg-orange-900/30', Q4: 'text-red-600 bg-red-100 dark:bg-red-900/30' };
                     const equipeBadge = {
@@ -21574,197 +21601,173 @@ storage: {
 
                     const acoesQualidade = acionaveis.filter(p => p.acao_prescritiva.responsavel_execucao === 'Equipe de Qualidade');
                     const acoesTreinamento = acionaveis.filter(p => p.acao_prescritiva.responsavel_execucao === 'Equipe de Treinamento');
+                    const tratativasMap = this.getTratativasAtivasMap();
 
-                    // ---------- CAPÍTULO A: PRESCRIÇÃO OPERACIONAL ----------
-                    let h = renderChapterTitle('Prescrição Operacional', 'Diagnóstico automático apenas dos operadores ativos na Base de RH, separando com clareza o que é atuação da Equipe de Qualidade e o que é atuação da Equipe de Treinamento.', 'fa-stethoscope', 'rose');
+                    let cntPend = 0, cntAnd = 0, cntConc = 0;
+                    acionaveis.forEach(p => {
+                        const st = tratativasMap[p.entrada.operador]?.status || 'pendente';
+                        if (st === 'concluido') cntConc++;
+                        else if (st === 'andamento') cntAnd++;
+                        else cntPend++;
+                    });
+                    const filtroStatusTrat = this.qtFiltroStatusTratativa || '';
 
-                    // Resumo de ativos vs desligados + filtro rápido por equipe (sincronizado sem conflito)
-                    h += `<div class="hideable-box mb-6 glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                        <div class="flex flex-wrap items-center justify-between gap-4">
-                            <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">
-                                Analisando <strong class="text-emerald-600 dark:text-emerald-400">${stats.ativosRH} operador(es) ativo(s)</strong> na Base de RH${stats.desligadosExcluidos > 0 ? ` (<strong class="text-slate-700 dark:text-slate-200">${stats.desligadosExcluidos} desligado(s)</strong> sem vínculo no RH foram desconsiderados automaticamente destas análises finais)` : ''}.
-                                Do total ativo, <strong class="text-slate-800 dark:text-white">${acionaveis.length}</strong> possuem prescrição (<strong class="text-blue-600 dark:text-blue-400">${acoesQualidade.length} para a Equipe de Qualidade</strong> e <strong class="text-purple-600 dark:text-purple-400">${acoesTreinamento.length} para a Equipe de Treinamento</strong>) e <strong>${estaveis}</strong> estão estáveis (Q1/Q2 sem falha crítica e sem queda brusca).
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                <button onclick="app.ui.prescFiltroEquipe=''; app.ui.prescFiltroPerfil=''; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${!filtroEq && !filtro ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'}">Todas (${acionaveis.length})</button>
-                                <button onclick="app.ui.selecionarEquipePrescricao('Equipe de Qualidade')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Qualidade' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'}"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i> Qualidade (${acoesQualidade.length})</button>
-                                <button onclick="app.ui.selecionarEquipePrescricao('Equipe de Treinamento')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Treinamento' ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}"><i class="fa-solid fa-graduation-cap mr-1"></i> Treinamento (${acoesTreinamento.length})</button>
-                                <button onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-excel mr-1"></i> Exportar XLSX</button>
-                                <button onclick="app.ui.exportarPrescricoesJSON()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-black dark:bg-slate-700 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-file-code mr-1"></i> JSON</button>
-                            </div>
+                    let h = '';
+
+                    // ---------- ABA 1: FILA & PRESCRIÇÕES ----------
+                    if (mod === 'todos' || mod === 'prescricao') {
+                    // Barra única, limpa e direta de filtros (Equipe + Status + Exportação)
+                    h += `<div class="mb-4 bg-white dark:bg-slate-800 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <button onclick="app.ui.prescFiltroEquipe=''; app.ui.prescFiltroPerfil=''; app.ui.qtFiltroStatusTratativa=''; app.ui._refreshComMemoriaDeScroll()" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${!filtroEq && !filtro && !filtroStatusTrat ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">Todos (${acionaveis.length})</button>
+                            <button onclick="app.ui.selecionarEquipePrescricao('Equipe de Qualidade')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Qualidade' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50/70 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'}"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i>Qualidade (${acoesQualidade.length})</button>
+                            <button onclick="app.ui.selecionarEquipePrescricao('Equipe de Treinamento')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filtroEq === 'Equipe de Treinamento' ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50/70 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}"><i class="fa-solid fa-graduation-cap mr-1"></i>Treinamento (${acoesTreinamento.length})</button>
+                            <span class="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:inline-block"></span>
+                            <button type="button" onclick="app.ui.qtFiltroStatusTratativa = app.ui.qtFiltroStatusTratativa === 'pendente' ? '' : 'pendente'; app.ui._refreshComMemoriaDeScroll()" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${filtroStatusTrat === 'pendente' ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}">Pendentes (${cntPend})</button>
+                            <button type="button" onclick="app.ui.qtFiltroStatusTratativa = app.ui.qtFiltroStatusTratativa === 'andamento' ? '' : 'andamento'; app.ui._refreshComMemoriaDeScroll()" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${filtroStatusTrat === 'andamento' ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50/60 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'}">Em Andamento (${cntAnd})</button>
+                            <button type="button" onclick="app.ui.qtFiltroStatusTratativa = app.ui.qtFiltroStatusTratativa === 'concluido' ? '' : 'concluido'; app.ui._refreshComMemoriaDeScroll()" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${filtroStatusTrat === 'concluido' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50/60 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'}">Concluídos (${cntConc})</button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[11px] text-slate-400 hidden xl:inline">${stats.ativosRH} ativos RH</span>
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"><i class="fa-solid fa-file-excel mr-1"></i>Exportar XLSX</button>
                         </div>
                     </div>`;
 
-                    // 6 BLOCOS DE PERFIL INTERATIVOS (Ao clicar em um bloco, filtra sem conflito e abre a explicação logo abaixo!)
-                    h += `<div class="hideable-box grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-4">`;
+                    // 6 BLOCOS DE PERFIL ENXUTOS E CLICÁVEIS
+                    h += `<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">`;
                     Object.keys(meta).forEach(k => {
                         const m = meta[k]; const n = contPerfil[k] || 0; const ativo = filtro === k;
                         const isQual = m.responsavel === 'Equipe de Qualidade';
                         const dimmed = (filtro && !ativo) || (filtroEq && m.responsavel !== filtroEq);
-                        h += `<div onclick="app.ui.selecionarPerfilPrescricao('${k}')" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 border-2 ${ativo ? 'border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-500/20 -translate-y-1 shadow-lg' : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'} ${dimmed ? 'opacity-60 hover:opacity-100' : ''} shadow-sm hover:-translate-y-1 hover:shadow-md transition-all flex flex-col justify-between relative">
+                        h += `<div onclick="app.ui.selecionarPerfilPrescricao('${k}')" class="cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-3.5 border ${ativo ? 'border-indigo-600 dark:border-indigo-400 ring-2 ring-indigo-500/20 shadow-md' : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300'} ${dimmed ? 'opacity-50 hover:opacity-100' : ''} transition-all flex flex-col justify-between">
                             <div>
-                                <div class="flex items-center justify-between mb-2"><i class="fa-solid ${m.icon} text-${m.cor}-500 text-lg"></i><span class="text-[9px] font-black px-2 py-0.5 rounded-md border ${gravCor[m.gravidade]}">${m.gravidade}</span></div>
-                                <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums">${n}</div>
-                                <div class="text-[11px] font-black text-slate-700 dark:text-slate-200 leading-tight mt-1 min-h-[28px]">${m.label}</div>
-                            </div>
-                            <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                                <span class="inline-block text-[9px] font-black px-2 py-0.5 rounded ${isQual ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}">${m.responsavel}</span>
-                                <div class="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                                    <span>SLA ${m.sla}h</span>
-                                    <span class="font-bold text-indigo-500">${ativo ? 'Selecionado ✓' : 'Ver motivo →'}</span>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-[9px] font-black px-1.5 py-0.5 rounded ${isQual ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}">${isQual ? 'Qualidade' : 'Treinamento'}</span>
+                                    <span class="text-[9px] font-bold text-slate-400">SLA ${m.sla}h</span>
                                 </div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${n}</div>
+                                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-snug mt-0.5">${m.label}</div>
                             </div>
                         </div>`;
                     });
                     h += `</div>`;
 
-                    // PAINEL EXPLICATIVO CONTEXTUAL LOGO ABAIXO DOS 6 BLOCOS
+                    // PAINEL EXPLICATIVO CONTEXTUAL (Só aparece quando um perfil está selecionado)
                     if (filtro && meta[filtro]) {
                         const mSel = meta[filtro];
                         const isQualSel = mSel.responsavel === 'Equipe de Qualidade';
                         const qtdSel = contPerfil[filtro] || 0;
-                        h += `<div class="hideable-box mb-8 rounded-3xl p-5 md:p-6 border-2 ${isQualSel ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/25' : 'border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-950/25'} shadow-sm transition-all">
-                            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b ${isQualSel ? 'border-blue-200/70 dark:border-blue-800/60' : 'border-purple-200/70 dark:border-purple-800/60'}">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-11 h-11 rounded-2xl ${isQualSel ? 'bg-blue-600' : 'bg-purple-600'} text-white flex items-center justify-center text-lg shadow-sm shrink-0"><i class="fa-solid ${mSel.icon}"></i></div>
-                                    <div>
-                                        <div class="flex flex-wrap items-center gap-2">
-                                            <span class="text-[10px] font-black px-2.5 py-0.5 rounded-md ${equipeBadge[mSel.responsavel]}">${mSel.responsavel}</span>
-                                            <span class="text-[10px] font-black px-2 py-0.5 rounded-md border ${gravCor[mSel.gravidade]}">Prioridade ${mSel.gravidade} &bull; SLA ${mSel.sla}h</span>
-                                            <span class="text-xs font-black text-slate-700 dark:text-slate-200">${qtdSel} operador(es) neste perfil</span>
-                                        </div>
-                                        <h3 class="text-base md:text-lg font-black text-slate-800 dark:text-white mt-1">${esc(mSel.label)}</h3>
-                                    </div>
+                        h += `<div class="mb-5 rounded-2xl p-4 border ${isQualSel ? 'border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20' : 'border-purple-200 dark:border-purple-800 bg-purple-50/40 dark:bg-purple-950/20'}">
+                            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200/70 dark:border-slate-700/60">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="text-[10px] font-black px-2 py-0.5 rounded ${equipeBadge[mSel.responsavel]}">${mSel.responsavel}</span>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white">${esc(mSel.label)} (${qtdSel})</h3>
+                                    <span class="text-[10px] font-bold text-slate-400">SLA ${mSel.sla}h</span>
                                 </div>
-                                <div class="flex items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                    ${qtdSel > 0 ? `<button onclick="app.ui.openOndeAgirModal('perfil', '${encodeURIComponent(filtro)}')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:border-indigo-400 shadow-xs"><i class="fa-solid fa-table-list mr-1"></i> Ver resumo em modal</button>` : ''}
-                                    <button onclick="app.ui.selecionarPerfilPrescricao('')" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-black text-white dark:bg-slate-700 text-xs font-bold"><i class="fa-solid fa-xmark mr-1"></i> Mostrar todos os perfis</button>
-                                </div>
+                                <button onclick="app.ui.selecionarPerfilPrescricao('')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-white dark:bg-slate-700 text-[11px] font-bold"><i class="fa-solid fa-xmark mr-1"></i>Limpar filtro</button>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                                <div class="bg-white dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1"><i class="fa-solid fa-magnifying-glass mr-1"></i>1. Por que o operador está neste bloco?</div>
-                                    <div class="font-bold text-slate-800 dark:text-white mb-1.5">${esc(mSel.regra)}</div>
-                                    <p class="text-slate-600 dark:text-slate-300 leading-relaxed">${esc(mSel.explicacao)}</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">
+                                    <div class="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-0.5">Por que está neste perfil?</div>
+                                    <div class="font-bold text-slate-800 dark:text-white">${esc(mSel.regra)}</div>
+                                    <p class="text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">${esc(mSel.explicacao)}</p>
                                 </div>
-                                <div class="bg-white dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-black uppercase tracking-wider ${isQualSel ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'} mb-1"><i class="fa-solid fa-user-shield mr-1"></i>2. Por que é a ${esc(mSel.responsavel)} que atua?</div>
-                                    <p class="text-slate-700 dark:text-slate-200 leading-relaxed font-medium">${esc(mSel.papelEquipe)}</p>
+                                <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">
+                                    <div class="text-[10px] font-black uppercase ${isQualSel ? 'text-blue-600' : 'text-purple-600'} mb-0.5">Papel da ${esc(mSel.responsavel)}</div>
+                                    <p class="text-slate-600 dark:text-slate-300 leading-relaxed">${esc(mSel.papelEquipe)}</p>
                                 </div>
-                                <div class="bg-white dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1"><i class="fa-solid fa-clipboard-check mr-1"></i>3. O que pôr em prática agora?</div>
-                                    <div class="font-black text-slate-800 dark:text-white mb-1">${esc(mSel.acao)}</div>
-                                    <div class="text-slate-500 dark:text-slate-400"><strong>Formato:</strong> ${esc(mSel.tipo)}<br><strong>Canal:</strong> ${esc(mSel.canal)}<br><strong>Prazo máximo:</strong> até ${mSel.sla} horas</div>
+                                <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">
+                                    <div class="text-[10px] font-black uppercase text-emerald-600 mb-0.5">O que aplicar agora</div>
+                                    <div class="font-bold text-slate-800 dark:text-white">${esc(mSel.acao)}</div>
+                                    <div class="text-slate-500 mt-1">${esc(mSel.tipo)} &bull; ${esc(mSel.canal)}</div>
                                 </div>
                             </div>
                         </div>`;
-                    } else {
-                        h += `<div class="hideable-box mb-6 px-4 py-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/50 flex flex-wrap items-center justify-between gap-3 text-xs">
-                            <div class="flex items-center gap-2.5 text-slate-700 dark:text-slate-200">
-                                <span class="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xs shrink-0"><i class="fa-solid fa-hand-pointer"></i></span>
-                                <span><strong>Dica de leitura:</strong> Clique em qualquer um dos <strong>6 blocos acima</strong> para filtrar os operadores daquele perfil e ver logo aqui abaixo <strong>o motivo de estarem lá</strong> e <strong>o que a equipe deve fazer</strong>.</span>
-                            </div>
-                            <button onclick="app.ui.prescGuiaTodosAberto = !app.ui.prescGuiaTodosAberto; app.ui._refreshComMemoriaDeScroll()" class="text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ${this.analiseEditMode ? 'hidden' : ''}">
-                                <i class="fa-solid ${this.prescGuiaTodosAberto ? 'fa-chevron-up' : 'fa-book-open'} mr-1"></i>${this.prescGuiaTodosAberto ? 'Ocultar resumo dos 6 perfis' : 'Ver tabela resumo dos 6 perfis'}
-                            </button>
-                        </div>`;
-                        if (this.prescGuiaTodosAberto) {
-                            h += `<div class="hideable-box mb-8 glass-card rounded-3xl p-4 md:p-5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-x-auto">
-                                <table class="w-full text-left text-xs">
-                                    <thead><tr class="text-[10px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-2 pr-2">Perfil</th><th class="py-2 px-2">Equipe</th><th class="py-2 px-2">Motivo de estar no perfil (Regra)</th><th class="py-2 pl-2">O que fazer na prática</th></tr></thead>
-                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
-                                        ${Object.keys(meta).map(k => {
-                                            const m = meta[k];
-                                            return `<tr onclick="app.ui.selecionarPerfilPrescricao('${k}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40">
-                                                <td class="py-2.5 pr-2 font-black text-slate-800 dark:text-white whitespace-nowrap"><i class="fa-solid ${m.icon} text-${m.cor}-500 mr-1.5"></i>${esc(m.label)} (${contPerfil[k] || 0})</td>
-                                                <td class="py-2.5 px-2 whitespace-nowrap"><span class="text-[10px] font-black px-2 py-0.5 rounded ${equipeBadge[m.responsavel]}">${m.responsavel}</span></td>
-                                                <td class="py-2.5 px-2 text-slate-600 dark:text-slate-300">${esc(m.regra)}</td>
-                                                <td class="py-2.5 pl-2 text-slate-700 dark:text-slate-200 font-semibold">${esc(m.acao)} <span class="text-[10px] text-slate-400">(SLA ${m.sla}h)</span></td>
-                                            </tr>`;
-                                        }).join('')}
-                                    </tbody>
-                                </table>
-                            </div>`;
-                        }
                     }
 
                     // Fila priorizada de intervenções
                     const visiveis = acionaveis
-                        .map(p => ({ p, i: lista.indexOf(p) }))
-                        .filter(x => (!filtro || x.p.diagnostico.perfil_identificado === filtro) && (!filtroEq || x.p.acao_prescritiva.responsavel_execucao === filtroEq));
-                    const limite = (this.prescExpandida || this.analiseEditMode) ? 9999 : 8;
-                    h += `<div class="space-y-3 mb-4">`;
-                    if (visiveis.length === 0) h += `<div class="text-center text-slate-400 italic p-8 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">Nenhum operador ativo enquadrado neste filtro.</div>`;
+                        .map(p => ({ p, i: lista.indexOf(p), st: (tratativasMap[p.entrada.operador]?.status || 'pendente') }))
+                        .filter(x => (!filtro || x.p.diagnostico.perfil_identificado === filtro) && (!filtroEq || x.p.acao_prescritiva.responsavel_execucao === filtroEq) && (!filtroStatusTrat || x.st === filtroStatusTrat));
+                    const limite = (this.prescExpandida || this.analiseEditMode) ? 9999 : 12;
+                    const stBadgeCfg = {
+                        pendente: { label: 'Pendente', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600', icon: 'fa-hourglass-start' },
+                        andamento: { label: 'Em Andamento', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-amber-300 dark:border-amber-700', icon: 'fa-person-digging' },
+                        concluido: { label: 'Concluído', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700', icon: 'fa-circle-check' }
+                    };
+
+                    h += `<div class="space-y-2.5 mb-4">`;
+                    if (visiveis.length === 0) h += `<div class="text-center text-slate-400 italic p-8 bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">Nenhum operador ativo enquadrado neste filtro.</div>`;
                     visiveis.forEach((x, pos) => {
                         const p = x.p; const e = p.entrada; const d = p.diagnostico; const a = p.acao_prescritiva; const m = meta[d.perfil_identificado];
+                        const stInfo = tratativasMap[e.operador] || { status: 'pendente' };
+                        const stKey = stInfo.status || 'pendente';
+                        const stMeta = stBadgeCfg[stKey] || stBadgeCfg.pendente;
                         const varCor = e.variacao_percentual <= -15 ? 'text-red-600' : (e.variacao_percentual < 0 ? 'text-orange-500' : 'text-emerald-600');
                         const lstOf = (arr, vazio) => arr.length ? arr.slice(0, 5).map(f => `<li class="flex justify-between gap-3"><span class="leading-snug">${esc(f.item)}</span><span class="font-black shrink-0">${f.ocorrencias}x</span></li>`).join('') : `<li class="italic text-slate-400">${vazio}</li>`;
-                        h += `<details class="hideable-box group bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden ${pos >= limite ? 'hidden print:block' : ''}">
-                            <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden p-4 md:p-5 flex flex-wrap items-center gap-3">
-                                <span class="text-[10px] font-black px-2.5 py-1 rounded-md border ${gravCor[d.gravidade]}">${d.gravidade}</span>
-                                <span class="font-black text-slate-800 dark:text-white text-sm flex-1 min-w-[180px]">${esc(e.operador)}<span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">${m.label}</span></span>
-                                <span class="text-[10px] font-black px-2.5 py-1 rounded-md ${equipeBadge[a.responsavel_execucao]}">${a.responsavel_execucao}</span>
-                                <span class="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${e.faixa_maturidade} (${app.utils.formatTempoCasa(e.tempo_casa_dias)})</span>
-                                <span class="text-[10px] font-black px-2 py-1 rounded-md ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
+                        h += `<details class="group bg-white dark:bg-slate-800 rounded-2xl border ${stKey === 'concluido' ? 'border-emerald-300 dark:border-emerald-800/70' : 'border-slate-200 dark:border-slate-700'} shadow-xs overflow-hidden ${pos >= limite ? 'hidden print:block' : ''}">
+                            <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-4 py-3.5 flex flex-wrap items-center gap-2.5 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 transition-colors">
+                                <span class="text-[10px] font-black px-2 py-0.5 rounded border ${gravCor[d.gravidade]}">${d.gravidade}</span>
+                                <span class="font-black text-slate-800 dark:text-white text-sm flex-1 min-w-[180px]">${esc(e.operador)} <span class="text-xs font-semibold text-slate-400 ml-1">&bull; ${m.label}</span></span>
+                                <span id="qt-st-badge-${pos}" class="text-[10px] font-bold px-2 py-0.5 rounded border ${stMeta.cls}"><i class="fa-solid ${stMeta.icon} mr-1"></i>${stMeta.label}</span>
+                                <span class="text-[10px] font-black px-2 py-0.5 rounded ${equipeBadge[a.responsavel_execucao]}">${a.responsavel_execucao === 'Equipe de Qualidade' ? 'Qualidade' : 'Treinamento'}</span>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${e.faixa_maturidade}</span>
+                                <span class="text-[10px] font-black px-2 py-0.5 rounded ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
                                 <span class="text-xs font-black ${varCor} tabular-nums">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</span>
-                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400"><i class="fa-solid fa-clock mr-1"></i>SLA ${d.sla_resolucao_horas}h</span>
-                                <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform"></i>
+                                <i class="fa-solid fa-chevron-down text-xs text-slate-400 group-open:rotate-180 transition-transform"></i>
                             </summary>
-                            <div class="p-4 md:p-6 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/30 grid grid-cols-1 lg:grid-cols-3 gap-5 text-xs">
+                            <div class="p-4 md:p-5 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/30 grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs">
                                 <div class="space-y-3">
+                                    <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1.5">Status da Tratativa</div>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <button type="button" onclick="app.ui.setStatusTratativaQT('${encodeURIComponent(e.operador)}', 'pendente')" class="px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all ${stKey === 'pendente' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-700'}">Pendente</button>
+                                            <button type="button" onclick="app.ui.setStatusTratativaQT('${encodeURIComponent(e.operador)}', 'andamento')" class="px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all ${stKey === 'andamento' ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'}">Em Andamento</button>
+                                            <button type="button" onclick="app.ui.setStatusTratativaQT('${encodeURIComponent(e.operador)}', 'concluido')" class="px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all ${stKey === 'concluido' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'}">Concluído</button>
+                                        </div>
+                                        ${stInfo.por ? `<div class="text-[10px] text-slate-400 mt-1.5">Por <strong>${esc(stInfo.por)}</strong> em ${esc(stInfo.data || '')}</div>` : ''}
+                                    </div>
+                                    <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+                                        <div class="text-[10px] font-black uppercase text-slate-400 mb-1">Ação Prescrita (SLA ${d.sla_resolucao_horas}h)</div>
+                                        <div class="font-bold text-slate-800 dark:text-white">${esc(a.acao)}</div>
+                                        <div class="text-[11px] text-slate-500 mt-1">${app.utils.formatTempoCasa(e.tempo_casa_dias)} de casa &bull; ${e.total_monitorias} monitoria(s)</div>
+                                    </div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                                    <div><div class="text-[10px] font-black uppercase text-red-500 mb-1">Falhas Críticas</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.falhas_criticas, 'Nenhuma')}</ul></div>
+                                    <div class="pt-2 border-t border-slate-100 dark:border-slate-700"><div class="text-[10px] font-black uppercase text-orange-500 mb-1">Desvios Processuais</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.desvios_processuais, 'Nenhum')}</ul></div>
+                                </div>
+                                <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-2">
                                     <div>
-                                        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Ação prescrita (${esc(a.responsavel_execucao)})</div>
-                                        <div class="font-bold text-slate-800 dark:text-white text-sm leading-snug">${esc(a.acao)}</div>
-                                        <div class="text-slate-500 mt-1">${esc(a.tipo_intervencao)} &bull; ${esc(a.canal)}</div>
-                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-2 bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700"><strong>Por que este perfil:</strong> ${esc(m.regra)}</div>
+                                        <div class="text-[10px] font-black uppercase text-slate-400 mb-1">Roteiro Sugerido</div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed italic">${esc(a.roteiro_sugerido)}</p>
                                     </div>
-                                    <div class="grid grid-cols-3 gap-2">
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Tempo de casa</div><div class="font-black text-slate-700 dark:text-slate-200">${app.utils.formatTempoCasa(e.tempo_casa_dias)}</div></div>
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Monitorias</div><div class="font-black text-slate-700 dark:text-slate-200">${e.total_monitorias}</div></div>
-                                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700"><div class="text-[9px] uppercase font-bold text-slate-400">Variação Mês</div><div class="font-black ${varCor}">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</div></div>
-                                    </div>
-                                    ${p.sinais_secundarios.length ? `<div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Outros cruzamentos detectados</div><div class="flex flex-wrap gap-1">${p.sinais_secundarios.map(s => `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${meta[s].label}</span>`).join('')}</div></div>` : ''}
-                                </div>
-                                <div class="space-y-3">
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-red-500 mb-1">Falhas críticas do operador</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.falhas_criticas, 'Nenhuma no período')}</ul></div>
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-1">Desvios processuais do operador</div><ul class="space-y-1 text-slate-600 dark:text-slate-300">${lstOf(e.desvios_processuais, 'Nenhum no período')}</ul></div>
-                                </div>
-                                <div class="space-y-3">
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Checklist de execução (${esc(a.responsavel_execucao)})</div><ul class="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-300">${a.pauta_obrigatoria.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
-                                    <div><div class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Roteiro pronto para aplicação</div><p class="text-slate-600 dark:text-slate-300 leading-relaxed italic bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">${esc(a.roteiro_sugerido)}</p></div>
-                                    <div class="flex gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                        <button onclick="app.ui.copiarRoteiroPrescricao(${x.i}, this)" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 font-bold hover:bg-indigo-100"><i class="fa-solid fa-copy mr-1"></i> Copiar roteiro</button>
-                                        <button onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(e.operador)}')" class="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 font-bold hover:bg-blue-100"><i class="fa-solid fa-eye mr-1"></i> Detalhar operador</button>
+                                    <div class="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                                        <button onclick="app.ui.copiarRoteiroPrescricao(${x.i}, this)" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300 font-bold hover:bg-indigo-100"><i class="fa-solid fa-copy mr-1"></i>Copiar roteiro</button>
+                                        <button onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(e.operador)}')" class="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 font-bold hover:bg-blue-100"><i class="fa-solid fa-eye mr-1"></i>Ver fichas</button>
                                     </div>
                                 </div>
                             </div>
                         </details>`;
                     });
                     h += `</div>`;
-                    if (visiveis.length > 8 && !this.analiseEditMode) {
-                        h += `<button onclick="app.ui.prescExpandida = !app.ui.prescExpandida; app.ui._refreshComMemoriaDeScroll()" class="hideable-box w-full py-3 mb-8 text-sm font-bold text-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors">${this.prescExpandida ? '<i class="fa-solid fa-chevron-up mr-2"></i> Ver apenas as 8 mais urgentes' : `<i class="fa-solid fa-chevron-down mr-2"></i> Ver todas as ${visiveis.length} intervenções`}</button>`;
+                    if (visiveis.length > 12 && !this.analiseEditMode) {
+                        h += `<button onclick="app.ui.prescExpandida = !app.ui.prescExpandida; app.ui._refreshComMemoriaDeScroll()" class="w-full py-2.5 mb-6 text-xs font-bold text-indigo-600 bg-white dark:bg-slate-800 hover:bg-slate-50 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors">${this.prescExpandida ? 'Mostrar menos' : `Ver todos os ${visiveis.length} operadores`}</button>`;
                     }
+                    } // Fim Aba 1
 
-                    // ---------- CAPÍTULO B: ONDE AGIR (QUALIDADE vs. TREINAMENTO) ----------
-                    h += renderChapterTitle('Onde Agir: Qualidade vs. Treinamento', 'Divisão clara do plano de trabalho entre a Equipe de Qualidade e a Equipe de Treinamento. Clique em qualquer grupo, critério ou número para ver os operadores e baixe o XLSX detalhado para enviar às equipes.', 'fa-bullseye', 'indigo');
-
-                    // Barra de Exportação XLSX Direta para Equipe de Qualidade e Equipe de Treinamento
-                    h += `<div class="hideable-box mb-6 glass-card rounded-3xl p-4 md:p-5 border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 flex flex-wrap items-center justify-between gap-4 ${this.analiseEditMode ? 'hidden' : ''}">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-lg shadow-sm shrink-0"><i class="fa-solid fa-file-excel"></i></div>
-                            <div>
-                                <h4 class="text-xs md:text-sm font-black text-slate-800 dark:text-white">Encaminhar Plano de Ação em Excel (.XLSX) para as Equipes</h4>
-                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Gera planilha organizada em 4 abas (Resumo & SLAs, Fila Nominal com Roteiro Pronto, Pauta de Ofensores e Checklist de Controle de Execução).</p>
-                            </div>
-                        </div>
+                    // ---------- ABA 2: ONDE AGIR (QUALIDADE vs. TREINAMENTO) ----------
+                    if (mod === 'todos' || mod === 'onde_agir') {
+                    // Barra enxuta de exportação XLSX
+                    h += `<div class="mb-4 bg-white dark:bg-slate-800 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                        <div class="text-xs font-bold text-slate-600 dark:text-slate-300"><i class="fa-solid fa-hand-pointer text-indigo-500 mr-1.5"></i>Clique em qualquer grupo ou item abaixo para listar os operadores ou baixe a planilha pronta de cada equipe:</div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('qualidade')" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-file-excel"></i> Baixar XLSX — Equipe Qualidade (${acoesQualidade.length})</button>
-                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('treinamento')" class="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-file-excel"></i> Baixar XLSX — Equipe Treinamento (${acoesTreinamento.length})</button>
-                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-download"></i> Plano Completo (.XLSX)</button>
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('qualidade')" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"><i class="fa-solid fa-file-excel"></i> XLSX Qualidade (${acoesQualidade.length})</button>
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('treinamento')" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"><i class="fa-solid fa-file-excel"></i> XLSX Treinamento (${acoesTreinamento.length})</button>
+                            <button onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"><i class="fa-solid fa-download"></i> XLSX Completo</button>
                         </div>
                     </div>`;
 
-                    // Agrupamento de temas/ofensores específicos para a fila da Qualidade e para a fila do Treinamento
                     const agregarTemas = (arrOps) => {
                         const map = {};
                         arrOps.forEach(p => {
@@ -21785,114 +21788,83 @@ storage: {
                     const temasQualidade = agregarTemas(acoesQualidade.filter(p => p.diagnostico.perfil_identificado !== 'REFERENCIA_BOAS_PRATICAS'));
                     const temasTreinamento = agregarTemas(acoesTreinamento);
 
-                    // Painel Lado a Lado: O que a Equipe de Qualidade vai trabalhar vs. O que a Equipe de Treinamento vai trabalhar (100% clicável!)
-                    h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
                         <!-- BLOCO EQUIPE DE QUALIDADE -->
-                        <div class="hideable-box glass-card rounded-3xl p-6 border-2 border-blue-200 dark:border-blue-800/70 bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-blue-200 dark:border-blue-800/70 shadow-xs flex flex-col justify-between">
                             <div>
-                                <div class="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-700">
+                                <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-100 dark:border-slate-700">
                                     <div class="flex items-center gap-3">
-                                        <div class="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl shadow-md"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+                                        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
                                         <div>
-                                            <span class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Frente 1 &bull; Conformidade, Diagnóstico e Benchmark</span>
-                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">O que a Equipe de Qualidade vai trabalhar</h3>
+                                            <h3 class="text-base font-black text-slate-800 dark:text-white">Equipe de Qualidade</h3>
+                                            <p class="text-[11px] text-slate-500">Veteranos com erro crítico, quedas bruscas (&ge;15%) e curadoria Q1</p>
                                         </div>
                                     </div>
-                                    <div onclick="app.ui.openOndeAgirModal('equipe', '${encodeURIComponent('Equipe de Qualidade')}')" class="text-right cursor-pointer px-3 py-1.5 rounded-2xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 transition-all" title="Clique para ver os ${acoesQualidade.length} operadores da Qualidade">
-                                        <div class="text-3xl font-black text-blue-600 dark:text-blue-400 tabular-nums">${acoesQualidade.length}</div>
-                                        <div class="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-300"><i class="fa-solid fa-users mr-1"></i>Ver Operadores</div>
+                                    <div onclick="app.ui.openOndeAgirModal('equipe', '${encodeURIComponent('Equipe de Qualidade')}')" class="text-right cursor-pointer px-3 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
+                                        <div class="text-2xl font-black text-blue-600 dark:text-blue-400 tabular-nums">${acoesQualidade.length}</div>
+                                        <div class="text-[9px] font-bold uppercase text-blue-600">Ver lista</div>
                                     </div>
                                 </div>
-                                <div class="text-xs text-slate-600 dark:text-slate-300 bg-blue-50/70 dark:bg-blue-950/30 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/50 mb-4 leading-relaxed">
-                                    <strong class="text-blue-800 dark:text-blue-300 block mb-0.5"><i class="fa-solid fa-circle-info mr-1"></i>Por que a Qualidade atua nestes casos?</strong>
-                                    Porque envolvem operadores que <strong>já passaram pela formação inicial</strong> e cometeram erro crítico de conformidade, operadores que sofreram <strong>queda atípica de nota (&ge; 15%)</strong> exigindo comparação técnica das monitorias, ou operadores <strong>Q1 (&ge; 95)</strong> para curadoria de ligações modelo.
-                                </div>
-                                <div class="space-y-2.5 mb-5">
-                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'RISCO_OPERACIONAL_VETERANO')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 dark:hover:bg-blue-950/30 border border-slate-200/70 hover:border-blue-400 dark:border-slate-700 transition-all">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 mr-2">SLA 24h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-blue-600">Auditoria Dirigida + Feedback de Conformidade</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) que cometeram Falha Crítica &bull; <span class="text-blue-600 font-semibold">Clique para listar</span></div></div>
-                                        <span class="text-lg font-black text-red-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.RISCO_OPERACIONAL_VETERANO || 0} op.</span>
+                                <div class="space-y-2 mb-4">
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'RISCO_OPERACIONAL_VETERANO')" class="cursor-pointer flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-700 mr-1.5">SLA 24h</span><strong class="text-xs text-slate-800 dark:text-white">Auditoria Dirigida (Pleno/Veterano c/ Crítica)</strong></div>
+                                        <span class="text-sm font-black text-red-600 tabular-nums">${contPerfil.RISCO_OPERACIONAL_VETERANO || 0} op.</span>
                                     </div>
-                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'ALERTA_RUPTURA')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 dark:hover:bg-blue-950/30 border border-slate-200/70 hover:border-blue-400 dark:border-slate-700 transition-all">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-blue-600">Diagnóstico Comparativo 1:1 (Queda Brusca)</strong><div class="text-[11px] text-slate-500 mt-0.5">Operadores com queda &ge; 15% na nota em relação ao mês anterior &bull; <span class="text-blue-600 font-semibold">Clique para listar</span></div></div>
-                                        <span class="text-lg font-black text-orange-500 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.ALERTA_RUPTURA || 0} op.</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'ALERTA_RUPTURA')" class="cursor-pointer flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 mr-1.5">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white">Diagnóstico 1:1 (Queda Brusca &ge; 15%)</strong></div>
+                                        <span class="text-sm font-black text-orange-500 tabular-nums">${contPerfil.ALERTA_RUPTURA || 0} op.</span>
                                     </div>
-                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'REFERENCIA_BOAS_PRATICAS')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 dark:hover:bg-blue-950/30 border border-slate-200/70 hover:border-blue-400 dark:border-slate-700 transition-all">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 mr-2">SLA 120h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-blue-600">Curadoria e Extração de Áudio Modelo</strong><div class="text-[11px] text-slate-500 mt-0.5">Destaques Q1 (nota &ge; 95 sem falha crítica) para enviar ao Treinamento &bull; <span class="text-blue-600 font-semibold">Clique para listar</span></div></div>
-                                        <span class="text-lg font-black text-emerald-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.REFERENCIA_BOAS_PRATICAS || 0} op.</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'REFERENCIA_BOAS_PRATICAS')" class="cursor-pointer flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50/60 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 mr-1.5">SLA 120h</span><strong class="text-xs text-slate-800 dark:text-white">Extração de Áudio Modelo (Q1 &ge; 95)</strong></div>
+                                        <span class="text-sm font-black text-emerald-600 tabular-nums">${contPerfil.REFERENCIA_BOAS_PRATICAS || 0} op.</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
-                                <div class="flex items-center justify-between gap-2 mb-2">
-                                    <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400"><i class="fa-solid fa-crosshairs mr-1"></i>Critérios prioritários para foco das auditorias da Qualidade</div>
-                                    <button onclick="app.ui.exportarPlanoOndeAgirXLSX('qualidade')" class="text-[10px] font-black text-blue-600 dark:text-blue-400 hover:underline ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-excel mr-1"></i>Baixar XLSX Qualidade</button>
-                                </div>
-                                ${temasQualidade.length ? `<ul class="space-y-1.5 text-xs">${temasQualidade.map(t => `<li onclick="app.ui.openOndeAgirModal('tema_equipe', '${encodeURIComponent('Equipe de Qualidade')}', '${encodeURIComponent(t.tipo + '|' + t.item)}')" class="cursor-pointer flex items-center justify-between gap-2 bg-slate-50 hover:bg-blue-50 dark:bg-slate-900/40 dark:hover:bg-blue-950/40 px-3 py-1.5 rounded-lg border border-transparent hover:border-blue-300 transition-all"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-orange-500'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-blue-600 dark:text-blue-400 shrink-0 underline">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma falha crítica ou ruptura ativa para auditoria corretiva.</div>`}
+                                <div class="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 mb-1.5">Principais itens para foco da Qualidade</div>
+                                ${temasQualidade.length ? `<ul class="space-y-1 text-xs">${temasQualidade.map(t => `<li onclick="app.ui.openOndeAgirModal('tema_equipe', '${encodeURIComponent('Equipe de Qualidade')}', '${encodeURIComponent(t.tipo + '|' + t.item)}')" class="cursor-pointer flex items-center justify-between gap-2 bg-slate-50 hover:bg-blue-50 dark:bg-slate-900/40 px-2.5 py-1.5 rounded-lg"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-orange-500'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-blue-600 shrink-0">${t.operadores} op.</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma falha crítica ou ruptura ativa.</div>`}
                             </div>
                         </div>
 
                         <!-- BLOCO EQUIPE DE TREINAMENTO -->
-                        <div class="hideable-box glass-card rounded-3xl p-6 border-2 border-purple-200 dark:border-purple-800/70 bg-white dark:bg-slate-800 shadow-sm flex flex-col justify-between">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-purple-200 dark:border-purple-800/70 shadow-xs flex flex-col justify-between">
                             <div>
-                                <div class="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-700">
+                                <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-100 dark:border-slate-700">
                                     <div class="flex items-center gap-3">
-                                        <div class="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center text-xl shadow-md"><i class="fa-solid fa-graduation-cap"></i></div>
+                                        <div class="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center text-lg"><i class="fa-solid fa-graduation-cap"></i></div>
                                         <div>
-                                            <span class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400">Frente 2 &bull; Curva de Aprendizado, Simulação e Sala</span>
-                                            <h3 class="text-lg font-black text-slate-800 dark:text-white">O que a Equipe de Treinamento vai trabalhar</h3>
+                                            <h3 class="text-base font-black text-slate-800 dark:text-white">Equipe de Treinamento</h3>
+                                            <p class="text-[11px] text-slate-500">Novatos (até 180d) em curva de aprendizado e reciclagem de Q3/Q4</p>
                                         </div>
                                     </div>
-                                    <div onclick="app.ui.openOndeAgirModal('equipe', '${encodeURIComponent('Equipe de Treinamento')}')" class="text-right cursor-pointer px-3 py-1.5 rounded-2xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 transition-all" title="Clique para ver os ${acoesTreinamento.length} operadores do Treinamento">
-                                        <div class="text-3xl font-black text-purple-600 dark:text-purple-400 tabular-nums">${acoesTreinamento.length}</div>
-                                        <div class="text-[10px] font-bold uppercase text-purple-600 dark:text-purple-300"><i class="fa-solid fa-users mr-1"></i>Ver Operadores</div>
+                                    <div onclick="app.ui.openOndeAgirModal('equipe', '${encodeURIComponent('Equipe de Treinamento')}')" class="text-right cursor-pointer px-3 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800">
+                                        <div class="text-2xl font-black text-purple-600 dark:text-purple-400 tabular-nums">${acoesTreinamento.length}</div>
+                                        <div class="text-[9px] font-bold uppercase text-purple-600">Ver lista</div>
                                     </div>
                                 </div>
-                                <div class="text-xs text-slate-600 dark:text-slate-300 bg-purple-50/70 dark:bg-purple-950/30 p-3.5 rounded-2xl border border-purple-100 dark:border-purple-900/50 mb-4 leading-relaxed">
-                                    <strong class="text-purple-800 dark:text-purple-300 block mb-0.5"><i class="fa-solid fa-circle-info mr-1"></i>Por que o Treinamento atua nestes casos?</strong>
-                                    Porque envolvem <strong>lacuna de aprendizagem em novatos</strong> (Ramp-Up e Júnior até 180 dias que erraram item crítico ou ficaram em Q3/Q4) ou <strong>reciclagem prática de processo</strong> para Plenos e Veteranos estagnados em Q3/Q4 por erros repetitivos de roteiro/sistema.
-                                </div>
-                                <div class="space-y-2.5 mb-5">
-                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'FALHA_CRITICA_RAMP_UP')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 dark:hover:bg-purple-950/30 border border-slate-200/70 hover:border-purple-400 dark:border-slate-700 transition-all">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 mr-2">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-purple-600">Simulação em Espelho + Intervenção de Segurança</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) que cometeram Falha Crítica &bull; <span class="text-purple-600 font-semibold">Clique para listar</span></div></div>
-                                        <span class="text-lg font-black text-orange-500 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.FALHA_CRITICA_RAMP_UP || 0} op.</span>
+                                <div class="space-y-2 mb-4">
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'FALHA_CRITICA_RAMP_UP')" class="cursor-pointer flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 mr-1.5">SLA 48h</span><strong class="text-xs text-slate-800 dark:text-white">Simulação em Espelho (Novato c/ Crítica)</strong></div>
+                                        <span class="text-sm font-black text-orange-500 tabular-nums">${contPerfil.FALHA_CRITICA_RAMP_UP || 0} op.</span>
                                     </div>
-                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'GAP_TREINAMENTO_INICIAL')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 dark:hover:bg-purple-950/30 border border-slate-200/70 hover:border-purple-400 dark:border-slate-700 transition-all">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-purple-600">Reciclagem Inicial em Sala (Curva de Aprendizado)</strong><div class="text-[11px] text-slate-500 mt-0.5">Ramp-Up e Júnior (até 180 dias) posicionados em Q3 ou Q4 &bull; <span class="text-purple-600 font-semibold">Clique para listar</span></div></div>
-                                        <span class="text-lg font-black text-amber-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.GAP_TREINAMENTO_INICIAL || 0} op.</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'GAP_TREINAMENTO_INICIAL')" class="cursor-pointer flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 mr-1.5">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white">Reciclagem Inicial em Sala (Novato Q3/Q4)</strong></div>
+                                        <span class="text-sm font-black text-amber-600 tabular-nums">${contPerfil.GAP_TREINAMENTO_INICIAL || 0} op.</span>
                                     </div>
-                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'RECICLAGEM_PROCESSUAL_VETERANO')" class="cursor-pointer group flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 dark:hover:bg-purple-950/30 border border-slate-200/70 hover:border-purple-400 dark:border-slate-700 transition-all">
-                                        <div><span class="text-[10px] font-black px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 mr-2">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white group-hover:text-purple-600">Oficina de Atualização Processual em Sala</strong><div class="text-[11px] text-slate-500 mt-0.5">Plenos e Veteranos (&gt; 180 dias) estagnados em Q3 ou Q4 por desvios de processo &bull; <span class="text-purple-600 font-semibold">Clique para listar</span></div></div>
-                                        <span class="text-lg font-black text-purple-600 tabular-nums px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">${contPerfil.RECICLAGEM_PROCESSUAL_VETERANO || 0} op.</span>
+                                    <div onclick="app.ui.openOndeAgirModal('perfil', 'RECICLAGEM_PROCESSUAL_VETERANO')" class="cursor-pointer flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-purple-50/60 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700">
+                                        <div><span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 mr-1.5">SLA 72h</span><strong class="text-xs text-slate-800 dark:text-white">Oficina de Atualização (Veterano Q3/Q4)</strong></div>
+                                        <span class="text-sm font-black text-purple-600 tabular-nums">${contPerfil.RECICLAGEM_PROCESSUAL_VETERANO || 0} op.</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
-                                <div class="flex items-center justify-between gap-2 mb-2">
-                                    <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400"><i class="fa-solid fa-book-open mr-1"></i>Conteúdos obrigatórios para a pauta de sala do Treinamento</div>
-                                    <button onclick="app.ui.exportarPlanoOndeAgirXLSX('treinamento')" class="text-[10px] font-black text-purple-600 dark:text-purple-400 hover:underline ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-file-excel mr-1"></i>Baixar XLSX Treinamento</button>
-                                </div>
-                                ${temasTreinamento.length ? `<ul class="space-y-1.5 text-xs">${temasTreinamento.map(t => `<li onclick="app.ui.openOndeAgirModal('tema_equipe', '${encodeURIComponent('Equipe de Treinamento')}', '${encodeURIComponent(t.tipo + '|' + t.item)}')" class="cursor-pointer flex items-center justify-between gap-2 bg-slate-50 hover:bg-purple-50 dark:bg-slate-900/40 dark:hover:bg-purple-950/40 px-3 py-1.5 rounded-lg border border-transparent hover:border-purple-300 transition-all"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-purple-600'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-purple-600 dark:text-purple-400 shrink-0 underline">${t.operadores} op. (${t.ocorrencias}x)</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma demanda pendente para sala de treinamento neste filtro.</div>`}
+                                <div class="text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 mb-1.5">Pauta prioritária para sala de Treinamento</div>
+                                ${temasTreinamento.length ? `<ul class="space-y-1 text-xs">${temasTreinamento.map(t => `<li onclick="app.ui.openOndeAgirModal('tema_equipe', '${encodeURIComponent('Equipe de Treinamento')}', '${encodeURIComponent(t.tipo + '|' + t.item)}')" class="cursor-pointer flex items-center justify-between gap-2 bg-slate-50 hover:bg-purple-50 dark:bg-slate-900/40 px-2.5 py-1.5 rounded-lg"><span class="truncate text-slate-700 dark:text-slate-200"><strong class="${t.tipo === 'Falha Crítica' ? 'text-red-600' : 'text-purple-600'}">[${t.tipo}]</strong> ${esc(t.item)}</span><span class="text-[11px] font-black text-purple-600 shrink-0">${t.operadores} op.</span></li>`).join('')}</ul>` : `<div class="text-xs italic text-slate-400">Nenhuma demanda pendente para sala.</div>`}
                             </div>
                         </div>
                     </div>`;
 
                     const faixas = ['Ramp-Up', 'Júnior', 'Pleno', 'Veterano'];
-                    const perfisKeys = Object.keys(meta);
-                    const matriz = {}; faixas.forEach(f => { matriz[f] = {}; perfisKeys.forEach(k => { matriz[f][k] = 0; }); });
-                    const totalFaixa = {}; faixas.forEach(f => { totalFaixa[f] = lista.filter(p => p.entrada.faixa_maturidade === f).length; });
-                    acionaveis.forEach(p => { matriz[p.entrada.faixa_maturidade][p.diagnostico.perfil_identificado]++; });
-                    const maxCel = Math.max(1, ...faixas.flatMap(f => perfisKeys.map(k => matriz[f][k])));
-
-                    h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-6 overflow-x-auto">
-                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-table-cells text-indigo-500 mr-2"></i> Mapa de Calor: Maturidade (Ativos RH) x Perfil de Intervenção</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Cruza o tempo de empresa dos operadores ativos com cada perfil de intervenção. <strong>Clique em qualquer célula com número</strong> para abrir os operadores daquele cruzamento.</p>
-                        <table class="w-full text-center text-xs border-separate border-spacing-1">
-                            <thead><tr><th class="text-left text-[10px] uppercase text-slate-400 p-2">Faixa (Ativos)</th>${perfisKeys.map(k => `<th onclick="app.ui.openOndeAgirModal('perfil', '${k}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg text-[9px] uppercase font-black text-slate-500 dark:text-slate-400 p-2 leading-tight">${meta[k].label}<span class="block text-[8px] font-bold ${meta[k].responsavel === 'Equipe de Qualidade' ? 'text-blue-500' : 'text-purple-500'} mt-0.5">${meta[k].responsavel}</span></th>`).join('')}<th class="text-[10px] uppercase text-slate-400 p-2">Ativos na Faixa</th></tr></thead>
-                            <tbody>${faixas.map(f => `<tr><td onclick="app.ui.openOndeAgirModal('faixa_ativos', '${encodeURIComponent(f)}')" class="cursor-pointer text-left font-black text-slate-700 dark:text-slate-200 hover:text-indigo-600 p-2">${f}</td>${perfisKeys.map(k => { const n = matriz[f][k]; const al = n === 0 ? 0 : (0.15 + 0.7 * n / maxCel); return `<td ${n ? `onclick="app.ui.openOndeAgirModal('celula', '${encodeURIComponent(f)}', '${k}')"` : ''} class="rounded-lg p-3 font-black tabular-nums ${n ? 'cursor-pointer hover:ring-2 hover:ring-indigo-500 text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}" style="background: rgba(99,102,241,${al.toFixed(2)})">${n ? `${n} op.` : '-'}</td>`; }).join('')}<td onclick="app.ui.openOndeAgirModal('faixa_ativos', '${encodeURIComponent(f)}')" class="cursor-pointer font-bold text-indigo-600 dark:text-indigo-400 hover:underline p-2">${totalFaixa[f]} op.</td></tr>`).join('')}</tbody>
-                        </table>
-                    </div>`;
-
-                    // Ofensores cruzados com maturidade (apenas ativos RH), Selo Resumido ("Qualidade", "Treinamento" ou "Qualidade & Treinamento") e explicação do PORQUÊ
                     const ofMap = {};
                     lista.forEach(p => {
                         [['Crítica', p.entrada.falhas_criticas], ['Desvio', p.entrada.desvios_processuais]].forEach(([tipo, arr]) => arr.forEach(f => {
@@ -21904,28 +21876,58 @@ storage: {
                     });
                     const ofArr = Object.values(ofMap).sort((a, b) => (b.tipo === 'Crítica') - (a.tipo === 'Crítica') || b.total - a.total).slice(0, 10);
 
-                    h += `<div class="hideable-box glass-card rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm mb-8 overflow-x-auto">
-                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-1"><i class="fa-solid fa-magnifying-glass-chart text-indigo-500 mr-2"></i> Ofensores x Maturidade (Quem atua em cada item do formulário e Por Quê)</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Cruza a maturidade dos operadores que erraram cada pergunta para definir o selo <strong>Qualidade</strong>, <strong>Treinamento</strong> ou <strong>Qualidade &amp; Treinamento</strong> e explicar o motivo. <strong>Clique em qualquer linha</strong> para ver quem são os operadores.</p>
+                    h += `<div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-xs mb-6 overflow-x-auto">
+                        <div class="flex items-center justify-between gap-2 mb-3">
+                            <h3 class="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-table-list text-indigo-500 mr-1.5"></i>Ofensores x Maturidade (Quem atua em cada item e por quê)</h3>
+                            <span class="text-[11px] text-slate-400">Clique na linha para ver os operadores</span>
+                        </div>
                         <table class="w-full text-left text-xs">
-                            <thead><tr class="text-[10px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-2 pr-2">Ofensor (Pergunta do Formulário)</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Ativos Impactados</th><th class="py-2 px-2">Concentração por Maturidade</th><th class="py-2 pl-2 min-w-[290px]">Selo Responsável &amp; Por que cuida deste item</th></tr></thead>
+                            <thead><tr class="text-[10px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-2 pr-2">Item do Formulário</th><th class="py-2 px-2 text-center">Ocorr.</th><th class="py-2 px-2 text-center">Operadores</th><th class="py-2 px-2">Maturidade</th><th class="py-2 pl-2 min-w-[260px]">Responsável &amp; Motivo</th></tr></thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">${ofArr.length ? ofArr.map(o => {
                                 const dir = this.getDirecionamentoOfensor(o);
                                 return `<tr onclick="app.ui.openOndeAgirModal('ofensor', '${encodeURIComponent(o.tipo)}', '${encodeURIComponent(o.item)}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
-                                    <td class="py-3 pr-2 text-slate-700 dark:text-slate-200 leading-snug font-medium"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1.5 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
-                                    <td class="py-3 px-2 text-center font-black tabular-nums">${o.total}x</td>
-                                    <td class="py-3 px-2 text-center"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 font-black hover:bg-indigo-100">${o.ops} op. <i class="fa-solid fa-up-right-from-square text-[9px]"></i></span></td>
-                                    <td class="py-3 px-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
-                                    <td class="py-3 pl-2">
-                                        <span class="inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-md ${dir.corSelo}"><i class="fa-solid ${dir.icone}"></i> ${dir.selo}</span>
-                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug"><strong>Por quê:</strong> ${esc(dir.motivo)}</div>
+                                    <td class="py-2.5 pr-2 text-slate-700 dark:text-slate-200 font-medium"><span class="text-[9px] font-black px-1.5 py-0.5 rounded mr-1.5 ${o.tipo === 'Crítica' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}">${o.tipo.toUpperCase()}</span>${esc(o.item)}</td>
+                                    <td class="py-2.5 px-2 text-center font-black tabular-nums">${o.total}x</td>
+                                    <td class="py-2.5 px-2 text-center"><span class="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 font-black">${o.ops} op.</span></td>
+                                    <td class="py-2.5 px-2"><div class="flex gap-1 flex-wrap">${faixas.filter(f => o.faixas[f]).map(f => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${f}: ${o.faixas[f]}</span>`).join('')}</div></td>
+                                    <td class="py-2.5 pl-2">
+                                        <span class="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded ${dir.corSelo}"><i class="fa-solid ${dir.icone}"></i> ${dir.selo}</span>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">${esc(dir.motivo)}</div>
                                     </td>
                                 </tr>`;
                             }).join('') : '<tr><td colspan="5" class="py-4 italic text-slate-400">Nenhum ofensor identificado entre os operadores ativos.</td></tr>'}</tbody>
                         </table>
                     </div>`;
+                    } // Fim Aba 2
 
-                    // ---------- CAPÍTULO C: SIMULADOR DE GANHO POTENCIAL (LABORATÓRIO INTERATIVO "WHAT-IF") ----------
+                    // ---------- ABA 3: SIMULADOR WHAT-IF ----------
+                    if (mod === 'todos' || mod === 'what_if') {
+                        h += `<div id="whatif-live-root" class="mb-8">${this.renderWhatIfLiveHTML(data, lista)}</div>`;
+                    }
+                    return h;
+                },
+
+                // Atualiza APENAS o container do What-If em 0ms (Zero Tremida / Zero Flicker / Preserva foco e posição da tabela)
+                refreshWhatIfInPlace() {
+                    const root = document.getElementById('whatif-live-root');
+                    if (root && this._activeQTData && this._prescCache) {
+                        const tableScroll = document.getElementById('whatif-ops-scroll-box');
+                        const prevScrollTop = tableScroll ? tableScroll.scrollTop : 0;
+                        root.innerHTML = this.renderWhatIfLiveHTML(this._activeQTData, this._prescCache);
+                        const newTableScroll = document.getElementById('whatif-ops-scroll-box');
+                        if (newTableScroll && prevScrollTop > 0) {
+                            newTableScroll.scrollTop = prevScrollTop;
+                        }
+                        return;
+                    }
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                // Renderizador isolado e estruturado em 3 Passos Limpos do Simulador What-If
+                renderWhatIfLiveHTML(data, lista) {
+                    if (!data || !lista || !lista.length) return '';
+                    const meta = this.getPrescricaoMeta();
+                    const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
                     const qcSim = this.getQuadCfg();
                     const wi = this.getWhatIfCfg(qcSim);
                     const fCrit = Math.max(0, Math.min(1, wi.eficCriticas / 100));
@@ -21935,6 +21937,7 @@ storage: {
                     const metaVet = Number(wi.metaVeteranos || 85);
                     const bonusQ2Val = Number(wi.bonusQ2 || 0);
                     const metaDir = Number(wi.metaDiretoria || 85);
+                    const stepTab = this.whatIfStepTab || 'alavancas';
 
                     const rankTodos = data.rankOperadores || [];
                     const nTotalOps = rankTodos.length || 1;
@@ -21948,19 +21951,21 @@ storage: {
                     const quadAtivosDepois = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 };
                     const classificarQuad = (nVal) => nVal >= qcSim.q1 ? 'Q1' : (nVal >= qcSim.q2 ? 'Q2' : (nVal >= qcSim.q3 ? 'Q3' : 'Q4'));
 
+                    const contPerfil = {};
+                    const ganhoPorPerfil = {};
+                    lista.forEach(p => {
+                        const k = p.diagnostico.perfil_identificado;
+                        contPerfil[k] = (contPerfil[k] || 0) + 1;
+                        ganhoPorPerfil[k] = 0;
+                    });
+
                     // Acumuladores das 5 alavancas independentes
-                    let somaAlavCritica = 0;
-                    let somaAlavRuptura = 0;
-                    let somaAlavNovatos = 0;
-                    let somaAlavVeteranos = 0;
-                    let somaAlavQ2 = 0;
+                    let somaAlavCritica = 0, somaAlavRuptura = 0, somaAlavNovatos = 0, somaAlavVeteranos = 0, somaAlavQ2 = 0;
                     let cntAlavCritica = 0, cntAlavRuptura = 0, cntAlavNovatos = 0, cntAlavVeteranos = 0, cntAlavQ2 = 0;
                     let totalLigsZeradasRecup = 0;
 
-                    let ganhoSomaQualidade = 0;
-                    let ganhoSomaTreinamento = 0;
-                    let opsImpactadosQual = 0;
-                    let opsImpactadosTrein = 0;
+                    let ganhoSomaQualidade = 0, ganhoSomaTreinamento = 0;
+                    let opsImpactadosQual = 0, opsImpactadosTrein = 0;
 
                     const todosSimulados = [];
                     lista.forEach(p => {
@@ -21974,51 +21979,47 @@ storage: {
                         const perfilAtivo = wi.perfisAtivos[perf] !== false;
                         const opIncluido = !wi.opsExcluidos[e.operador];
                         const podeSimular = perfilAtivo && opIncluido;
+                        const frente = (p.acao_prescritiva && p.acao_prescritiva.responsavel_execucao === 'Equipe de Qualidade') ? 'qualidade' : (p.acao_prescritiva ? 'treinamento' : 'estavel');
+
+                        // Calcula PRIMEIRO o potencial bruto (independente do checkbox individual) para manter a ORDEM FIXA da tabela sem pular linhas!
+                        const notaSemCrit = e.nota_sem_critica || nAtual;
+                        const brCrit = ((e.ligs_zeradas_critica > 0 || e.falhas_criticas.length > 0) && notaSemCrit > nAtual) ? (notaSemCrit - nAtual) * fCrit * fAder : 0;
+                        const brAposCrit = nAtual + brCrit;
+                        const brRupt = (perf === 'ALERTA_RUPTURA' && e.nota_anterior && e.nota_anterior > brAposCrit) ? (e.nota_anterior - brAposCrit) * fRupt * fAder : 0;
+                        const brAposRupt = brAposCrit + brRupt;
+                        const brNov = (isNovato && (perf === 'GAP_TREINAMENTO_INICIAL' || perf === 'FALHA_CRITICA_RAMP_UP' || qAnt === 'Q3' || qAnt === 'Q4') && metaNov > brAposRupt) ? (metaNov - brAposRupt) * fAder : 0;
+                        const brVet = (!isNovato && (perf === 'RECICLAGEM_PROCESSUAL_VETERANO' || perf === 'RISCO_OPERACIONAL_VETERANO' || qAnt === 'Q3' || qAnt === 'Q4') && metaVet > brAposRupt) ? (metaVet - brAposRupt) * fAder : 0;
+                        const brQ2 = (qAnt === 'Q2' && bonusQ2Val > 0 && (brAposRupt + brNov + brVet) < 100) ? Math.min(100 - (brAposRupt + brNov + brVet), bonusQ2Val * fAder) : 0;
+
+                        const metaManualOp = wi.metasIndividuais && wi.metasIndividuais[e.operador] !== undefined ? Number(wi.metasIndividuais[e.operador]) : null;
+                        const deltaAutomatico = Math.max(0, Math.min(100 - nAtual, brCrit + brRupt + brNov + brVet + brQ2));
+                        const deltaPotencialBruto = (metaManualOp !== null && !isNaN(metaManualOp)) ? Math.max(0, Math.min(100, metaManualOp) - nAtual) : deltaAutomatico;
 
                         let gCrit = 0, gRupt = 0, gNov = 0, gVet = 0, gQ2 = 0;
-                        let frente = (p.acao_prescritiva && p.acao_prescritiva.responsavel_execucao === 'Equipe de Qualidade') ? 'qualidade' : (p.acao_prescritiva ? 'treinamento' : 'estavel');
+                        let deltaTotalOp = 0;
                         let explicacaoGanho = [];
 
                         if (podeSimular) {
-                            // 1) Ganho por Neutralização de Falhas Críticas (se teve ligação zerada por falha crítica)
-                            const notaSemCrit = e.nota_sem_critica || nAtual;
-                            if ((e.ligs_zeradas_critica > 0 || e.falhas_criticas.length > 0) && notaSemCrit > nAtual) {
-                                gCrit = (notaSemCrit - nAtual) * fCrit * fAder;
-                                if (gCrit > 0.05) {
-                                    explicacaoGanho.push(`Sem falha crítica: +${gCrit.toFixed(1)}`);
-                                    totalLigsZeradasRecup += (e.ligs_zeradas_critica || 1);
+                            if (metaManualOp !== null && !isNaN(metaManualOp)) {
+                                deltaTotalOp = Math.max(0, Math.min(100, metaManualOp) - nAtual);
+                                if (deltaTotalOp > 0.05) {
+                                    explicacaoGanho.push(`Alvo Manual (${metaManualOp} pts): +${deltaTotalOp.toFixed(1)}`);
+                                    if (frente === 'treinamento') gVet = deltaTotalOp;
+                                    else gQ2 = deltaTotalOp;
                                 }
-                            }
-                            const baseAposCrit = nAtual + gCrit;
-
-                            // 2) Ganho por Reversão de Queda Brusca (Alerta de Ruptura)
-                            if (perf === 'ALERTA_RUPTURA' && e.nota_anterior && e.nota_anterior > baseAposCrit) {
-                                gRupt = (e.nota_anterior - baseAposCrit) * fRupt * fAder;
+                            } else {
+                                gCrit = brCrit; gRupt = brRupt; gNov = brNov; gVet = brVet; gQ2 = brQ2;
+                                deltaTotalOp = deltaAutomatico;
+                                if (gCrit > 0.05) { explicacaoGanho.push(`Sem falha crítica: +${gCrit.toFixed(1)}`); totalLigsZeradasRecup += (e.ligs_zeradas_critica || 1); }
                                 if (gRupt > 0.05) explicacaoGanho.push(`Recup. histórico (${e.nota_anterior}): +${gRupt.toFixed(1)}`);
-                            }
-                            const baseAposRupt = baseAposCrit + gRupt;
-
-                            // 3) Ganho por Meta Pós-Treinamento de Novatos (Ramp-Up/Júnior em Q3/Q4 ou Falha Crítica Ramp-Up)
-                            if (isNovato && (perf === 'GAP_TREINAMENTO_INICIAL' || perf === 'FALHA_CRITICA_RAMP_UP' || qAnt === 'Q3' || qAnt === 'Q4') && metaNov > baseAposRupt) {
-                                gNov = (metaNov - baseAposRupt) * fAder;
                                 if (gNov > 0.05) explicacaoGanho.push(`Piso Novato (${metaNov}): +${gNov.toFixed(1)}`);
-                            }
-
-                            // 4) Ganho por Meta Pós-Reciclagem de Experientes (Pleno/Veterano em Q3/Q4 ou Risco Veterano)
-                            if (!isNovato && (perf === 'RECICLAGEM_PROCESSUAL_VETERANO' || perf === 'RISCO_OPERACIONAL_VETERANO' || qAnt === 'Q3' || qAnt === 'Q4') && metaVet > baseAposRupt) {
-                                gVet = (metaVet - baseAposRupt) * fAder;
                                 if (gVet > 0.05) explicacaoGanho.push(`Piso Experiente (${metaVet}): +${gVet.toFixed(1)}`);
-                            }
-
-                            // 5) Bônus Incremental nos Operadores Q2 (Lapidação rumo ao Q1)
-                            if (qAnt === 'Q2' && bonusQ2Val > 0 && (baseAposRupt + gNov + gVet) < 100) {
-                                gQ2 = Math.min(100 - (baseAposRupt + gNov + gVet), bonusQ2Val * fAder);
                                 if (gQ2 > 0.05) explicacaoGanho.push(`Lapidação Q2: +${gQ2.toFixed(1)}`);
                             }
                         }
 
-                        const deltaTotalOp = Math.max(0, Math.min(100 - nAtual, gCrit + gRupt + gNov + gVet + gQ2));
                         const nProj = Math.min(100, nAtual + deltaTotalOp);
+                        const nAlvoExibicao = parseFloat(Math.min(100, nAtual + deltaPotencialBruto).toFixed(1));
                         const qDep = classificarQuad(nProj);
                         quadAtivosDepois[qDep]++;
 
@@ -22029,6 +22030,7 @@ storage: {
                         if (gQ2 > 0.05) { somaAlavQ2 += gQ2; cntAlavQ2++; }
 
                         if (deltaTotalOp > 0.05) {
+                            ganhoPorPerfil[perf] = (ganhoPorPerfil[perf] || 0) + deltaTotalOp;
                             if (frente === 'qualidade' || (frente === 'estavel' && gQ2 > 0)) {
                                 ganhoSomaQualidade += deltaTotalOp;
                                 opsImpactadosQual++;
@@ -22044,22 +22046,31 @@ storage: {
                             tempoDias: e.tempo_casa_dias,
                             perfilKey: perf,
                             perfil: meta[perf] ? meta[perf].label : 'Estável (Q1/Q2)',
+                            frenteKey: frente,
                             frente: frente === 'qualidade' ? 'Equipe de Qualidade' : (frente === 'treinamento' ? 'Equipe de Treinamento' : 'Estável / Q2'),
-                            incluido: opIncluido && perfilAtivo,
+                            incluido: podeSimular,
+                            opMarcado: opIncluido,
+                            perfilLigado: perfilAtivo,
                             antes: nAtual,
-                            notaSemCrit: e.nota_sem_critica || nAtual,
+                            notaSemCrit: notaSemCrit,
                             notaAnt: e.nota_anterior,
                             depois: parseFloat(nProj.toFixed(1)),
+                            alvoRef: nAlvoExibicao,
+                            temMetaManual: metaManualOp !== null && !isNaN(metaManualOp),
                             qAntes: qAnt,
                             qDepois: qDep,
+                            potencialOrdenacao: parseFloat(deltaPotencialBruto.toFixed(2)),
                             ganhoOp: parseFloat(deltaTotalOp.toFixed(1)),
+                            ganhoSeMarcado: parseFloat(deltaPotencialBruto.toFixed(1)),
                             impactoGlobal: parseFloat((deltaTotalOp / nTotalOps).toFixed(2)),
+                            impactoSeMarcado: parseFloat((deltaPotencialBruto / nTotalOps).toFixed(2)),
                             impactoAtivos: parseFloat((deltaTotalOp / Math.max(1, lista.length)).toFixed(2)),
-                            detalheAlavancas: explicacaoGanho.join(' | ') || 'Sem variação simulada'
+                            detalheAlavancas: explicacaoGanho.join(' | ') || ( !podeSimular ? 'Desmarcado na simulação' : 'Sem variação automática (defina Alvo Manual se desejar)' )
                         });
                     });
 
-                    todosSimulados.sort((a, b) => b.ganhoOp - a.ganhoOp || a.antes - b.antes);
+                    // ORDEM ESTÁVEL E FIXA: ordena por potencialOrdenacao e nota inicial (NUNCA muda de posição ao marcar/desmarcar o checkbox!)
+                    todosSimulados.sort((a, b) => b.potencialOrdenacao - a.potencialOrdenacao || a.antes - b.antes || a.nome.localeCompare(b.nome));
                     this._whatIfCacheOps = todosSimulados;
 
                     const somaGanhoGeral = somaAlavCritica + somaAlavRuptura + somaAlavNovatos + somaAlavVeteranos + somaAlavQ2;
@@ -22083,161 +22094,171 @@ storage: {
                         metaDir, atingiuMeta, diffMetaDir, wi
                     };
 
-                    h += renderChapterTitle('Simulador de Ganho Potencial ("What-If")', 'Laboratório interativo de projeção executiva: ajuste as metas, taxas de eficácia, bônus por quadrante e operadores incluídos para descobrir exatamente até onde a nota da operação pode chegar.', 'fa-wand-magic-sparkles', 'teal');
+                    const qtdOpsMarcados = todosSimulados.filter(o => o.incluido).length;
+                    const qtdOpsComGanho = todosSimulados.filter(o => o.ganhoOp > 0.05).length;
 
-                    h += `<div class="hideable-box glass-card rounded-3xl p-6 md:p-8 border-2 border-teal-200 dark:border-teal-800/60 bg-white dark:bg-slate-800 shadow-sm mb-8">
-                        <!-- TOPO: Presets Rápidos + Botão Exportar Simulação XLSX -->
-                        <div class="flex flex-wrap items-center justify-between gap-4 pb-5 mb-6 border-b border-slate-100 dark:border-slate-700">
-                            <div>
-                                <span class="text-[10px] font-black uppercase tracking-widest text-teal-600 dark:text-teal-400"><i class="fa-solid fa-sliders mr-1"></i>Simulador Estratégico Multivariável ("What-If")</span>
-                                <h3 class="text-lg md:text-xl font-black text-slate-800 dark:text-white mt-0.5">Personalize as Alavancas e Veja Onde a Operação Chega</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Altere livremente os controles abaixo ou teste cenários prontos de 1 clique.</p>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-1.5 ${this.analiseEditMode ? 'hidden' : ''}">
-                                <span class="text-[10px] font-black uppercase text-slate-400 mr-1">Cenários:</span>
-                                <button onclick="app.ui.applyWhatIfPreset('conservador')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all">Conservador (50%)</button>
-                                <button onclick="app.ui.applyWhatIfPreset('realista')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 transition-all">Realista (85%)</button>
-                                <button onclick="app.ui.applyWhatIfPreset('otimista')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all">Potencial Máximo (100%)</button>
-                                <button onclick="app.ui.applyWhatIfPreset('so_qualidade')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-all">Só Qualidade</button>
-                                <button onclick="app.ui.applyWhatIfPreset('so_treinamento')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-all">Só Treinamento</button>
-                                <button onclick="app.ui.applyWhatIfPreset('reset')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 transition-all" title="Restaurar valores padrão"><i class="fa-solid fa-rotate-left"></i></button>
-                                <button onclick="app.ui.exportarWhatIfXLSX()" class="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-slate-900 hover:bg-black dark:bg-white dark:text-slate-900 text-white shadow-sm flex items-center gap-1.5 ml-1"><i class="fa-solid fa-file-excel text-emerald-400 dark:text-emerald-600"></i> Exportar Simulação (.XLSX)</button>
-                            </div>
-                        </div>
+                    // Filtros da Aba 3 (Individual por Operador)
+                    const buscaOp = String(this.whatIfBuscaOp || '').trim().toLowerCase();
+                    const filtroGrupoOp = this.whatIfFiltroGrupoOp || 'todos';
+                    const opsFiltradosTabela = todosSimulados.filter(item => {
+                        if (buscaOp && !item.nome.toLowerCase().includes(buscaOp) && !item.perfil.toLowerCase().includes(buscaOp)) return false;
+                        if (filtroGrupoOp === 'qualidade') return item.frenteKey === 'qualidade';
+                        if (filtroGrupoOp === 'treinamento') return item.frenteKey === 'treinamento';
+                        if (filtroGrupoOp === 'q3q4') return item.qAntes === 'Q3' || item.qAntes === 'Q4';
+                        if (filtroGrupoOp === 'marcados') return item.incluido;
+                        if (filtroGrupoOp === 'desmarcados') return !item.incluido;
+                        return true;
+                    });
 
-                        <!-- PAINEL DE CONTROLES CUSTOMIZÁVEIS PELO USUÁRIO (6 Sliders + Escopo + Meta Diretoria) -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 bg-slate-50/90 dark:bg-slate-900/50 p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 ${this.analiseEditMode ? 'hidden' : ''}">
-                            <!-- Controle 1: Redução de Falhas Críticas -->
-                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-shield-halved text-red-500 mr-1"></i>1. Eliminar Falhas Críticas</span>
-                                    <span class="font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded">${wi.eficCriticas}%</span>
-                                </div>
-                                <input type="range" min="0" max="100" step="5" value="${wi.eficCriticas}" onchange="app.ui.setWhatIfParam('eficCriticas', this.value)" class="w-full accent-red-600 cursor-pointer">
-                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>0% (Atual)</span><span>Recupera ligações zeradas</span><span>100%</span></div>
+                    let html = `<div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-xs">
+                        <!-- CABEÇALHO + CENÁRIOS RÁPIDOS DE 1 CLIQUE -->
+                        <div class="flex flex-wrap items-center justify-between gap-3 pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-700">
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-sm md:text-base font-black text-slate-800 dark:text-white">Simulador de Ganho Potencial ("What-If")</h3>
+                                <span class="text-[11px] font-bold px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300">${qtdOpsMarcados}/${todosSimulados.length} ativos simulados</span>
                             </div>
-
-                            <!-- Controle 2: Recuperação de Queda Brusca (Ruptura) -->
-                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-arrow-trend-up text-orange-500 mr-1"></i>2. Reverter Quedas (Ruptura)</span>
-                                    <span class="font-black text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded">${wi.eficRuptura}%</span>
-                                </div>
-                                <input type="range" min="0" max="100" step="5" value="${wi.eficRuptura}" onchange="app.ui.setWhatIfParam('eficRuptura', this.value)" class="w-full accent-orange-500 cursor-pointer">
-                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>0%</span><span>Retoma nota do mês anterior</span><span>100%</span></div>
-                            </div>
-
-                            <!-- Controle 3: Nota Alvo Pós-Treinamento Novatos -->
-                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-seedling text-amber-500 mr-1"></i>3. Piso Pós-Sala Novatos (≤180d)</span>
-                                    <span class="font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">${metaNov} pts</span>
-                                </div>
-                                <input type="range" min="70" max="98" step="1" value="${metaNov}" onchange="app.ui.setWhatIfParam('metaNovatos', this.value)" class="w-full accent-amber-500 cursor-pointer">
-                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>70 pts</span><span>Ramp-Up e Júnior em Q3/Q4</span><span>98 pts</span></div>
-                            </div>
-
-                            <!-- Controle 4: Nota Alvo Pós-Reciclagem Experientes -->
-                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-rotate text-purple-500 mr-1"></i>4. Piso Pós-Reciclagem (>180d)</span>
-                                    <span class="font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">${metaVet} pts</span>
-                                </div>
-                                <input type="range" min="70" max="98" step="1" value="${metaVet}" onchange="app.ui.setWhatIfParam('metaVeteranos', this.value)" class="w-full accent-purple-600 cursor-pointer">
-                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>70 pts</span><span>Plenos e Veteranos em Q3/Q4</span><span>98 pts</span></div>
-                            </div>
-
-                            <!-- Controle 5: Ganho Incremental no Q2 rumo ao Q1 -->
-                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-award text-blue-500 mr-1"></i>5. Lapidação Q2 Rumo ao Q1</span>
-                                    <span class="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded">+${bonusQ2Val} pts</span>
-                                </div>
-                                <input type="range" min="0" max="12" step="1" value="${bonusQ2Val}" onchange="app.ui.setWhatIfParam('bonusQ2', this.value)" class="w-full accent-blue-600 cursor-pointer">
-                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>+0 pts</span><span>Uso de áudios modelo no Q2</span><span>+12 pts</span></div>
-                            </div>
-
-                            <!-- Controle 6: Taxa Global de Aderência / Execução no SLA -->
-                            <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-bolt text-teal-500 mr-1"></i>6. Taxa Global de Execução</span>
-                                    <span class="font-black text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded">${wi.aderenciaGeral}%</span>
-                                </div>
-                                <input type="range" min="10" max="100" step="5" value="${wi.aderenciaGeral}" onchange="app.ui.setWhatIfParam('aderenciaGeral', this.value)" class="w-full accent-teal-600 cursor-pointer">
-                                <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>10%</span><span>Aderência geral das equipes</span><span>100%</span></div>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <button type="button" onclick="app.ui.applyWhatIfPreset('conservador')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors">Conservador (50%)</button>
+                                <button type="button" onclick="app.ui.applyWhatIfPreset('realista')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 transition-colors">Realista (85%)</button>
+                                <button type="button" onclick="app.ui.applyWhatIfPreset('otimista')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">Máximo (100%)</button>
+                                <button type="button" onclick="app.ui.applyWhatIfPreset('so_qualidade')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-colors">Só Qualidade</button>
+                                <button type="button" onclick="app.ui.applyWhatIfPreset('so_treinamento')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-colors">Só Treinamento</button>
+                                <button type="button" onclick="app.ui.applyWhatIfPreset('reset')" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 transition-colors" title="Restaurar padrão"><i class="fa-solid fa-rotate-left"></i></button>
+                                <button type="button" onclick="app.ui.exportarWhatIfXLSX()" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 hover:bg-black dark:bg-white dark:text-slate-900 text-white flex items-center gap-1 ml-1"><i class="fa-solid fa-file-excel text-emerald-400 dark:text-emerald-600"></i> XLSX</button>
                             </div>
                         </div>
 
-                        <!-- BARRA DE FILTRO DE PERFIS ATIVOS NA SIMULAÇÃO + TERMÔMETRO DA META DA DIRETORIA -->
-                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
-                            <!-- Chaveamento de Perfis na Simulação -->
-                            <div class="lg:col-span-7 bg-slate-50/70 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
-                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2"><i class="fa-solid fa-toggle-on text-indigo-500 mr-1"></i>Ligar / Desligar Perfis na Simulação (Clique para simular isoladamente):</div>
-                                <div class="flex flex-wrap gap-1.5">
-                                    ${Object.keys(meta).filter(k => k !== 'REFERENCIA_BOAS_PRATICAS').map(k => {
-                                        const m = meta[k];
-                                        const ligado = wi.perfisAtivos[k] !== false;
-                                        return `<button onclick="app.ui.toggleWhatIfPerfil('${k}')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1.5 ${ligado ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 line-through'}"><i class="fa-solid ${ligado ? 'fa-square-check' : 'fa-square'}"></i> ${esc(m.label)} (${contPerfil[k] || 0})</button>`;
-                                    }).join('')}
-                                </div>
-                            </div>
-
-                            <!-- Termômetro da Meta da Diretoria -->
-                            <div class="lg:col-span-5 bg-slate-50/70 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-                                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300"><i class="fa-solid fa-flag-checkered text-teal-500 mr-1"></i>Meta Executiva:</span>
-                                        <input type="number" min="60" max="100" step="0.5" value="${metaDir}" onchange="app.ui.setWhatIfParam('metaDiretoria', this.value)" class="w-16 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-black text-center text-slate-800 dark:text-white">
-                                        <span class="text-[10px] font-bold text-slate-400">pts</span>
-                                    </div>
-                                    <div class="flex gap-1">
-                                        <button onclick="app.ui.setWhatIfParam('escopoBase', 'global')" class="px-2 py-0.5 rounded text-[10px] font-bold ${wi.escopoBase !== 'ativos' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500'}">Base Global</button>
-                                        <button onclick="app.ui.setWhatIfParam('escopoBase', 'ativos')" class="px-2 py-0.5 rounded text-[10px] font-bold ${wi.escopoBase === 'ativos' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500'}">Só Ativos RH</button>
-                                    </div>
-                                </div>
-                                <div class="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-1.5">
-                                    <div class="h-full rounded-full transition-all ${atingiuMeta ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${pctTermometro.toFixed(0)}%"></div>
-                                </div>
-                                <div class="flex items-center justify-between text-[11px]">
-                                    <span class="text-slate-500">Atual: <strong>${notaRefAtual.toFixed(2)}</strong> &rarr; Projetada: <strong>${notaRefMeta.toFixed(2)}</strong></span>
-                                    <span class="font-black ${atingiuMeta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">${atingiuMeta ? `<i class="fa-solid fa-trophy mr-1"></i>Meta Atingida! (+${Math.abs(diffMetaDir).toFixed(2)} pts)` : `Faltam ${Math.abs(diffMetaDir).toFixed(2)} pts p/ a Meta`}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 4 KPIs Executivos do Simulador -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                            <div class="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                        <!-- PLACAR FIXO NO TOPO: 4 KPIs + Termômetro da Meta da Diretoria -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
+                            <div class="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
                                 <div class="text-[10px] font-black uppercase tracking-widest text-slate-400"><i class="fa-solid fa-gauge-simple mr-1"></i>Média Atual da Operação</div>
-                                <div class="text-4xl font-black text-slate-800 dark:text-white tabular-nums my-2">${mediaGlobalAtual.toFixed(2)}</div>
-                                <div class="text-[11px] text-slate-500">Média apenas dos ativos RH: <strong>${mediaAtivosAtual.toFixed(2)}</strong></div>
+                                <div class="text-3xl font-black text-slate-800 dark:text-white tabular-nums my-1">${mediaGlobalAtual.toFixed(2)}</div>
+                                <div class="text-[11px] text-slate-500">Só Ativos RH: <strong>${mediaAtivosAtual.toFixed(2)}</strong></div>
                             </div>
 
-                            <div class="bg-blue-50/60 dark:bg-blue-950/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800/60 flex flex-col justify-between">
-                                <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i>Retorno: Frente Qualidade</div>
-                                <div class="text-3xl font-black text-blue-600 dark:text-blue-400 tabular-nums my-2">+${ganhoPtsQualGlobal.toFixed(2)} <span class="text-xs font-bold">pts na global</span></div>
-                                <div class="text-[11px] text-slate-600 dark:text-slate-300">${opsImpactadosQual} op(s) alavancados (auditoria crítica + reversão de ruptura + lapidação Q2)</div>
+                            <div class="bg-blue-50/60 dark:bg-blue-950/20 rounded-2xl p-4 border border-blue-200 dark:border-blue-800/60 flex flex-col justify-between">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i>Ganho: Frente Qualidade</div>
+                                <div class="text-2xl font-black text-blue-600 dark:text-blue-400 tabular-nums my-1">+${ganhoPtsQualGlobal.toFixed(2)} <span class="text-xs font-bold">pts na global</span></div>
+                                <div class="text-[11px] text-slate-600 dark:text-slate-300">${opsImpactadosQual} op(s) alavancados</div>
                             </div>
 
-                            <div class="bg-purple-50/60 dark:bg-purple-950/20 rounded-2xl p-5 border border-purple-200 dark:border-purple-800/60 flex flex-col justify-between">
-                                <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400"><i class="fa-solid fa-graduation-cap mr-1"></i>Retorno: Frente Treinamento</div>
-                                <div class="text-3xl font-black text-purple-600 dark:text-purple-400 tabular-nums my-2">+${ganhoPtsTreinGlobal.toFixed(2)} <span class="text-xs font-bold">pts na global</span></div>
-                                <div class="text-[11px] text-slate-600 dark:text-slate-300">${opsImpactadosTrein} op(s) elevados (novatos p/ ${metaNov} pts e veteranos p/ ${metaVet} pts)</div>
+                            <div class="bg-purple-50/60 dark:bg-purple-950/20 rounded-2xl p-4 border border-purple-200 dark:border-purple-800/60 flex flex-col justify-between">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400"><i class="fa-solid fa-graduation-cap mr-1"></i>Ganho: Frente Treinamento</div>
+                                <div class="text-2xl font-black text-purple-600 dark:text-purple-400 tabular-nums my-1">+${ganhoPtsTreinGlobal.toFixed(2)} <span class="text-xs font-bold">pts na global</span></div>
+                                <div class="text-[11px] text-slate-600 dark:text-slate-300">${opsImpactadosTrein} op(s) alavancados</div>
                             </div>
 
-                            <div class="bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-2xl p-5 shadow-md flex flex-col justify-between relative overflow-hidden">
-                                <div class="absolute -right-4 -bottom-4 text-white/10 text-7xl pointer-events-none"><i class="fa-solid fa-rocket"></i></div>
+                            <div class="bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-2xl p-4 shadow-md flex flex-col justify-between relative overflow-hidden">
+                                <div class="absolute -right-3 -bottom-3 text-white/10 text-6xl pointer-events-none"><i class="fa-solid fa-rocket"></i></div>
                                 <div class="text-[10px] font-black uppercase tracking-widest text-teal-100">Média Global Projetada (${wi.aderenciaGeral}% exec.)</div>
-                                <div class="flex items-baseline gap-2 my-2">
-                                    <span class="text-4xl font-black tabular-nums">${mediaGlobalProjetada.toFixed(2)}</span>
+                                <div class="flex items-baseline gap-2 my-1">
+                                    <span class="text-3xl font-black tabular-nums">${mediaGlobalProjetada.toFixed(2)}</span>
                                     <span class="text-xs font-black bg-white/20 px-2 py-0.5 rounded-lg">+${ganhoPtsTotalGlobal.toFixed(2)} pts</span>
                                 </div>
-                                <div class="text-[11px] text-teal-50">Média projetada dos ativos RH: <strong>${mediaAtivosProjetada.toFixed(2)}</strong> (+${ganhoPtsAtivos.toFixed(2)} pts)</div>
+                                <div class="text-[11px] text-teal-50">Ativos RH Projetada: <strong>${mediaAtivosProjetada.toFixed(2)}</strong> (+${ganhoPtsAtivos.toFixed(2)} pts)</div>
                             </div>
                         </div>
 
-                        <!-- DECOMPOSIÇÃO MATEMÁTICA POR ALAVANCA (5 Fontes de Ganho) -->
-                        <div class="mb-6 bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700">
+                        <!-- BARRA DO TERMÔMETRO DA META EXECUTIVA -->
+                        <div class="bg-slate-50/80 dark:bg-slate-900/40 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 mb-6 flex flex-wrap items-center justify-between gap-4">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-[11px] font-black uppercase text-slate-600 dark:text-slate-300"><i class="fa-solid fa-flag-checkered text-teal-500 mr-1"></i>Meta da Diretoria:</span>
+                                    <input type="number" min="60" max="100" step="0.5" value="${metaDir}" onchange="app.ui.setWhatIfParam('metaDiretoria', this.value)" class="w-16 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-black text-center text-slate-800 dark:text-white">
+                                    <span class="text-[10px] font-bold text-slate-400">pts</span>
+                                </div>
+                                <div class="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <button type="button" onclick="app.ui.setWhatIfParam('escopoBase', 'global')" class="px-2.5 py-1 rounded-md text-[10px] font-bold ${wi.escopoBase !== 'ativos' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500'}">Medir na Base Global</button>
+                                    <button type="button" onclick="app.ui.setWhatIfParam('escopoBase', 'ativos')" class="px-2.5 py-1 rounded-md text-[10px] font-bold ${wi.escopoBase === 'ativos' ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500'}">Medir Só em Ativos RH</button>
+                                </div>
+                            </div>
+                            <div class="flex-1 min-w-[220px] flex items-center gap-3">
+                                <div class="flex-1 h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                    <div class="h-full rounded-full ${atingiuMeta ? 'bg-emerald-500' : 'bg-amber-500'}" style="width: ${pctTermometro.toFixed(0)}%"></div>
+                                </div>
+                                <span class="text-xs font-black whitespace-nowrap ${atingiuMeta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">
+                                    ${atingiuMeta ? `<i class="fa-solid fa-trophy mr-1"></i>Meta Batida! (+${Math.abs(diffMetaDir).toFixed(2)} pts)` : `Faltam ${Math.abs(diffMetaDir).toFixed(2)} pts p/ ${metaDir}`}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- NAVEGAÇÃO EM 3 PASSOS INTUITIVOS (Sem poluição visual) -->
+                        <div class="flex flex-wrap gap-2 mb-5 border-b border-slate-200 dark:border-slate-700 pb-3">
+                            <button type="button" onclick="app.ui.setWhatIfStepTab('alavancas')" class="px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 transition-colors ${stepTab === 'alavancas' ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}">
+                                <span class="w-5 h-5 rounded-full ${stepTab === 'alavancas' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'} flex items-center justify-center text-[10px]">1</span>
+                                Alavancas &amp; Decomposição do Ganho
+                            </button>
+                            <button type="button" onclick="app.ui.setWhatIfStepTab('perfis')" class="px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 transition-colors ${stepTab === 'perfis' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}">
+                                <span class="w-5 h-5 rounded-full ${stepTab === 'perfis' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'} flex items-center justify-center text-[10px]">2</span>
+                                Simular por Perfil &amp; Migração de Quadrantes
+                            </button>
+                            <button type="button" onclick="app.ui.setWhatIfStepTab('individual')" class="px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 transition-colors ${stepTab === 'individual' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}">
+                                <span class="w-5 h-5 rounded-full ${stepTab === 'individual' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'} flex items-center justify-center text-[10px]">3</span>
+                                Simulação Individual por Operador (${qtdOpsMarcados}/${todosSimulados.length})
+                            </button>
+                        </div>`;
+
+                    // ==================== CONTEÚDO DA ABA 1: ALAVANCAS & DECOMPOSIÇÃO ====================
+                    if (stepTab === 'alavancas') {
+                        html += `
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 bg-slate-50/90 dark:bg-slate-900/50 p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-shield-halved text-red-500 mr-1"></i>1. Eliminar Falhas Críticas</span>
+                                    <span id="wi-lbl-eficCriticas" class="font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded">${wi.eficCriticas}%</span>
+                                </div>
+                                <input type="range" min="0" max="100" step="5" value="${wi.eficCriticas}" oninput="document.getElementById('wi-lbl-eficCriticas').textContent=this.value+'%'" onchange="app.ui.setWhatIfParam('eficCriticas', this.value)" class="w-full accent-red-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>0% (Atual)</span><span>Recupera ligações zeradas</span><span>100%</span></div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-arrow-trend-up text-orange-500 mr-1"></i>2. Reverter Quedas (Ruptura)</span>
+                                    <span id="wi-lbl-eficRuptura" class="font-black text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded">${wi.eficRuptura}%</span>
+                                </div>
+                                <input type="range" min="0" max="100" step="5" value="${wi.eficRuptura}" oninput="document.getElementById('wi-lbl-eficRuptura').textContent=this.value+'%'" onchange="app.ui.setWhatIfParam('eficRuptura', this.value)" class="w-full accent-orange-500 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>0%</span><span>Retoma nota do mês anterior</span><span>100%</span></div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-seedling text-amber-500 mr-1"></i>3. Piso Pós-Sala Novatos (≤180d)</span>
+                                    <span id="wi-lbl-metaNovatos" class="font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">${metaNov} pts</span>
+                                </div>
+                                <input type="range" min="70" max="98" step="1" value="${metaNov}" oninput="document.getElementById('wi-lbl-metaNovatos').textContent=this.value+' pts'" onchange="app.ui.setWhatIfParam('metaNovatos', this.value)" class="w-full accent-amber-500 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>70 pts</span><span>Ramp-Up e Júnior em Q3/Q4</span><span>98 pts</span></div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-rotate text-purple-500 mr-1"></i>4. Piso Pós-Reciclagem (&gt;180d)</span>
+                                    <span id="wi-lbl-metaVeteranos" class="font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">${metaVet} pts</span>
+                                </div>
+                                <input type="range" min="70" max="98" step="1" value="${metaVet}" oninput="document.getElementById('wi-lbl-metaVeteranos').textContent=this.value+' pts'" onchange="app.ui.setWhatIfParam('metaVeteranos', this.value)" class="w-full accent-purple-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>70 pts</span><span>Plenos e Veteranos em Q3/Q4</span><span>98 pts</span></div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-award text-blue-500 mr-1"></i>5. Lapidação Q2 Rumo ao Q1</span>
+                                    <span id="wi-lbl-bonusQ2" class="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded">+${bonusQ2Val} pts</span>
+                                </div>
+                                <input type="range" min="0" max="12" step="1" value="${bonusQ2Val}" oninput="document.getElementById('wi-lbl-bonusQ2').textContent='+'+this.value+' pts'" onchange="app.ui.setWhatIfParam('bonusQ2', this.value)" class="w-full accent-blue-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>+0 pts</span><span>Uso de áudios modelo no Q2</span><span>+12 pts</span></div>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                                <div class="flex items-center justify-between text-xs mb-1.5">
+                                    <span class="font-black text-slate-700 dark:text-slate-200"><i class="fa-solid fa-bolt text-teal-500 mr-1"></i>6. Taxa Global de Execução</span>
+                                    <span id="wi-lbl-aderenciaGeral" class="font-black text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded">${wi.aderenciaGeral}%</span>
+                                </div>
+                                <input type="range" min="10" max="100" step="5" value="${wi.aderenciaGeral}" oninput="document.getElementById('wi-lbl-aderenciaGeral').textContent=this.value+'%'" onchange="app.ui.setWhatIfParam('aderenciaGeral', this.value)" class="w-full accent-teal-600 cursor-pointer">
+                                <div class="flex justify-between text-[10px] text-slate-400 mt-1"><span>10%</span><span>Aderência geral das equipes</span><span>100%</span></div>
+                            </div>
+                        </div>
+
+                        <!-- DECOMPOSIÇÃO MATEMÁTICA POR ALAVANCA -->
+                        <div class="bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700">
                             <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-layer-group text-teal-500 mr-1.5"></i>Decomposição do Ganho: De Onde Vem Cada Ponto na Média Global?</h4>
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
                                 ${[
@@ -22252,15 +22273,47 @@ storage: {
                                     <div class="text-[10px] text-slate-400">${al.ops} op(s) &bull; ${al.det}</div>
                                 </div>`).join('')}
                             </div>
-                        </div>
+                        </div>`;
+                    }
 
-                        <!-- Comparativo Antes vs Depois nos Quadrantes + Simulação Individual Clicável por Operador -->
+                    // ==================== CONTEÚDO DA ABA 2: POR PERFIL & MIGRAÇÃO DE QUADRANTES ====================
+                    if (stepTab === 'perfis') {
+                        html += `
                         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            <!-- Migração de Quadrantes -->
+                            <div class="lg:col-span-7 bg-slate-50/80 dark:bg-slate-900/40 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="flex items-center justify-between gap-2 mb-3">
+                                    <div>
+                                        <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200"><i class="fa-solid fa-toggle-on text-indigo-500 mr-1.5"></i>Ligar / Desligar Perfis na Simulação</h4>
+                                        <p class="text-[11px] text-slate-500">Clique em qualquer perfil abaixo para ativar ou desativar o grupo inteiro e ver o impacto imediato.</p>
+                                    </div>
+                                </div>
+                                <div class="space-y-2.5">
+                                    ${Object.keys(meta).filter(k => k !== 'REFERENCIA_BOAS_PRATICAS').map(k => {
+                                        const m = meta[k];
+                                        const ligado = wi.perfisAtivos[k] !== false;
+                                        const ptsPerf = (ganhoPorPerfil[k] || 0) / nTotalOps;
+                                        const isQual = m.responsavel === 'Equipe de Qualidade';
+                                        return `<div onclick="app.ui.toggleWhatIfPerfil('${k}')" class="cursor-pointer p-3.5 rounded-xl border-2 transition-colors flex items-center justify-between gap-3 ${ligado ? 'bg-white dark:bg-slate-800 border-indigo-500/70 shadow-xs' : 'bg-slate-100/70 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 opacity-60'}">
+                                            <div class="flex items-center gap-3">
+                                                <i class="fa-solid ${ligado ? 'fa-square-check text-indigo-600 text-lg' : 'fa-square text-slate-400 text-lg'}"></i>
+                                                <div>
+                                                    <div class="text-xs font-black text-slate-800 dark:text-white ${!ligado ? 'line-through' : ''}">${esc(m.label)} (${contPerfil[k] || 0} op.)</div>
+                                                    <div class="text-[10px] ${isQual ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'} font-bold">${esc(m.responsavel)} &bull; ${esc(m.acao)}</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-right shrink-0">
+                                                <span class="text-sm font-black tabular-nums ${ligado && ptsPerf > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">+${ptsPerf.toFixed(2)} pts</span>
+                                                <span class="block text-[9px] font-bold uppercase ${ligado ? 'text-indigo-500' : 'text-slate-400'}">${ligado ? 'Simulando' : 'Pausado'}</span>
+                                            </div>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+
                             <div class="lg:col-span-5 bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700 flex flex-col justify-between">
                                 <div>
                                     <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-arrows-turn-to-dots text-teal-500 mr-1.5"></i>Migração Projetada nos Quadrantes (Ativos RH)</h4>
-                                    <div class="grid grid-cols-2 gap-2.5 text-center">
+                                    <div class="grid grid-cols-2 gap-3 text-center">
                                         ${[
                                             { q: 'Q1', nome: qcSim.nomeQ1 || 'Excelente', cor: 'emerald' },
                                             { q: 'Q2', nome: qcSim.nomeQ2 || 'Bom', cor: 'blue' },
@@ -22270,66 +22323,100 @@ storage: {
                                             const ant = quadAtivosAntes[item.q] || 0;
                                             const dep = quadAtivosDepois[item.q] || 0;
                                             const diff = dep - ant;
-                                            return `<div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
-                                                <div class="text-[10px] font-black text-${item.cor}-600 dark:text-${item.cor}-400">${item.q} &bull; ${item.nome}</div>
-                                                <div class="flex items-center justify-center gap-2 mt-1.5">
+                                            return `<div class="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
+                                                <div class="text-[11px] font-black text-${item.cor}-600 dark:text-${item.cor}-400">${item.q} &bull; ${item.nome}</div>
+                                                <div class="flex items-center justify-center gap-2 mt-2">
                                                     <span class="text-sm font-bold text-slate-400 line-through">${ant}</span>
                                                     <i class="fa-solid fa-arrow-right text-[10px] text-slate-400"></i>
-                                                    <span class="text-2xl font-black text-slate-800 dark:text-white">${dep}</span>
+                                                    <span class="text-3xl font-black text-slate-800 dark:text-white">${dep}</span>
                                                 </div>
-                                                <div class="text-[10px] font-black mt-0.5 ${diff > 0 ? (item.q === 'Q1' || item.q === 'Q2' ? 'text-emerald-600' : 'text-red-500') : (diff < 0 ? (item.q === 'Q3' || item.q === 'Q4' ? 'text-emerald-600' : 'text-orange-500') : 'text-slate-400')}">${diff > 0 ? '+' + diff : (diff === 0 ? '0' : diff)} op(s)</div>
+                                                <div class="text-[10px] font-black mt-1 ${diff > 0 ? (item.q === 'Q1' || item.q === 'Q2' ? 'text-emerald-600' : 'text-red-500') : (diff < 0 ? (item.q === 'Q3' || item.q === 'Q4' ? 'text-emerald-600' : 'text-orange-500') : 'text-slate-400')}">${diff > 0 ? '+' + diff : (diff === 0 ? '0' : diff)} op(s)</div>
                                             </div>`;
                                         }).join('')}
                                     </div>
                                 </div>
-                                <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                                <div class="mt-4 pt-3 border-t border-slate-200/70 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                                     <i class="fa-solid fa-circle-check text-teal-500 mr-1"></i>
                                     Operadores em quadrante crítico (Q3 + Q4) caem de <strong>${(quadAtivosAntes.Q3 + quadAtivosAntes.Q4)}</strong> para <strong>${(quadAtivosDepois.Q3 + quadAtivosDepois.Q4)}</strong>, enquanto os operadores em alta performance (Q1 + Q2) sobem de <strong>${(quadAtivosAntes.Q1 + quadAtivosAntes.Q2)}</strong> para <strong>${(quadAtivosDepois.Q1 + quadAtivosDepois.Q2)}</strong>.
                                 </div>
                             </div>
+                        </div>`;
+                    }
 
-                            <!-- Tabela Interativa por Operador (Marque/Desmarque qualquer operador para simular impacto individual) -->
-                            <div class="lg:col-span-7 bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-700">
-                                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                                    <div>
-                                        <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200"><i class="fa-solid fa-user-check text-indigo-500 mr-1.5"></i>Simulação Individual por Operador (Clique para Incluir/Excluir)</h4>
-                                        <p class="text-[10px] text-slate-400">Desmarque qualquer operador abaixo para testar o impacto exato dele na média global.</p>
+                    // ==================== CONTEÚDO DA ABA 3: SIMULAÇÃO INDIVIDUAL POR OPERADOR (Checkboxes 100% funcionais e sem pular de linha!) ====================
+                    if (stepTab === 'individual') {
+                        html += `
+                        <div class="bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-4 md:p-5 border border-slate-200/80 dark:border-slate-700">
+                            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
+                                    <div class="relative flex-1 max-w-xs">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input type="text" value="${esc(this.whatIfBuscaOp || '')}" oninput="app.ui.whatIfBuscaOp = this.value; app.ui.refreshWhatIfInPlace()" placeholder="Buscar operador ou perfil..." class="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-blue-500">
                                     </div>
-                                    <button onclick="app.ui.whatIfVerTodosOps = !app.ui.whatIfVerTodosOps; app.ui._refreshComMemoriaDeScroll()" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline ${this.analiseEditMode ? 'hidden' : ''}">
-                                        ${this.whatIfVerTodosOps ? 'Ver top 10 impactos' : `Ver todos os ${todosSimulados.length} ativos`}
-                                    </button>
+                                    <div class="flex flex-wrap gap-1">
+                                        ${[
+                                            { id: 'todos', lbl: `Todos (${todosSimulados.length})` },
+                                            { id: 'qualidade', lbl: 'Fila Qualidade' },
+                                            { id: 'treinamento', lbl: 'Fila Treinamento' },
+                                            { id: 'q3q4', lbl: 'Só Q3 e Q4' },
+                                            { id: 'marcados', lbl: `Incluídos (${qtdOpsMarcados})` },
+                                            { id: 'desmarcados', lbl: `Excluídos (${todosSimulados.length - qtdOpsMarcados})` }
+                                        ].map(f => `<button type="button" onclick="app.ui.whatIfFiltroGrupoOp='${f.id}'; app.ui.refreshWhatIfInPlace()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold border ${filtroGrupoOp === f.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">${f.lbl}</button>`).join('')}
+                                    </div>
                                 </div>
-                                <div class="max-h-72 overflow-y-auto custom-scrollbar pr-1">
-                                    <table class="w-full text-left text-xs">
-                                        <thead><tr class="text-[9px] uppercase text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-1.5 pr-1">Simular</th><th class="py-1.5 px-1">Operador / Perfil</th><th class="py-1.5 px-1 text-center">Atual &rarr; Proj.</th><th class="py-1.5 px-1 text-center">Ganho Op.</th><th class="py-1.5 pl-1 text-right">Impacto Global</th></tr></thead>
-                                        <tbody class="divide-y divide-slate-200/60 dark:divide-slate-700/60">
-                                            ${(this.whatIfVerTodosOps ? todosSimulados : todosSimulados.slice(0, 10)).map(item => `
-                                                <tr class="hover:bg-white dark:hover:bg-slate-800 transition-colors ${!item.incluido ? 'opacity-50' : ''}">
-                                                    <td class="py-2 pr-1 text-center">
-                                                        <input type="checkbox" ${item.incluido ? 'checked' : ''} onchange="app.ui.toggleWhatIfOperador('${encodeURIComponent(item.nome)}')" class="w-4 h-4 accent-teal-600 rounded cursor-pointer">
-                                                    </td>
-                                                    <td class="py-2 px-1">
-                                                        <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(item.nome)}')" class="font-bold text-slate-800 dark:text-white hover:text-indigo-600 cursor-pointer truncate max-w-[200px]">${esc(item.nome)}</div>
-                                                        <div class="text-[10px] text-slate-400">${esc(item.faixa)} &bull; ${esc(item.perfil)}</div>
-                                                    </td>
-                                                    <td class="py-2 px-1 text-center tabular-nums font-bold">
-                                                        <span class="text-slate-500">${item.antes.toFixed(1)}</span> <i class="fa-solid fa-arrow-right text-[9px] text-slate-400 mx-0.5"></i> <span class="font-black text-emerald-600 dark:text-emerald-400">${item.depois.toFixed(1)}</span>
-                                                        <span class="block text-[9px] text-slate-400">${item.qAntes} &rarr; ${item.qDepois}</span>
-                                                    </td>
-                                                    <td class="py-2 px-1 text-center font-black tabular-nums ${item.ganhoOp > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'}">+${item.ganhoOp.toFixed(1)}</td>
-                                                    <td class="py-2 pl-1 text-right font-black tabular-nums ${item.impactoGlobal > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">+${item.impactoGlobal.toFixed(2)} pts</td>
-                                                </tr>
-                                            `).join('')}
-                                        </tbody>
-                                    </table>
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <button type="button" onclick="app.ui.marcarTodosWhatIfOps(true)" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold"><i class="fa-solid fa-check-double mr-1"></i>Marcar Todos</button>
+                                    <button type="button" onclick="app.ui.marcarTodosWhatIfOps(false)" class="px-2.5 py-1.5 rounded-xl bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold"><i class="fa-regular fa-square mr-1"></i>Desmarcar Todos</button>
                                 </div>
                             </div>
-                        </div>
-                    </div>`;
-                    return h;
+
+                            <div id="whatif-ops-scroll-box" class="max-h-[440px] overflow-y-auto custom-scrollbar pr-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="sticky top-0 bg-slate-100 dark:bg-slate-900 z-10"><tr class="text-[10px] uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700"><th class="py-2.5 px-3 w-24 text-center">Simular?</th><th class="py-2.5 px-2">Operador (Ativo RH) &amp; Perfil</th><th class="py-2.5 px-2 text-center">Nota Atual</th><th class="py-2.5 px-2 text-center">Nota Alvo (Editável)</th><th class="py-2.5 px-2 text-center">Ganho Op.</th><th class="py-2.5 px-3 text-right">Impacto na Global</th></tr></thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                        ${opsFiltradosTabela.length === 0 ? `<tr><td colspan="6" class="py-6 text-center text-slate-400 italic">Nenhum operador encontrado para este filtro.</td></tr>` : opsFiltradosTabela.map((item, idx) => `
+                                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors ${!item.incluido ? 'bg-slate-50/70 dark:bg-slate-900/40 opacity-65' : ''}">
+                                                <td class="py-2.5 px-3 text-center">
+                                                    <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                                                        <input type="checkbox" ${item.opMarcado ? 'checked' : ''} onchange="app.ui.toggleWhatIfOperador('${encodeURIComponent(item.nome)}')" class="w-4 h-4 accent-teal-600 rounded cursor-pointer">
+                                                        <span class="text-[9px] font-black px-1.5 py-0.5 rounded ${item.incluido ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}">${item.incluido ? 'ATIVO' : 'OFF'}</span>
+                                                    </label>
+                                                </td>
+                                                <td class="py-2.5 px-2">
+                                                    <div onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(item.nome)}')" class="font-bold text-slate-800 dark:text-white hover:text-blue-600 cursor-pointer">${idx + 1}. ${esc(item.nome)}</div>
+                                                    <div class="text-[10px] text-slate-400">${esc(item.faixa)} &bull; <span class="${item.frenteKey === 'qualidade' ? 'text-blue-500' : (item.frenteKey === 'treinamento' ? 'text-purple-500' : 'text-slate-400')} font-semibold">${esc(item.frente)}</span> &bull; ${esc(item.perfil)}</div>
+                                                    <div class="text-[10px] text-teal-600 dark:text-teal-400">${esc(item.detalheAlavancas)}</div>
+                                                </td>
+                                                <td class="py-2.5 px-2 text-center tabular-nums">
+                                                    <span class="font-black text-slate-700 dark:text-slate-200">${item.antes.toFixed(1)}</span>
+                                                    <span class="block text-[9px] text-slate-400">${item.qAntes}</span>
+                                                </td>
+                                                <td class="py-2.5 px-2 text-center">
+                                                    <div class="inline-flex items-center gap-1">
+                                                        <input type="number" min="0" max="100" step="0.5" value="${item.incluido ? item.depois.toFixed(1) : item.alvoRef.toFixed(1)}" onchange="app.ui.setWhatIfMetaIndividual('${encodeURIComponent(item.nome)}', this.value)" class="w-16 px-1.5 py-1 rounded-lg border ${item.temMetaManual ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900'} text-xs font-black text-center text-emerald-600 dark:text-emerald-400">
+                                                        ${item.temMetaManual ? `<button type="button" onclick="app.ui.setWhatIfMetaIndividual('${encodeURIComponent(item.nome)}', null)" class="text-[10px] text-slate-400 hover:text-rose-500" title="Restaurar cálculo automático"><i class="fa-solid fa-rotate-left"></i></button>` : ''}
+                                                    </div>
+                                                    <span class="block text-[9px] text-slate-400 mt-0.5">${item.qAntes} &rarr; <strong>${item.qDepois}</strong></span>
+                                                </td>
+                                                <td class="py-2.5 px-2 text-center font-black tabular-nums ${item.ganhoOp > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'}">
+                                                    ${item.incluido ? `+${item.ganhoOp.toFixed(1)}` : `<span class="line-through text-slate-400">+${item.ganhoSeMarcado.toFixed(1)}</span>`}
+                                                </td>
+                                                <td class="py-2.5 px-3 text-right font-black tabular-nums ${item.impactoGlobal > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">
+                                                    ${item.incluido ? `+${item.impactoGlobal.toFixed(2)} pts` : `<span class="text-[10px] text-slate-400">(+${item.impactoSeMarcado.toFixed(2)} se ativo)</span>`}
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>`;
+                    }
+
+                    html += `</div>`;
+                    return html;
                 },
 
-                // Estado e métodos interativos do Simulador What-If Completo
+                // Estado e métodos interativos do Simulador What-If Completo (Zero Tremida)
                 getWhatIfCfg(qc) {
                     const qcRef = qc || this.getQuadCfg();
                     if (!this.whatIfCfg) {
@@ -22349,37 +22436,72 @@ storage: {
                                 GAP_TREINAMENTO_INICIAL: true,
                                 RECICLAGEM_PROCESSUAL_VETERANO: true
                             },
-                            opsExcluidos: {}
+                            opsExcluidos: {},
+                            metasIndividuais: {}
                         };
                     }
+                    if (!this.whatIfCfg.metasIndividuais) this.whatIfCfg.metasIndividuais = {};
                     return this.whatIfCfg;
+                },
+
+                setWhatIfStepTab(tab) {
+                    this.whatIfStepTab = tab;
+                    this.refreshWhatIfInPlace();
                 },
 
                 setWhatIfParam(key, val) {
                     const cfg = this.getWhatIfCfg();
                     if (key === 'escopoBase') cfg[key] = String(val);
                     else cfg[key] = Number(val);
-                    this._refreshComMemoriaDeScroll();
+                    this.refreshWhatIfInPlace();
                 },
 
                 toggleWhatIfPerfil(perfilKey) {
                     const cfg = this.getWhatIfCfg();
                     cfg.perfisAtivos[perfilKey] = cfg.perfisAtivos[perfilKey] === false ? true : false;
-                    this._refreshComMemoriaDeScroll();
+                    this.refreshWhatIfInPlace();
                 },
 
                 toggleWhatIfOperador(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
                     const cfg = this.getWhatIfCfg();
-                    if (cfg.opsExcluidos[nome]) delete cfg.opsExcluidos[nome];
-                    else cfg.opsExcluidos[nome] = true;
-                    this._refreshComMemoriaDeScroll();
+                    if (cfg.opsExcluidos[nome]) {
+                        delete cfg.opsExcluidos[nome];
+                    } else {
+                        cfg.opsExcluidos[nome] = true;
+                    }
+                    this.refreshWhatIfInPlace();
+                },
+
+                setWhatIfMetaIndividual(nomeEncoded, val) {
+                    const nome = decodeURIComponent(nomeEncoded);
+                    const cfg = this.getWhatIfCfg();
+                    if (val === null || val === undefined || val === '') {
+                        delete cfg.metasIndividuais[nome];
+                    } else {
+                        cfg.metasIndividuais[nome] = Math.max(0, Math.min(100, Number(val)));
+                        delete cfg.opsExcluidos[nome]; // Ao definir alvo manual, garante que o operador fique ativo na simulação
+                    }
+                    this.refreshWhatIfInPlace();
+                },
+
+                marcarTodosWhatIfOps(marcar) {
+                    const cfg = this.getWhatIfCfg();
+                    const ops = this._whatIfCacheOps || [];
+                    if (marcar) {
+                        cfg.opsExcluidos = {};
+                        Object.keys(cfg.perfisAtivos).forEach(k => { cfg.perfisAtivos[k] = true; });
+                    } else {
+                        ops.forEach(o => { cfg.opsExcluidos[o.nome] = true; });
+                    }
+                    this.refreshWhatIfInPlace();
                 },
 
                 applyWhatIfPreset(preset) {
                     const qc = this.getQuadCfg();
                     const cfg = this.getWhatIfCfg(qc);
                     cfg.opsExcluidos = {};
+                    cfg.metasIndividuais = {};
                     Object.keys(cfg.perfisAtivos).forEach(k => { cfg.perfisAtivos[k] = true; });
 
                     if (preset === 'conservador') {
@@ -22423,7 +22545,7 @@ storage: {
                         this.whatIfCfg = null;
                         this.getWhatIfCfg(qc);
                     }
-                    this._refreshComMemoriaDeScroll();
+                    this.refreshWhatIfInPlace();
                 },
 
                 exportarWhatIfXLSX() {
@@ -22480,6 +22602,268 @@ storage: {
                     XLSX.utils.book_append_sheet(wb, ws2, "2_Simulacao_Por_Operador");
 
                     XLSX.writeFile(wb, "Simulacao_Potencial_WhatIf_Qualidade_Treinamento.xlsx");
+                },
+
+                // =========================================================================
+                // NOVA ABA: QUALIDADE & TREINAMENTO (BACKOFFICE RETROALIMENTADO POR SETOR)
+                // =========================================================================
+                userCanAccessApresentacaoQT(apr, user) {
+                    if (!apr) return false;
+                    if (apr.retroalimentarQT === false) return false;
+                    const u = user || app.currentUser;
+                    const cargo = String(u?.tipoAcesso || '').trim();
+                    const isGestaoOuDev = app.isAdmin ||
+                        (app.isSuperAdmin && app.isSuperAdmin()) ||
+                        (app.isGestor && app.isGestor()) ||
+                        ['Dev', 'Gerente', 'Gestor'].includes(cargo);
+                    if (isGestaoOuDev) return true;
+                    if (!u) return false;
+
+                    const uMat = String(u.matricula || '').trim();
+                    if (uMat && apr.criadorMatricula && String(apr.criadorMatricula).trim() === uMat) return true;
+                    if (uMat && Array.isArray(apr.responsaveisQualidade) && apr.responsaveisQualidade.some(m => String(m).trim() === uMat)) return true;
+                    if (uMat && Array.isArray(apr.responsaveisTreinamento) && apr.responsaveisTreinamento.some(m => String(m).trim() === uMat)) return true;
+                    if (uMat && Array.isArray(apr.allowedUsers) && apr.allowedUsers.some(m => String(m).trim() === uMat)) return true;
+
+                    // Cruzamento automático pelo Setor/Operação vinculado no cadastro do usuário (u.operacoes)
+                    const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                    const setorApr = norm(apr.setor || apr.pasta || '');
+                    if (setorApr && Array.isArray(u.operacoes) && u.operacoes.length > 0) {
+                        const matchSetor = u.operacoes.some(opUser => {
+                            const nOp = norm(opUser);
+                            return nOp && (nOp === setorApr || setorApr.includes(nOp) || nOp.includes(setorApr));
+                        });
+                        if (matchSetor) return true;
+                    }
+                    return false;
+                },
+
+                getApresentacoesLiberadasQT() {
+                    const todas = Object.values(app.apresentacoesList || {}).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    return todas.filter(apr => this.userCanAccessApresentacaoQT(apr, app.currentUser));
+                },
+
+                getTratativasAtivasMap() {
+                    const id = this.qtFonteAtivaId || '__sessao_atual__';
+                    if (id !== '__sessao_atual__' && app.apresentacoesList && app.apresentacoesList[id]) {
+                        if (!app.apresentacoesList[id].tratativasQT) app.apresentacoesList[id].tratativasQT = {};
+                        return app.apresentacoesList[id].tratativasQT;
+                    }
+                    if (!this._sessaoTratativasQT) {
+                        try { this._sessaoTratativasQT = JSON.parse(localStorage.getItem('soft_qt_tratativas_sessao') || '{}'); } catch (e) { this._sessaoTratativasQT = {}; }
+                    }
+                    return this._sessaoTratativasQT;
+                },
+
+                setStatusTratativaQT(operadorEncoded, novoStatus) {
+                    const opNome = decodeURIComponent(operadorEncoded);
+                    const map = this.getTratativasAtivasMap();
+                    const userNome = app.currentUser?.nome ? String(app.currentUser.nome).split(' ').slice(0, 2).join(' ') : (app.isAdmin ? 'Admin' : 'Equipe Q&T');
+                    const agora = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    map[opNome] = { status: novoStatus, por: userNome, data: agora };
+
+                    const id = this.qtFonteAtivaId || '__sessao_atual__';
+                    if (id !== '__sessao_atual__' && app.apresentacoesList && app.apresentacoesList[id]) {
+                        app.apresentacoesList[id].tratativasQT = map;
+                        if (app.storage && typeof app.storage.saveApresentacoes === 'function') {
+                            app.storage.saveApresentacoes(id).catch(e => console.warn('Aviso ao salvar tratativa Q&T:', e));
+                        }
+                    } else {
+                        try { localStorage.setItem('soft_qt_tratativas_sessao', JSON.stringify(map)); } catch (e) {}
+                    }
+                    this._refreshComMemoriaDeScroll();
+                },
+
+                abrirQualidadeTreinamentoDaSessao(aprId) {
+                    this.qtFonteAtivaId = aprId || '__sessao_atual__';
+                    if (aprId && aprId !== '__sessao_atual__') {
+                        this._carregarDadosApresentacaoParaQT(aprId);
+                    }
+                    this.renderTab('qualidade_treinamento', true);
+                },
+
+                _carregarDadosApresentacaoParaQT(aprId) {
+                    const apr = (app.apresentacoesList || {})[aprId];
+                    if (!apr || !apr.payloadData) return null;
+                    try {
+                        const isCompressed = !apr.payloadData.trim().startsWith('{');
+                        const jsonStr = isCompressed ? LZString.decompressFromBase64(apr.payloadData) : apr.payloadData;
+                        const parsed = JSON.parse(jsonStr);
+                        // Mantém também em app.analiseCSVDinamicoData para que todos os modais (openOperadorAnaliseModal, etc.) funcionem
+                        app.analiseCSVDinamicoData = parsed;
+                        if (parsed && Array.isArray(parsed.relatorios) && parsed.relatorios.length > 0 && (!parsed.consolidado || !parsed.consolidado.evolutivoMesLabels)) {
+                            const rhSnapSave = parsed.consolidado ? parsed.consolidado.rhSnapshot : null;
+                            try { app.admin.gerarInteligenciaCSV(); } catch (errGen) {}
+                            if (rhSnapSave && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado && !app.analiseCSVDinamicoData.consolidado.rhSnapshot) {
+                                app.analiseCSVDinamicoData.consolidado.rhSnapshot = rhSnapSave;
+                            }
+                        }
+                        const finalConsolidado = (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) ? app.analiseCSVDinamicoData.consolidado : (parsed ? parsed.consolidado : null);
+                        this._cachedQTPayload = { id: aprId, data: finalConsolidado };
+                        return finalConsolidado;
+                    } catch (e) {
+                        console.error('Erro ao descompactar apresentação para Qualidade & Treinamento:', e);
+                        return null;
+                    }
+                },
+
+                selecionarFonteQT(fonteId) {
+                    this.qtFonteAtivaId = fonteId;
+                    this.whatIfCfg = null; // Reseta simulação para a nova base selecionada
+                    if (fonteId && fonteId !== '__sessao_atual__') {
+                        this._carregarDadosApresentacaoParaQT(fonteId);
+                    }
+                    const qtContainer = document.getElementById('view-container-qualidade_treinamento');
+                    if (qtContainer) this.renderView_QualidadeTreinamento(qtContainer);
+                    else this.renderTab('qualidade_treinamento', true);
+                },
+
+                selecionarSetorFiltroQT(setorEncoded) {
+                    const setor = setorEncoded ? decodeURIComponent(setorEncoded) : '';
+                    this.qtFiltroSetor = setor;
+                    const liberadas = this.getApresentacoesLiberadasQT();
+                    if (setor) {
+                        const primeiraDoSetor = liberadas.find(a => (a.setor || a.pasta || 'Geral') === setor);
+                        if (primeiraDoSetor) {
+                            this.qtFonteAtivaId = primeiraDoSetor.id;
+                            this._carregarDadosApresentacaoParaQT(primeiraDoSetor.id);
+                        }
+                    }
+                    const qtContainer = document.getElementById('view-container-qualidade_treinamento');
+                    if (qtContainer) this.renderView_QualidadeTreinamento(qtContainer);
+                },
+
+                renderQualidadeTreinamentoBody(data) {
+                    if (!data) return '';
+                    const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
+                    const subTab = this.qtSubTab || 'prescricao';
+
+                    let listaTemp = [];
+                    try { listaTemp = this.buildPrescricoesOperacionais(data); } catch (e) {}
+                    const acionaveis = listaTemp.filter(p => p.acao_prescritiva);
+
+                    const liberadas = this.getApresentacoesLiberadasQT();
+                    const temSessaoAtual = !!(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado);
+                    const setoresUnicos = [...new Set(liberadas.map(a => a.setor || a.pasta || 'Geral'))].sort();
+                    const filtroSetor = this.qtFiltroSetor || '';
+                    const liberadasFiltradas = filtroSetor ? liberadas.filter(a => (a.setor || a.pasta || 'Geral') === filtroSetor) : liberadas;
+
+                    const activeApr = (this.qtFonteAtivaId && this.qtFonteAtivaId !== '__sessao_atual__')
+                        ? (liberadas.find(a => a.id === this.qtFonteAtivaId) || null)
+                        : null;
+                    const userCargo = String(app.currentUser?.tipoAcesso || (app.isAdmin ? 'Dev' : 'Qualidade')).trim();
+                    const isGestaoOuDev = app.isAdmin || (app.isSuperAdmin && app.isSuperAdmin()) || (app.isGestor && app.isGestor()) || ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
+                    const userMat = String(app.currentUser?.matricula || '').trim();
+                    const canManageApr = activeApr && (isGestaoOuDev || (activeApr.criadorMatricula && String(activeApr.criadorMatricula).trim() === userMat));
+
+                    // Barra superior única, super clean e sem textos longos
+                    let navHtml = `
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl px-4 py-3 border border-slate-200 dark:border-slate-700 shadow-xs mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <!-- Abas de Navegação Limpas (1 por vez para zero poluição visual) -->
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                ${[
+                                    { id: 'prescricao', icon: 'fa-list-check', label: `1. Fila & Prescrições (${acionaveis.length})` },
+                                    { id: 'onde_agir', icon: 'fa-bullseye', label: '2. Onde Agir' },
+                                    { id: 'what_if', icon: 'fa-sliders', label: '3. Simulador What-If' }
+                                ].map(t => `<button type="button" onclick="app.ui.qtSubTab='${t.id}'; app.ui._refreshComMemoriaDeScroll()" class="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-colors ${subTab === t.id ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200'}"><i class="fa-solid ${t.icon}"></i>${t.label}</button>`).join('')}
+                            </div>
+
+                            <!-- Seletores Compactos de Setor, Base e Ações Rápidas -->
+                            <div class="flex flex-wrap items-center gap-2">
+                                ${setoresUnicos.length > 1 ? `
+                                <select onchange="app.ui.selecionarSetorFiltroQT(this.value)" class="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                    <option value="" ${!filtroSetor ? 'selected' : ''}>Todos os Setores (${liberadas.length})</option>
+                                    ${setoresUnicos.map(st => `<option value="${encodeURIComponent(st)}" ${filtroSetor === st ? 'selected' : ''}>Setor: ${esc(st)}</option>`).join('')}
+                                </select>` : ''}
+
+                                <select onchange="app.ui.selecionarFonteQT(this.value)" class="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer max-w-[280px] truncate">
+                                    ${temSessaoAtual ? `<option value="__sessao_atual__" ${this.qtFonteAtivaId === '__sessao_atual__' ? 'selected' : ''}>⚡ Sessão Atual: ${esc(app.analiseCSVDinamicoData.consolidado.customTitle || app.analiseCSVDinamicoData.consolidado.infoOperacao || 'Ativa')}</option>` : ''}
+                                    ${liberadasFiltradas.map(apr => `<option value="${apr.id}" ${this.qtFonteAtivaId === apr.id ? 'selected' : ''}>📁 [${esc(apr.setor || apr.pasta || 'Setor')}] ${esc(apr.nome)}</option>`).join('')}
+                                </select>
+
+                                ${canManageApr ? `<button type="button" onclick="app.admin.openShareApresentacaoModal('${activeApr.id}')" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors" title="Gerenciar Setor e Equipe Q&T"><i class="fa-solid fa-user-shield mr-1"></i>Acessos</button>` : ''}
+
+                                ${temSessaoAtual && (!activeApr || this.qtFonteAtivaId === '__sessao_atual__') ? `
+                                <button type="button" onclick="app.admin.openSaveApresentacaoModal()" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors" title="Salvar e vincular setor">
+                                    <i class="fa-solid fa-cloud-arrow-up mr-1"></i>Salvar Setor
+                                </button>` : ''}
+
+                                <label class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors" title="Atualizar planilha de Tempo de Casa (Ativos do RH)">
+                                    <i class="fa-solid fa-user-clock"></i> Base RH
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                </label>
+                            </div>
+                        </div>`;
+
+                    return navHtml + this.renderPrescricaoCapitulos(data, () => '', subTab);
+                },
+
+                renderView_QualidadeTreinamento(container) {
+                    if (!app.analiseCSVDinamicoData && !this.isFetchingAnaliseData && !this.hasTriedToFetchAnaliseData) {
+                        this.isFetchingAnaliseData = true;
+                        container.innerHTML = `<div class="p-12 text-center text-slate-400 glass-card rounded-2xl mt-6 border-dashed border border-slate-300">
+                            <i class="fa-solid fa-spinner fa-spin text-3xl mb-3 text-indigo-500"></i>
+                            <h3 class="font-bold text-base text-slate-700 dark:text-slate-200">Carregando dados...</h3>
+                        </div>`;
+                        localforage.getItem('soft_analise_data').then(savedData => {
+                            this.hasTriedToFetchAnaliseData = true;
+                            if (savedData) {
+                                app.analiseCSVDinamicoData = savedData;
+                                app.admin.gerarInteligenciaCSV();
+                            }
+                            this.isFetchingAnaliseData = false;
+                            app.ui.renderTab('qualidade_treinamento', true);
+                        }).catch(() => {
+                            this.hasTriedToFetchAnaliseData = true;
+                            this.isFetchingAnaliseData = false;
+                            app.ui.renderTab('qualidade_treinamento', true);
+                        });
+                        return;
+                    }
+
+                    const liberadas = this.getApresentacoesLiberadasQT();
+                    const temSessaoAtual = !!(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado);
+
+                    if (!this.qtFonteAtivaId) {
+                        if (liberadas.length > 0) this.qtFonteAtivaId = liberadas[0].id;
+                        else if (temSessaoAtual) this.qtFonteAtivaId = '__sessao_atual__';
+                    }
+                    if (this.qtFonteAtivaId !== '__sessao_atual__' && !liberadas.some(a => a.id === this.qtFonteAtivaId)) {
+                        this.qtFonteAtivaId = liberadas.length > 0 ? liberadas[0].id : (temSessaoAtual ? '__sessao_atual__' : '');
+                    }
+
+                    let activeData = null;
+                    if (this.qtFonteAtivaId && this.qtFonteAtivaId !== '__sessao_atual__') {
+                        const activeApr = liberadas.find(a => a.id === this.qtFonteAtivaId) || null;
+                        if (activeApr) {
+                            if (this._cachedQTPayload && this._cachedQTPayload.id === activeApr.id && this._cachedQTPayload.data) {
+                                activeData = this._cachedQTPayload.data;
+                            } else {
+                                activeData = this._carregarDadosApresentacaoParaQT(activeApr.id);
+                            }
+                        }
+                    } else if (temSessaoAtual) {
+                        activeData = app.analiseCSVDinamicoData.consolidado;
+                    }
+
+                    if (!activeData) {
+                        container.innerHTML = `
+                            <div class="max-w-[1600px] mx-auto pb-16">
+                                <div class="p-10 text-center bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
+                                    <i class="fa-solid fa-folder-open text-4xl text-indigo-400 mb-3"></i>
+                                    <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1">Nenhuma base disponível para o seu setor</h3>
+                                    <p class="text-slate-500 dark:text-slate-400 text-xs max-w-md mx-auto mb-5">
+                                        Importe a planilha na aba <strong>Apresentação de Resultados</strong> e clique em <strong>Salvar &amp; Retroalimentar Q&amp;T</strong>.
+                                    </p>
+                                    <button type="button" onclick="app.ui.renderTab('analise_csv_dinamico', true)" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-all">
+                                        Ir para Apresentação de Resultados
+                                    </button>
+                                </div>
+                            </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = `<div class="max-w-[1600px] mx-auto pb-16"><div id="qt-dynamic-body">${this.renderQualidadeTreinamentoBody(activeData)}</div></div>`;
                 },
 
                 getQuadCfg() {
@@ -23071,7 +23455,34 @@ storage: {
                     }
         
                     let mainData = app.analiseCSVDinamicoData || null;
+                    if (mainData && Array.isArray(mainData.relatorios) && mainData.relatorios.length > 0 && (!mainData.consolidado || !Array.isArray(mainData.consolidado.evolutivoMesLabels))) {
+                        const rhSnapBackup = mainData.consolidado ? mainData.consolidado.rhSnapshot : null;
+                        try { app.admin.gerarInteligenciaCSV(); } catch (eGen) { console.warn('Aviso ao atualizar consolidado:', eGen); }
+                        if (rhSnapBackup && mainData.consolidado && !mainData.consolidado.rhSnapshot) {
+                            mainData.consolidado.rhSnapshot = rhSnapBackup;
+                        }
+                    }
                     let data = mainData ? mainData.consolidado : null;
+                    if (data) {
+                        if (!data.operadores) data.operadores = {};
+                        if (!Array.isArray(data.rankOperadores)) data.rankOperadores = Object.values(data.operadores);
+                        if (!Array.isArray(data.rankMonitores)) data.rankMonitores = [];
+                        if (!Array.isArray(data.falhasComunsArray)) data.falhasComunsArray = [];
+                        if (!Array.isArray(data.falhasCriticasArray)) data.falhasCriticasArray = [];
+                        if (!data.feedbacksGlobais) data.feedbacksGlobais = { aplicado: 0, nao_aplicado: 0, monitorado: 0 };
+                        if (!Array.isArray(data.mesesDisponiveis)) data.mesesDisponiveis = [];
+                        if (!Array.isArray(data.ciclosDisponiveis)) data.ciclosDisponiveis = [];
+                        if (!Array.isArray(data.evolutivoMesLabels)) data.evolutivoMesLabels = data.mesesDisponiveis.map(m => app.ui.formatMonthLabel(m));
+                        if (!Array.isArray(data.evolutivoMesData)) data.evolutivoMesData = Array.isArray(data.evolutivoChartData) ? data.evolutivoChartData : [];
+                        if (!Array.isArray(data.evolutivoCicloLabels)) data.evolutivoCicloLabels = [];
+                        if (!Array.isArray(data.evolutivoCicloData)) data.evolutivoCicloData = [];
+                        if (!Array.isArray(data.evolutivoChartLabels)) data.evolutivoChartLabels = data.evolutivoMesLabels;
+                        if (!Array.isArray(data.evolutivoChartData)) data.evolutivoChartData = data.evolutivoMesData;
+                        if (!Array.isArray(data.evolutivoPioresIniciais)) data.evolutivoPioresIniciais = [];
+                        if (!Array.isArray(data.evolutivoQuedas)) data.evolutivoQuedas = [];
+                        if (!data.mesesEvolutivo) data.mesesEvolutivo = {};
+                        if (!data.operadoresEvolutivo) data.operadoresEvolutivo = {};
+                    }
                     let btnHideCode = ''; // Removido a pedido do usuário
 
                     // --- LÓGICA DE CORES E FUNDO IMERSIVO ---
@@ -23135,11 +23546,11 @@ storage: {
                     let totalPerguntasGlobais = 0;
                     if (data && data.operadores) {
                         Object.values(data.operadores).forEach(op => {
-                            op.avaliacoes.forEach(av => totalPerguntasGlobais += av.perguntas.length);
+                            (op.avaliacoes || []).forEach(av => totalPerguntasGlobais += (av.perguntas ? av.perguntas.length : 0));
                         });
                     }
-                    const totalFalhasNormais = data ? data.falhasComunsArray.reduce((acc, f) => acc + f.count, 0) : 0;
-                    const totalFalhasCriticas = data ? data.falhasCriticasArray.reduce((acc, f) => acc + f.count, 0) : 0;
+                    const totalFalhasNormais = (data && Array.isArray(data.falhasComunsArray)) ? data.falhasComunsArray.reduce((acc, f) => acc + (f.count || 0), 0) : 0;
+                    const totalFalhasCriticas = (data && Array.isArray(data.falhasCriticasArray)) ? data.falhasCriticasArray.reduce((acc, f) => acc + (f.count || 0), 0) : 0;
                     const somaTodosErros = totalFalhasNormais + totalFalhasCriticas;
                     const pctErros = totalPerguntasGlobais > 0 ? ((somaTodosErros / totalPerguntasGlobais) * 100).toFixed(1) : 0;
                     const pctAcertos = totalPerguntasGlobais > 0 ? (100 - pctErros).toFixed(1) : 0;
@@ -23249,10 +23660,13 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- BOTÃO DE SALVAR NA NUVEM E MODO APRESENTAÇÃO -->
+                                <!-- BOTÃO DE SALVAR NA NUVEM, RETROALIMENTAR Q&T E MODO APRESENTAÇÃO -->
                                 ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                <button onclick="app.admin.executeSaveApresentacao(event)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap min-w-[180px] ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <i class="fa-solid fa-cloud-arrow-up"></i> Salvar Projeto
+                                <button onclick="app.admin.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Salvar &amp; Retroalimentar Q&amp;T
+                                </button>
+                                <button onclick="app.ui.abrirQualidadeTreinamentoDaSessao('__sessao_atual__')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Abrir Prescrição Operacional, Onde Agir e Simulador What-If na aba Qualidade & Treinamento">
+                                    <i class="fa-solid fa-compass-drafting"></i> Backoffice Q&amp;T
                                 </button>
                                 <button onclick="app.ui.toggleEditModeAnalise()" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap min-w-[180px]">
                                     <i class="fa-solid ${this.analiseEditMode ? 'fa-eye-slash' : 'fa-play'}"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Apresentar'}
@@ -23522,11 +23936,13 @@ storage: {
                         </div>
                     `;
                     // --- CAPÍTULO 3: EVOLUÇÃO HISTÓRICA (SEMANAS/CICLOS S23..S44 + MESES + CURVA SVG/CHART.JS) ---
-                    const temEvolucaoMes = data.mesesDisponiveis && data.mesesDisponiveis.length > 1;
-                    const temEvolucaoCiclo = data.evolutivoCicloLabels && data.evolutivoCicloLabels.length > 1;
+                    const evolMesLabelsSafe = Array.isArray(data.evolutivoMesLabels) ? data.evolutivoMesLabels : (data.mesesDisponiveis || []).map(m => app.ui.formatMonthLabel(m));
+                    const evolCicloLabelsSafe = Array.isArray(data.evolutivoCicloLabels) ? data.evolutivoCicloLabels : [];
+                    const temEvolucaoMes = (data.mesesDisponiveis && data.mesesDisponiveis.length > 1) && evolMesLabelsSafe.length > 0;
+                    const temEvolucaoCiclo = evolCicloLabelsSafe.length > 1;
                     if (temEvolucaoMes || temEvolucaoCiclo || (data.evolutivoChartLabels && data.evolutivoChartLabels.length > 0)) {
                         const modoEvolAtivo = data.evolutivoModoAtivo || (temEvolucaoCiclo ? 'ciclo' : 'mes');
-                        const evolLabels = data.evolutivoChartLabels || [];
+                        const evolLabels = (data.evolutivoChartLabels && data.evolutivoChartLabels.length > 0) ? data.evolutivoChartLabels : evolMesLabelsSafe;
                         const evolVals = (data.evolutivoChartData || []).map(v => parseFloat(v) || 0);
                         const evolNums = evolVals.filter(v => v > 0);
                         const evolMin = evolNums.length ? Math.min(...evolNums) : 0;
@@ -23588,8 +24004,8 @@ storage: {
                                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Acompanhe a linha histórica de nota média e a volatilidade operacional entre os ciclos/períodos avaliados.</p>
                                     </div>
                                     <div class="flex flex-wrap items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                        ${temEvolucaoCiclo ? `<button onclick="app.ui.setEvolutivoModo('ciclo')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${modoEvolAtivo === 'ciclo' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}"><i class="fa-solid fa-calendar-week mr-1"></i> Por Ciclo (${data.evolutivoCicloLabels[0]} a ${data.evolutivoCicloLabels[data.evolutivoCicloLabels.length - 1]})</button>` : ''}
-                                        ${temEvolucaoMes ? `<button onclick="app.ui.setEvolutivoModo('mes')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${modoEvolAtivo === 'mes' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}"><i class="fa-solid fa-calendar-days mr-1"></i> Por Mês (${data.evolutivoMesLabels.length} meses)</button>` : ''}
+                                        ${temEvolucaoCiclo ? `<button onclick="app.ui.setEvolutivoModo('ciclo')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${modoEvolAtivo === 'ciclo' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}"><i class="fa-solid fa-calendar-week mr-1"></i> Por Ciclo (${evolCicloLabelsSafe[0]} a ${evolCicloLabelsSafe[evolCicloLabelsSafe.length - 1]})</button>` : ''}
+                                        ${temEvolucaoMes ? `<button onclick="app.ui.setEvolutivoModo('mes')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${modoEvolAtivo === 'mes' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}"><i class="fa-solid fa-calendar-days mr-1"></i> Por Mês (${evolMesLabelsSafe.length} meses)</button>` : ''}
                                     </div>
                                 </div>
                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -24028,15 +24444,15 @@ storage: {
                     `;
                     
                     // Lógica de Ordenação da Tabela
-                    let arrSort = [...data.rankOperadores];
+                    let arrSort = [...(data.rankOperadores || [])];
                     arrSort.sort((a,b) => {
                         let vA, vB;
-                        if(this.analiseSortCol === 'nome') { vA = a.nome; vB = b.nome; }
-                        else if(this.analiseSortCol === 'notas') { vA = a.notas.length; vB = b.notas.length; }
-                        else if(this.analiseSortCol === 'min') { vA = a.min; vB = b.min; }
+                        if(this.analiseSortCol === 'nome') { vA = a.nome || ''; vB = b.nome || ''; }
+                        else if(this.analiseSortCol === 'notas') { vA = (a.notas || []).length; vB = (b.notas || []).length; }
+                        else if(this.analiseSortCol === 'min') { vA = a.min || 0; vB = b.min || 0; }
                         else if(this.analiseSortCol === 'fb') { vA = a.feedbacks ? a.feedbacks.aplicado : 0; vB = b.feedbacks ? b.feedbacks.aplicado : 0; }
-                        else if(this.analiseSortCol === 'quadrante') { vA = parseFloat(a.media); vB = parseFloat(b.media); }
-                        else { vA = parseFloat(a.media); vB = parseFloat(b.media); }
+                        else if(this.analiseSortCol === 'quadrante') { vA = parseFloat(a.media) || 0; vB = parseFloat(b.media) || 0; }
+                        else { vA = parseFloat(a.media) || 0; vB = parseFloat(b.media) || 0; }
 
                         if(typeof vA === 'string') return this.analiseSortDir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA);
                         return this.analiseSortDir === 'asc' ? vA - vB : vB - vA;
@@ -24064,7 +24480,7 @@ storage: {
                                     </div>
                                 </td>
                                 <td class="py-3 px-4 text-center"><span class="font-black text-[10px] px-2.5 py-1 rounded-md shadow-sm border border-slate-200/50 dark:border-slate-700 ${quadColor}">${quadStr}</span></td>
-                                <td class="py-3 px-4 text-center font-bold text-slate-600 dark:text-slate-400">${op.notas.length}</td>
+                                <td class="py-3 px-4 text-center font-bold text-slate-600 dark:text-slate-400">${(op.notas || []).length}</td>
                                 <td class="py-3 px-4 text-center font-bold">
                                     <div class="flex flex-col items-center gap-1">
                                         <span class="text-emerald-600 text-[11px]">${fbs.aplicado} Aplicados</span>${badgeFb}
@@ -24089,7 +24505,22 @@ storage: {
                             </button>` : ''}
                         </details>
                         
-                        ${this.renderPrescricaoCapitulos(data, renderChapterTitle)}
+                        <!-- ATALHO LIMPO PARA QUALIDADE & TREINAMENTO (Oculto no modo apresentação e na impressão) -->
+                        <div class="mb-8 mt-6 bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-wrap items-center justify-between gap-4 ${this.analiseEditMode ? 'hidden' : ''} print:hidden">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm shrink-0"><i class="fa-solid fa-compass-drafting"></i></div>
+                                <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Prescrições, Onde Agir e Simulador What-If disponíveis na aba <strong>Qualidade &amp; Treinamento</strong>.</span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="app.admin.openSaveApresentacaoModal()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Salvar Setor
+                                </button>
+                                <button type="button" onclick="app.ui.abrirQualidadeTreinamentoDaSessao('__sessao_atual__')" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all">
+                                    <i class="fa-solid fa-arrow-right"></i> Abrir Qualidade &amp; Treinamento
+                                </button>
+                            </div>
+                        </div>
+
                         ${renderChapterTitle('Evidências & Fechamento', 'Galeria de intervenções presenciais e consolidação da apresentação para o histórico permanente na nuvem.', 'fa-camera-retro', 'cyan')}
                         <!-- FUNDAÇÕES PARA ITENS 5 E 6: GESTÃO DE AÇÕES E SALVAMENTO -->
                         <div class="mb-8 grid grid-cols-1 gap-6 ${this.analiseEditMode ? 'hidden' : ''}">
@@ -24116,7 +24547,7 @@ storage: {
                                 if(act) {
                                     opsImpactados += parseInt(act.operadores) || 0;
                                     if(!monitoresAcaoMap[act.matricula]) {
-                                        const u = app.users.find(x => x.matricula === act.matricula);
+                                        const u = (app.users || []).find(x => x.matricula === act.matricula);
                                         monitoresAcaoMap[act.matricula] = {
                                             nome: u ? u.nome.split(' ')[0] : act.nome,
                                             foto: u && u.foto ? u.foto : `https://ui-avatars.com/api/?name=${encodeURIComponent(act.nome)}&background=cbd5e1&color=ffffff`
@@ -27470,12 +27901,29 @@ storage: {
 
                             // Salva as configurações de forma atômica
                             app.storage.saveConfig().then(() => {
-                                app.ui.showAlert("Importação Bem Sucedida!", `O sistema mapeou e memorizou o Tempo de Empresa de <b>${contagem} colaboradores</b>.<br><br>Esses dados agora poderão ser cruzados nos relatórios analíticos!`, "success");
+                                app.ui.showAlert("Importação Bem Sucedida!", `O sistema mapeou e memorizou o Tempo de Empresa de <b>${contagem} colaboradores</b>.<br><br>Esses dados agora poderão ser cruzados nos relatórios analíticos e na aba Qualidade & Treinamento!`, "success");
                                 // Recalcula a tabela para aplicar possíveis atualizações instantaneamente
                                 if(app.analiseCSVDinamicoData) {
                                     app.admin.gerarInteligenciaCSV();
+                                    if(app.analiseCSVDinamicoData.consolidado) {
+                                        const rhSnap = {};
+                                        Object.keys(app.analiseCSVDinamicoData.consolidado.operadores || {}).forEach(nome => {
+                                            const d = app.utils.getTempoCasaDoOperador(nome);
+                                            if (d !== null && d !== undefined) rhSnap[nome] = d;
+                                        });
+                                        app.analiseCSVDinamicoData.consolidado.rhSnapshot = rhSnap;
+                                    }
                                 }
-                                app.ui.renderTab('analise_csv_dinamico', true);
+                                if(app.ui && app.ui._cachedQTPayload && app.ui._cachedQTPayload.consolidado) {
+                                    const rhSnapQT = {};
+                                    Object.keys(app.ui._cachedQTPayload.consolidado.operadores || {}).forEach(nome => {
+                                        const d = app.utils.getTempoCasaDoOperador(nome);
+                                        if (d !== null && d !== undefined) rhSnapQT[nome] = d;
+                                    });
+                                    app.ui._cachedQTPayload.consolidado.rhSnapshot = rhSnapQT;
+                                }
+                                const targetTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
+                                app.ui.renderTab(targetTab, true);
                             });
 
                         } catch (error) {
@@ -27679,6 +28127,27 @@ storage: {
                     reader.readAsBinaryString(file);
                 },
 
+                autoMarkEquipePorSetor(setorStr) {
+                    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                    const sTarget = norm(setorStr);
+                    const cbs = document.querySelectorAll('.save-qt-user-check');
+                    let marcados = 0;
+                    cbs.forEach(cb => {
+                        const opsAttr = cb.getAttribute('data-ops') || '';
+                        const opsList = opsAttr.split('|').map(norm).filter(Boolean);
+                        if (sTarget && opsList.some(op => op === sTarget || op.includes(sTarget) || sTarget.includes(op))) {
+                            cb.checked = true;
+                            marcados++;
+                        }
+                    });
+                    const badge = document.getElementById('save-qt-auto-badge');
+                    if (badge) {
+                        badge.innerHTML = marcados > 0
+                            ? `<i class="fa-solid fa-wand-magic-sparkles mr-1"></i> ${marcados} analista(s)/instrutor(es) do setor "${setorStr}" pré-selecionado(s)`
+                            : `<i class="fa-solid fa-hand-pointer mr-1"></i> Selecione abaixo os responsáveis de Qualidade e Treinamento deste setor`;
+                    }
+                },
+
                 openSaveApresentacaoModal() {
                     const data = app.analiseCSVDinamicoData;
                     if(!data) return;
@@ -27688,39 +28157,160 @@ storage: {
                     const mesAtualNum = new Date().getMonth(); // 0 a 11
 
                     // Resgata o nome extraído da própria planilha se possível
-                    const sugestaoNome = data.consolidado.infoOperacao.replace('Filtro Ativo: ', '');
+                    const sugestaoRaw = (data.consolidado?.infoOperacao || '').replace('Filtro Ativo: ', '').trim();
+                    const sugestaoNome = (sugestaoRaw && sugestaoRaw !== 'Visão Consolidada (Geral)') ? sugestaoRaw : (data.consolidado?.customTitle || '');
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> Arquivar Projeto (Nuvem Local)`;
+                    // Coleta setores conhecidos do sistema e das apresentações salvas
+                    const setoresSet = new Set();
+                    if (app.getOperacoesSetoriais) {
+                        (app.getOperacoesSetoriais() || []).forEach(s => { if (s) setoresSet.add(String(s).trim()); });
+                    }
+                    Object.values(app.apresentacoesList || {}).forEach(a => {
+                        if (a.setor) setoresSet.add(String(a.setor).trim());
+                        else if (a.pasta) setoresSet.add(String(a.pasta).trim());
+                    });
+                    const setoresConhecidos = Array.from(setoresSet).sort();
+
+                    // Separa usuários de Qualidade e de Treinamento
+                    const todosUsuarios = app.users || [];
+                    const eqQualidade = todosUsuarios.filter(u => String(u.tipoAcesso || '').trim() === 'Qualidade');
+                    const eqTreinamento = todosUsuarios.filter(u => String(u.tipoAcesso || '').trim() === 'Treinamento');
+                    const outrosUsuarios = todosUsuarios.filter(u => {
+                        const c = String(u.tipoAcesso || '').trim();
+                        return c !== 'Qualidade' && c !== 'Treinamento' && c !== 'Dev' && c !== 'Gerente' && c !== 'Gestor' && !u.isAdmin;
+                    });
+
+                    const renderUserCheck = (u, roleTag, colorClass) => {
+                        const ops = Array.isArray(u.operacoes) ? u.operacoes : (u.operacao ? [u.operacao] : []);
+                        const opsStr = ops.join(' • ');
+                        return `
+                            <label class="save-qt-user-row flex items-center gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 cursor-pointer transition-colors" data-search="${String(u.nome + ' ' + u.matricula + ' ' + opsStr).toLowerCase()}">
+                                <input type="checkbox" value="${u.matricula}" data-role="${roleTag}" data-ops="${ops.join('|')}" class="save-qt-user-check w-4 h-4 accent-indigo-600 rounded shrink-0">
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-xs font-black text-slate-800 dark:text-slate-100 truncate">${u.nome}</div>
+                                    <div class="text-[10px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                                        <span class="font-bold">${u.matricula}</span>
+                                        ${opsStr ? `<span class="px-1.5 py-0.2 rounded ${colorClass} font-black text-[9px] truncate max-w-[160px]" title="${opsStr}">${opsStr}</span>` : `<span class="italic text-[9px] text-slate-400">Sem setor fixo</span>`}
+                                    </div>
+                                </div>
+                            </label>
+                        `;
+                    };
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    if (modalBox) {
+                        modalBox.classList.remove('max-w-lg', 'max-w-2xl', 'max-w-5xl');
+                        modalBox.classList.add('max-w-3xl');
+                    }
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> Salvar Apresentação & Retroalimentar Qualidade e Treinamento`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-5 leading-relaxed">Salve a versão final desta apresentação estruturada para acessar a qualquer momento no futuro sem precisar importar planilhas novamente.</p>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação / Célula Alvo *</label>
-                                <input type="text" id="save-apres-op" value="${sugestaoNome !== 'Visão Consolidada (Geral)' ? sugestaoNome : ''}" class="w-full p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white" placeholder="Ex: SAC, Vendas, Retenção">
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Mês de Referência *</label>
-                                    <select id="save-apres-mes" class="w-full p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white cursor-pointer">
+                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+                            Organize a apresentação por <strong>Setor / Operação</strong> e vincule os responsáveis de <strong>Qualidade</strong> e <strong>Treinamento</strong> daquele setor. Assim, a apresentação fica limpa para o cliente enquanto sua equipe trabalha nos capítulos 8, 9 e 10 dentro da aba <strong>Qualidade & Treinamento</strong>.
+                        </p>
+                        <div class="space-y-4 max-h-[68vh] overflow-y-auto pr-1 custom-scrollbar">
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="md:col-span-6">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">1. Setor / Operação Alvo *</label>
+                                    <input type="text" id="save-apres-op" list="save-apres-setores-datalist" oninput="app.admin.autoMarkEquipePorSetor(this.value)" value="${sugestaoNome}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white" placeholder="Ex: SAC, Retenção, Vendas, Cobrança...">
+                                    <datalist id="save-apres-setores-datalist">
+                                        ${setoresConhecidos.map(s => `<option value="${s}">`).join('')}
+                                    </datalist>
+                                    ${setoresConhecidos.length > 0 ? `
+                                    <div class="flex flex-wrap gap-1 mt-1.5">
+                                        <span class="text-[9px] font-bold text-slate-400 self-center mr-1">Setores rápidos:</span>
+                                        ${setoresConhecidos.slice(0, 8).map(s => `<button type="button" onclick="const inp = document.getElementById('save-apres-op'); inp.value = '${s.replace(/'/g, "\\'")}'; app.admin.autoMarkEquipePorSetor(inp.value);" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-colors">${s}</button>`).join('')}
+                                    </div>` : ''}
+                                </div>
+                                <div class="md:col-span-3">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Mês de Referência *</label>
+                                    <select id="save-apres-mes" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         ${mesesLista.map((m, i) => `<option value="${m}" ${i === mesAtualNum ? 'selected' : ''}>${m}</option>`).join('')}
                                     </select>
                                 </div>
-                                <div>
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Ano Corretivo *</label>
-                                    <select id="save-apres-ano" class="w-full p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm dark:text-white cursor-pointer">
+                                <div class="md:col-span-3">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Ano *</label>
+                                    <select id="save-apres-ano" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         ${anosDisponiveis.map(a => `<option value="${a}">${a}</option>`).join('')}
                                     </select>
                                 </div>
                             </div>
+
+                            <!-- Retroalimentação Q&T Toggle -->
+                            <label class="flex items-start gap-3 p-3.5 rounded-2xl bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 cursor-pointer">
+                                <input type="checkbox" id="save-apres-retro-qt" checked class="w-5 h-5 accent-indigo-600 rounded mt-0.5 shrink-0">
+                                <div class="text-xs">
+                                    <div class="font-black text-indigo-950 dark:text-indigo-200 flex items-center gap-2">
+                                        <span>Retroalimentar aba "Qualidade & Treinamento" com este fechamento</span>
+                                        <span class="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-black uppercase">Recomendado</span>
+                                    </div>
+                                    <p class="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">Congela o snapshot de ativos de RH desta apresentação e disponibiliza os Capítulos 8 (Prescrição), 9 (Onde Agir) e 10 (Simulador What-If) para a equipe vinculada abaixo.</p>
+                                </div>
+                            </label>
+
+                            <!-- Seleção de Equipe Qualidade e Treinamento do Setor -->
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                                <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                                    <div>
+                                        <div class="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                            <i class="fa-solid fa-user-shield text-indigo-500"></i> 2. Equipe Responsável pelo Setor (Acesso Restrito)
+                                        </div>
+                                        <div id="save-qt-auto-badge" class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                                            <i class="fa-solid fa-hand-pointer mr-1"></i> Selecione quem da Qualidade e do Treinamento atende este setor
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" placeholder="Filtrar nome ou setor..." oninput="const q = this.value.toLowerCase(); document.querySelectorAll('.save-qt-user-row').forEach(r => r.style.display = r.getAttribute('data-search').includes(q) ? '' : 'none');" class="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-none">
+                                        <button type="button" onclick="const cbs = document.querySelectorAll('.save-qt-user-check'); const all = Array.from(cbs).every(c => c.checked); cbs.forEach(c => c.checked = !all);" class="px-2.5 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-[10px] font-black text-slate-700 dark:text-slate-200 hover:bg-slate-300 transition-colors whitespace-nowrap">Marcar/Desmarcar Todos</button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <!-- Coluna Qualidade -->
+                                    <div class="bg-white/70 dark:bg-slate-900/50 p-3 rounded-xl border border-purple-200 dark:border-purple-900/50">
+                                        <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-purple-100 dark:border-purple-900/40">
+                                            <span class="text-[11px] font-black text-purple-700 dark:text-purple-300 uppercase flex items-center gap-1.5"><i class="fa-solid fa-magnifying-glass-chart"></i> Equipe Qualidade (${eqQualidade.length})</span>
+                                            <button type="button" onclick="document.querySelectorAll('.save-qt-user-check[data-role=Qualidade]').forEach(c => c.checked = true)" class="text-[10px] font-bold text-purple-600 hover:underline">Todos</button>
+                                        </div>
+                                        <div class="space-y-1.5 max-h-44 overflow-y-auto pr-1 custom-scrollbar">
+                                            ${eqQualidade.length > 0 ? eqQualidade.map(u => renderUserCheck(u, 'Qualidade', 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300')).join('') : `<div class="text-[11px] text-slate-400 italic py-3 text-center">Nenhum usuário com perfil "Qualidade" cadastrado.</div>`}
+                                        </div>
+                                    </div>
+
+                                    <!-- Coluna Treinamento -->
+                                    <div class="bg-white/70 dark:bg-slate-900/50 p-3 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                                        <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-amber-100 dark:border-amber-900/40">
+                                            <span class="text-[11px] font-black text-amber-700 dark:text-amber-300 uppercase flex items-center gap-1.5"><i class="fa-solid fa-chalkboard-user"></i> Equipe Treinamento (${eqTreinamento.length})</span>
+                                            <button type="button" onclick="document.querySelectorAll('.save-qt-user-check[data-role=Treinamento]').forEach(c => c.checked = true)" class="text-[10px] font-bold text-amber-600 hover:underline">Todos</button>
+                                        </div>
+                                        <div class="space-y-1.5 max-h-44 overflow-y-auto pr-1 custom-scrollbar">
+                                            ${eqTreinamento.length > 0 ? eqTreinamento.map(u => renderUserCheck(u, 'Treinamento', 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300')).join('') : `<div class="text-[11px] text-slate-400 italic py-3 text-center">Nenhum usuário com perfil "Treinamento" cadastrado.</div>`}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                ${outrosUsuarios.length > 0 ? `
+                                <details class="pt-1">
+                                    <summary class="text-[11px] font-bold text-slate-500 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300">+ Liberar acesso para outros colaboradores específicos (${outrosUsuarios.length})</summary>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
+                                        ${outrosUsuarios.map(u => renderUserCheck(u, 'Outro', 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300')).join('')}
+                                    </div>
+                                </details>` : ''}
+                            </div>
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
-                        <button onclick="app.admin.executeSaveApresentacao(event)" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center min-w-[180px]"><i class="fa-solid fa-check mr-1"></i> Salvar Projeto</button>
+                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="app.admin.executeSaveApresentacao(event, false)" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center"><i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Salvar Apresentação</button>
+                        <button onclick="app.admin.executeSaveApresentacao(event, true)" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-sm shadow-md transition-all flex items-center justify-center"><i class="fa-solid fa-compass-drafting mr-1.5"></i> Salvar e Abrir Backoffice Q&T</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
+
+                    if (sugestaoNome) {
+                        setTimeout(() => app.admin.autoMarkEquipePorSetor(sugestaoNome), 50);
+                    }
                 },
-                executeSaveApresentacao(event) {
+                executeSaveApresentacao(event, abrirQTAposSalvar = false) {
                     const btnSave = event ? event.currentTarget : null;
                     if(btnSave) {
                         btnSave.disabled = true;
@@ -27738,23 +28328,41 @@ storage: {
                             const opInput = document.getElementById('save-apres-op');
                             const mesInput = document.getElementById('save-apres-mes');
                             const anoInput = document.getElementById('save-apres-ano');
+                            const retroInput = document.getElementById('save-apres-retro-qt');
                             
                             const customOp = opInput && opInput.value ? opInput.value.trim() : '';
                             const customMes = mesInput ? mesInput.value : '';
                             const customAno = anoInput ? anoInput.value : '';
+                            const retroalimentarQT = retroInput ? !!retroInput.checked : true;
 
-                            const nome = (customMes && customAno) ? `${customMes}/${customAno} (Salvo)` : `${app.ui.formatMonthLabel(app.currentMonth)} (Salvo)`;
-                            const pasta = customOp || app.analiseCSVDinamicoData.consolidado.customTitle || 'Apresentação Salva';
+                            const nome = (customMes && customAno) ? `${customMes}/${customAno}` : `${app.ui.formatMonthLabel(app.currentMonth)}`;
+                            const pasta = customOp || app.analiseCSVDinamicoData.consolidado.customTitle || 'Geral';
+
+                            // Congela snapshot de Tempo de Casa (RH) dentro do consolidado para que a aba Qualidade & Treinamento saiba quem está ativo
+                            if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                                const rhSnap = { ...(app.analiseCSVDinamicoData.consolidado.rhSnapshot || {}) };
+                                Object.keys(app.analiseCSVDinamicoData.consolidado.operadores || {}).forEach(nomeOp => {
+                                    const dias = app.utils.getTempoCasaDoOperador(nomeOp);
+                                    if (dias !== null && dias !== undefined) {
+                                        rhSnap[nomeOp] = dias;
+                                    }
+                                });
+                                app.analiseCSVDinamicoData.consolidado.rhSnapshot = rhSnap;
+                            }
 
                             const userMat = String(app.currentUser?.matricula || (app.isAdmin ? 'gestaosoft' : '')).trim();
                             const userNome = app.currentUser ? (app.utils && app.utils.fixEncoding ? app.utils.fixEncoding(app.currentUser.nome) : app.currentUser.nome) : (app.isAdmin ? 'Administração Dev' : 'Colaborador');
                             const userCargo = app.currentUser?.tipoAcesso || (app.isAdmin ? 'Dev' : 'Colaborador');
 
+                            // Coleta responsáveis de Qualidade e Treinamento marcados no modal
+                            const responsaveisQualidade = Array.from(document.querySelectorAll('.save-qt-user-check[data-role="Qualidade"]:checked')).map(c => String(c.value).trim());
+                            const responsaveisTreinamento = Array.from(document.querySelectorAll('.save-qt-user-check[data-role="Treinamento"]:checked')).map(c => String(c.value).trim());
+                            const outrosLiberados = Array.from(document.querySelectorAll('.save-qt-user-check:checked')).map(c => String(c.value).trim());
+
                             // Matrículas com acesso garantido automaticamente:
-                            // 1. O próprio criador do projeto
-                            // 2. O gestor direto do criador (se houver)
-                            // 3. Todos os Gestores, Gerentes e Devs do sistema
-                            const allowedSet = new Set();
+                            const allowedSet = new Set(outrosLiberados);
+                            responsaveisQualidade.forEach(m => allowedSet.add(m));
+                            responsaveisTreinamento.forEach(m => allowedSet.add(m));
                             if (userMat) allowedSet.add(userMat);
                             if (app.currentUser?.gestorMatricula) {
                                 allowedSet.add(String(app.currentUser.gestorMatricula).trim());
@@ -27770,6 +28378,13 @@ storage: {
                                 id: id,
                                 nome: nome,
                                 pasta: pasta,
+                                setor: pasta,
+                                mesRef: customMes || '',
+                                anoRef: customAno || '',
+                                retroalimentarQT: retroalimentarQT,
+                                responsaveisQualidade: responsaveisQualidade,
+                                responsaveisTreinamento: responsaveisTreinamento,
+                                tratativasQT: {},
                                 dataStr: dataAtual.toLocaleDateString('pt-BR') + ' às ' + dataAtual.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
                                 timestamp: Date.now(),
                                 criadorMatricula: userMat,
@@ -27796,8 +28411,17 @@ storage: {
                                     modal.classList.add('hidden');
                                 }
                                 if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
-                                app.ui.renderTab('analise_csv_dinamico', true); 
-                                app.ui.showAlert("Projeto Salvo!", "O projeto foi salvo na nuvem com sucesso e já está disponível para você, seu gestor, gerentes e a equipe Dev.", "success");
+                                app.ui.qtFonteAtivaId = id;
+                                app.ui._cachedQTFonteId = id;
+                                app.ui._cachedQTPayload = { id: id, data: app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData.consolidado : null };
+
+                                if (abrirQTAposSalvar) {
+                                    app.ui.renderTab('qualidade_treinamento', true);
+                                    app.ui.showAlert("Salvo & Retroalimentado!", `Apresentação do setor <b>${pasta}</b> salva e carregada diretamente no Backoffice de <b>Qualidade & Treinamento</b>!`, "success");
+                                } else {
+                                    app.ui.renderTab('analise_csv_dinamico', true); 
+                                    app.ui.showAlert("Apresentação Salva & Retroalimentada!", `O fechamento do setor <b>${pasta}</b> (${nome}) foi salvo e já retroalimenta a aba <b>Qualidade & Treinamento</b> para a equipe responsável.`, "success");
+                                }
                             }).catch(err => {
                                 console.error(err);
                                 if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
@@ -27822,11 +28446,10 @@ storage: {
                         (app.isGestor && app.isGestor()) || 
                         ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
 
-                    // SEGURANÇA & ACESSO HIERÁRQUICO:
-                    // Se NÃO for Gestão/Dev, exibe apenas os projetos que foram criados pelo próprio usuário
-                    // ou que tenham sua matrícula explicitamente na lista de liberados (allowedUsers)
+                    // SEGURANÇA & ACESSO HIERÁRQUICO POR SETOR:
                     if (!isGestaoOuDev && app.currentUser) {
                         lista = lista.filter(a => {
+                            if (app.ui && app.ui.userCanAccessApresentacaoQT && app.ui.userCanAccessApresentacaoQT(a, app.currentUser)) return true;
                             if (a.criadorMatricula && String(a.criadorMatricula).trim() === userMat) return true;
                             if (Array.isArray(a.allowedUsers) && a.allowedUsers.some(m => String(m).trim() === userMat)) return true;
                             return false;
@@ -27834,43 +28457,53 @@ storage: {
                     }
 
                     if(lista.length === 0) {
-                        return `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-8 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação disponível na nuvem.</div>`;
+                        return `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-8 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação disponível para o seu perfil/setor na nuvem.</div>`;
                     }
 
                     const pastas = {};
                     lista.forEach(a => {
-                        if(!pastas[a.pasta]) pastas[a.pasta] = [];
-                        pastas[a.pasta].push(a);
+                        const keyPasta = a.setor || a.pasta || 'Geral';
+                        if(!pastas[keyPasta]) pastas[keyPasta] = [];
+                        pastas[keyPasta].push(a);
                     });
 
                     let html = '';
                     Object.keys(pastas).sort().forEach(nomePasta => {
                         html += `
-                            <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[350px]">
+                            <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[370px]">
                                 <div class="bg-blue-50 dark:bg-blue-900/20 px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
                                     <i class="fa-solid fa-folder-open text-blue-500 text-xl"></i>
-                                    <h3 class="font-bold text-slate-800 dark:text-white truncate">${nomePasta}</h3>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Setor / Operação</div>
+                                        <h3 class="font-bold text-slate-800 dark:text-white truncate">${nomePasta}</h3>
+                                    </div>
                                     <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2 py-0.5 rounded-full font-black">${pastas[nomePasta].length}</span>
                                 </div>
                                 <div class="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     ${pastas[nomePasta].map(apr => {
                                         const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim() === userMat);
                                         const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim() === userMat;
+                                        const qtdQual = (apr.responsaveisQualidade || []).length;
+                                        const qtdTrein = (apr.responsaveisTreinamento || []).length;
+                                        const qtdTratativas = Object.keys(apr.tratativasQT || {}).length;
                                         return `
                                         <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group transition-colors hover:border-blue-300">
                                             <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${apr.id}')">
-                                                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors flex items-center gap-2">
+                                                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors flex items-center gap-1.5 flex-wrap">
                                                     <span class="truncate">${apr.nome}</span>
                                                     ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide border border-emerald-200 dark:border-emerald-700 shrink-0">MEU PROJETO</span>` : ''}
+                                                    ${apr.retroalimentarQT !== false ? `<span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-indigo-200 dark:border-indigo-700 shrink-0" title="Retroalimenta a aba Qualidade & Treinamento"><i class="fa-solid fa-arrows-spin mr-0.5"></i>Q&T</span>` : ''}
                                                 </div>
-                                                <div class="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                                                <div class="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
                                                     <span><i class="fa-regular fa-clock"></i> ${apr.dataStr}</span>
-                                                    ${apr.criadorNome ? `<span class="bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-semibold border border-slate-300/50 dark:border-slate-600"><i class="fa-solid fa-user-pen mr-1"></i>${apr.criadorNome}${apr.criadorCargo ? ` <span class="opacity-75 font-normal">(${apr.criadorCargo})</span>` : ''}</span>` : ''}
-                                                    ${canManage && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded font-bold border border-teal-200 dark:border-teal-700"><i class="fa-solid fa-users mr-1"></i>${apr.allowedUsers.length} liberados</span>` : ''}
+                                                    ${(qtdQual > 0 || qtdTrein > 0) ? `<span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded font-bold">Q:${qtdQual} • T:${qtdTrein}</span>` : ''}
+                                                    ${qtdTratativas > 0 ? `<span class="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold">${qtdTratativas} tratativa(s)</span>` : ''}
+                                                    ${canManage && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded font-bold border border-teal-200 dark:border-teal-700"><i class="fa-solid fa-users mr-1"></i>${apr.allowedUsers.length}</span>` : ''}
                                                 </div>
                                             </div>
-                                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                                                ${canManage ? `<button onclick="app.admin.openShareApresentacaoModal('${apr.id}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Compartilhar / Liberar Acesso"><i class="fa-solid fa-user-plus text-xs"></i></button>` : ''}
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <button onclick="app.ui.abrirQualidadeTreinamentoDaSessao('${apr.id}')" class="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 hover:text-white hover:bg-indigo-600 shadow-sm border border-indigo-200 dark:border-indigo-700 flex items-center justify-center transition-colors" title="Abrir no Backoffice Qualidade & Treinamento"><i class="fa-solid fa-compass-drafting text-xs"></i></button>
+                                                ${canManage ? `<button onclick="app.admin.openShareApresentacaoModal('${apr.id}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Gerenciar Setor e Equipe Q&T Responsável"><i class="fa-solid fa-user-shield text-xs"></i></button>` : ''}
                                                 ${canManage ? `<button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
                                             </div>
                                         </div>
@@ -27887,70 +28520,96 @@ storage: {
                     if(!apr) return;
                     
                     const allowed = (apr.allowedUsers || []).map(m => String(m).trim());
+                    const respQ = (apr.responsaveisQualidade || []).map(m => String(m).trim());
+                    const respT = (apr.responsaveisTreinamento || []).map(m => String(m).trim());
                     const criadorMat = String(apr.criadorMatricula || '').trim();
+                    const setorAtual = apr.setor || apr.pasta || '';
                     
-                    // Monta a lista de caixinhas para marcar/desmarcar
                     let userCheckboxes = (app.users || []).map(u => {
                         const uMat = String(u.matricula || '').trim();
                         const cargo = String(u.tipoAcesso || '').trim();
                         const isGestao = cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin;
                         const isCriador = criadorMat && uMat === criadorMat;
-                        const isChecked = isCriador || isGestao || allowed.includes(uMat) ? 'checked' : '';
+                        const isChecked = isCriador || isGestao || allowed.includes(uMat) || respQ.includes(uMat) || respT.includes(uMat) ? 'checked' : '';
                         const isDisabled = isCriador || isGestao ? 'disabled title="Acesso nativo permanente (Gestão/Criador)"' : '';
+                        const ops = Array.isArray(u.operacoes) ? u.operacoes.join(' • ') : (u.operacao || '');
+                        const badgeCargo = cargo === 'Qualidade'
+                            ? `<span class="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 px-1.5 py-0.5 rounded font-black shrink-0">QUALIDADE</span>`
+                            : (cargo === 'Treinamento'
+                                ? `<span class="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 px-1.5 py-0.5 rounded font-black shrink-0">TREINAMENTO</span>`
+                                : '');
 
                         return `
-                            <label class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 ${isDisabled ? 'opacity-80 bg-slate-100 dark:bg-slate-800/80 cursor-default' : 'cursor-pointer hover:border-teal-500'} transition-colors">
-                                <input type="checkbox" value="${u.matricula}" class="share-user-check w-5 h-5 accent-teal-600" ${isChecked} ${isDisabled}>
+                            <label class="share-user-row flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 ${isDisabled ? 'opacity-80 bg-slate-100 dark:bg-slate-800/80 cursor-default' : 'cursor-pointer hover:border-teal-500'} transition-colors" data-cargo="${cargo}" data-search="${String(u.nome + ' ' + u.matricula + ' ' + cargo + ' ' + ops).toLowerCase()}">
+                                <input type="checkbox" value="${u.matricula}" data-cargo="${cargo}" class="share-user-check w-5 h-5 accent-teal-600" ${isChecked} ${isDisabled}>
                                 <div class="flex-1 min-w-0">
-                                    <div class="text-sm font-bold text-slate-700 dark:text-slate-200 truncate flex items-center gap-2">
+                                    <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1.5 flex-wrap">
                                         <span class="truncate">${u.nome}</span>
+                                        ${badgeCargo}
                                         ${isCriador ? `<span class="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 px-1 rounded font-black shrink-0">CRIADOR</span>` : ''}
                                         ${isGestao ? `<span class="text-[9px] bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 px-1 rounded font-bold shrink-0">${cargo || 'Admin'}</span>` : ''}
                                     </div>
-                                    <div class="text-[10px] text-slate-500 uppercase tracking-widest">${u.matricula} ${u.tipoAcesso ? `• ${u.tipoAcesso}` : ''}</div>
+                                    <div class="text-[10px] text-slate-500 truncate">${u.matricula} ${u.tipoAcesso ? `• ${u.tipoAcesso}` : ''} ${ops ? `• <b>${ops}</b>` : ''}</div>
                                 </div>
                             </label>
                         `;
                     }).join('');
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-users text-teal-500"></i> Compartilhar Apresentação`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-user-shield text-teal-500"></i> Setor & Permissões de Qualidade e Treinamento`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-sm text-slate-600 dark:text-slate-300 mb-2 leading-relaxed">Selecione os colaboradores que poderão visualizar esta apresentação específica (<strong>${apr.nome}</strong>) na aba Analítica deles. Eles poderão visualizar e interagir com os gráficos, mas não poderão alterar os dados.</p>
-                        <div class="p-2.5 mb-4 rounded-xl bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
-                            <i class="fa-solid fa-circle-info text-blue-500 text-sm"></i>
-                            <span>O criador, seu gestor, gerentes e devs possuem acesso nativo e permanente a este projeto salvo.</span>
+                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">Defina o <strong>Setor</strong> e quais analistas de <strong>Qualidade</strong> e <strong>Treinamento</strong> terão acesso a esta apresentação (<strong>${apr.nome}</strong>) tanto na aba de Apresentação quanto no Backoffice Q&T.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                            <div>
+                                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Setor / Operação Vinculada</label>
+                                <input type="text" id="share-apres-setor" value="${setorAtual}" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-bold dark:text-white outline-none">
+                            </div>
+                            <div class="flex items-end">
+                                <label class="flex items-center gap-2 p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 cursor-pointer w-full">
+                                    <input type="checkbox" id="share-apres-retro-qt" ${apr.retroalimentarQT !== false ? 'checked' : ''} class="w-4 h-4 accent-indigo-600 rounded">
+                                    <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200">Ativo no Backoffice Qualidade & Treinamento</span>
+                                </label>
+                            </div>
                         </div>
-                        <div class="flex justify-between items-center mb-3">
-                            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Colaboradores</span>
-                            <button type="button" onclick="const cbs = document.querySelectorAll('.share-user-check:not(:disabled)'); const allC = Array.from(cbs).every(c => c.checked); cbs.forEach(c => c.checked = !allC);" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Outros</button>
+                        <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" onclick="document.querySelectorAll('.share-user-row').forEach(r => r.style.display = '')" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-[10px] font-bold">Todos</button>
+                                <button type="button" onclick="document.querySelectorAll('.share-user-row').forEach(r => r.style.display = r.getAttribute('data-cargo') === 'Qualidade' ? '' : 'none')" class="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-700 text-[10px] font-black">Só Qualidade</button>
+                                <button type="button" onclick="document.querySelectorAll('.share-user-row').forEach(r => r.style.display = r.getAttribute('data-cargo') === 'Treinamento' ? '' : 'none')" class="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black">Só Treinamento</button>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" placeholder="Buscar nome ou setor..." oninput="const q = this.value.toLowerCase(); document.querySelectorAll('.share-user-row').forEach(r => r.style.display = r.getAttribute('data-search').includes(q) ? '' : 'none');" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-none">
+                                <button type="button" onclick="const cbs = document.querySelectorAll('.share-user-check:not(:disabled)'); const allC = Array.from(cbs).every(c => c.checked); cbs.forEach(c => c.checked = !allC);" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Inverter</button>
+                            </div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-2" id="share-users-container">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[45vh] overflow-y-auto custom-scrollbar pr-2 pb-2" id="share-users-container">
                             ${userCheckboxes}
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Cancelar</button>
-                        <button onclick="app.admin.saveShareApresentacao('${id}')" class="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Permissões</button>
+                        <button onclick="app.admin.saveShareApresentacao('${id}')" class="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Setor e Permissões</button>
                     `;
                     
                     const modalBox = document.querySelector('#global-modal > div');
                     modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
-                    modalBox.classList.add('max-w-2xl'); // Modal mais larguinho para caber os botões
+                    modalBox.classList.add('max-w-2xl');
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
                 saveShareApresentacao(id) {
                     const checkboxes = document.querySelectorAll('.share-user-check:checked');
                     const allowedUsers = Array.from(checkboxes).map(cb => String(cb.value).trim());
+                    const respQ = Array.from(document.querySelectorAll('.share-user-check[data-cargo="Qualidade"]:checked')).map(cb => String(cb.value).trim());
+                    const respT = Array.from(document.querySelectorAll('.share-user-check[data-cargo="Treinamento"]:checked')).map(cb => String(cb.value).trim());
+                    const novoSetorEl = document.getElementById('share-apres-setor');
+                    const retroEl = document.getElementById('share-apres-retro-qt');
                     
                     if (app.apresentacoesList && app.apresentacoesList[id]) {
                         const apr = app.apresentacoesList[id];
                         const allowedSet = new Set(allowedUsers);
 
-                        // Garante que o criador continue com acesso
                         if (apr.criadorMatricula) allowedSet.add(String(apr.criadorMatricula).trim());
 
-                        // Garante que todos os Gestores, Gerentes e Devs continuem com acesso
                         (app.users || []).forEach(u => {
                             const cargo = String(u.tipoAcesso || '').trim();
                             if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin) {
@@ -27958,11 +28617,22 @@ storage: {
                             }
                         });
 
+                        if (novoSetorEl && novoSetorEl.value.trim()) {
+                            apr.setor = novoSetorEl.value.trim();
+                            apr.pasta = novoSetorEl.value.trim();
+                        }
+                        if (retroEl) {
+                            apr.retroalimentarQT = !!retroEl.checked;
+                        }
+                        apr.responsaveisQualidade = respQ;
+                        apr.responsaveisTreinamento = respT;
                         apr.allowedUsers = Array.from(allowedSet);
+
                         app.storage.saveApresentacoes(id).then(() => {
                             document.getElementById('global-modal').classList.add('hidden');
-                            app.ui.renderTab('analise_csv_dinamico', true);
-                            app.ui.showAlert("Liberado com Sucesso", "Os usuários marcados agora podem acessar essa apresentação na aba Apresentação de Resultados deles.", "success");
+                            const activeTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
+                            app.ui.renderTab(activeTab, true);
+                            app.ui.showAlert("Setor & Permissões Atualizados!", "Os analistas de Qualidade e Treinamento selecionados já possuem acesso restrito a este fechamento.", "success");
                         });
                     }
                 },
@@ -27976,6 +28646,9 @@ storage: {
                         const jsonDescompactado = isCompressed ? LZString.decompressFromBase64(apr.payloadData) : apr.payloadData;
                         
                         app.analiseCSVDinamicoData = JSON.parse(jsonDescompactado);
+                        if (app.analiseCSVDinamicoData && Array.isArray(app.analiseCSVDinamicoData.relatorios) && app.analiseCSVDinamicoData.relatorios.length > 0 && (!app.analiseCSVDinamicoData.consolidado || !Array.isArray(app.analiseCSVDinamicoData.consolidado.evolutivoMesLabels))) {
+                            try { app.admin.gerarInteligenciaCSV(); } catch (errG) {}
+                        }
                         localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); // Salva no local HD
                         app.ui.renderTab('analise_csv_dinamico', true);
                         app.ui.showAlert("Restaurado", "Apresentação recuperada, descompactada e montada na tela com sucesso!", "success");
@@ -28457,6 +29130,8 @@ storage: {
                     let oldAcoes = [];
                     let oldCustomTitle = null;
                     let oldTitleColor = '';
+                    let oldBgColor = '';
+                    let oldRhSnapshot = null;
                     let oldChapterCustomData = {}; // <--- SALVA VIDAS DOS CAPÍTULOS
 
                     if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
@@ -28464,6 +29139,8 @@ storage: {
                         oldAcoes = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas || [];
                         oldCustomTitle = app.analiseCSVDinamicoData.consolidado.customTitle || null;
                         oldTitleColor = app.analiseCSVDinamicoData.consolidado.titleColor || '';
+                        oldBgColor = app.analiseCSVDinamicoData.consolidado.bgColor || '';
+                        oldRhSnapshot = app.analiseCSVDinamicoData.consolidado.rhSnapshot || null;
                         oldChapterCustomData = app.analiseCSVDinamicoData.consolidado.chapterCustomData || {}; // <--- RESGATA DA MEMÓRIA ANTERIOR
                     }
 
@@ -28487,6 +29164,8 @@ storage: {
                         acoesSelecionadas: oldAcoes,
                         customTitle: oldCustomTitle,
                         titleColor: oldTitleColor,
+                        bgColor: oldBgColor,
+                        rhSnapshot: oldRhSnapshot,
                         chapterCustomData: oldChapterCustomData, // <--- DEVOLVE PRA ESTRUTURA BLINDADA
                         notasDistribuicao: {}, // <--- NOVO: Armazena a contagem exata de cada nota
                         assuntosDistribuicao: {} // <--- CORREÇÃO: A "estante" mestra que estava faltando para as caixinhas!
@@ -33886,6 +34565,16 @@ Object.assign(app.ui, {
                                 badge: 'Essencial',
                                 iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30',
                                 desc: 'Acompanhe seus indicadores individuais, bonificação, notas de monitoria e status do mês em tempo real.'
+                            },
+                            {
+                                id: 'qualidade_treinamento',
+                                title: 'Qualidade & Treinamento (Backoffice)',
+                                cat: 'qualidade',
+                                catLabel: 'Qualidade & Treinamento',
+                                icon: 'fa-compass-drafting',
+                                badge: 'Novo',
+                                iconBg: 'bg-gradient-to-br from-indigo-600 to-teal-600 text-white shadow-lg shadow-indigo-500/30',
+                                desc: 'Motor de prescrição operacional retroalimentado por setor, fila de atuação Q&T, exportação XLSX e Simulador What-If.'
                             },
                             {
                                 id: 'caca_palavras',
