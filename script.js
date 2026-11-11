@@ -3719,12 +3719,24 @@ storage: {
         }, // <--- CORREÇÃO: Fechando a gaveta 'ata' e separando com vírgula!
 
         diarioBordo: {
-            viewMode: 'lista',
+            viewMode: null,
             filtroOp: 'TODAS',
             filtroData: '',
             filtroBusca: '',
+            filtroPeriodoDash: 'todos',
             diarioEmEdicao: null,
             chartInstance: null,
+
+            filtrarPorOperacao(op) {
+                this.filtroOp = op;
+                this.viewMode = 'lista';
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            verDashboard() {
+                this.viewMode = 'dashboard';
+                app.ui.renderTab('diario_bordo', true);
+            },
 
             getOperacoesDisponiveis() {
                 const opsSet = new Set();
@@ -3922,27 +3934,38 @@ storage: {
             adicionarAlteracaoQuadro() {
                 const matEl = document.getElementById('db-add-alt-mat');
                 const nomeEl = document.getElementById('db-add-alt-nome');
+                const origemEl = document.getElementById('db-add-alt-origem');
+                const destinoEl = document.getElementById('db-add-alt-destino');
+                const obsEl = document.getElementById('db-add-alt-obs');
                 const chamEl = document.getElementById('db-add-alt-chamado');
-                const opEl = document.getElementById('db-add-alt-op');
 
                 const mat = (matEl?.value || '').trim();
                 const nome = (nomeEl?.value || '').trim();
+                const origem = (origemEl?.value || '').trim();
+                const destino = (destinoEl?.value || '').trim();
+                const observacao = (obsEl?.value || '').trim();
                 const chamado = (chamEl?.value || '').trim();
-                const operacao = (opEl?.value || '').trim();
 
-                if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador.", "warning");
+                if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador a ser remanejado.", "warning");
 
                 if (!this.diarioEmEdicao.alteracoesQuadro) this.diarioEmEdicao.alteracoesQuadro = [];
                 this.diarioEmEdicao.alteracoesQuadro.push({
                     id: 'alt_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
                     matricula: mat || '-',
                     nome: nome || 'Colaborador',
-                    chamado: chamado || '-',
-                    operacao: operacao || '-'
+                    origem: origem || '-',
+                    deOndeVeio: origem || '-',
+                    destino: destino || '-',
+                    paraOndeVai: destino || '-',
+                    observacao: observacao || '-',
+                    chamado: chamado || '-'
                 });
 
                 if (matEl) matEl.value = '';
                 if (nomeEl) nomeEl.value = '';
+                if (origemEl) origemEl.value = '';
+                if (destinoEl) destinoEl.value = '';
+                if (obsEl) obsEl.value = '';
                 if (chamEl) chamEl.value = '';
 
                 this.atualizarSecoesFormulario();
@@ -4040,16 +4063,18 @@ storage: {
                 const tbAlt = document.getElementById('db-tbody-alt');
                 if (tbAlt) {
                     if (d.alteracoesQuadro.length === 0) {
-                        tbAlt.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-xs text-slate-400 italic">Nenhuma alteração de quadro registrada.</td></tr>`;
+                        tbAlt.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-xs text-slate-400 italic">Nenhum remanejamento registrado nesta data (campo opcional).</td></tr>`;
                     } else {
                         tbAlt.innerHTML = d.alteracoesQuadro.map((item, idx) => `
                             <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition">
-                                <td class="p-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${item.matricula}</td>
-                                <td class="p-2.5 text-xs text-slate-800 dark:text-white font-medium">${item.nome}</td>
-                                <td class="p-2.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">${item.chamado}</td>
-                                <td class="p-2.5 text-xs text-slate-600 dark:text-slate-300">${item.operacao}</td>
+                                <td class="p-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${item.matricula || '-'}</td>
+                                <td class="p-2.5 text-xs text-slate-800 dark:text-white font-medium">${item.nome || '-'}</td>
+                                <td class="p-2.5 text-xs text-slate-600 dark:text-slate-300 font-semibold"><span class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"><i class="fa-solid fa-arrow-right-from-bracket text-[10px]"></i> ${item.deOndeVeio || item.origem || '-'}</span></td>
+                                <td class="p-2.5 text-xs text-slate-600 dark:text-slate-300 font-semibold"><span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-arrow-right-to-bracket text-[10px]"></i> ${item.paraOndeVai || item.destino || item.operacao || '-'}</span></td>
+                                <td class="p-2.5 text-xs text-slate-600 dark:text-slate-300">${item.observacao || item.motivo || '-'}</td>
+                                <td class="p-2.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">${item.chamado && item.chamado !== '-' ? item.chamado : '-'}</td>
                                 <td class="p-2.5 text-right">
-                                    <button type="button" onclick="app.diarioBordo.removerAlteracaoQuadro(${idx})" class="text-rose-500 hover:text-rose-700 p-1 transition" title="Remover Alteração">
+                                    <button type="button" onclick="app.diarioBordo.removerAlteracaoQuadro(${idx})" class="text-rose-500 hover:text-rose-700 p-1 transition cursor-pointer" title="Remover Remanejamento">
                                         <i class="fa-solid fa-trash-can text-xs"></i>
                                     </button>
                                 </td>
@@ -4122,10 +4147,12 @@ storage: {
                 if (!diario) return app.ui.showAlert("Erro", "Nenhum diário selecionado para gerar PDF.", "error");
 
                 const { jsPDF } = window.jspdf;
-                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-                const pageWidth = doc.internal.pageSize.getWidth();
-                const pageHeight = doc.internal.pageSize.getHeight();
+                // A4 Horizontal (Landscape): 297mm largura x 210mm altura
+                const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                const pageWidth = doc.internal.pageSize.getWidth(); // 297
+                const pageHeight = doc.internal.pageSize.getHeight(); // 210
                 const marginX = 14;
+                const contentWidth = pageWidth - (marginX * 2); // 269mm
 
                 const P = parseInt(diario.previstosSala) || 0;
                 const A = Array.isArray(diario.abs) ? diario.abs.length : 0;
@@ -4134,232 +4161,247 @@ storage: {
                 const pctPR = P > 0 ? ((PR / P) * 100).toFixed(1) : '0.0';
                 const pctA = P > 0 ? ((A / P) * 100).toFixed(1) : '0.0';
                 const pctD = P > 0 ? ((D / P) * 100).toFixed(1) : '0.0';
+                const dataFormatada = diario.data ? diario.data.split('-').reverse().join('/') : '--/--/----';
 
-                // Faixa Superior Corporativa Softmarketing
-                doc.setFillColor(22, 163, 74);
-                doc.rect(marginX, 12, pageWidth - (marginX * 2), 22, 'F');
+                // ==========================================
+                // CABEÇALHO EXECUTIVO SÓBRIO (NAVY CORPORATIVO)
+                // ==========================================
+                doc.setFillColor(15, 23, 42); // Slate 900
+                doc.rect(marginX, 10, contentWidth, 20, 'F');
+                doc.setFillColor(16, 185, 129); // Accent Emerald
+                doc.rect(marginX, 30, contentWidth, 1.2, 'F');
 
                 doc.setTextColor(255, 255, 255);
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(14);
-                doc.text("DIÁRIO DE BORDO | TREINAMENTO", marginX + 6, 21);
+                doc.setFontSize(13);
+                doc.text("SOFTMARKETING  |  DIÁRIO DE BORDO DO TREINAMENTO", marginX + 6, 18);
 
                 doc.setFont("helvetica", "normal");
                 doc.setFontSize(8);
-                doc.text("SOFTMARKETING SOLUÇÕES EM COMUNICAÇÃO  |  GESTÃO DA QUALIDADE & CAPACITAÇÃO", marginX + 6, 28);
+                doc.setTextColor(203, 213, 225); // Slate 300
+                doc.text("GESTÃO DE QUALIDADE & CAPACITAÇÃO OPERACIONAL  •  RELATÓRIO DIÁRIO DE FORMAÇÃO", marginX + 6, 25);
 
-                // Bloco de Identificação da Operação & Turma
-                doc.setFillColor(248, 250, 252);
-                doc.setDrawColor(203, 213, 225);
-                doc.setLineWidth(0.3);
-                doc.roundedRect(marginX, 38, pageWidth - (marginX * 2), 26, 2, 2, 'FD');
-
-                let startTextX = marginX + 5;
-                if (diario.treinadorFoto && typeof diario.treinadorFoto === 'string' && diario.treinadorFoto.startsWith('data:image')) {
-                    try {
-                        doc.addImage(diario.treinadorFoto, 'JPEG', marginX + 4, 40.5, 21, 21);
-                        startTextX = marginX + 28;
-                    } catch(e) {}
-                }
-
-                doc.setTextColor(30, 41, 59);
+                // Badges no Cabeçalho (Direita)
+                const rightX = marginX + contentWidth - 6;
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(11);
-                doc.text(`OPERAÇÃO: ${String(diario.operacao || 'NÃO INFORMADA').toUpperCase()}`, startTextX, 45);
-                doc.text(`TURMA: ${String(diario.turma || 'TURMA').toUpperCase()}`, startTextX, 51);
+                doc.setFontSize(10);
+                doc.setTextColor(255, 255, 255);
+                doc.text(`OPERAÇÃO: ${String(diario.operacao || 'N/A').toUpperCase()}   |   TURMA: ${String(diario.turma || 'TURMA').toUpperCase()}`, rightX, 18, { align: 'right' });
 
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(8.5);
-                doc.setTextColor(71, 85, 105);
-                const dataFormatada = diario.data ? diario.data.split('-').reverse().join('/') : '--/--/----';
-                doc.text(`Data da Capacitação: ${dataFormatada}  |  Treinador(a): ${diario.treinadorNome || 'Não informado'} (${diario.treinadorMatricula || '-'})`, startTextX, 57);
+                doc.setFontSize(8);
+                doc.setTextColor(148, 163, 184);
+                doc.text(`Data: ${dataFormatada}  •  Instrutor(a): ${diario.treinadorNome || 'Treinador'} (${diario.treinadorMatricula || '-'})`, rightX, 25, { align: 'right' });
 
-                // Tabela de Indicadores de Frequência
-                let currentY = 68;
-                doc.autoTable({
-                    startY: currentY,
-                    margin: { left: marginX, right: marginX },
-                    head: [['Previstos em Sala', 'Presentes em Sala', 'Absenteísmo (ABS)', 'Desligamentos (T.O)']],
-                    body: [
-                        [
-                            `${P} colaboradores\n(100%)`,
-                            `${PR} colaboradores\n(${pctPR}%)`,
-                            `${A} colaboradores\n(${pctA}%)`,
-                            `${D} colaboradores\n(${pctD}%)`
-                        ]
-                    ],
-                    theme: 'grid',
-                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', fontSize: 9 },
-                    bodyStyles: { halign: 'center', fontSize: 9, fontStyle: 'bold', cellPadding: 3 },
-                    columnStyles: {
-                        0: { textColor: [30, 41, 59] },
-                        1: { textColor: [22, 163, 74], fillColor: [240, 253, 244] },
-                        2: { textColor: [217, 119, 6], fillColor: [254, 243, 199] },
-                        3: { textColor: [225, 29, 72], fillColor: [255, 241, 242] }
-                    }
-                });
+                // ==========================================
+                // CARDS DE INDICADORES (4 COLUNAS EM PAINEL SÓBRIO)
+                // ==========================================
+                const cardY = 34;
+                const cardH = 16;
+                const cardW = (contentWidth - 9) / 4; // ~64.5mm cada
 
-                currentY = doc.lastAutoTable.finalY + 6;
+                const renderCard = (x, label, val, sub, bgR, bgG, bgB, bdrR, bdrG, bdrB, textR, textG, textB) => {
+                    doc.setFillColor(bgR, bgG, bgB);
+                    doc.setDrawColor(bdrR, bdrG, bdrB);
+                    doc.setLineWidth(0.2);
+                    doc.roundedRect(x, cardY, cardW, cardH, 1.5, 1.5, 'FD');
 
-                // Gráfico em Porcentagem (Barra Proporcional Colorida)
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(9.5);
-                doc.setTextColor(30, 41, 59);
-                doc.text("DISTRIBUIÇÃO PERCENTUAL EM SALA (PRESENTES x ABS x T.O)", marginX, currentY);
-                currentY += 4;
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(textR, textG, textB);
+                    doc.text(label, x + 4, cardY + 5);
 
-                const barWidth = pageWidth - (marginX * 2);
-                const barHeight = 8;
-                const wPR = P > 0 ? (PR / P) * barWidth : 0;
-                const wA = P > 0 ? (A / P) * barWidth : 0;
-                const wD = P > 0 ? (D / P) * barWidth : 0;
+                    doc.setFontSize(11);
+                    doc.setTextColor(15, 23, 42);
+                    doc.text(String(val), x + 4, cardY + 11);
 
-                let curBX = marginX;
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text(sub, x + 4, cardY + 14.5);
+                };
+
+                renderCard(marginX, "PREVISTOS EM SALA", `${P} colabs`, "100% da meta de abertura", 248, 250, 252, 226, 232, 240, 71, 85, 105);
+                renderCard(marginX + cardW + 3, "PRESENTES EM SALA", `${PR} colabs`, `${pctPR}% frequência efetiva`, 240, 253, 244, 187, 247, 208, 22, 101, 52);
+                renderCard(marginX + (cardW + 3) * 2, "ABSENTEÍSMO (ABS)", `${A} faltas`, `${pctA}% taxa de ausência`, 254, 243, 199, 253, 230, 138, 180, 83, 9);
+                renderCard(marginX + (cardW + 3) * 3, "DESLIGAMENTOS (T.O)", `${D} evasões`, `${pctD}% turnover da turma`, 255, 241, 242, 254, 205, 211, 190, 24, 93);
+
+                // Barra de Distribuição Percentual Proporcional (Elegante e Fina)
+                const barY = cardY + cardH + 3.5;
+                const barH = 3.5;
+                const wPR = P > 0 ? (PR / P) * contentWidth : 0;
+                const wA = P > 0 ? (A / P) * contentWidth : 0;
+                const wD = P > 0 ? (D / P) * contentWidth : 0;
+
+                let bX = marginX;
                 if (wPR > 0) {
-                    doc.setFillColor(22, 163, 74);
-                    doc.rect(curBX, currentY, wPR, barHeight, 'F');
-                    curBX += wPR;
+                    doc.setFillColor(16, 185, 129); // Emerald
+                    doc.rect(bX, barY, wPR, barH, 'F');
+                    bX += wPR;
                 }
                 if (wA > 0) {
-                    doc.setFillColor(245, 158, 11);
-                    doc.rect(curBX, currentY, wA, barHeight, 'F');
-                    curBX += wA;
+                    doc.setFillColor(245, 158, 11); // Amber
+                    doc.rect(bX, barY, wA, barH, 'F');
+                    bX += wA;
                 }
                 if (wD > 0) {
-                    doc.setFillColor(244, 63, 94);
-                    doc.rect(curBX, currentY, wD, barHeight, 'F');
-                    curBX += wD;
+                    doc.setFillColor(244, 63, 94); // Rose
+                    doc.rect(bX, barY, wD, barH, 'F');
+                    bX += wD;
                 }
-                doc.setDrawColor(203, 213, 225);
-                doc.setLineWidth(0.3);
-                doc.rect(marginX, currentY, barWidth, barHeight, 'D');
+                doc.setDrawColor(226, 232, 240);
+                doc.setLineWidth(0.2);
+                doc.rect(marginX, barY, contentWidth, barH, 'D');
 
-                currentY += barHeight + 4.5;
-                doc.setFontSize(8);
+                // Legenda Fina da Barra
                 doc.setFont("helvetica", "bold");
-                
-                doc.setFillColor(22, 163, 74); doc.rect(marginX, currentY - 2.5, 3, 3, 'F');
-                doc.setTextColor(22, 163, 74);
-                doc.text(`Presentes: ${pctPR}% (${PR})`, marginX + 4.5, currentY);
-
-                doc.setFillColor(245, 158, 11); doc.rect(marginX + 55, currentY - 2.5, 3, 3, 'F');
+                doc.setFontSize(7);
+                doc.setTextColor(22, 101, 52);
+                doc.text(`• Presentes: ${pctPR}% (${PR})`, marginX, barY + barH + 3.5);
                 doc.setTextColor(180, 83, 9);
-                doc.text(`ABS: ${pctA}% (${A})`, marginX + 59.5, currentY);
+                doc.text(`• ABS: ${pctA}% (${A})`, marginX + 60, barY + barH + 3.5);
+                doc.setTextColor(190, 24, 93);
+                doc.text(`• Desligamentos (T.O): ${pctD}% (${D})`, marginX + 115, barY + barH + 3.5);
 
-                doc.setFillColor(244, 63, 94); doc.rect(marginX + 110, currentY - 2.5, 3, 3, 'F');
-                doc.setTextColor(225, 29, 72);
-                doc.text(`T.O (Desligamentos): ${pctD}% (${D})`, marginX + 114.5, currentY);
+                // ==========================================
+                // TABELAS LADO A LADO EM A4 HORIZONTAL
+                // ==========================================
+                // Coluna 1 (Esquerda): ABS (Faltas e Justificativas) -> ~131mm
+                // Coluna 2 (Direita): Desligamentos e Alterações de Quadro -> ~131mm
+                const tablesStartY = barY + barH + 7;
+                const colW = (contentWidth - 6) / 2; // ~131.5mm cada coluna
 
-                currentY += 7;
-
-                // Tabela de ABS
                 const absRows = (diario.abs || []).map(item => [
                     item.matricula || '-',
                     item.nome || '-',
                     item.motivo || 'Sem justificativa informada'
                 ]);
-                doc.autoTable({
-                    startY: currentY,
-                    margin: { left: marginX, right: marginX },
-                    head: [[`ABS - Absenteísmo e Faltas (${absRows.length})`, '', '']],
-                    body: absRows.length > 0 ? absRows : [['Nenhuma falta registrada nesta turma.', '', '']],
-                    columns: [
-                        { header: 'Matrícula', dataKey: 0 },
-                        { header: 'Nome do Colaborador', dataKey: 1 },
-                        { header: 'Motivo da Falta', dataKey: 2 }
-                    ],
-                    theme: 'striped',
-                    headStyles: { fillColor: [245, 158, 11], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-                    styles: { fontSize: 7.5, cellPadding: 2 }
-                });
-                currentY = doc.lastAutoTable.finalY + 5;
 
-                // Tabela de Desligamentos
                 const deslRows = (diario.desligamentos || []).map(item => [
                     item.matricula || '-',
                     item.nome || '-'
                 ]);
-                doc.autoTable({
-                    startY: currentY,
-                    margin: { left: marginX, right: marginX },
-                    head: [[`Desligamentos da Turma / T.O (${deslRows.length})`, '']],
-                    body: deslRows.length > 0 ? deslRows : [['Nenhum desligamento registrado nesta turma.', '']],
-                    columns: [
-                        { header: 'Matrícula', dataKey: 0 },
-                        { header: 'Nome do Colaborador', dataKey: 1 }
-                    ],
-                    theme: 'striped',
-                    headStyles: { fillColor: [225, 29, 72], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-                    styles: { fontSize: 7.5, cellPadding: 2 }
-                });
-                currentY = doc.lastAutoTable.finalY + 5;
 
-                // Tabela de Alterações de Quadro
                 const altRows = (diario.alteracoesQuadro || []).map(item => [
                     item.matricula || '-',
                     item.nome || '-',
-                    item.chamado || '-',
-                    item.operacao || '-'
+                    item.deOndeVeio || item.origem || '-',
+                    item.paraOndeVai || item.destino || item.operacao || '-',
+                    item.observacao || item.motivo || item.chamado || '-'
                 ]);
-                doc.autoTable({
-                    startY: currentY,
-                    margin: { left: marginX, right: marginX },
-                    head: [[`Alterações de Quadro (${altRows.length})`, '', '', '']],
-                    body: altRows.length > 0 ? altRows : [['Nenhuma alteração de quadro registrada.', '', '', '']],
-                    columns: [
-                        { header: 'Matrícula', dataKey: 0 },
-                        { header: 'Nome', dataKey: 1 },
-                        { header: 'Nº Chamado', dataKey: 2 },
-                        { header: 'Operação', dataKey: 3 }
-                    ],
-                    theme: 'striped',
-                    headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-                    styles: { fontSize: 7.5, cellPadding: 2 }
-                });
-                currentY = doc.lastAutoTable.finalY + 5;
 
-                // Relato do Treinador
+                // 1) Tabela ABS na Coluna Esquerda
+                doc.autoTable({
+                    startY: tablesStartY,
+                    margin: { left: marginX },
+                    tableWidth: colW,
+                    head: [[`ABS - Absenteísmo e Faltas (${absRows.length})`, '', ''], ['Matrícula', 'Nome do Colaborador', 'Motivo da Falta']],
+                    body: absRows.length > 0 ? absRows : [['Nenhuma falta registrada nesta turma.', '', '']],
+                    theme: 'striped',
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
+                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 22, halign: 'center' },
+                        1: { cellWidth: 48 },
+                        2: { cellWidth: colW - 70 }
+                    }
+                });
+                const absFinalY = doc.lastAutoTable.finalY;
+
+                // 2) Tabela Desligamentos na Coluna Direita (Topo)
+                const rightColX = marginX + colW + 6;
+                doc.autoTable({
+                    startY: tablesStartY,
+                    margin: { left: rightColX },
+                    tableWidth: colW,
+                    head: [[`Desligamentos da Turma / Evasões (${deslRows.length})`, ''], ['Matrícula', 'Nome do Colaborador']],
+                    body: deslRows.length > 0 ? deslRows : [['Nenhum desligamento registrado.', '']],
+                    theme: 'striped',
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
+                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 28, halign: 'center' },
+                        1: { cellWidth: colW - 28 }
+                    }
+                });
+                const deslFinalY = doc.lastAutoTable.finalY;
+
+                // 3) Tabela Remanejamentos de Quadro na Coluna Direita (Logo abaixo de Desligamentos)
+                doc.autoTable({
+                    startY: deslFinalY + 4,
+                    margin: { left: rightColX },
+                    tableWidth: colW,
+                    head: [[`Remanejamentos de Quadro - Opcional (${altRows.length})`, '', '', '', ''], ['Matrícula', 'Nome', 'De onde veio', 'Para onde vai', 'Observação']],
+                    body: altRows.length > 0 ? altRows : [['Nenhum remanejamento registrado nesta turma (opcional).', '', '', '', '']],
+                    theme: 'striped',
+                    headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, cellPadding: 2 },
+                    bodyStyles: { fontSize: 6.5, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 18, halign: 'center' },
+                        1: { cellWidth: 32 },
+                        2: { cellWidth: 26 },
+                        3: { cellWidth: 26 },
+                        4: { cellWidth: colW - 102 }
+                    }
+                });
+                const altFinalY = doc.lastAutoTable.finalY;
+
+                // ==========================================
+                // RELATO DO INSTRUTOR (OCUPA A LARGURA INTEGRAL)
+                // ==========================================
+                let bottomY = Math.max(absFinalY, altFinalY) + 5;
                 if (diario.relatoGeral && diario.relatoGeral.trim()) {
-                    if (currentY > pageHeight - 35) {
+                    if (bottomY > pageHeight - 35) {
                         doc.addPage();
-                        currentY = 16;
+                        bottomY = 14;
                     }
                     doc.setFont("helvetica", "bold");
-                    doc.setFontSize(9);
+                    doc.setFontSize(8);
                     doc.setTextColor(30, 41, 59);
-                    doc.text("RELATO DO DIA / OBSERVAÇÕES DO INSTRUTOR", marginX, currentY);
-                    currentY += 4;
+                    doc.text("RELATO DO DIA / OBSERVAÇÕES DO INSTRUTOR", marginX, bottomY);
+                    bottomY += 3;
 
-                    const splitRelato = doc.splitTextToSize(diario.relatoGeral.trim(), pageWidth - (marginX * 2) - 6);
-                    const relatoBoxHeight = (splitRelato.length * 4.2) + 5;
+                    const splitRelato = doc.splitTextToSize(diario.relatoGeral.trim(), contentWidth - 8);
+                    const boxH = Math.max(12, (splitRelato.length * 3.8) + 4);
 
                     doc.setFillColor(248, 250, 252);
-                    doc.setDrawColor(203, 213, 225);
+                    doc.setDrawColor(226, 232, 240);
                     doc.setLineWidth(0.2);
-                    doc.rect(marginX, currentY, pageWidth - (marginX * 2), relatoBoxHeight, 'FD');
+                    doc.roundedRect(marginX, bottomY, contentWidth, boxH, 1, 1, 'FD');
+                    doc.setFillColor(16, 185, 129); // Accent bar na esquerda
+                    doc.rect(marginX, bottomY, 1.5, boxH, 'F');
 
                     doc.setFont("helvetica", "normal");
-                    doc.setFontSize(8);
+                    doc.setFontSize(7.5);
                     doc.setTextColor(51, 65, 85);
-                    doc.text(splitRelato, marginX + 3, currentY + 4.5);
-                    currentY += relatoBoxHeight + 5;
+                    doc.text(splitRelato, marginX + 4, bottomY + 4);
                 }
 
-                // Rodapé de Todas as Páginas
+                // ==========================================
+                // RODAPÉ EXECUTIVO
+                // ==========================================
                 const totalPages = doc.internal.getNumberOfPages();
                 for (let i = 1; i <= totalPages; i++) {
                     doc.setPage(i);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.setLineWidth(0.2);
+                    doc.line(marginX, pageHeight - 8, marginX + contentWidth, pageHeight - 8);
+
                     doc.setFont("helvetica", "normal");
-                    doc.setFontSize(7.5);
+                    doc.setFontSize(7);
                     doc.setTextColor(148, 163, 184);
-                    doc.text(`Diário de Bordo Oficial | Softmarketing Soluções em Comunicação | Emitido em ${new Date().toLocaleString('pt-BR')} | Página ${i} de ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+                    doc.text(`Softmarketing Soluções em Comunicação  •  Diário de Bordo Oficial  •  Emitido em ${new Date().toLocaleString('pt-BR')}`, marginX, pageHeight - 4.5);
+                    doc.text(`Página ${i} de ${totalPages}`, marginX + contentWidth, pageHeight - 4.5, { align: 'right' });
                 }
 
                 const safeOp = (diario.operacao || 'Operacao').replace(/[^a-zA-Z0-9]/g, '_');
                 const safeTurma = (diario.turma || 'Turma').replace(/[^a-zA-Z0-9]/g, '_');
                 const filename = `Diario_Bordo_${safeOp}_${safeTurma}_${diario.data || 'data'}.pdf`;
                 doc.save(filename);
-                app.ui.showAlert("PDF Gerado com Sucesso", `O arquivo "${filename}" foi baixado com sucesso!`, "success");
+                app.ui.showAlert("PDF Gerado com Sucesso", `O arquivo "${filename}" foi baixado no formato A4 Horizontal!`, "success");
             }
         },
 
@@ -13914,10 +13956,388 @@ storage: {
 
                 renderView_DiarioBordo(container) {
                     if (!app.diarioBordo) return;
-                    const mode = app.diarioBordo.viewMode || 'lista';
                     const allDiarios = Object.values(app.diarioBordoList || {}).filter(Boolean);
+                    const userCargo = app.currentUser?.tipoAcesso || '';
+                    const isGestao = ['Gestor', 'Dev', 'Gerente'].includes(userCargo) || app.isAdmin;
+                    
+                    if (!app.diarioBordo.viewMode) {
+                        app.diarioBordo.viewMode = isGestao ? 'dashboard' : 'lista';
+                    }
+                    const mode = app.diarioBordo.viewMode;
 
-                    if (mode === 'lista') {
+                    // Barra Superior de Navegação (Dashboard vs Turmas & Histórico)
+                    const navSubTabsHtml = `
+                        <div class="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl">
+                                <button type="button" onclick="app.diarioBordo.viewMode = 'dashboard'; app.ui.renderTab('diario_bordo', true);" class="px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'dashboard' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
+                                    <i class="fa-solid fa-chart-pie"></i> Dashboard Geral das Operações
+                                </button>
+                                <button type="button" onclick="app.diarioBordo.viewMode = 'lista'; app.ui.renderTab('diario_bordo', true);" class="px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'lista' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
+                                    <i class="fa-solid fa-list-check"></i> Turmas &amp; Histórico (${allDiarios.length})
+                                </button>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm hover:shadow transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                    <i class="fa-solid fa-plus"></i> Novo Diário de Bordo
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    if (mode === 'dashboard') {
+                        const periodo = app.diarioBordo.filtroPeriodoDash || 'todos';
+                        const hojeStr = new Date().toISOString().split('T')[0];
+                        const d7Str = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+                        const mesAtualPrefix = hojeStr.substring(0, 7);
+
+                        const diariosPeriodo = allDiarios.filter(d => {
+                            if (!d.data) return true;
+                            if (periodo === 'hoje') return d.data === hojeStr;
+                            if (periodo === '7d') return d.data >= d7Str;
+                            if (periodo === 'mes') return d.data.startsWith(mesAtualPrefix);
+                            return true;
+                        });
+
+                        const operacoesCadastradas = app.diarioBordo.getOperacoesDisponiveis();
+                        const opsMap = {};
+                        operacoesCadastradas.forEach(op => {
+                            opsMap[op] = {
+                                nome: op,
+                                turmas: [],
+                                previstos: 0,
+                                presentes: 0,
+                                abs: 0,
+                                desligamentos: 0,
+                                alteracoes: 0,
+                                treinadores: new Set(),
+                                ultimaData: ''
+                            };
+                        });
+
+                        diariosPeriodo.forEach(d => {
+                            const op = d.operacao || 'Geral';
+                            if (!opsMap[op]) {
+                                opsMap[op] = {
+                                    nome: op,
+                                    turmas: [],
+                                    previstos: 0,
+                                    presentes: 0,
+                                    abs: 0,
+                                    desligamentos: 0,
+                                    alteracoes: 0,
+                                    treinadores: new Set(),
+                                    ultimaData: ''
+                                };
+                            }
+                            const P = parseInt(d.previstosSala) || 0;
+                            const A = Array.isArray(d.abs) ? d.abs.length : 0;
+                            const D = Array.isArray(d.desligamentos) ? d.desligamentos.length : 0;
+                            const PR = Math.max(0, P - A - D);
+                            const AQ = Array.isArray(d.alteracoesQuadro) ? d.alteracoesQuadro.length : 0;
+
+                            opsMap[op].turmas.push(d);
+                            opsMap[op].previstos += P;
+                            opsMap[op].presentes += PR;
+                            opsMap[op].abs += A;
+                            opsMap[op].desligamentos += D;
+                            opsMap[op].alteracoes += AQ;
+                            if (d.treinadorNome) opsMap[op].treinadores.add(d.treinadorNome);
+                            if (!opsMap[op].ultimaData || d.data > opsMap[op].ultimaData) opsMap[op].ultimaData = d.data;
+                        });
+
+                        let globPrev = 0, globPres = 0, globAbs = 0, globDesl = 0, globAlt = 0;
+                        const opsList = Object.values(opsMap);
+                        const opsComTurmas = opsList.filter(o => o.turmas.length > 0);
+
+                        opsComTurmas.forEach(o => {
+                            globPrev += o.previstos;
+                            globPres += o.presentes;
+                            globAbs += o.abs;
+                            globDesl += o.desligamentos;
+                            globAlt += o.alteracoes;
+                        });
+
+                        const globPctPres = globPrev > 0 ? ((globPres / globPrev) * 100).toFixed(1) : '0.0';
+                        const globPctAbs = globPrev > 0 ? ((globAbs / globPrev) * 100).toFixed(1) : '0.0';
+                        const globPctDesl = globPrev > 0 ? ((globDesl / globPrev) * 100).toFixed(1) : '0.0';
+
+                        // Ordena: Operações com turmas primeiro (por maior previstos), depois as demais
+                        opsList.sort((a, b) => {
+                            if (b.turmas.length !== a.turmas.length) return b.turmas.length - a.turmas.length;
+                            return b.previstos - a.previstos;
+                        });
+
+                        container.innerHTML = `
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
+                                
+                                <!-- Banner Header -->
+                                <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                    <div class="relative z-10">
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-emerald-200 text-xs font-bold uppercase tracking-widest mb-3 border border-white/10">
+                                            <i class="fa-solid fa-chart-pie"></i> Painel Executivo da Gestão
+                                        </div>
+                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Dashboard de Diários de Bordo</h2>
+                                        <p class="text-emerald-100/80 text-xs sm:text-sm max-w-2xl mt-1 leading-relaxed">
+                                            Visão consolidada em tempo real de todas as operações: frequência em sala, absenteísmo e desligamentos de turmas em formação.
+                                        </p>
+                                    </div>
+                                    <div class="relative z-10 flex flex-wrap items-center gap-3">
+                                        <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
+                                            <i class="fa-solid fa-plus text-emerald-600"></i> Novo Diário de Bordo
+                                        </button>
+                                    </div>
+                                    <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-9xl">
+                                        <i class="fa-solid fa-chart-line"></i>
+                                    </div>
+                                </div>
+
+                                <!-- Sub-navegação -->
+                                ${navSubTabsHtml}
+
+                                <!-- Barra de Filtro de Período -->
+                                <div class="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider"><i class="fa-regular fa-calendar mr-1"></i> Período:</span>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <button type="button" onclick="app.diarioBordo.filtroPeriodoDash='todos'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${periodo === 'todos' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">Histórico Completo</button>
+                                            <button type="button" onclick="app.diarioBordo.filtroPeriodoDash='hoje'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${periodo === 'hoje' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">Hoje</button>
+                                            <button type="button" onclick="app.diarioBordo.filtroPeriodoDash='7d'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${periodo === '7d' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">Últimos 7 dias</button>
+                                            <button type="button" onclick="app.diarioBordo.filtroPeriodoDash='mes'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${periodo === 'mes' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">Mês Atual</button>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-slate-500 font-semibold">
+                                        <i class="fa-solid fa-layer-group text-emerald-500 mr-1"></i> <strong>${opsComTurmas.length}</strong> de <strong>${operacoesCadastradas.length}</strong> operações com turmas ativas
+                                    </div>
+                                </div>
+
+                                <!-- Macro KPIs Globais -->
+                                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Operações</span> <i class="fa-solid fa-building text-blue-500"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${opsComTurmas.length} <span class="text-xs font-semibold text-slate-400">/ ${operacoesCadastradas.length}</span></div>
+                                        <div class="text-[10px] text-slate-400 font-medium mt-1">Operações com turmas</div>
+                                    </div>
+
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Turmas</span> <i class="fa-solid fa-chalkboard text-indigo-500"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${diariosPeriodo.length}</div>
+                                        <div class="text-[10px] text-slate-400 font-medium mt-1">Diários registrados</div>
+                                    </div>
+
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Previstos</span> <i class="fa-solid fa-users text-slate-400"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${globPrev}</div>
+                                        <div class="text-[10px] text-slate-400 font-medium mt-1">Headcount total</div>
+                                    </div>
+
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/40 shadow-xs flex flex-col justify-between bg-emerald-50/20">
+                                        <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Presentes</span> <i class="fa-solid fa-user-check text-emerald-500"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400">${globPres} <span class="text-xs font-bold">(${globPctPres}%)</span></div>
+                                        <div class="text-[10px] text-emerald-700/80 dark:text-emerald-400 font-medium mt-1">Frequência geral</div>
+                                    </div>
+
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-amber-200 dark:border-amber-800/40 shadow-xs flex flex-col justify-between bg-amber-50/20">
+                                        <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>ABS (Faltas)</span> <i class="fa-solid fa-user-xmark text-amber-500"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-amber-600 dark:text-amber-400">${globAbs} <span class="text-xs font-bold">(${globPctAbs}%)</span></div>
+                                        <div class="text-[10px] text-amber-700/80 dark:text-amber-400 font-medium mt-1">Ausências totais</div>
+                                    </div>
+
+                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-rose-200 dark:border-rose-800/40 shadow-xs flex flex-col justify-between bg-rose-50/20">
+                                        <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Desligamentos</span> <i class="fa-solid fa-user-minus text-rose-500"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-rose-600 dark:text-rose-400">${globDesl} <span class="text-xs font-bold">(${globPctDesl}%)</span></div>
+                                        <div class="text-[10px] text-rose-700/80 dark:text-rose-400 font-medium mt-1">Turnover em turma</div>
+                                    </div>
+                                </div>
+
+                                <!-- Cards das Operações (Bater o Olho) -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h3 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-chart-simple text-emerald-500"></i> Visão Rápida por Operação
+                                            </h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Resumo imediato de frequência, faltas e turnover por operação.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                                        ${opsList.map(op => {
+                                            const hasTurmas = op.turmas.length > 0;
+                                            const pctPres = op.previstos > 0 ? ((op.presentes / op.previstos) * 100).toFixed(1) : '0.0';
+                                            const pctAbs = op.previstos > 0 ? ((op.abs / op.previstos) * 100).toFixed(1) : '0.0';
+                                            const pctDesl = op.previstos > 0 ? ((op.desligamentos / op.previstos) * 100).toFixed(1) : '0.0';
+                                            
+                                            let statusBadge = '';
+                                            if (!hasTurmas) {
+                                                statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300">Sem Turmas</span>';
+                                            } else if (parseFloat(pctPres) >= 90) {
+                                                statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40"><i class="fa-solid fa-circle-check mr-1 text-emerald-600"></i> Excelente</span>';
+                                            } else if (parseFloat(pctPres) >= 80) {
+                                                statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40"><i class="fa-solid fa-circle-info mr-1 text-blue-600"></i> Estável</span>';
+                                            } else {
+                                                statusBadge = '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40"><i class="fa-solid fa-triangle-exclamation mr-1 text-rose-600"></i> Atenção</span>';
+                                            }
+
+                                            const ultDataFmt = op.ultimaData ? op.ultimaData.split('-').reverse().join('/') : '--/--/----';
+                                            const treinadoresArr = Array.from(op.treinadores);
+
+                                            return `
+                                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition flex flex-col justify-between group ${!hasTurmas ? 'opacity-70 hover:opacity-100' : ''}">
+                                                    <div>
+                                                        <div class="flex items-start justify-between gap-3 mb-3">
+                                                            <div class="flex-1 min-w-0">
+                                                                <h4 class="text-base font-black text-slate-800 dark:text-white truncate" title="${op.nome}">
+                                                                    ${op.nome}
+                                                                </h4>
+                                                                <div class="text-[11px] font-semibold text-slate-400 mt-0.5">
+                                                                    ${op.turmas.length} turma${op.turmas.length === 1 ? '' : 's'} no período
+                                                                </div>
+                                                            </div>
+                                                            <div class="shrink-0">
+                                                                ${statusBadge}
+                                                            </div>
+                                                        </div>
+
+                                                        ${hasTurmas ? `
+                                                            <!-- Grid Métricas da Operação -->
+                                                            <div class="grid grid-cols-4 gap-2 text-center my-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700/60">
+                                                                <div>
+                                                                    <div class="text-[9px] font-bold text-slate-400 uppercase">Prev.</div>
+                                                                    <div class="text-xs font-black text-slate-700 dark:text-slate-200">${op.previstos}</div>
+                                                                </div>
+                                                                <div>
+                                                                    <div class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Pres.</div>
+                                                                    <div class="text-xs font-black text-emerald-700 dark:text-emerald-300">${op.presentes} <span class="text-[9px] font-normal">(${pctPres}%)</span></div>
+                                                                </div>
+                                                                <div>
+                                                                    <div class="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase">ABS</div>
+                                                                    <div class="text-xs font-black text-amber-700 dark:text-amber-300">${op.abs} <span class="text-[9px] font-normal">(${pctAbs}%)</span></div>
+                                                                </div>
+                                                                <div>
+                                                                    <div class="text-[9px] font-bold text-rose-600 dark:text-rose-400 uppercase">T.O</div>
+                                                                    <div class="text-xs font-black text-rose-700 dark:text-rose-300">${op.desligamentos} <span class="text-[9px] font-normal">(${pctDesl}%)</span></div>
+                                                                </div>
+                                                            </div>
+
+                                                            <!-- Barra de Proporção -->
+                                                            <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 flex overflow-hidden mb-3">
+                                                                <div style="width: ${pctPres}%" class="h-full bg-emerald-500" title="Presentes: ${pctPres}%"></div>
+                                                                <div style="width: ${pctAbs}%" class="h-full bg-amber-500" title="ABS: ${pctAbs}%"></div>
+                                                                <div style="width: ${pctDesl}%" class="h-full bg-rose-500" title="T.O: ${pctDesl}%"></div>
+                                                            </div>
+
+                                                            <div class="text-[11px] text-slate-500 dark:text-slate-400 mb-3 flex flex-wrap items-center justify-between gap-2">
+                                                                <span><i class="fa-regular fa-calendar-check mr-1 text-emerald-500"></i> Último registro: <strong>${ultDataFmt}</strong></span>
+                                                                ${treinadoresArr.length > 0 ? `<span><i class="fa-solid fa-chalkboard-user mr-1 text-slate-400"></i> ${treinadoresArr.slice(0, 2).join(', ')}${treinadoresArr.length > 2 ? ' +' + (treinadoresArr.length - 2) : ''}</span>` : ''}
+                                                            </div>
+                                                        ` : `
+                                                            <div class="py-6 text-center text-xs text-slate-400 italic">
+                                                                Nenhuma turma registrada nesta operação no período selecionado.
+                                                            </div>
+                                                        `}
+                                                    </div>
+
+                                                    <div class="pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between">
+                                                        ${hasTurmas ? `
+                                                            <button type="button" onclick="app.diarioBordo.filtrarPorOperacao('${op.nome}')" class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                                                <i class="fa-solid fa-arrow-right text-emerald-600 text-xs"></i> Ver ${op.turmas.length} Turma${op.turmas.length === 1 ? '' : 's'}
+                                                            </button>
+                                                            <span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">${op.alteracoes > 0 ? op.alteracoes + ' remanejamento(s)' : ''}</span>
+                                                        ` : `
+                                                            <button type="button" onclick="app.diarioBordo.novoDiario(); setTimeout(() => { const el = document.getElementById('db-input-op'); if(el) el.value = '${op.nome}'; }, 100);" class="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                                                <i class="fa-solid fa-plus text-xs"></i> Abrir Turma
+                                                            </button>
+                                                        `}
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+
+                                <!-- Matriz Comparativa Consolidada -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h3 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-table-list text-indigo-500"></i> Matriz Consolidada de Todas as Operações
+                                            </h3>
+                                            <p class="text-xs text-slate-400">Comparativo direto de headcount, frequência em treinamento e desligamentos por operação.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                                <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-400 uppercase text-[10px] font-black tracking-wider">
+                                                    <th class="py-3 px-3">Operação</th>
+                                                    <th class="py-3 px-3 text-center">Turmas</th>
+                                                    <th class="py-3 px-3 text-center">Previstos</th>
+                                                    <th class="py-3 px-3 text-center">Presentes</th>
+                                                    <th class="py-3 px-3 text-center">Taxa Presença</th>
+                                                    <th class="py-3 px-3 text-center">ABS (Faltas)</th>
+                                                    <th class="py-3 px-3 text-center">T.O (Evasão)</th>
+                                                    <th class="py-3 px-3 text-center">Remanejamentos (Op.)</th>
+                                                    <th class="py-3 px-3 text-center">Status</th>
+                                                    <th class="py-3 px-3 text-right">Ação</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60 font-semibold text-slate-700 dark:text-slate-300">
+                                                ${opsList.map(op => {
+                                                    const hasTurmas = op.turmas.length > 0;
+                                                    const pctPres = op.previstos > 0 ? ((op.presentes / op.previstos) * 100).toFixed(1) : '0.0';
+                                                    const pctAbs = op.previstos > 0 ? ((op.abs / op.previstos) * 100).toFixed(1) : '0.0';
+                                                    const pctDesl = op.previstos > 0 ? ((op.desligamentos / op.previstos) * 100).toFixed(1) : '0.0';
+
+                                                    let statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300">Sem Turmas</span>';
+                                                    if (hasTurmas) {
+                                                        if (parseFloat(pctPres) >= 90) statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Excelente</span>';
+                                                        else if (parseFloat(pctPres) >= 80) statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">Estável</span>';
+                                                        else statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">Atenção</span>';
+                                                    }
+
+                                                    return `
+                                                        <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition">
+                                                            <td class="py-3 px-3 font-bold text-slate-800 dark:text-white">${op.nome}</td>
+                                                            <td class="py-3 px-3 text-center font-bold">${op.turmas.length}</td>
+                                                            <td class="py-3 px-3 text-center">${op.previstos}</td>
+                                                            <td class="py-3 px-3 text-center text-emerald-600 font-bold">${op.presentes}</td>
+                                                            <td class="py-3 px-3 text-center font-black ${parseFloat(pctPres) >= 90 ? 'text-emerald-600' : (parseFloat(pctPres) >= 80 ? 'text-blue-600' : 'text-rose-600')}">${hasTurmas ? pctPres + '%' : '-'}</td>
+                                                            <td class="py-3 px-3 text-center ${op.abs > 0 ? 'text-amber-600 font-bold' : ''}">${op.abs} ${hasTurmas ? `(${pctAbs}%)` : ''}</td>
+                                                            <td class="py-3 px-3 text-center ${op.desligamentos > 0 ? 'text-rose-600 font-bold' : ''}">${op.desligamentos} ${hasTurmas ? `(${pctDesl}%)` : ''}</td>
+                                                            <td class="py-3 px-3 text-center text-indigo-600">${op.alteracoes}</td>
+                                                            <td class="py-3 px-3 text-center">${statusBadge}</td>
+                                                            <td class="py-3 px-3 text-right">
+                                                                ${hasTurmas ? `
+                                                                    <button type="button" onclick="app.diarioBordo.filtrarPorOperacao('${op.nome}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer">
+                                                                        Ver Turmas
+                                                                    </button>
+                                                                ` : `
+                                                                    <span class="text-slate-400 text-xs">-</span>
+                                                                `}
+                                                            </td>
+                                                        </tr>
+                                                    `;
+                                                }).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (mode === 'lista') {
                         // Aplicação dos Filtros
                         const filtroOp = app.diarioBordo.filtroOp || 'TODAS';
                         const filtroData = app.diarioBordo.filtroData || '';
@@ -13938,7 +14358,7 @@ storage: {
                         const operacoes = app.diarioBordo.getOperacoesDisponiveis();
 
                         container.innerHTML = `
-                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6">
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
                                 
                                 <!-- Banner Header -->
                                 <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -13960,6 +14380,9 @@ storage: {
                                         <i class="fa-solid fa-book-journal-whills"></i>
                                     </div>
                                 </div>
+
+                                <!-- Sub-navegação -->
+                                ${navSubTabsHtml}
 
                                 <!-- Barra de Filtros e Busca -->
                                 <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4">
@@ -14083,7 +14506,7 @@ storage: {
 
                                                         ${AQ > 0 ? `
                                                             <div class="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold mb-3 flex items-center gap-1.5">
-                                                                <i class="fa-solid fa-arrows-split-up-and-left text-xs"></i> ${AQ} alteraç${AQ > 1 ? 'ões' : 'ão'} de quadro registrada${AQ > 1 ? 's' : ''}
+                                                                <i class="fa-solid fa-people-arrows text-xs"></i> ${AQ} remanejamento${AQ > 1 ? 's' : ''} de quadro
                                                             </div>
                                                         ` : ''}
 
@@ -14105,7 +14528,7 @@ storage: {
                                                             </button>
                                                         </div>
                                                         <button type="button" onclick="app.diarioBordo.excluirDiario('${item.id}')" class="w-8 h-8 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition flex items-center justify-center cursor-pointer" title="Excluir Diário">
-                                                            <i class="fa-solid fa-trash-can text-xs"></i>
+                                                                <i class="fa-solid fa-trash-can text-xs"></i>
                                                         </button>
                                                     </div>
                                                 </div>
@@ -14365,53 +14788,72 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- SEÇÃO 3: ALTERAÇÕES DE QUADRO -->
+                                <!-- SEÇÃO 3: REMANEJAMENTO DE QUADRO (OPCIONAL) -->
                                 <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
                                     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
                                         <div class="flex items-center gap-2">
                                             <i class="fa-solid fa-people-arrows text-indigo-500"></i>
-                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Alterações de Quadro</h3>
+                                            <div>
+                                                <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                                    Remanejamento de Quadro <span class="text-[11px] font-bold text-slate-400 lowercase">(opcional)</span>
+                                                </h3>
+                                                <p class="text-[11px] text-slate-400">Preencha apenas se houver remanejamento de colaboradores entre operações ou turmas.</p>
+                                            </div>
                                         </div>
                                         <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
-                                            ${(d.alteracoesQuadro || []).length} alteraç${(d.alteracoesQuadro || []).length !== 1 ? 'ões' : 'ão'}
+                                            ${(d.alteracoesQuadro || []).length} remanejamento${(d.alteracoesQuadro || []).length !== 1 ? 's' : ''} (Opcional)
                                         </span>
                                     </div>
 
-                                    <!-- Linha de Inserção de Alteração de Quadro -->
-                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                                        <div class="sm:col-span-2">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
-                                            <input type="text" id="db-add-alt-mat" oninput="app.diarioBordo.onMatriculaChange('alt', this.value)" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                    <!-- Linha de Inserção de Remanejamento -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 space-y-3">
+                                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
+                                                <input type="text" id="db-add-alt-mat" oninput="app.diarioBordo.onMatriculaChange('alt', this.value)" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            </div>
+                                            <div class="sm:col-span-4">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome:</label>
+                                                <input type="text" id="db-add-alt-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            </div>
+                                            <div class="sm:col-span-3">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-right-from-bracket text-amber-500 mr-1"></i> De onde veio (Origem):</label>
+                                                <input type="text" id="db-add-alt-origem" placeholder="Ex: Operação A / Turma 01" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            </div>
+                                            <div class="sm:col-span-3">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-right-to-bracket text-emerald-500 mr-1"></i> Para onde vai (Destino):</label>
+                                                <input type="text" id="db-add-alt-destino" placeholder="Ex: Operação B / Turma 02" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            </div>
                                         </div>
-                                        <div class="sm:col-span-4">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome:</label>
-                                            <input type="text" id="db-add-alt-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
-                                        </div>
-                                        <div class="sm:col-span-3">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nº do Chamado:</label>
-                                            <input type="text" id="db-add-alt-chamado" placeholder="Ex: CH-10492" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
-                                        </div>
-                                        <div class="sm:col-span-2">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Operação:</label>
-                                            <input type="text" id="db-add-alt-op" placeholder="Operação" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
-                                        </div>
-                                        <div class="sm:col-span-1">
-                                            <button type="button" onclick="app.diarioBordo.adicionarAlteracaoQuadro()" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center justify-center shadow-sm cursor-pointer" title="Registrar Alteração">
-                                                <i class="fa-solid fa-plus"></i>
-                                            </button>
+                                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                            <div class="sm:col-span-7">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1"><i class="fa-regular fa-comment-dots text-slate-400 mr-1"></i> Campo de Observação:</label>
+                                                <input type="text" id="db-add-alt-obs" placeholder="Motivo do remanejamento, detalhes operacionais ou justificativa..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            </div>
+                                            <div class="sm:col-span-3">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nº Chamado (Opcional):</label>
+                                                <input type="text" id="db-add-alt-chamado" placeholder="Ex: CH-10492" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <button type="button" onclick="app.diarioBordo.adicionarAlteracaoQuadro()" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer" title="Adicionar Remanejamento">
+                                                    <i class="fa-solid fa-plus"></i> Adicionar
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <!-- Tabela de Alterações de Quadro -->
+                                    <!-- Tabela de Remanejamentos de Quadro -->
                                     <div class="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700/80">
                                         <table class="w-full text-left border-collapse">
                                             <thead>
                                                 <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
-                                                    <th class="p-2.5 w-32">Matrícula</th>
-                                                    <th class="p-2.5">Nome do Colaborador</th>
-                                                    <th class="p-2.5 w-36">Nº Chamado</th>
-                                                    <th class="p-2.5">Operação</th>
-                                                    <th class="p-2.5 w-16 text-right">Ação</th>
+                                                    <th class="p-2.5 w-28">Matrícula</th>
+                                                    <th class="p-2.5 w-44">Nome do Colaborador</th>
+                                                    <th class="p-2.5 w-40">De Onde Veio</th>
+                                                    <th class="p-2.5 w-40">Para Onde Vai</th>
+                                                    <th class="p-2.5">Observação</th>
+                                                    <th class="p-2.5 w-24">Chamado</th>
+                                                    <th class="p-2.5 w-14 text-right">Ação</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="db-tbody-alt">
@@ -25524,7 +25966,7 @@ storage: {
                             }
                         });
 
-                        // 2. O Motor da "Fila de Dominó" (Evita que tudo apareça de uma vez)
+                        // 2. O Motor da "Fila de Dominó" (Otimizado com requestAnimationFrame para 60fps)
                         let revealQueue = [];
                         let isRevealing = false;
 
@@ -25534,10 +25976,13 @@ storage: {
                                 return;
                             }
                             isRevealing = true;
-                            const el = revealQueue.shift();
-                            el.classList.add('is-visible');
-                            // Intervalo entre um card e outro aparecendo (100ms é o ideal para fluidez)
-                            setTimeout(processRevealQueue, 100); 
+                            const batch = revealQueue.splice(0, 12);
+                            batch.forEach(el => el.classList.add('is-visible'));
+                            if (revealQueue.length > 0) {
+                                requestAnimationFrame(processRevealQueue);
+                            } else {
+                                isRevealing = false;
+                            }
                         };
 
                         // 3. O Olheiro (Intersection Observer)
@@ -25560,34 +26005,47 @@ storage: {
                         // Põe o olheiro para trabalhar nos elementos
                         activeContainer.querySelectorAll('.reveal-item').forEach(el => observer.observe(el));
 
-                        // 3. Interação do Mouse e Scroll com os Orbes (Imersão Total)
+                        // 3. Interação do Mouse e Scroll com os Orbes (Imersão Total com requestAnimationFrame)
                                 const orb1 = document.getElementById('story-orb-1');
                                 const orb2 = document.getElementById('story-orb-2');
+                                const containerApres = document.getElementById('view-container-' + app.currentTab) || activeContainer;
                                 
-                                if (orb1 && orb2) {
-                                    // Efeito Magnético: Agora usando Variáveis CSS para alta performance (60fps)
-                                    containerApresentacao.addEventListener('mousemove', (e) => {
-                                        const xPos = (e.clientX / window.innerWidth) - 0.5;
-                                        const yPos = (e.clientY / window.innerHeight) - 0.5;
-                                        
-                                        // Aplica os valores dinâmicos direto no style global do container animado
-                                        document.getElementById('story-dynamic-bg').style.setProperty('--mouse-x', `${xPos * 400}px`);
-                                        document.getElementById('story-dynamic-bg').style.setProperty('--mouse-y', `${yPos * 400}px`);
-                                    });
+                                if (orb1 && orb2 && containerApres) {
+                                    let mouseTicking = false;
+                                    containerApres.addEventListener('mousemove', (e) => {
+                                        if (mouseTicking) return;
+                                        mouseTicking = true;
+                                        requestAnimationFrame(() => {
+                                            const xPos = (e.clientX / window.innerWidth) - 0.5;
+                                            const yPos = (e.clientY / window.innerHeight) - 0.5;
+                                            const bg = document.getElementById('story-dynamic-bg');
+                                            if (bg) {
+                                                bg.style.setProperty('--mouse-x', `${xPos * 400}px`);
+                                                bg.style.setProperty('--mouse-y', `${yPos * 400}px`);
+                                            }
+                                            mouseTicking = false;
+                                        });
+                                    }, { passive: true });
                                 }
                             }
 
-                            // INIT PARTICLES.JS VERDE LEVE
+                            // INIT PARTICLES.JS VERDE LEVE (Com limpeza de instâncias e contagem leve)
                             if (window.particlesJS && document.getElementById('particles-js')) {
+                                if (window.pJSDom && window.pJSDom.length > 0) {
+                                    window.pJSDom.forEach(p => {
+                                        try { if (p && p.pJS && p.pJS.fn && p.pJS.fn.vendors && p.pJS.fn.vendors.destroypJS) p.pJS.fn.vendors.destroypJS(); } catch(e){}
+                                    });
+                                    window.pJSDom = [];
+                                }
                                 window.particlesJS('particles-js', {
                                   "particles": {
-                                    "number": { "value": 50, "density": { "enable": true, "value_area": 800 } },
+                                    "number": { "value": 25, "density": { "enable": true, "value_area": 900 } },
                                     "color": { "value": "#86efac" },
                                     "shape": { "type": "circle" },
-                                    "opacity": { "value": 0.5, "random": false },
-                                    "size": { "value": 3, "random": true },
-                                    "line_linked": { "enable": true, "distance": 150, "color": "#6ee7b7", "opacity": 0.4, "width": 1 },
-                                    "move": { "enable": true, "speed": 1.5, "direction": "none", "random": true, "straight": false, "out_mode": "out", "bounce": false }
+                                    "opacity": { "value": 0.4, "random": false },
+                                    "size": { "value": 2.5, "random": true },
+                                    "line_linked": { "enable": true, "distance": 130, "color": "#6ee7b7", "opacity": 0.3, "width": 1 },
+                                    "move": { "enable": true, "speed": 1.2, "direction": "none", "random": true, "straight": false, "out_mode": "out", "bounce": false }
                                   }
                                 });
                             }
@@ -25700,6 +26158,120 @@ storage: {
                     localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(e => console.error("Erro ao salvar texto do capítulo:", e));
                 },
 
+                toggleCapituloOculto(idKey) {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) return;
+                    const c = app.analiseCSVDinamicoData.consolidado;
+                    if (!c.capitulosOcultos) c.capitulosOcultos = {};
+                    c.capitulosOcultos[idKey] = !c.capitulosOcultos[idKey];
+                    
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(e => console.error("Erro ao salvar capitulo oculto:", e));
+                    
+                    const statusStr = c.capitulosOcultos[idKey] ? 'ocultado na apresentação' : 'visível na apresentação';
+                    if (typeof app.ui.showAlert === 'function') {
+                        app.ui.showAlert("Capítulo Atualizado", `O capítulo selecionado agora está ${statusStr}.`, "info");
+                    }
+                    this.renderTab('analise_csv_dinamico', true);
+                },
+
+                isCapituloOculto(idKey) {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) return false;
+                    const c = app.analiseCSVDinamicoData.consolidado;
+                    return !!(c.capitulosOcultos && c.capitulosOcultos[idKey]);
+                },
+
+                openGerenciarCapitulosModal() {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) {
+                        return app.ui.showAlert("Aviso", "Nenhum relatório consolidado disponível no momento.", "warning");
+                    }
+                    const data = app.analiseCSVDinamicoData.consolidado;
+                    if (!data.capitulosOcultos) data.capitulosOcultos = {};
+
+                    const listaCapitulos = [
+                        { id: 'visaoexecutiva', nome: 'Visão Executiva', icon: 'fa-chart-pie', desc: 'KPIs globais e métricas principais da operação' },
+                        { id: 'engajamentoqualidade', nome: 'Engajamento & Qualidade', icon: 'fa-comments', desc: 'Entregas de feedback presencial/remoto e monitores' },
+                        { id: 'evolucaohistorica', nome: 'Evolução Histórica', icon: 'fa-arrow-trend-up', desc: 'Linha temporal, melhoras e maiores quedas' },
+                        { id: 'matrizdedesempenho', nome: 'Matriz de Desempenho', icon: 'fa-border-all', desc: '4 Quadrantes operacionais de nota' },
+                        { id: 'ciclodematuridade', nome: 'Ciclo de Maturidade', icon: 'fa-seedling', desc: 'Curva de aprendizado x tempo de casa' },
+                        { id: 'eficienciaoperacionalnotavstma', nome: 'Eficiência Operacional (TMA)', icon: 'fa-stopwatch', desc: 'Dispersão estratégica Nota x TMA' },
+                        { id: 'motivosdecontato', nome: 'Motivos de Contato', icon: 'fa-tags', desc: 'Distribuição volumétrica por assunto/tema' },
+                        { id: 'distribuicaodenotas', nome: 'Distribuição de Notas', icon: 'fa-ranking-star', desc: 'Histograma quantitativo de todas as notas' },
+                        { id: 'auditoriaindividual', nome: 'Auditoria Individual', icon: 'fa-users-viewfinder', desc: 'Detalhamento analítico por colaborador' },
+                        { id: 'evidenciasfechamento', nome: 'Evidências & Fechamento', icon: 'fa-camera-retro', desc: 'Fotos da intervenção e planos de ação' }
+                    ];
+
+                    const contentHtml = `
+                        <div class="space-y-4">
+                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                Escolha abaixo os capítulos que devem ser <strong>exibidos ou ocultados</strong> na sua apresentação ao vivo. Capítulos ocultados não aparecerão durante o modo de tela cheia.
+                            </p>
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ações Rápidas:</span>
+                                <div class="flex items-center gap-3">
+                                    <button type="button" onclick="app.ui.definirTodosCapitulos(false)" class="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-1">
+                                        <i class="fa-solid fa-eye text-xs"></i> Exibir Todos
+                                    </button>
+                                    <span class="text-slate-300 dark:text-slate-700">|</span>
+                                    <button type="button" onclick="app.ui.definirTodosCapitulos(true)" class="text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer flex items-center gap-1">
+                                        <i class="fa-solid fa-eye-slash text-xs"></i> Ocultar Todos
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="space-y-2 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
+                                ${listaCapitulos.map(c => {
+                                    const isOculto = !!data.capitulosOcultos[c.id];
+                                    return `
+                                        <div class="flex items-center justify-between p-3.5 rounded-2xl border transition ${isOculto ? 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/50' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'}">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-base ${isOculto ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs'}">
+                                                    <i class="fa-solid ${c.icon}"></i>
+                                                </div>
+                                                <div>
+                                                    <h4 class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                        ${c.nome}
+                                                        ${isOculto ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">Oculto</span>' : '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">Visível</span>'}
+                                                    </h4>
+                                                    <p class="text-[10px] text-slate-400 mt-0.5">${c.desc}</p>
+                                                </div>
+                                            </div>
+                                            <button type="button" onclick="app.ui.toggleCapituloOculto('${c.id}'); app.ui.openGerenciarCapitulosModal();" class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${isOculto ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs' : 'bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200'}">
+                                                <i class="fa-solid ${isOculto ? 'fa-eye' : 'fa-eye-slash'}"></i> ${isOculto ? 'Exibir' : 'Ocultar'}
+                                            </button>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-layer-group text-indigo-500 mr-2"></i> Capítulos da Apresentação`;
+                    document.getElementById('modal-content').innerHTML = contentHtml;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer">
+                            Concluir
+                        </button>
+                    `;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    if (modalBox) {
+                        modalBox.classList.remove('max-w-xl', 'max-w-2xl', 'max-w-3xl', 'max-w-4xl', 'max-w-5xl');
+                        modalBox.classList.add('max-w-xl');
+                    }
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                definirTodosCapitulos(ocultar) {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) return;
+                    const data = app.analiseCSVDinamicoData.consolidado;
+                    if (!data.capitulosOcultos) data.capitulosOcultos = {};
+                    const ids = ['visaoexecutiva', 'engajamentoqualidade', 'evolucaohistorica', 'matrizdedesempenho', 'ciclodematuridade', 'eficienciaoperacionalnotavstma', 'motivosdecontato', 'distribuicaodenotas', 'auditoriaindividual', 'evidenciasfechamento'];
+                    ids.forEach(id => {
+                        data.capitulosOcultos[id] = !!ocultar;
+                    });
+                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(e => console.error(e));
+                    this.openGerenciarCapitulosModal();
+                    this.renderTab('analise_csv_dinamico', true);
+                },
+
                 toggleEditModeAnalise() {
                     this.analiseEditMode = !this.analiseEditMode;
                     const header = document.querySelector('header');
@@ -25793,8 +26365,54 @@ storage: {
                     const glowColor = hex2rgba(userBg, 0.15); // Orbe principal suave
                     const glowSecondary = hex2rgba(userBg, 0.08); // Orbe secundário de preenchimento
 
+                    if (data && !data.capitulosOcultos) data.capitulosOcultos = {};
+                    const isCapituloOculto = (idKey) => !!(data && data.capitulosOcultos && data.capitulosOcultos[idKey]);
+                    const qtdCapitulosOcultos = data ? Object.values(data.capitulosOcultos || {}).filter(Boolean).length : 0;
+
+                    const renderAvisoCapituloOculto = (idKey) => `
+                        <div class="flex items-center justify-between p-3.5 mb-6 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-bold shadow-xs animate-fade-in">
+                            <span class="flex items-center gap-2.5">
+                                <span class="w-8 h-8 rounded-xl bg-amber-200 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 flex items-center justify-center shrink-0">
+                                    <i class="fa-solid fa-eye-slash text-sm"></i>
+                                </span>
+                                <div>
+                                    <div class="font-black text-amber-900 dark:text-amber-100">Capítulo Oculto na Apresentação</div>
+                                    <div class="text-[11px] font-normal text-amber-800/80 dark:text-amber-300/80">Este bloco não será exibido para a plateia quando você ativar o Modo de Apresentação.</div>
+                                </div>
+                            </span>
+                            <button type="button" onclick="app.ui.toggleCapituloOculto('${idKey}')" class="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-xs cursor-pointer transition flex items-center gap-1.5 shrink-0">
+                                <i class="fa-solid fa-eye"></i> Exibir na Apresentação
+                            </button>
+                        </div>
+                    `;
+
+                    const wrapCapitulo = (idKey, content) => {
+                        const oculto = isCapituloOculto(idKey);
+                        if (this.analiseEditMode && oculto) {
+                            return ''; // No modo apresentação, capitulo oculto não gera NADA no DOM
+                        }
+                        const borderCls = (!this.analiseEditMode && oculto) 
+                            ? 'border-2 border-dashed border-amber-400 dark:border-amber-600/70 rounded-3xl p-4 my-6 bg-amber-50/10 dark:bg-amber-950/10' 
+                            : '';
+                        const avisoHtml = (!this.analiseEditMode && oculto) ? renderAvisoCapituloOculto(idKey) : '';
+                        return `
+                            <div data-chapter="${idKey}" class="chapter-block-wrapper relative transition-all duration-300 ${borderCls}">
+                                ${avisoHtml}
+                                ${content}
+                            </div>
+                        `;
+                    };
+
                     let chapterCount = 1;
                     const renderChapterTitle = (title, subtitle, icon, theme) => {
+                        const idKey = title.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                        const isOculto = isCapituloOculto(idKey);
+
+                        // Em modo apresentação, se o capítulo estiver oculto, não exibe nem numera
+                        if (this.analiseEditMode && isOculto) {
+                            return '';
+                        }
+
                         const themes = {
                             blue: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/50', light: 'text-blue-300' },
                             emerald: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/50', light: 'text-emerald-300' },
@@ -25802,7 +26420,8 @@ storage: {
                             orange: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/50', light: 'text-orange-300' },
                             teal: { bg: 'bg-teal-500/20', text: 'text-teal-400', border: 'border-teal-500/50', light: 'text-teal-300' },
                             purple: { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/50', light: 'text-purple-300' },
-                            cyan: { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/50', light: 'text-cyan-300' }
+                            cyan: { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/50', light: 'text-cyan-300' },
+                            pink: { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/50', light: 'text-pink-300' }
                         };
                         // Em modo de apresentação forçamos as cores do tema escuro para garantir contraste
                         const t = (this.analiseEditMode ? themes[theme] : null) || { 
@@ -25813,7 +26432,6 @@ storage: {
                         };
                         
                         // ID Seguro e Leitura do Cofre
-                        const idKey = title.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                         if (!data.chapterCustomData) data.chapterCustomData = {};
                         const exibT = data.chapterCustomData[idKey]?.t || title;
                         const exibS = data.chapterCustomData[idKey]?.s || subtitle;
@@ -25833,6 +26451,13 @@ storage: {
                                 </div>
                                 <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputT}" onblur="${onInputT}" class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-3 drop-shadow-lg outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500 max-w-4xl">${exibT}</h2>
                                 <p contenteditable="${this.analiseEditMode ? 'false' : 'true'}" oninput="${onInputS}" onblur="${onInputS}" class="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed mx-auto outline-none focus:bg-slate-100 dark:focus:bg-slate-800 rounded-lg px-3 py-1 transition-colors border-b-2 border-transparent focus:border-blue-500">${exibS}</p>
+                                
+                                ${!this.analiseEditMode ? `
+                                <div class="mt-4 flex items-center justify-center gap-2">
+                                    <button type="button" onclick="app.ui.toggleCapituloOculto('${idKey}')" class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${isOculto ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20' : 'bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}" title="${isOculto ? 'Capítulo atualmente oculto na apresentação. Clique para exibir.' : 'Clique para ocultar este capítulo durante a apresentação'}">
+                                        <i class="fa-solid ${isOculto ? 'fa-eye-slash' : 'fa-eye'}"></i> ${isOculto ? 'Oculto na Apresentação (Clique p/ Exibir)' : 'Ocultar na Apresentação'}
+                                    </button>
+                                </div>` : ''}
                             </div>
                         `;
                     };
@@ -25855,18 +26480,28 @@ storage: {
 
                     let html = `
                         <style>
-                            /* Efeito de Scroll Suave para os Cards */
+                            /* Otimização de Performance 60fps & Content-Visibility */
+                            .chapter-marker, .hideable-box {
+                                content-visibility: auto;
+                                contain-intrinsic-size: 1px 250px;
+                            }
                             .scroll-reveal-card {
-                                opacity: 0;
-                                transform: translateY(40px) scale(0.98);
-                                transition: opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-                            }
-                            .scroll-reveal-card.is-visible {
                                 opacity: 1;
-                                transform: translateY(0) scale(1);
+                                transform: none;
                             }
-                            
-                            /* Animação contínua dos orbes de luz de fundo */
+                            .animate-marquee {
+                                will-change: transform;
+                                transform: translateZ(0);
+                                contain: layout paint;
+                            }
+                            #particles-js {
+                                position: fixed;
+                                inset: 0;
+                                width: 100vw;
+                                height: 100vh;
+                                pointer-events: none;
+                                z-index: 0;
+                            }
                             @keyframes floatOrb1 {
                                 0%, 100% { transform: translate(0, 0) scale(1); }
                                 50% { transform: translate(40px, -60px) scale(1.1); }
@@ -25875,19 +26510,19 @@ storage: {
                                 0%, 100% { transform: translate(0, 0) scale(1); }
                                 50% { transform: translate(-50px, 40px) scale(1.2); }
                             }
-                            .animate-orb-1 { animation: floatOrb1 18s ease-in-out infinite; }
-                            .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; }
+                            .animate-orb-1 { animation: floatOrb1 18s ease-in-out infinite; will-change: transform; }
+                            .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; will-change: transform; }
                             @media print { .parallax-layer, #particles-js { display: none !important; } }
                         </style>
 
-                        <!-- ESTRUTURA PARALLAX COM PARTICLES.JS VERDE LEVE -->
-                        <div class="absolute inset-0 pointer-events-none overflow-hidden z-0" style="height: 100%;">
-                            <!-- Orbes suaves de fundo para não perder a profundidade -->
-                            <div class="parallax-layer absolute top-[10%] left-[5%] w-[400px] h-[400px] bg-emerald-400/10 rounded-full blur-[100px]" data-parallax-speed="0.25"></div>
-                            <div class="parallax-layer absolute top-[60%] right-[5%] w-[500px] h-[500px] bg-green-500/10 rounded-full blur-[120px]" data-parallax-speed="0.45"></div>
+                        <!-- ESTRUTURA PARALLAX COM PARTICLES.JS VERDE LEVE (VIEWPORT FIXO) -->
+                        <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" style="will-change: transform; transform: translateZ(0);">
+                            <!-- Orbes suaves de fundo com aceleração por GPU -->
+                            <div class="parallax-layer absolute top-[10%] left-[5%] w-[350px] h-[350px] bg-emerald-400/10 rounded-full blur-[80px]" style="transform: translateZ(0);"></div>
+                            <div class="parallax-layer absolute top-[60%] right-[5%] w-[400px] h-[400px] bg-green-500/10 rounded-full blur-[90px]" style="transform: translateZ(0);"></div>
                             
-                            <!-- Container do Particles -->
-                            <div id="particles-js" class="absolute inset-0 w-full h-full opacity-60 mix-blend-screen dark:mix-blend-lighten"></div>
+                            <!-- Container do Particles Fixo na Janela -->
+                            <div id="particles-js" class="absolute inset-0 w-full h-full opacity-50 mix-blend-screen dark:mix-blend-lighten"></div>
                         </div>
 
                         <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
@@ -26173,7 +26808,7 @@ storage: {
                     const mediaOperacaoPonderada = (data.mediaTotal !== undefined && data.mediaTotal !== null && !isNaN(parseFloat(data.mediaTotal))) ? parseFloat(data.mediaTotal).toFixed(2) : '0.00';
                     const mediaColabSimples = (data.rankOperadores && data.rankOperadores.length > 0) ? (data.rankOperadores.reduce((a, b) => a + parseFloat(b.media), 0) / data.rankOperadores.length).toFixed(2) : '0.00';
 
-                    html += `
+                    html += wrapCapitulo('visaoexecutiva', `
                         ${renderChapterTitle('Visão Executiva', 'Indicadores chave de performance (KPIs) e resumos métricos globais da operação no período.', 'fa-chart-pie', 'blue')}
                         ${renderAlertaSutilInativos('Visão Executiva')}
                         <!-- DASHBOARD CARDS MESTRES -->
@@ -26188,7 +26823,9 @@ storage: {
 
                             ${renderDashCard('falhasCriticas', 'fa-circle-exclamation text-red-500', 'Falhas Críticas', `${totalFalhasCriticas}`, `Representa <strong class="text-red-500">${pctErrosCriticos}%</strong> dos erros na amostragem geral.`, 'bg-red-500', data.comments?.falhasCriticas)}
                         </div>
+                    `);
 
+                    html += wrapCapitulo('engajamentoqualidade', `
                         ${renderChapterTitle('Engajamento & Qualidade', 'Mapeamento da entrega de feedbacks e saúde da comunicação direta entre gestão e operação.', 'fa-comments', 'emerald')}
                         ${renderAlertaSutilInativos('Engajamento & Feedbacks')}
                         <!-- GESTÃO E GRÁFICO DE FEEDBACKS -->
@@ -26236,7 +26873,7 @@ storage: {
                                 </div>
                             </div>
                         </div>
-                    `;
+                    `);
                     // --- CAPÍTULO 3: EVOLUÇÃO HISTÓRICA (SEMANAS/CICLOS S23..S44 + MESES + CURVA SVG/CHART.JS) ---
                     const evolMesLabelsSafe = Array.isArray(data.evolutivoMesLabels) ? data.evolutivoMesLabels : (data.mesesDisponiveis || []).map(m => app.ui.formatMonthLabel(m));
                     const evolCicloLabelsSafe = Array.isArray(data.evolutivoCicloLabels) ? data.evolutivoCicloLabels : [];
@@ -27102,10 +27739,11 @@ storage: {
                                 </div>
                             `).join('');
 
-                            // Gera as imagens do Track (Slide Infinito) - Clique Ajustado para app.admin
-                            let trackHtml = todasFotos.map(f => `
+                            // Gera as imagens do Track (Slide Infinito Otimizado) - Clique Ajustado para app.admin
+                            const fotosAmpla = todasFotos.slice(0, 16);
+                            let trackHtml = fotosAmpla.map(f => `
                                 <div class="shrink-0 w-64 h-48 rounded-2xl overflow-hidden relative shadow-md border border-slate-200 dark:border-slate-700 mx-2 hover:scale-[1.02] transition-transform cursor-pointer" onclick="app.admin.showAcaoCompleta('${f.id}')">
-                                    <img src="${f.src}" class="w-full h-full object-cover pointer-events-none">
+                                    <img src="${f.src}" loading="lazy" decoding="async" class="w-full h-full object-cover pointer-events-none">
                                     <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8 pointer-events-none">
                                         <p class="text-white text-[10px] font-bold truncate">${f.tema}</p>
                                     </div>
@@ -27116,7 +27754,7 @@ storage: {
                             html += `
                                 <style>
                                     @keyframes slideMarquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-                                    .animate-marquee { display: flex; width: max-content; animation: slideMarquee ${Math.max(20, todasFotos.length * 4)}s linear infinite; }
+                                    .animate-marquee { display: flex; width: max-content; will-change: transform; transform: translateZ(0); contain: layout paint; animation: slideMarquee ${Math.max(20, fotosAmpla.length * 4)}s linear infinite; }
                                     .animate-marquee:hover { animation-play-state: paused; }
                                 </style>
                                 <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-teal-500 shadow-lg animate-fade-in overflow-hidden">
@@ -33148,6 +33786,7 @@ storage: {
                     const mat = document.getElementById('cad-mat').value.trim();
                     const pwd = document.getElementById('cad-pwd').value.trim();
                     const tipoAcesso = document.getElementById('cad-tipo-acesso')?.value || 'Qualidade';
+                    const subclasse = tipoAcesso === 'Treinamento' ? (document.getElementById('cad-subclasse')?.value || 'Instrutor') : null;
                     const fileInput = document.getElementById('cad-foto');
                     
                     const checkboxes = document.querySelectorAll('.cad-op-check:checked');
@@ -33160,7 +33799,7 @@ storage: {
 
                     const saveFinal = (fotoBase64) => {
                         const encPwd = app.utils.encryptPassword(pwd);
-                        app.users.push({ nome, matricula: mat, senha: encPwd, tipoAcesso, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        app.users.push({ nome, matricula: mat, senha: encPwd, tipoAcesso, subclasse, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
                         app.storage.saveUsers().then(() => {
                             app.ui.closeAddUserModal();
                             app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
@@ -33185,6 +33824,18 @@ storage: {
                     document.getElementById('edit-pwd').value = '';
                     const selTipo = document.getElementById('edit-tipo-acesso');
                     if (selTipo) selTipo.value = u.tipoAcesso || 'Qualidade';
+
+                    const editSubclasseContainer = document.getElementById('edit-subclasse-container');
+                    const editSubclasseSel = document.getElementById('edit-subclasse');
+                    if (editSubclasseContainer && editSubclasseSel) {
+                        if ((u.tipoAcesso || '') === 'Treinamento') {
+                            editSubclasseContainer.classList.remove('hidden');
+                            editSubclasseSel.value = u.subclasse || 'Instrutor';
+                        } else {
+                            editSubclasseContainer.classList.add('hidden');
+                            editSubclasseSel.value = 'Instrutor';
+                        }
+                    }
                     
                     const imgPreview = document.getElementById('edit-foto-preview');
                     if (u.foto) { imgPreview.src = u.foto; imgPreview.classList.remove('hidden'); } 
@@ -33216,6 +33867,7 @@ storage: {
                     if (!app.hasAdminAccess('gestao_equipe')) {
                         adminBlocks.classList.add('hidden');
                         if (selTipo) selTipo.parentElement.classList.add('hidden');
+                        if (editSubclasseContainer) editSubclasseContainer.classList.add('hidden');
                     } else {
                         adminBlocks.classList.remove('hidden');
                         if (selTipo) selTipo.parentElement.classList.remove('hidden');
@@ -33230,6 +33882,7 @@ storage: {
                     const mat = document.getElementById('edit-mat').value.trim();
                     const pwd = document.getElementById('edit-pwd').value.trim();
                     const tipoAcesso = document.getElementById('edit-tipo-acesso')?.value || 'Qualidade';
+                    const subclasse = tipoAcesso === 'Treinamento' ? (document.getElementById('edit-subclasse')?.value || 'Instrutor') : null;
                     const fileInput = document.getElementById('edit-foto');
                     
                     const checkboxes = document.querySelectorAll('.edit-op-check:checked');
@@ -33248,6 +33901,7 @@ storage: {
                         app.users[idx].nome = nome;
                         app.users[idx].matricula = mat;
                         app.users[idx].tipoAcesso = tipoAcesso;
+                        app.users[idx].subclasse = subclasse;
                         app.users[idx].operacoes = operacoes;
                         app.users[idx].abasLiberadas = abasLiberadas;
                         if(pwd) app.users[idx].senha = app.utils.encryptPassword(pwd);
