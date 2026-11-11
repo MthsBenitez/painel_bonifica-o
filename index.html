@@ -396,6 +396,7 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema *</label>
                         <select id="cal-tema" class="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-white">
+                            <option value="Diário de Bordo">Diário de Bordo</option>
                             <option value="Quality Day">Quality Day</option>
                             <option value="Aplicação de Ação">Aplicação de Ação</option>
                             <option value="Reunião">Reunião</option>
@@ -546,6 +547,58 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal Disponibilidade de Colaborador (Discreta / Sem Superexposição) -->
+    <div id="view-disponibilidade-modal" class="fixed inset-0 z-[80] hidden flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
+        <div class="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800 overflow-hidden transform transition-all p-6 space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold"><i class="fa-solid fa-clock"></i></span>
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">Disponibilidade</div>
+                        <h4 class="text-sm font-extrabold text-slate-800 dark:text-white">Status da Agenda</h4>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('view-disponibilidade-modal').classList.add('hidden')" class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center transition cursor-pointer">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+            <div class="space-y-3">
+                <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 font-bold text-sm">
+                        <i class="fa-solid fa-user-clock"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Colaborador</div>
+                        <div id="vdisp-nome" class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">Nome do Colaborador</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="p-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                        <div class="text-[9px] font-bold uppercase text-slate-400">Data</div>
+                        <div id="vdisp-data" class="text-xs font-extrabold text-slate-700 dark:text-slate-200">--/--/----</div>
+                    </div>
+                    <div class="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50">
+                        <div class="text-[9px] font-bold uppercase text-blue-600 dark:text-blue-400">Horário</div>
+                        <div id="vdisp-horario" class="text-xs font-black text-blue-700 dark:text-blue-300">--:-- às --:--</div>
+                    </div>
+                </div>
+                <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-center gap-2.5">
+                    <i class="fa-solid fa-calendar-xmark text-amber-600 text-sm shrink-0"></i>
+                    <div class="text-[11px] font-bold text-amber-900 dark:text-amber-200">
+                        Horário Ocupado <span class="text-[10px] font-normal text-amber-700 dark:text-amber-300 block">Colaborador com compromisso/atividade agendada.</span>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 text-center italic">
+                    <i class="fa-solid fa-shield-halved mr-1"></i> Observações e pauta são confidenciais do colaborador e de seus gestores.
+                </p>
+            </div>
+            <button type="button" onclick="document.getElementById('view-disponibilidade-modal').classList.add('hidden')" class="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer">
+                Entendido / Fechar
+            </button>
+        </div>
+    </div>
+
     <!-- Modal Visualização Legal Ata -->
     <div id="view-ata-legal-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
         <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
@@ -656,6 +709,109 @@
             </div>
         </div>
     </div>
+
+    <!-- MODAL: E-MAIL PRONTO PARA COPIAR E COLAR (DIÁRIO DE BORDO) -->
+    <div id="email-pronto-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4" onclick="if(event.target === this) this.classList.add('hidden')">
+        <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-7 max-w-2xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shadow-inner">
+                        <i class="fa-solid fa-envelope-open-text"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Comunicação com Gestores</div>
+                        <h3 class="text-base font-extrabold text-slate-800 dark:text-white">E-mail Pronto para Copiar e Colar</h3>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('email-pronto-modal').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center cursor-pointer transition">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+
+            <div class="py-4 space-y-3 flex-1 overflow-y-auto">
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    O texto abaixo já contém a saudação aos gestores, o histórico de aulas ministradas até a data de hoje, os desligamentos, alterações de quadro e o ABS do dia.
+                </p>
+                <textarea id="email-pronto-textarea" rows="12" class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 font-sans outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed custom-scrollbar select-all" readonly></textarea>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-700 shrink-0">
+                <button type="button" onclick="document.getElementById('email-pronto-modal').classList.add('hidden')" class="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold text-xs transition cursor-pointer">
+                    Fechar
+                </button>
+                <button type="button" onclick="app.diarioBordo.executarCopiarTextoEmail()" class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95">
+                    <i class="fa-solid fa-copy"></i> Copiar para Área de Transferência
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: FINALIZAR TURMA & CONSIDERAÇÕES FINAIS -->
+    <div id="finalizar-turma-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4" onclick="if(event.target === this) this.classList.add('hidden')">
+        <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-7 max-w-xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg shadow-inner">
+                        <i class="fa-solid fa-flag-checkered"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Entrega de Capacitação</div>
+                        <h3 class="text-base font-extrabold text-slate-800 dark:text-white">Finalizar Turma e Gerar Relatório</h3>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('finalizar-turma-modal').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center cursor-pointer transition">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+
+            <div class="py-4 space-y-4 flex-1 overflow-y-auto">
+                <input type="hidden" id="finalizar-turma-id">
+                <div id="finalizar-turma-resumo-info" class="p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/60 space-y-1 text-xs">
+                    <!-- Preenchido via JS -->
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data Efetiva de Entrega da Turma:</label>
+                    <input type="date" id="finalizar-turma-data" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Considerações Finais / Parecer do Treinamento:</label>
+                    <textarea id="finalizar-turma-parecer" rows="5" placeholder="Descreva o parecer final sobre a turma, evolução comportamental, perfil de atendimento, alinhamentos feitos com a supervisão da operação e recomendações..." class="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"></textarea>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-700 shrink-0">
+                <button type="button" onclick="document.getElementById('finalizar-turma-modal').classList.add('hidden')" class="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold text-xs transition cursor-pointer">
+                    Cancelar
+                </button>
+                <button type="button" onclick="app.diarioBordo.confirmarFinalizacaoTurma()" class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95">
+                    <i class="fa-solid fa-check-double"></i> Concluir Entrega &amp; Baixar Relatório Final
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: VISUALIZADOR DE ANEXO DE LISTA DE PRESENÇA (FOTO OU PDF) -->
+    <div id="anexo-visualizar-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4" onclick="if(event.target === this) this.classList.add('hidden')">
+        <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-3xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
+                <div class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-file-signature text-emerald-600 text-lg"></i>
+                    <h3 id="anexo-visualizar-titulo" class="text-sm font-extrabold text-slate-800 dark:text-white">Lista de Presença Assinada</h3>
+                </div>
+                <button type="button" onclick="document.getElementById('anexo-visualizar-modal').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center cursor-pointer transition">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+            <div id="anexo-visualizar-corpo" class="py-4 flex-1 overflow-y-auto flex items-center justify-center">
+                <!-- Injetado via JS -->
+            </div>
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2 shrink-0">
+                <button type="button" onclick="document.getElementById('anexo-visualizar-modal').classList.add('hidden')" class="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition">Fechar</button>
+            </div>
+        </div>
+    </div>
     
     <!-- TELA AMIGÁVEL DE CARREGAMENTO (F5 / SESSÃO ATIVA) -->
     <div id="session-wait-screen" class="hidden fixed inset-0 z-[9999] bg-slate-50 dark:bg-dark-bg flex flex-col items-center justify-center p-6 text-center animate-fade-in">
@@ -730,8 +886,8 @@
                 </div>
             </div>
 
-            <h1 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Portal de Resultados</h1>
-            <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Acompanhe seus indicadores de excelência.</p>
+            <h1 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Qualidade & Treinamento</h1>
+            <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Qualidade & Treinamento | Softmarketing</p>
             
             <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-5">
                 
@@ -918,7 +1074,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261111_v26"></script>
+    <script src="script.js?v=20261111_v34"></script>
 </body>
 </html>
 
