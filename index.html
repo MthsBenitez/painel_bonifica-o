@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal de Resultados | Softmarketing</title>
+    <title>Qualidade&Treinamento | Softmarketing</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/%3E%3C/svg%3E">
 
     <!-- SheetJS (Excel Export) -->
@@ -140,13 +140,20 @@
                 </div>
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tipo de Acesso (Grupo)</label>
-                    <select id="cad-tipo-acesso" onchange="app.ui.aplicarPresetNoModal(this.value, 'cad-aba-check')" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                    <select id="cad-tipo-acesso" onchange="app.ui.aplicarPresetNoModal(this.value, 'cad-aba-check'); app.ui.onTipoAcessoChange(this.value, 'cad');" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
                         <option value="Operador">Operador</option>
                         <option value="Qualidade">Qualidade</option>
                         <option value="Treinamento">Treinamento</option>
                         <option value="Dev">Dev</option>
                         <option value="Gestor">Gestor</option>
                         <option value="Gerente">Gerente</option>
+                    </select>
+                </div>
+                <div id="cad-subclasse-container" class="hidden">
+                    <label class="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase mb-1.5"><i class="fa-solid fa-layer-group mr-1"></i> Subclasse (Treinamento)</label>
+                    <select id="cad-subclasse" class="w-full p-2.5 rounded-xl bg-emerald-50/50 dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 focus:ring-2 focus:ring-emerald-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                        <option value="Instrutor">Instrutor</option>
+                        <option value="Analista">Analista</option>
                     </select>
                 </div>
                 <div>
@@ -195,13 +202,20 @@
                 </div>
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tipo de Acesso (Grupo)</label>
-                    <select id="edit-tipo-acesso" onchange="app.ui.aplicarPresetNoModal(this.value, 'edit-aba-check')" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-purple-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                    <select id="edit-tipo-acesso" onchange="app.ui.aplicarPresetNoModal(this.value, 'edit-aba-check'); app.ui.onTipoAcessoChange(this.value, 'edit');" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-purple-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
                         <option value="Operador">Operador</option>
                         <option value="Qualidade">Qualidade</option>
                         <option value="Treinamento">Treinamento</option>
                         <option value="Dev">Dev</option>
                         <option value="Gestor">Gestor</option>
                         <option value="Gerente">Gerente</option>
+                    </select>
+                </div>
+                <div id="edit-subclasse-container" class="hidden">
+                    <label class="block text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase mb-1.5"><i class="fa-solid fa-layer-group mr-1"></i> Subclasse (Treinamento)</label>
+                    <select id="edit-subclasse" class="w-full p-2.5 rounded-xl bg-purple-50/50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 focus:ring-2 focus:ring-purple-500 dark:text-white text-xs font-bold outline-none cursor-pointer">
+                        <option value="Instrutor">Instrutor</option>
+                        <option value="Analista">Analista</option>
                     </select>
                 </div>
                 <div>
@@ -904,7 +918,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261109_v16"></script>
+    <script src="script.js?v=20261111_v23"></script>
 </body>
 </html>
 

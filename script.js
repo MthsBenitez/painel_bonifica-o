@@ -486,10 +486,15 @@ storage: {
                                 app.atasList = { ...cachedAtas, ...(app.atasList || {}) };
                             }
                         }).catch(() => {});
+                        localforage.getItem('soft_diario_bordo_hd').then(cachedDb => {
+                            if (cachedDb && typeof cachedDb === 'object') {
+                                app.diarioBordoList = { ...cachedDb, ...(app.diarioBordoList || {}) };
+                            }
+                        }).catch(() => {});
                     }
 
                     // Carga paralela ultra-rápida apenas dos nós leves essenciais (SEM actions de 34MB e SEM shares de 13.6MB no boot!)
-                    const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes'];
+                    const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes', 'diario_bordo'];
 
                     // Carga única (.once) direta do Firebase no boot (sem cache local que desconecte usuários e sem loops .on)
                     const fetchCoreData = async () => {
@@ -627,6 +632,18 @@ storage: {
                                     if (u.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
                                         u.senha = app.utils.encryptPassword(u.senha);
                                     }
+                                    // Denominação automática dos usuários atuais de Treinamento
+                                    if (String(u.tipoAcesso || '').trim() === 'Treinamento') {
+                                        if (!u.subclasse) {
+                                            const cLower = String(u.cargo || '').toLowerCase();
+                                            const nLower = String(u.nome || '').toLowerCase();
+                                            if (cLower.includes('analista') || nLower.includes('analista')) {
+                                                u.subclasse = 'Analista';
+                                            } else {
+                                                u.subclasse = 'Instrutor';
+                                            }
+                                        }
+                                    }
                                     return u;
                                 });
                             } else {
@@ -679,6 +696,32 @@ storage: {
                             if (data.estoqueLogs) app.estoqueLogs = data.estoqueLogs; else app.estoqueLogs = {};
                             if (data.impressoes) app.impressoesList = data.impressoes; else app.impressoesList = {};
                             if (data.impressoesStats) app.impressoesStats = data.impressoesStats; else app.impressoesStats = { arquivos: 0, folhas: 0 };
+                            if (data.diario_bordo) {
+                                if (Array.isArray(data.diario_bordo)) {
+                                    app.diarioBordoList = {};
+                                    data.diario_bordo.forEach((d, idx) => { if (d) app.diarioBordoList[d.id || ('db_' + idx)] = d; });
+                                } else if (typeof data.diario_bordo === 'object') {
+                                    app.diarioBordoList = data.diario_bordo;
+                                } else {
+                                    app.diarioBordoList = {};
+                                }
+                                try { localStorage.setItem('soft_diario_bordo_backup', JSON.stringify(app.diarioBordoList)); } catch (e) {}
+                                if (typeof localforage !== 'undefined') localforage.setItem('soft_diario_bordo_hd', app.diarioBordoList).catch(() => {});
+                            } else {
+                                try {
+                                    const localDbRaw = localStorage.getItem('soft_diario_bordo_backup');
+                                    if (localDbRaw) {
+                                        const localDb = JSON.parse(localDbRaw);
+                                        if (localDb && typeof localDb === 'object') {
+                                            app.diarioBordoList = localDb;
+                                        } else {
+                                            app.diarioBordoList = {};
+                                        }
+                                    } else {
+                                        app.diarioBordoList = {};
+                                    }
+                                } catch (e) { app.diarioBordoList = {}; }
+                            }
                             if (data.harmonyDeploy) {
                                 app.harmonyDeployList = data.harmonyDeploy;
                             } else {
@@ -1284,6 +1327,24 @@ storage: {
                     return firebase.database().ref('sistema_bonificacao/impressoes').set(sanitizedObj);
                 },
                 saveImpressoesStats() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/impressoesStats').set(app.impressoesStats || { arquivos: 0, folhas: 0 }); },
+                saveDiarioBordo(singleId = null) {
+                    this.invalidateCoreCache();
+                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
+                    try { localStorage.setItem('soft_diario_bordo_backup', JSON.stringify(app.diarioBordoList || {})); } catch (e) {}
+                    if (typeof localforage !== 'undefined' && app.diarioBordoList) {
+                        localforage.setItem('soft_diario_bordo_hd', app.diarioBordoList).catch(() => {});
+                    }
+                    if (singleId) {
+                        const item = (app.diarioBordoList || {})[singleId];
+                        if (!item) {
+                            return firebase.database().ref('sistema_bonificacao/diario_bordo/' + singleId).remove();
+                        }
+                        const sanitized = this.sanitizeFirebaseObject(item);
+                        return firebase.database().ref('sistema_bonificacao/diario_bordo/' + singleId).set(sanitized);
+                    }
+                    const sanitizedObj = this.sanitizeFirebaseObject(app.diarioBordoList || {});
+                    return firebase.database().ref('sistema_bonificacao/diario_bordo').set(sanitizedObj);
+                },
                 saveMonitorias() {
                     this.invalidateCoreCache();
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; 
@@ -1510,6 +1571,473 @@ storage: {
                     if (userSys && app.config.tempoDeCasa[userSys.matricula] !== undefined) return app.config.tempoDeCasa[userSys.matricula];
 
                     return null;
+                },
+
+                formatSecondsToTMA(sec) {
+                    if (sec === null || sec === undefined || isNaN(sec)) return '--:--:--';
+                    const s = Math.max(0, Math.round(Number(sec)));
+                    const h = Math.floor(s / 3600);
+                    const m = Math.floor((s % 3600) / 60);
+                    const remS = s % 60;
+                    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(remS).padStart(2, '0')}`;
+                },
+
+                parseTMAToSeconds(val) {
+                    if (val === null || val === undefined || val === '') return null;
+
+                    // 1. Objeto Date (ou similar)
+                    if (val instanceof Date || (typeof val === 'object' && typeof val.getHours === 'function')) {
+                        try {
+                            const sec = val.getHours() * 3600 + val.getMinutes() * 60 + val.getSeconds();
+                            return sec > 0 ? sec : null;
+                        } catch (e) { return null; }
+                    }
+
+                    // 2. Número puro
+                    if (typeof val === 'number') {
+                        if (isNaN(val) || val <= 0) return null;
+                        // Fração de dia do Excel (ex: 0.00546296 para 00:07:52)
+                        if (val > 0 && val < 1) {
+                            return Math.round(val * 86400);
+                        }
+                        // Serial Date com hora (ex: 45606.00546296)
+                        if (val > 1 && (val % 1) > 0.00001 && val < 100000) {
+                            const frac = val - Math.floor(val);
+                            const sec = Math.round(frac * 86400);
+                            if (sec > 0 && sec < 86400) return sec;
+                        }
+                        // Segundos inteiros
+                        return Math.round(val);
+                    }
+
+                    let str = String(val).trim();
+                    if (!str) return null;
+
+                    // Remove aspas e caracteres invisíveis
+                    str = str.replace(/["'\r\n]/g, '').trim();
+
+                    // Formato com AM/PM (ex: "12:07:52 AM" -> 00:07:52)
+                    const isPM = /PM/i.test(str);
+                    const isAM = /AM/i.test(str);
+                    str = str.replace(/\s*(AM|PM)/gi, '').trim();
+
+                    // Formato hh:mm:ss ou mm:ss ou h:m:s
+                    if (str.includes(':')) {
+                        const parts = str.split(':').map(p => parseFloat(p.replace(',', '.')) || 0);
+                        let sec = 0;
+                        if (parts.length >= 3) {
+                            let h = parts[0];
+                            if (isAM && h === 12) h = 0;
+                            if (isPM && h < 12) h += 12;
+                            sec = Math.round(h * 3600 + parts[1] * 60 + parts[2]);
+                        } else if (parts.length === 2) {
+                            sec = Math.round(parts[0] * 60 + parts[1]);
+                        }
+                        if (sec > 0) return sec;
+                    }
+
+                    // Formato textual como "00h 07m 52s", "7m 52s", "7min 52seg"
+                    const hMatch = str.match(/(\d+)\s*(?:h|hr|hrs|hora|horas)/i);
+                    const mMatch = str.match(/(\d+)\s*(?:m|min|mins|minuto|minutos)/i);
+                    const sMatch = str.match(/(\d+)\s*(?:s|seg|segs|segundo|segundos)/i);
+                    if (hMatch || mMatch || sMatch) {
+                        const h = hMatch ? parseInt(hMatch[1], 10) : 0;
+                        const m = mMatch ? parseInt(mMatch[1], 10) : 0;
+                        const s = sMatch ? parseInt(sMatch[1], 10) : 0;
+                        const sec = h * 3600 + m * 60 + s;
+                        if (sec > 0) return sec;
+                    }
+
+                    // Limpeza numérica pura
+                    const numClean = parseFloat(str.replace(',', '.').replace(/[^\d.]/g, ''));
+                    if (!isNaN(numClean) && numClean > 0) {
+                        if (numClean > 0 && numClean < 1) return Math.round(numClean * 86400);
+                        return Math.round(numClean);
+                    }
+
+                    return null;
+                },
+
+                mapearMatriculasDaSessao() {
+                    const nomeParaMat = {};
+                    const matParaNome = {};
+
+                    const registrar = (nome, mat) => {
+                        if (!nome && !mat) return;
+                        const nLimpo = app.utils.fixEncoding(String(nome || '')).toUpperCase().trim();
+                        const mLimpo = String(mat || '').trim();
+                        if (nLimpo && mLimpo && !nLimpo.includes('TOTAL') && !nLimpo.includes('NAO IDENTIFICADO') && !nLimpo.includes('NÃO IDENTIFICADO')) {
+                            nomeParaMat[nLimpo] = mLimpo;
+                            matParaNome[mLimpo] = nLimpo;
+                            const mSemZero = mLimpo.replace(/^0+/, '');
+                            if (mSemZero) matParaNome[mSemZero] = nLimpo;
+                        }
+                    };
+
+                    // 1. Mapeamento da Base de RH (se carregada)
+                    if (app.config && app.config.rhMatriculaPorNome) {
+                        Object.entries(app.config.rhMatriculaPorNome).forEach(([n, m]) => registrar(n, m));
+                    }
+                    if (app.config && app.config.rhNomePorMatricula) {
+                        Object.entries(app.config.rhNomePorMatricula).forEach(([m, n]) => registrar(n, m));
+                    }
+
+                    // 2. Mapeamento a partir dos relatórios importados na sessão
+                    if (app.analiseCSVDinamicoData && Array.isArray(app.analiseCSVDinamicoData.relatorios)) {
+                        app.analiseCSVDinamicoData.relatorios.forEach(rel => {
+                            const rows = rel.rows || [];
+                            if (rows.length === 0) return;
+                            const chaves = Object.keys(rows[0]);
+                            const colNome = chaves.find(k => {
+                                const up = k.trim().toUpperCase();
+                                return (up.includes('NOME') || up.includes('OPERADOR') || up.includes('COLABORADOR') || up.includes('ATENDENTE') || up.includes('AGENTE')) && !up.includes('SUPERVISOR') && !up.includes('MONITOR') && !up.includes('COORDENADOR') && !up.includes('GESTOR') && !up.includes('CLIENTE');
+                            });
+                            const colMat = chaves.find(k => {
+                                const up = k.trim().toUpperCase();
+                                return (up.includes('MATRICULA') || up.includes('MATRÍCULA') || up.includes('MATR') || up.includes('CHAPA') || up.includes('LOGIN') || up.includes('RE') || up.includes('ID_OPERADOR') || up.includes('IDOPERADOR') || up.includes('CODIGO') || up.includes('CÓDIGO')) && !up.includes('SUPERVISOR') && !up.includes('MONITOR');
+                            });
+                            if (colNome && colMat) {
+                                rows.forEach(r => registrar(r[colNome], r[colMat]));
+                            }
+                        });
+                    }
+
+                    // 3. Usuários cadastrados no portal
+                    if (Array.isArray(app.users)) {
+                        app.users.forEach(u => registrar(u.nome, u.matricula));
+                    }
+
+                    // 4. Aliases manuais
+                    if (app.config && app.config.aliases) {
+                        Object.entries(app.config.aliases).forEach(([n, m]) => registrar(n, m));
+                    }
+
+                    return { nomeParaMat, matParaNome };
+                },
+
+                getMatriculaDoOperador(nomePesquisa) {
+                    if (!nomePesquisa) return null;
+                    const nomeStr = app.utils.fixEncoding(String(nomePesquisa || '')).toUpperCase().trim();
+                    if (!nomeStr) return null;
+
+                    // 1. Aliases diretos
+                    if (app.config && app.config.aliases && app.config.aliases[nomeStr]) {
+                        return String(app.config.aliases[nomeStr]).trim();
+                    }
+
+                    // 2. Mapa global da sessão (RH + Relatórios + Usuários)
+                    const mapa = this.mapearMatriculasDaSessao();
+                    if (mapa.nomeParaMat[nomeStr]) return mapa.nomeParaMat[nomeStr];
+
+                    // 3. Normalização sem acentos
+                    const normTarget = nomeStr.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                    for (const [n, m] of Object.entries(mapa.nomeParaMat)) {
+                        const normN = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                        if (normN === normTarget) return m;
+                    }
+
+                    // 4. Comparação por Primeiro e Último Nome (ex: Aline dos Santos Silva vs Aline Santos)
+                    const partesTarget = normTarget.split(/\s+/).filter(p => p.length > 2);
+                    if (partesTarget.length >= 2) {
+                        const pPrimeiro = partesTarget[0];
+                        const pUltimo = partesTarget[partesTarget.length - 1];
+                        for (const [n, m] of Object.entries(mapa.nomeParaMat)) {
+                            const normN = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                            if (normN.includes(pPrimeiro) && normN.includes(pUltimo)) return m;
+                        }
+                    }
+
+                    // 5. Se o próprio nomePesquisa já for numérico (matrícula direta)
+                    const numApenas = nomeStr.replace(/\D/g, '');
+                    if (numApenas.length >= 3 && numApenas.length === nomeStr.replace(/\s/g, '').length) {
+                        return numApenas;
+                    }
+
+                    return null;
+                },
+
+                getTMADoOperador(nomePesquisa, snapshotOverride) {
+                    const store = snapshotOverride || (app.analiseCSVDinamicoData?.consolidado?.tmaSnapshot) || (app.ui?._cachedQTPayload?.data?.tmaSnapshot) || app.config?.tmaData;
+                    if (!store || Object.keys(store).length === 0) return null;
+                    const nomeStr = app.utils.fixEncoding(String(nomePesquisa || ''))
+                        .toUpperCase()
+                        .replace(/\//g, ' - ')
+                        .replace(/[.#$\[\]]/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    if (!nomeStr) return null;
+
+                    const wrap = (val, chaveUsada) => {
+                        if (val === null || val === undefined) return null;
+                        if (typeof val === 'object' && val.tmaSegundos > 0) return val;
+                        const num = Number(val);
+                        if (!isNaN(num) && num > 0) return { tmaSegundos: num, chave: chaveUsada, nome: nomeStr };
+                        return null;
+                    };
+
+                    // 1. Busca direta pelo nome
+                    if (store[nomeStr] !== undefined) {
+                        const res = wrap(store[nomeStr], nomeStr);
+                        if (res) return res;
+                    }
+
+                    // 2. Busca pela Matrícula (via mapa global da sessão)
+                    const mat = this.getMatriculaDoOperador(nomePesquisa);
+                    if (mat) {
+                        if (store[mat] !== undefined) {
+                            const res = wrap(store[mat], mat);
+                            if (res) return res;
+                        }
+                        const matSemZero = mat.replace(/^0+/, '');
+                        if (matSemZero && store[matSemZero] !== undefined) {
+                            const res = wrap(store[matSemZero], matSemZero);
+                            if (res) return res;
+                        }
+                        const matPad = mat.padStart(6, '0');
+                        if (store[matPad] !== undefined) {
+                            const res = wrap(store[matPad], matPad);
+                            if (res) return res;
+                        }
+                    }
+
+                    // 3. Normalização de caracteres e acentos nas chaves da store
+                    const normTarget = nomeStr.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                    const allKeys = Object.keys(store);
+                    for (let i = 0; i < allKeys.length; i++) {
+                        const k = allKeys[i];
+                        const normKey = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                        if (normKey === normTarget) {
+                            const res = wrap(store[k], k);
+                            if (res) return res;
+                        }
+                    }
+
+                    // 4. Varre os objetos internos da store (onde cada entrada tem .mat e .nome)
+                    for (let i = 0; i < allKeys.length; i++) {
+                        const entry = store[allKeys[i]];
+                        if (entry && typeof entry === 'object' && entry.tmaSegundos > 0) {
+                            if (mat && entry.mat) {
+                                const eMat = String(entry.mat).trim();
+                                if (eMat === mat || eMat.replace(/^0+/, '') === mat.replace(/^0+/, '')) {
+                                    return entry;
+                                }
+                            }
+                            if (entry.nome) {
+                                const normEntryNome = String(entry.nome).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                                if (normEntryNome === normTarget) return entry;
+                                const partesT = normTarget.split(/\s+/).filter(p => p.length > 2);
+                                if (partesT.length >= 2 && normEntryNome.includes(partesT[0]) && normEntryNome.includes(partesT[partesT.length - 1])) {
+                                    return entry;
+                                }
+                            }
+                        }
+                    }
+
+                    return null;
+                },
+
+                reconciliarBaseTMAComRH(targetStore) {
+                    const store = targetStore || (app.config && app.config.tmaData) || (app.analiseCSVDinamicoData?.consolidado?.tmaSnapshot);
+                    if (!store || Object.keys(store).length === 0) return { cruzados: 0, total: 0 };
+
+                    const mapaSessao = this.mapearMatriculasDaSessao();
+                    const operadoresConsolidado = (app.analiseCSVDinamicoData?.consolidado?.operadores) || {};
+                    const opsNomes = Object.keys(operadoresConsolidado);
+
+                    const chaves = Object.keys(store);
+                    const uniqueEntries = [];
+                    const vistos = new Set();
+
+                    chaves.forEach(k => {
+                        const val = store[k];
+                        if (val && typeof val === 'object' && val.tmaSegundos > 0) {
+                            const idUnico = (val.mat || '') + '_' + (val.nome || '') + '_' + val.tmaSegundos;
+                            if (!vistos.has(idUnico)) {
+                                vistos.add(idUnico);
+                                uniqueEntries.push(val);
+                            }
+                        }
+                    });
+
+                    let cruzados = 0;
+
+                    uniqueEntries.forEach(entry => {
+                        let mat = entry.mat ? String(entry.mat).trim() : '';
+                        let nome = entry.nome ? String(entry.nome).trim() : '';
+
+                        // 1. Se tem matrícula mas não tem nome (ou nome genérico), resgata nome pelo RH
+                        if (mat && (!nome || nome === 'Não Identificado' || nome === '')) {
+                            const nRH = (app.config && app.config.rhNomePorMatricula && (
+                                app.config.rhNomePorMatricula[mat] ||
+                                app.config.rhNomePorMatricula[mat.replace(/^0+/, '')] ||
+                                app.config.rhNomePorMatricula[mat.padStart(6, '0')]
+                            )) || (mapaSessao.matParaNome[mat] || mapaSessao.matParaNome[mat.replace(/^0+/, '')]);
+
+                            if (nRH) {
+                                nome = nRH;
+                                entry.nome = nRH;
+                            }
+                        }
+
+                        // 2. Se tem nome mas não tem matrícula, resgata matrícula pelo RH
+                        if (nome && !mat) {
+                            const normN = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            const mRH = (app.config && app.config.rhMatriculaPorNome && (
+                                app.config.rhMatriculaPorNome[nome] ||
+                                app.config.rhMatriculaPorNome[normN]
+                            )) || (mapaSessao.nomeParaMat[nome] || mapaSessao.nomeParaMat[normN]);
+
+                            if (mRH) {
+                                mat = mRH;
+                                entry.mat = mRH;
+                            }
+                        }
+
+                        // 3. Tenta casar com algum operador da monitoria ativa
+                        let opCasado = null;
+                        if (nome) {
+                            const normNome = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            for (let i = 0; i < opsNomes.length; i++) {
+                                const opN = opsNomes[i];
+                                const normOp = opN.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                                if (normOp === normNome) {
+                                    opCasado = opN;
+                                    break;
+                                }
+                                // Casamento por primeiro e último nome (ex: ALINE DOS SANTOS SILVA vs ALINE SANTOS)
+                                const partesN = normNome.split(/\s+/).filter(p => p.length > 2);
+                                const partesOp = normOp.split(/\s+/).filter(p => p.length > 2);
+                                if (partesN.length >= 2 && partesOp.length >= 2) {
+                                    if (partesN[0] === partesOp[0] && partesN[partesN.length - 1] === partesOp[partesOp.length - 1]) {
+                                        opCasado = opN;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Se ainda não casou e tem matrícula, verifica se algum operador na monitoria tem essa matrícula
+                        if (!opCasado && mat) {
+                            for (let i = 0; i < opsNomes.length; i++) {
+                                const opN = opsNomes[i];
+                                const matOp = app.utils.getMatriculaDoOperador(opN);
+                                if (matOp && (matOp === mat || matOp.replace(/^0+/, '') === mat.replace(/^0+/, ''))) {
+                                    opCasado = opN;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Registra em todas as variantes na store
+                        if (opCasado) {
+                            store[opCasado] = entry;
+                            const normCasado = opCasado.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            store[normCasado] = entry;
+                            cruzados++;
+                        }
+                        if (nome) {
+                            store[nome] = entry;
+                            const normNome = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            store[normNome] = entry;
+                        }
+                        if (mat) {
+                            store[mat] = entry;
+                            const matSemZero = mat.replace(/^0+/, '');
+                            if (matSemZero) store[matSemZero] = entry;
+                            store[mat.padStart(6, '0')] = entry;
+                        }
+                    });
+
+                    // Sincroniza app.config.tmaData e os snapshots
+                    if (app.config) {
+                        if (!app.config.tmaData) app.config.tmaData = {};
+                        Object.assign(app.config.tmaData, store);
+                    }
+                    if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                        app.analiseCSVDinamicoData.consolidado.tmaSnapshot = { ...(app.config?.tmaData || {}), ...store };
+                    }
+                    if (app.ui && app.ui._cachedQTPayload && app.ui._cachedQTPayload.data) {
+                        app.ui._cachedQTPayload.data.tmaSnapshot = { ...(app.config?.tmaData || {}), ...store };
+                    }
+
+                    return { cruzados, total: uniqueEntries.length };
+                },
+
+                classificarQuadranteTMA(nota, tmaSegundos, metaNota = 80, metaTMA = 360) {
+                    if (tmaSegundos === null || tmaSegundos === undefined || isNaN(tmaSegundos) || Number(tmaSegundos) <= 0) return null;
+                    const n = parseFloat(nota) || 0;
+                    const t = parseFloat(tmaSegundos) || 0;
+                    const mNota = parseFloat(metaNota) || 80;
+                    const mTMA = parseFloat(metaTMA) || 360;
+
+                    const notaAlta = n >= mNota;
+                    const tmaNaMeta = t <= mTMA; // Na meta ou abaixo da meta (tempo eficiente)
+
+                    if (notaAlta && tmaNaMeta) {
+                        return {
+                            id: 'Q1',
+                            quadrante: 'Q1 · Referência (Benchmark)',
+                            rotuloCurto: 'Q1 · Benchmark',
+                            perfil: 'Nota Alta + TMA na Meta/Baixo',
+                            equipe: 'Qualidade & Treinamento',
+                            equipeSelo: 'Qualidade & Treinamento',
+                            equipeBadge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700',
+                            corTema: 'emerald',
+                            corHex: '#10b981',
+                            diagnostico: 'Operador eficiente e resolutivo. Domina os sistemas, cumpre a fraseologia e resolve sem enrolação.',
+                            acao: 'Qualidade identifica as melhores práticas e Treinamento utiliza suas ligações como áudio modelo e convida o operador para atuar como multiplicador/espelho.',
+                            icone: 'fa-trophy',
+                            badgeBg: 'bg-emerald-500'
+                        };
+                    } else if (notaAlta && !tmaNaMeta) {
+                        return {
+                            id: 'Q2',
+                            quadrante: 'Q2 · Prolixo / Cuidado Excessivo',
+                            rotuloCurto: 'Q2 · Prolixo',
+                            perfil: 'Nota Alta + TMA Alto',
+                            equipe: 'Equipe de Treinamento',
+                            equipeSelo: 'Treinamento',
+                            equipeBadge: 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border-purple-300 dark:border-purple-700',
+                            corTema: 'purple',
+                            corHex: '#a855f7',
+                            diagnostico: 'O atendimento é tecnicamente correto, educado e sem falhas, mas o colaborador é inseguro, prolixo ou lento na digitação/navegação.',
+                            acao: 'Treinamento aplica técnicas de atendimento ágil, síntese, navegação e condução assertiva sem perder a qualidade técnica.',
+                            icone: 'fa-hourglass-half',
+                            badgeBg: 'bg-purple-500'
+                        };
+                    } else if (!notaAlta && tmaNaMeta) {
+                        return {
+                            id: 'Q3',
+                            quadrante: 'Q3 · Despachador (Falsa Eficiência)',
+                            rotuloCurto: 'Q3 · Despachador',
+                            perfil: 'Nota Baixa + TMA Baixo',
+                            equipe: 'Equipe de Qualidade',
+                            equipeSelo: 'Qualidade',
+                            equipeBadge: 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-300 dark:border-blue-700',
+                            corTema: 'blue',
+                            corHex: '#3b82f6',
+                            diagnostico: 'Derruba a ligação rápido para bater meta de tempo, mas comete falhas graves (pula PID, não confirma dúvidas, não registra histórico).',
+                            acao: 'Qualidade realiza auditoria dirigida de conformidade e estanca o atalho operacional com alinhamento processual imediato.',
+                            icone: 'fa-bolt',
+                            badgeBg: 'bg-blue-500'
+                        };
+                    } else {
+                        return {
+                            id: 'Q4',
+                            quadrante: 'Q4 · Atenção Crítica (Ofensor Duplo)',
+                            rotuloCurto: 'Q4 · Ofensor Duplo',
+                            perfil: 'Nota Baixa + TMA Alto',
+                            equipe: 'Qualidade & Treinamento',
+                            equipeSelo: 'Qualidade & Treinamento',
+                            equipeBadge: 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300 border-red-300 dark:border-red-700',
+                            corTema: 'red',
+                            corHex: '#ef4444',
+                            diagnostico: 'Prende a linha por muito tempo e ainda assim presta um atendimento com desvios ou erros graves de procedimento.',
+                            acao: 'Plano intensivo duplo: Treinamento capacita em reciclagem técnica/sala e Qualidade monitora a esteira semanalmente.',
+                            icone: 'fa-triangle-exclamation',
+                            badgeBg: 'bg-red-500'
+                        };
+                    }
                 },
 
                 fixEncoding(str) {
@@ -3189,6 +3717,651 @@ storage: {
                   XLSX.writeFile(workbook, `Gestao_Atas_${new Date().toISOString().split('T')[0]}.xlsx`);
               }
         }, // <--- CORREÇÃO: Fechando a gaveta 'ata' e separando com vírgula!
+
+        diarioBordo: {
+            viewMode: 'lista',
+            filtroOp: 'TODAS',
+            filtroData: '',
+            filtroBusca: '',
+            diarioEmEdicao: null,
+            chartInstance: null,
+
+            getOperacoesDisponiveis() {
+                const opsSet = new Set();
+                try {
+                    if (typeof app.getOperacoesSetoriais === 'function') {
+                        const setoriais = app.getOperacoesSetoriais() || [];
+                        setoriais.forEach(o => {
+                            const n = typeof o === 'string' ? o : o.nome;
+                            if (n) opsSet.add(String(n).trim());
+                        });
+                    }
+                    if (app.operacoesList) {
+                        Object.values(app.operacoesList).forEach(op => {
+                            if (op && op.nome) opsSet.add(String(op.nome).trim());
+                        });
+                    }
+                } catch(e) {}
+                if (opsSet.size === 0) {
+                    ['VENDAS', 'RETENÇÃO', 'COBRANÇA', 'SAC', 'BACKOFFICE', 'OUVIDORIA', 'SUPORTE'].forEach(o => opsSet.add(o));
+                }
+                return Array.from(opsSet).sort((a, b) => a.localeCompare(b));
+            },
+
+            novoDiario() {
+                const hoje = new Date().toISOString().split('T')[0];
+                const curUser = app.currentUser || {};
+                const ops = this.getOperacoesDisponiveis();
+                this.diarioEmEdicao = {
+                    id: 'db_' + Date.now(),
+                    data: hoje,
+                    operacao: ops.length > 0 ? ops[0] : '',
+                    turma: '',
+                    treinadorMatricula: curUser.matricula || (app.isAdmin ? 'admin' : ''),
+                    treinadorNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a) de Treinamento'),
+                    treinadorFoto: curUser.foto || '',
+                    previstosSala: 20,
+                    relatoGeral: '',
+                    desligamentos: [],
+                    alteracoesQuadro: [],
+                    abs: [],
+                    criadoEm: Date.now(),
+                    atualizadoEm: Date.now(),
+                    criadoPor: curUser.matricula || 'admin'
+                };
+                this.viewMode = 'form';
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            editarDiario(id) {
+                const item = app.diarioBordoList && app.diarioBordoList[id];
+                if (!item) return app.ui.showAlert("Aviso", "Diário de bordo não localizado.", "error");
+                this.diarioEmEdicao = JSON.parse(JSON.stringify(item));
+                if (!Array.isArray(this.diarioEmEdicao.desligamentos)) this.diarioEmEdicao.desligamentos = [];
+                if (!Array.isArray(this.diarioEmEdicao.alteracoesQuadro)) this.diarioEmEdicao.alteracoesQuadro = [];
+                if (!Array.isArray(this.diarioEmEdicao.abs)) this.diarioEmEdicao.abs = [];
+                this.viewMode = 'form';
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            voltarLista() {
+                this.viewMode = 'lista';
+                this.diarioEmEdicao = null;
+                if (this.chartInstance) {
+                    try { this.chartInstance.destroy(); } catch (e) {}
+                    this.chartInstance = null;
+                }
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            salvarDiario() {
+                const d = this.diarioEmEdicao;
+                if (!d) return;
+
+                const opEl = document.getElementById('db-input-op');
+                const turmaEl = document.getElementById('db-input-turma');
+                const dataEl = document.getElementById('db-input-data');
+                const prevEl = document.getElementById('db-input-previstos');
+                const relatoEl = document.getElementById('db-input-relato');
+                const treinadorNomeEl = document.getElementById('db-input-treinador-nome');
+                const treinadorMatEl = document.getElementById('db-input-treinador-mat');
+
+                if (opEl) d.operacao = opEl.value.trim();
+                if (turmaEl) d.turma = turmaEl.value.trim();
+                if (dataEl) d.data = dataEl.value;
+                if (prevEl) d.previstosSala = Math.max(0, parseInt(prevEl.value) || 0);
+                if (relatoEl) d.relatoGeral = relatoEl.value;
+                if (treinadorNomeEl) d.treinadorNome = treinadorNomeEl.value.trim();
+                if (treinadorMatEl) d.treinadorMatricula = treinadorMatEl.value.trim();
+
+                if (!d.operacao) return app.ui.showAlert("Atenção", "Selecione a operação da turma.", "warning");
+                if (!d.turma) return app.ui.showAlert("Atenção", "Informe o número ou identificação da turma.", "warning");
+                if (!d.data) return app.ui.showAlert("Atenção", "Informe a data do diário de bordo.", "warning");
+                if (d.previstosSala <= 0) return app.ui.showAlert("Atenção", "Informe a quantidade de colaboradores previstos em sala.", "warning");
+
+                d.atualizadoEm = Date.now();
+                if (!app.diarioBordoList) app.diarioBordoList = {};
+                app.diarioBordoList[d.id] = d;
+
+                app.storage.saveDiarioBordo(d.id).then(() => {
+                    app.ui.showAlert("Diário de Bordo Salvo", `Turma "${d.turma}" da operação ${d.operacao} gravada com sucesso!`, "success");
+                    this.voltarLista();
+                }).catch(err => {
+                    console.error("Erro ao salvar diário de bordo:", err);
+                    app.ui.showAlert("Erro de Conexão", "Os dados foram salvos no armazenamento local de segurança.", "warning");
+                    this.voltarLista();
+                });
+            },
+
+            excluirDiario(id) {
+                const item = app.diarioBordoList && app.diarioBordoList[id];
+                const nomeTurma = item ? `${item.operacao} - ${item.turma}` : 'este diário';
+                app.ui.showConfirm(
+                    "Excluir Diário de Bordo",
+                    `Deseja realmente excluir o relato da turma "${nomeTurma}"? Esta ação removerá o registro para analistas e gestores.`,
+                    `delete app.diarioBordoList['${id}']; app.storage.saveDiarioBordo('${id}').then(() => app.ui.renderTab('diario_bordo', true));`,
+                    true
+                );
+            },
+
+            buscarColaboradorPorMatricula(mat) {
+                if (!mat || !app.users) return null;
+                const clean = String(mat).trim().toLowerCase();
+                return app.users.find(u => String(u.matricula).trim().toLowerCase() === clean) || null;
+            },
+
+            onMatriculaChange(tipo, valor) {
+                const user = this.buscarColaboradorPorMatricula(valor);
+                if (!user) return;
+                const inputNome = document.getElementById(`db-add-${tipo}-nome`);
+                if (inputNome && !inputNome.value) {
+                    inputNome.value = user.nome || '';
+                }
+            },
+
+            adicionarAbs() {
+                const matEl = document.getElementById('db-add-abs-mat');
+                const nomeEl = document.getElementById('db-add-abs-nome');
+                const motEl = document.getElementById('db-add-abs-mot');
+
+                const mat = (matEl?.value || '').trim();
+                const nome = (nomeEl?.value || '').trim();
+                const motivo = (motEl?.value || '').trim();
+
+                if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador faltante.", "warning");
+
+                if (!this.diarioEmEdicao.abs) this.diarioEmEdicao.abs = [];
+                this.diarioEmEdicao.abs.push({
+                    id: 'abs_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    matricula: mat || '-',
+                    nome: nome || 'Colaborador',
+                    motivo: motivo || 'Sem justificativa informada'
+                });
+
+                if (matEl) matEl.value = '';
+                if (nomeEl) nomeEl.value = '';
+                if (motEl) motEl.value = '';
+
+                this.atualizarSecoesFormulario();
+            },
+
+            removerAbs(idx) {
+                if (!this.diarioEmEdicao || !this.diarioEmEdicao.abs) return;
+                this.diarioEmEdicao.abs.splice(idx, 1);
+                this.atualizarSecoesFormulario();
+            },
+
+            adicionarDesligamento() {
+                const matEl = document.getElementById('db-add-desl-mat');
+                const nomeEl = document.getElementById('db-add-desl-nome');
+
+                const mat = (matEl?.value || '').trim();
+                const nome = (nomeEl?.value || '').trim();
+
+                if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador desligado.", "warning");
+
+                if (!this.diarioEmEdicao.desligamentos) this.diarioEmEdicao.desligamentos = [];
+                this.diarioEmEdicao.desligamentos.push({
+                    id: 'desl_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    matricula: mat || '-',
+                    nome: nome || 'Colaborador'
+                });
+
+                if (matEl) matEl.value = '';
+                if (nomeEl) nomeEl.value = '';
+
+                this.atualizarSecoesFormulario();
+            },
+
+            removerDesligamento(idx) {
+                if (!this.diarioEmEdicao || !this.diarioEmEdicao.desligamentos) return;
+                this.diarioEmEdicao.desligamentos.splice(idx, 1);
+                this.atualizarSecoesFormulario();
+            },
+
+            adicionarAlteracaoQuadro() {
+                const matEl = document.getElementById('db-add-alt-mat');
+                const nomeEl = document.getElementById('db-add-alt-nome');
+                const chamEl = document.getElementById('db-add-alt-chamado');
+                const opEl = document.getElementById('db-add-alt-op');
+
+                const mat = (matEl?.value || '').trim();
+                const nome = (nomeEl?.value || '').trim();
+                const chamado = (chamEl?.value || '').trim();
+                const operacao = (opEl?.value || '').trim();
+
+                if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador.", "warning");
+
+                if (!this.diarioEmEdicao.alteracoesQuadro) this.diarioEmEdicao.alteracoesQuadro = [];
+                this.diarioEmEdicao.alteracoesQuadro.push({
+                    id: 'alt_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    matricula: mat || '-',
+                    nome: nome || 'Colaborador',
+                    chamado: chamado || '-',
+                    operacao: operacao || '-'
+                });
+
+                if (matEl) matEl.value = '';
+                if (nomeEl) nomeEl.value = '';
+                if (chamEl) chamEl.value = '';
+
+                this.atualizarSecoesFormulario();
+            },
+
+            removerAlteracaoQuadro(idx) {
+                if (!this.diarioEmEdicao || !this.diarioEmEdicao.alteracoesQuadro) return;
+                this.diarioEmEdicao.alteracoesQuadro.splice(idx, 1);
+                this.atualizarSecoesFormulario();
+            },
+
+            carregarFotoTreinador(event) {
+                const file = event.target.files && event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    if (this.diarioEmEdicao) {
+                        this.diarioEmEdicao.treinadorFoto = e.target.result;
+                        const imgEl = document.getElementById('db-preview-foto-treinador');
+                        if (imgEl) {
+                            imgEl.src = e.target.result;
+                            imgEl.classList.remove('hidden');
+                        }
+                        const iconEl = document.getElementById('db-preview-icon-treinador');
+                        if (iconEl) iconEl.classList.add('hidden');
+                    }
+                };
+                reader.readAsDataURL(file);
+            },
+
+            atualizarSecoesFormulario() {
+                const d = this.diarioEmEdicao;
+                if (!d) return;
+
+                const prevEl = document.getElementById('db-input-previstos');
+                if (prevEl) d.previstosSala = Math.max(0, parseInt(prevEl.value) || 0);
+
+                const P = d.previstosSala || 0;
+                const A = (d.abs || []).length;
+                const D = (d.desligamentos || []).length;
+                const PR = Math.max(0, P - A - D);
+                const pctPR = P > 0 ? ((PR / P) * 100).toFixed(1) : '0.0';
+                const pctA = P > 0 ? ((A / P) * 100).toFixed(1) : '0.0';
+                const pctD = P > 0 ? ((D / P) * 100).toFixed(1) : '0.0';
+
+                const elPrev = document.getElementById('db-kpi-prev');
+                const elPres = document.getElementById('db-kpi-pres');
+                const elAbs = document.getElementById('db-kpi-abs');
+                const elDesl = document.getElementById('db-kpi-desl');
+
+                if (elPrev) elPrev.innerHTML = `${P} <span class="text-xs font-normal text-slate-400">previstos</span>`;
+                if (elPres) elPres.innerHTML = `${PR} <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">(${pctPR}%)</span>`;
+                if (elAbs) elAbs.innerHTML = `${A} <span class="text-xs font-semibold text-amber-600 dark:text-amber-400">(${pctA}%)</span>`;
+                if (elDesl) elDesl.innerHTML = `${D} <span class="text-xs font-semibold text-rose-600 dark:text-rose-400">(${pctD}%)</span>`;
+
+                const tbAbs = document.getElementById('db-tbody-abs');
+                if (tbAbs) {
+                    if (d.abs.length === 0) {
+                        tbAbs.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-xs text-slate-400 italic">Nenhuma falta/ABS registrada para esta turma.</td></tr>`;
+                    } else {
+                        tbAbs.innerHTML = d.abs.map((item, idx) => `
+                            <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition">
+                                <td class="p-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${item.matricula}</td>
+                                <td class="p-2.5 text-xs text-slate-800 dark:text-white font-medium">${item.nome}</td>
+                                <td class="p-2.5 text-xs text-slate-600 dark:text-slate-300">${item.motivo}</td>
+                                <td class="p-2.5 text-right">
+                                    <button type="button" onclick="app.diarioBordo.removerAbs(${idx})" class="text-rose-500 hover:text-rose-700 p-1 transition" title="Remover Falta">
+                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+
+                const tbDesl = document.getElementById('db-tbody-desl');
+                if (tbDesl) {
+                    if (d.desligamentos.length === 0) {
+                        tbDesl.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-xs text-slate-400 italic">Nenhum desligamento informado para esta turma.</td></tr>`;
+                    } else {
+                        tbDesl.innerHTML = d.desligamentos.map((item, idx) => `
+                            <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition">
+                                <td class="p-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${item.matricula}</td>
+                                <td class="p-2.5 text-xs text-slate-800 dark:text-white font-medium">${item.nome}</td>
+                                <td class="p-2.5 text-right">
+                                    <button type="button" onclick="app.diarioBordo.removerDesligamento(${idx})" class="text-rose-500 hover:text-rose-700 p-1 transition" title="Remover Desligamento">
+                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+
+                const tbAlt = document.getElementById('db-tbody-alt');
+                if (tbAlt) {
+                    if (d.alteracoesQuadro.length === 0) {
+                        tbAlt.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-xs text-slate-400 italic">Nenhuma alteração de quadro registrada.</td></tr>`;
+                    } else {
+                        tbAlt.innerHTML = d.alteracoesQuadro.map((item, idx) => `
+                            <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition">
+                                <td class="p-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${item.matricula}</td>
+                                <td class="p-2.5 text-xs text-slate-800 dark:text-white font-medium">${item.nome}</td>
+                                <td class="p-2.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">${item.chamado}</td>
+                                <td class="p-2.5 text-xs text-slate-600 dark:text-slate-300">${item.operacao}</td>
+                                <td class="p-2.5 text-right">
+                                    <button type="button" onclick="app.diarioBordo.removerAlteracaoQuadro(${idx})" class="text-rose-500 hover:text-rose-700 p-1 transition" title="Remover Alteração">
+                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+
+                this.renderizarGraficoResumo(PR, A, D);
+            },
+
+            renderizarGraficoResumo(pr, a, d) {
+                const canvas = document.getElementById('db-chart-resumo');
+                if (!canvas || typeof Chart === 'undefined') return;
+
+                if (this.chartInstance) {
+                    try { this.chartInstance.destroy(); } catch (e) {}
+                    this.chartInstance = null;
+                }
+
+                const total = pr + a + d;
+                const dataVals = total > 0 ? [pr, a, d] : [1, 0, 0];
+                const bgColors = total > 0 ? ['#10b981', '#f59e0b', '#f43f5e'] : ['#e2e8f0', '#e2e8f0', '#e2e8f0'];
+
+                const ctx = canvas.getContext('2d');
+                this.chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Presentes', 'ABS (Faltas)', 'Desligamentos (T.O)'],
+                        datasets: [{
+                            data: dataVals,
+                            backgroundColor: bgColors,
+                            borderWidth: 2,
+                            borderColor: document.documentElement.classList.contains('dark') ? '#1e293b' : '#ffffff',
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 12,
+                                    font: { size: 10, family: 'Poppins' },
+                                    color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#475569'
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(c) {
+                                        const val = c.raw || 0;
+                                        const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
+                                        return ` ${c.label}: ${val} (${pct}%)`;
+                                    }
+                                }
+                            }
+                        },
+                        cutout: '68%'
+                    }
+                });
+            },
+
+            gerarPDF(diarioId = null) {
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    return app.ui.showAlert("Aviso", "Aguarde o carregamento do gerador de PDF...", "error");
+                }
+                const diario = diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
+                if (!diario) return app.ui.showAlert("Erro", "Nenhum diário selecionado para gerar PDF.", "error");
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const marginX = 14;
+
+                const P = parseInt(diario.previstosSala) || 0;
+                const A = Array.isArray(diario.abs) ? diario.abs.length : 0;
+                const D = Array.isArray(diario.desligamentos) ? diario.desligamentos.length : 0;
+                const PR = Math.max(0, P - A - D);
+                const pctPR = P > 0 ? ((PR / P) * 100).toFixed(1) : '0.0';
+                const pctA = P > 0 ? ((A / P) * 100).toFixed(1) : '0.0';
+                const pctD = P > 0 ? ((D / P) * 100).toFixed(1) : '0.0';
+
+                // Faixa Superior Corporativa Softmarketing
+                doc.setFillColor(22, 163, 74);
+                doc.rect(marginX, 12, pageWidth - (marginX * 2), 22, 'F');
+
+                doc.setTextColor(255, 255, 255);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(14);
+                doc.text("DIÁRIO DE BORDO | TREINAMENTO", marginX + 6, 21);
+
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8);
+                doc.text("SOFTMARKETING SOLUÇÕES EM COMUNICAÇÃO  |  GESTÃO DA QUALIDADE & CAPACITAÇÃO", marginX + 6, 28);
+
+                // Bloco de Identificação da Operação & Turma
+                doc.setFillColor(248, 250, 252);
+                doc.setDrawColor(203, 213, 225);
+                doc.setLineWidth(0.3);
+                doc.roundedRect(marginX, 38, pageWidth - (marginX * 2), 26, 2, 2, 'FD');
+
+                let startTextX = marginX + 5;
+                if (diario.treinadorFoto && typeof diario.treinadorFoto === 'string' && diario.treinadorFoto.startsWith('data:image')) {
+                    try {
+                        doc.addImage(diario.treinadorFoto, 'JPEG', marginX + 4, 40.5, 21, 21);
+                        startTextX = marginX + 28;
+                    } catch(e) {}
+                }
+
+                doc.setTextColor(30, 41, 59);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(11);
+                doc.text(`OPERAÇÃO: ${String(diario.operacao || 'NÃO INFORMADA').toUpperCase()}`, startTextX, 45);
+                doc.text(`TURMA: ${String(diario.turma || 'TURMA').toUpperCase()}`, startTextX, 51);
+
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8.5);
+                doc.setTextColor(71, 85, 105);
+                const dataFormatada = diario.data ? diario.data.split('-').reverse().join('/') : '--/--/----';
+                doc.text(`Data da Capacitação: ${dataFormatada}  |  Treinador(a): ${diario.treinadorNome || 'Não informado'} (${diario.treinadorMatricula || '-'})`, startTextX, 57);
+
+                // Tabela de Indicadores de Frequência
+                let currentY = 68;
+                doc.autoTable({
+                    startY: currentY,
+                    margin: { left: marginX, right: marginX },
+                    head: [['Previstos em Sala', 'Presentes em Sala', 'Absenteísmo (ABS)', 'Desligamentos (T.O)']],
+                    body: [
+                        [
+                            `${P} colaboradores\n(100%)`,
+                            `${PR} colaboradores\n(${pctPR}%)`,
+                            `${A} colaboradores\n(${pctA}%)`,
+                            `${D} colaboradores\n(${pctD}%)`
+                        ]
+                    ],
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', fontSize: 9 },
+                    bodyStyles: { halign: 'center', fontSize: 9, fontStyle: 'bold', cellPadding: 3 },
+                    columnStyles: {
+                        0: { textColor: [30, 41, 59] },
+                        1: { textColor: [22, 163, 74], fillColor: [240, 253, 244] },
+                        2: { textColor: [217, 119, 6], fillColor: [254, 243, 199] },
+                        3: { textColor: [225, 29, 72], fillColor: [255, 241, 242] }
+                    }
+                });
+
+                currentY = doc.lastAutoTable.finalY + 6;
+
+                // Gráfico em Porcentagem (Barra Proporcional Colorida)
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5);
+                doc.setTextColor(30, 41, 59);
+                doc.text("DISTRIBUIÇÃO PERCENTUAL EM SALA (PRESENTES x ABS x T.O)", marginX, currentY);
+                currentY += 4;
+
+                const barWidth = pageWidth - (marginX * 2);
+                const barHeight = 8;
+                const wPR = P > 0 ? (PR / P) * barWidth : 0;
+                const wA = P > 0 ? (A / P) * barWidth : 0;
+                const wD = P > 0 ? (D / P) * barWidth : 0;
+
+                let curBX = marginX;
+                if (wPR > 0) {
+                    doc.setFillColor(22, 163, 74);
+                    doc.rect(curBX, currentY, wPR, barHeight, 'F');
+                    curBX += wPR;
+                }
+                if (wA > 0) {
+                    doc.setFillColor(245, 158, 11);
+                    doc.rect(curBX, currentY, wA, barHeight, 'F');
+                    curBX += wA;
+                }
+                if (wD > 0) {
+                    doc.setFillColor(244, 63, 94);
+                    doc.rect(curBX, currentY, wD, barHeight, 'F');
+                    curBX += wD;
+                }
+                doc.setDrawColor(203, 213, 225);
+                doc.setLineWidth(0.3);
+                doc.rect(marginX, currentY, barWidth, barHeight, 'D');
+
+                currentY += barHeight + 4.5;
+                doc.setFontSize(8);
+                doc.setFont("helvetica", "bold");
+                
+                doc.setFillColor(22, 163, 74); doc.rect(marginX, currentY - 2.5, 3, 3, 'F');
+                doc.setTextColor(22, 163, 74);
+                doc.text(`Presentes: ${pctPR}% (${PR})`, marginX + 4.5, currentY);
+
+                doc.setFillColor(245, 158, 11); doc.rect(marginX + 55, currentY - 2.5, 3, 3, 'F');
+                doc.setTextColor(180, 83, 9);
+                doc.text(`ABS: ${pctA}% (${A})`, marginX + 59.5, currentY);
+
+                doc.setFillColor(244, 63, 94); doc.rect(marginX + 110, currentY - 2.5, 3, 3, 'F');
+                doc.setTextColor(225, 29, 72);
+                doc.text(`T.O (Desligamentos): ${pctD}% (${D})`, marginX + 114.5, currentY);
+
+                currentY += 7;
+
+                // Tabela de ABS
+                const absRows = (diario.abs || []).map(item => [
+                    item.matricula || '-',
+                    item.nome || '-',
+                    item.motivo || 'Sem justificativa informada'
+                ]);
+                doc.autoTable({
+                    startY: currentY,
+                    margin: { left: marginX, right: marginX },
+                    head: [[`ABS - Absenteísmo e Faltas (${absRows.length})`, '', '']],
+                    body: absRows.length > 0 ? absRows : [['Nenhuma falta registrada nesta turma.', '', '']],
+                    columns: [
+                        { header: 'Matrícula', dataKey: 0 },
+                        { header: 'Nome do Colaborador', dataKey: 1 },
+                        { header: 'Motivo da Falta', dataKey: 2 }
+                    ],
+                    theme: 'striped',
+                    headStyles: { fillColor: [245, 158, 11], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+                    styles: { fontSize: 7.5, cellPadding: 2 }
+                });
+                currentY = doc.lastAutoTable.finalY + 5;
+
+                // Tabela de Desligamentos
+                const deslRows = (diario.desligamentos || []).map(item => [
+                    item.matricula || '-',
+                    item.nome || '-'
+                ]);
+                doc.autoTable({
+                    startY: currentY,
+                    margin: { left: marginX, right: marginX },
+                    head: [[`Desligamentos da Turma / T.O (${deslRows.length})`, '']],
+                    body: deslRows.length > 0 ? deslRows : [['Nenhum desligamento registrado nesta turma.', '']],
+                    columns: [
+                        { header: 'Matrícula', dataKey: 0 },
+                        { header: 'Nome do Colaborador', dataKey: 1 }
+                    ],
+                    theme: 'striped',
+                    headStyles: { fillColor: [225, 29, 72], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+                    styles: { fontSize: 7.5, cellPadding: 2 }
+                });
+                currentY = doc.lastAutoTable.finalY + 5;
+
+                // Tabela de Alterações de Quadro
+                const altRows = (diario.alteracoesQuadro || []).map(item => [
+                    item.matricula || '-',
+                    item.nome || '-',
+                    item.chamado || '-',
+                    item.operacao || '-'
+                ]);
+                doc.autoTable({
+                    startY: currentY,
+                    margin: { left: marginX, right: marginX },
+                    head: [[`Alterações de Quadro (${altRows.length})`, '', '', '']],
+                    body: altRows.length > 0 ? altRows : [['Nenhuma alteração de quadro registrada.', '', '', '']],
+                    columns: [
+                        { header: 'Matrícula', dataKey: 0 },
+                        { header: 'Nome', dataKey: 1 },
+                        { header: 'Nº Chamado', dataKey: 2 },
+                        { header: 'Operação', dataKey: 3 }
+                    ],
+                    theme: 'striped',
+                    headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+                    styles: { fontSize: 7.5, cellPadding: 2 }
+                });
+                currentY = doc.lastAutoTable.finalY + 5;
+
+                // Relato do Treinador
+                if (diario.relatoGeral && diario.relatoGeral.trim()) {
+                    if (currentY > pageHeight - 35) {
+                        doc.addPage();
+                        currentY = 16;
+                    }
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(9);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text("RELATO DO DIA / OBSERVAÇÕES DO INSTRUTOR", marginX, currentY);
+                    currentY += 4;
+
+                    const splitRelato = doc.splitTextToSize(diario.relatoGeral.trim(), pageWidth - (marginX * 2) - 6);
+                    const relatoBoxHeight = (splitRelato.length * 4.2) + 5;
+
+                    doc.setFillColor(248, 250, 252);
+                    doc.setDrawColor(203, 213, 225);
+                    doc.setLineWidth(0.2);
+                    doc.rect(marginX, currentY, pageWidth - (marginX * 2), relatoBoxHeight, 'FD');
+
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(8);
+                    doc.setTextColor(51, 65, 85);
+                    doc.text(splitRelato, marginX + 3, currentY + 4.5);
+                    currentY += relatoBoxHeight + 5;
+                }
+
+                // Rodapé de Todas as Páginas
+                const totalPages = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= totalPages; i++) {
+                    doc.setPage(i);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text(`Diário de Bordo Oficial | Softmarketing Soluções em Comunicação | Emitido em ${new Date().toLocaleString('pt-BR')} | Página ${i} de ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+                }
+
+                const safeOp = (diario.operacao || 'Operacao').replace(/[^a-zA-Z0-9]/g, '_');
+                const safeTurma = (diario.turma || 'Turma').replace(/[^a-zA-Z0-9]/g, '_');
+                const filename = `Diario_Bordo_${safeOp}_${safeTurma}_${diario.data || 'data'}.pdf`;
+                doc.save(filename);
+                app.ui.showAlert("PDF Gerado com Sucesso", `O arquivo "${filename}" foi baixado com sucesso!`, "success");
+            }
+        },
 
         calendar: {
             viewEvent(id) {
@@ -6137,14 +7310,14 @@ storage: {
                 menusUser: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}] },
-                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
                 menusAdmin: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -6159,9 +7332,9 @@ storage: {
                     const defaults = {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['home', 'qualidade_treinamento', 'analise_csv_dinamico', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['home', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'home', 'qualidade_treinamento', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'qualidade_treinamento', 'diario_bordo', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas'])],
                         'Gerente': allIds
                     };
 
@@ -6178,6 +7351,7 @@ storage: {
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
                         if (!base.includes('home')) base.unshift('home');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('qualidade_treinamento')) base.push('qualidade_treinamento');
+                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('diario_bordo')) base.push('diario_bordo');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('caca_palavras')) base.push('caca_palavras');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('palavras_cruzadas')) base.push('palavras_cruzadas');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
@@ -6261,6 +7435,9 @@ storage: {
                     if (idx === -1) return;
                     const presets = this.getPresetsGruposAcesso();
                     app.users[idx].tipoAcesso = novoGrupo;
+                    if (novoGrupo === 'Treinamento' && !app.users[idx].subclasse) {
+                        app.users[idx].subclasse = 'Instrutor';
+                    }
                     app.users[idx].abasLiberadas = [...(presets[novoGrupo] || [])];
                     if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
                         app.currentUser = app.users[idx];
@@ -6270,6 +7447,29 @@ storage: {
                         this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
                         this.showAlert("Perfil Atualizado!", `<b>${app.users[idx].nome}</b> agora possui o perfil <b>${novoGrupo}</b> com a barra personalizada de ADM ativa.`, "success");
                     });
+                },
+
+                alterarSubclasseTreinamentoRapido(matricula, novaSubclasse) {
+                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(matricula).trim());
+                    if (idx === -1) return;
+                    app.users[idx].subclasse = novaSubclasse;
+                    if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
+                        app.currentUser.subclasse = novaSubclasse;
+                    }
+                    app.storage.saveUsers().then(() => {
+                        this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
+                        this.showAlert("Subclasse Atualizada", `<b>${app.users[idx].nome}</b> agora está denominado(a) como <b>${novaSubclasse}</b> de Treinamento.`, "success");
+                    });
+                },
+
+                onTipoAcessoChange(grupo, prefix) {
+                    const container = document.getElementById(`${prefix}-subclasse-container`);
+                    if (!container) return;
+                    if (grupo === 'Treinamento') {
+                        container.classList.remove('hidden');
+                    } else {
+                        container.classList.add('hidden');
+                    }
                 },
 
                 aplicarPresetNoModal(grupo, checkClass) {
@@ -6544,7 +7744,10 @@ storage: {
                     if (selTipo) {
                         selTipo.value = 'Qualidade';
                         this.aplicarPresetNoModal('Qualidade', 'cad-aba-check');
+                        this.onTipoAcessoChange('Qualidade', 'cad');
                     }
+                    const selSub = document.getElementById('cad-subclasse');
+                    if (selSub) selSub.value = 'Instrutor';
 
                     document.getElementById('cad-foto').value = '';
                     document.getElementById('add-user-modal').classList.remove('hidden'); 
@@ -6728,13 +7931,25 @@ storage: {
                 },
 
                 showAlert(title, message, type = 'info') {
+                    const titleEl = document.getElementById('modal-title');
+                    const contentEl = document.getElementById('modal-content');
+                    const actionsEl = document.getElementById('modal-actions');
+                    const modalEl = document.getElementById('global-modal');
+                    if (!titleEl || !contentEl || !modalEl) {
+                        if (typeof this.showNotification === 'function') {
+                            this.showNotification(`${title}: ${message}`, type);
+                        }
+                        return;
+                    }
                     const color = type === 'success' ? 'text-green-500' : (type === 'error' ? 'text-red-500' : 'text-blue-500');
                     const icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info');
                     
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon} ${color}"></i> ${title}`;
-                    document.getElementById('modal-content').innerHTML = message;
-                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Entendi</button>`;
-                    document.getElementById('global-modal').classList.remove('hidden');
+                    titleEl.innerHTML = `<i class="fa-solid ${icon} ${color}"></i> ${title}`;
+                    contentEl.innerHTML = message;
+                    if (actionsEl) {
+                        actionsEl.innerHTML = `<button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg font-bold text-sm transition-colors">Entendi</button>`;
+                    }
+                    modalEl.classList.remove('hidden');
                 },
 
                 showNotification(message, type = 'info', duration = 3200) {
@@ -7081,6 +8296,197 @@ storage: {
                             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.parsed.y + '% das avaliações' } } }, scales: { y: { min: 0, ticks: { color: textColor, callback: pctTick }, grid: { color: gridColor } }, x: { grid: { display: false }, ticks: { color: textColor, font: { size: 10 } } } } }
                         });
                     }, 'motivos');
+
+                    // 7) Dispersão Nota vs. TMA (Scatter Plot dos 4 Quadrantes Operacionais)
+                    safe(() => {
+                        const el = document.getElementById('chart-tma-dispersao');
+                        if (!el) return;
+                        const tmaSnapshot = data ? (data.tmaSnapshot || (app.config.tmaData && Object.keys(app.config.tmaData).length > 0 ? app.config.tmaData : null)) : null;
+                        if (!tmaSnapshot || Object.keys(tmaSnapshot).length === 0) return;
+
+                        const metaNota = app.ui.getQuadCfg ? app.ui.getQuadCfg().q2 : 80;
+                        const metaTMA = (data && data.metaTMA) || app.config?.metaTMA || 360;
+
+                        const q1Pts = [], q2Pts = [], q3Pts = [], q4Pts = [];
+                        Object.values(data.operadores || {}).forEach(op => {
+                            const tmaObj = app.utils.getTMADoOperador(op.nome, tmaSnapshot);
+                            if (tmaObj && tmaObj.tmaSegundos > 0) {
+                                const media = typeof op.media === 'number' ? op.media : (op.notas && op.notas.length ? op.notas.reduce((a, b) => a + b, 0) / op.notas.length : 0);
+                                const quad = app.utils.classificarQuadranteTMA(media, tmaObj.tmaSegundos, metaNota, metaTMA);
+                                const pt = {
+                                    x: tmaObj.tmaSegundos,
+                                    y: parseFloat(media.toFixed(1)),
+                                    nome: op.nome,
+                                    matricula: tmaObj.mat || app.utils.getMatriculaDoOperador(op.nome) || '-',
+                                    tmaFmt: app.utils.formatSecondsToTMA(tmaObj.tmaSegundos),
+                                    quadId: quad.id,
+                                    quadLabel: quad.quadrante,
+                                    diasCasa: app.utils.getTempoCasaDoOperador(op.nome)
+                                };
+                                if (quad.id === 'Q1') q1Pts.push(pt);
+                                else if (quad.id === 'Q2') q2Pts.push(pt);
+                                else if (quad.id === 'Q3') q3Pts.push(pt);
+                                else q4Pts.push(pt);
+                            }
+                        });
+
+                        const todosPts = [...q1Pts, ...q2Pts, ...q3Pts, ...q4Pts];
+                        if (todosPts.length === 0) return;
+
+                        const allX = todosPts.map(p => p.x);
+                        const allY = todosPts.map(p => p.y);
+                        const minX = Math.max(0, Math.floor(Math.min(...allX, metaTMA) * 0.8));
+                        const maxX = Math.ceil(Math.max(...allX, metaTMA) * 1.15);
+                        const minY = Math.max(0, Math.floor((Math.min(...allY, metaNota) - 5) / 5) * 5);
+                        const maxY = 100;
+
+                        if (window.chartTmaDispersao) window.chartTmaDispersao.destroy();
+                        window.chartTmaDispersao = new Chart(el, {
+                            type: 'scatter',
+                            data: {
+                                datasets: [
+                                    {
+                                        label: `Q1 · Benchmark (${q1Pts.length})`,
+                                        data: q1Pts,
+                                        backgroundColor: 'rgba(16, 185, 129, 0.85)',
+                                        borderColor: '#10b981',
+                                        borderWidth: 2,
+                                        pointRadius: 6,
+                                        pointHoverRadius: 9
+                                    },
+                                    {
+                                        label: `Q2 · Prolixo (${q2Pts.length})`,
+                                        data: q2Pts,
+                                        backgroundColor: 'rgba(168, 85, 247, 0.85)',
+                                        borderColor: '#a855f7',
+                                        borderWidth: 2,
+                                        pointRadius: 6,
+                                        pointHoverRadius: 9
+                                    },
+                                    {
+                                        label: `Q3 · Despachador (${q3Pts.length})`,
+                                        data: q3Pts,
+                                        backgroundColor: 'rgba(59, 130, 246, 0.85)',
+                                        borderColor: '#3b82f6',
+                                        borderWidth: 2,
+                                        pointRadius: 6,
+                                        pointHoverRadius: 9
+                                    },
+                                    {
+                                        label: `Q4 · Atenção Crítica (${q4Pts.length})`,
+                                        data: q4Pts,
+                                        backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                                        borderColor: '#ef4444',
+                                        borderWidth: 2,
+                                        pointRadius: 6,
+                                        pointHoverRadius: 9
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                onClick: (evt, elements) => {
+                                    if (elements && elements.length > 0) {
+                                        const elIndex = elements[0].index;
+                                        const dsIndex = elements[0].datasetIndex;
+                                        const ds = window.chartTmaDispersao.data.datasets[dsIndex];
+                                        if (ds && ds.data[elIndex]) {
+                                            app.ui.openOperadorAnaliseModal(encodeURIComponent(ds.data[elIndex].nome));
+                                        }
+                                    }
+                                },
+                                plugins: {
+                                    legend: {
+                                        position: 'top',
+                                        labels: { color: textColor, boxWidth: 12, font: { size: 11, weight: 'bold' } }
+                                    },
+                                    tooltip: {
+                                        ...tt,
+                                        callbacks: {
+                                            title: items => {
+                                                if (!items.length) return '';
+                                                const pt = items[0].raw;
+                                                return `${pt.nome} (Mat: ${pt.matricula})`;
+                                            },
+                                            label: ctx => {
+                                                const pt = ctx.raw;
+                                                const res = [` Nota: ${pt.y}% · TMA: ${pt.tmaFmt}`, ` ${pt.quadLabel}`];
+                                                if (pt.diasCasa !== null && pt.diasCasa !== undefined) res.push(` Tempo de Casa: ${app.utils.formatTempoCasa(pt.diasCasa)}`);
+                                                return res;
+                                            }
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    x: {
+                                        title: {
+                                            display: true,
+                                            text: `Tempo Médio de Atendimento (TMA) · Linha de Corte: ${app.utils.formatSecondsToTMA(metaTMA)}`,
+                                            color: textColor,
+                                            font: { size: 11, weight: 'bold' }
+                                        },
+                                        min: minX,
+                                        max: maxX,
+                                        ticks: {
+                                            color: textColor,
+                                            callback: v => app.utils.formatSecondsToTMA(v)
+                                        },
+                                        grid: { color: gridColor }
+                                    },
+                                    y: {
+                                        title: {
+                                            display: true,
+                                            text: `Qualidade Técnica (Nota %) · Linha de Corte: ${metaNota}%`,
+                                            color: textColor,
+                                            font: { size: 11, weight: 'bold' }
+                                        },
+                                        min: minY,
+                                        max: maxY,
+                                        ticks: {
+                                            color: textColor,
+                                            callback: pctTick
+                                        },
+                                        grid: { color: gridColor }
+                                    }
+                                }
+                            },
+                            plugins: [{
+                                id: 'tmaCrosshairPlugin',
+                                afterDraw(chart) {
+                                    const { ctx, chartArea: { left, top, right, bottom }, scales: { x, y } } = chart;
+                                    const xMeta = x.getPixelForValue(metaTMA);
+                                    const yMeta = y.getPixelForValue(metaNota);
+                                    ctx.save();
+                                    if (xMeta >= left && xMeta <= right) {
+                                        ctx.strokeStyle = '#06b6d4';
+                                        ctx.lineWidth = 1.5;
+                                        ctx.setLineDash([4, 4]);
+                                        ctx.beginPath();
+                                        ctx.moveTo(xMeta, top);
+                                        ctx.lineTo(xMeta, bottom);
+                                        ctx.stroke();
+                                        ctx.fillStyle = '#06b6d4';
+                                        ctx.font = 'bold 10px sans-serif';
+                                        ctx.fillText('Meta TMA: ' + app.utils.formatSecondsToTMA(metaTMA), xMeta + 4, top + 14);
+                                    }
+                                    if (yMeta >= top && yMeta <= bottom) {
+                                        ctx.strokeStyle = '#10b981';
+                                        ctx.lineWidth = 1.5;
+                                        ctx.setLineDash([4, 4]);
+                                        ctx.beginPath();
+                                        ctx.moveTo(left, yMeta);
+                                        ctx.lineTo(right, yMeta);
+                                        ctx.stroke();
+                                        ctx.fillStyle = '#10b981';
+                                        ctx.font = 'bold 10px sans-serif';
+                                        ctx.fillText('Meta Nota: ' + metaNota + '%', left + 6, yMeta - 6);
+                                    }
+                                    ctx.restore();
+                                }
+                            }]
+                        });
+                    }, 'tmaDispersao');
                 },
 
                 openMaturidadeModal(idx) {
@@ -7576,6 +8982,7 @@ storage: {
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
                             else if(tabId === 'qualidade_treinamento') this.renderView_QualidadeTreinamento(viewDiv);
+                            else if(tabId === 'diario_bordo') this.renderView_DiarioBordo(viewDiv);
                             else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
                             else if(tabId === 'impressoes' || tabId === 'gestao_impressoes') this.renderView_Impressoes(viewDiv);
                             else if(tabId === 'dashboard_firebase_dev') { this.abrirModalFirebaseDev(); this.renderTab('dashboard_adm', true); }
@@ -12505,6 +13912,552 @@ storage: {
                     app.ui.showConfirm("Cuidado", "Apagar este item da prateleira permanentemente?", `delete app.estoqueItems['${id}']; app.storage.saveEstoque().then(() => app.ui.renderTab('controle_estoque', true));`, true);
                 },
 
+                renderView_DiarioBordo(container) {
+                    if (!app.diarioBordo) return;
+                    const mode = app.diarioBordo.viewMode || 'lista';
+                    const allDiarios = Object.values(app.diarioBordoList || {}).filter(Boolean);
+
+                    if (mode === 'lista') {
+                        // Aplicação dos Filtros
+                        const filtroOp = app.diarioBordo.filtroOp || 'TODAS';
+                        const filtroData = app.diarioBordo.filtroData || '';
+                        const filtroBusca = String(app.diarioBordo.filtroBusca || '').toLowerCase().trim();
+
+                        const listaFiltrada = allDiarios.filter(d => {
+                            if (filtroOp !== 'TODAS' && d.operacao !== filtroOp) return false;
+                            if (filtroData && d.data !== filtroData) return false;
+                            if (filtroBusca) {
+                                const turmaMatch = String(d.turma || '').toLowerCase().includes(filtroBusca);
+                                const treinadorMatch = String(d.treinadorNome || '').toLowerCase().includes(filtroBusca);
+                                const opMatch = String(d.operacao || '').toLowerCase().includes(filtroBusca);
+                                if (!turmaMatch && !treinadorMatch && !opMatch) return false;
+                            }
+                            return true;
+                        }).sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+
+                        const operacoes = app.diarioBordo.getOperacoesDisponiveis();
+
+                        container.innerHTML = `
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6">
+                                
+                                <!-- Banner Header -->
+                                <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                    <div class="relative z-10">
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-emerald-200 text-xs font-bold uppercase tracking-widest mb-3 border border-white/10">
+                                            <i class="fa-solid fa-chalkboard-user"></i> Capacitação &amp; Treinamento
+                                        </div>
+                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Diário de Bordo</h2>
+                                        <p class="text-emerald-100/80 text-xs sm:text-sm max-w-2xl mt-1 leading-relaxed">
+                                            Acompanhamento diário das turmas em formação, frequência em sala, alterações de quadro, absenteísmo e geração de relatório executivo oficial.
+                                        </p>
+                                    </div>
+                                    <div class="relative z-10 flex flex-wrap items-center gap-3">
+                                        <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
+                                            <i class="fa-solid fa-plus text-emerald-600"></i> Novo Diário de Bordo
+                                        </button>
+                                    </div>
+                                    <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-9xl">
+                                        <i class="fa-solid fa-book-journal-whills"></i>
+                                    </div>
+                                </div>
+
+                                <!-- Barra de Filtros e Busca -->
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4">
+                                    <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+                                        <!-- Filtro Operação -->
+                                        <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <i class="fa-solid fa-building text-slate-400 text-xs"></i>
+                                            <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Operação:</label>
+                                            <select onchange="app.diarioBordo.filtroOp = this.value; app.ui.renderTab('diario_bordo', true);" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                                <option value="TODAS" ${filtroOp === 'TODAS' ? 'selected' : ''}>Todas as Operações</option>
+                                                ${operacoes.map(op => `<option value="${op}" ${filtroOp === op ? 'selected' : ''}>${op}</option>`).join('')}
+                                            </select>
+                                        </div>
+
+                                        <!-- Filtro Data -->
+                                        <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <i class="fa-regular fa-calendar text-slate-400 text-xs"></i>
+                                            <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Data:</label>
+                                            <input type="date" value="${filtroData}" onchange="app.diarioBordo.filtroData = this.value; app.ui.renderTab('diario_bordo', true);" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                        </div>
+
+                                        <!-- Campo de Busca -->
+                                        <div class="flex-1 min-w-[200px] flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                            <input type="text" value="${app.diarioBordo.filtroBusca || ''}" oninput="app.diarioBordo.filtroBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar turma, instrutor ou operação..." class="w-full bg-transparent text-xs text-slate-700 dark:text-slate-200 outline-none placeholder:text-slate-400">
+                                        </div>
+                                    </div>
+
+                                    ${(filtroOp !== 'TODAS' || filtroData || app.diarioBordo.filtroBusca) ? `
+                                        <button type="button" onclick="app.diarioBordo.filtroOp = 'TODAS'; app.diarioBordo.filtroData = ''; app.diarioBordo.filtroBusca = ''; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fa-solid fa-filter-circle-xmark"></i> Limpar Filtros
+                                        </button>
+                                    ` : ''}
+                                </div>
+
+                                <!-- Grid de Blocos de Turmas (Acesso para Treinador, Analista, Gestor e Dev) -->
+                                ${listaFiltrada.length === 0 ? `
+                                    <div class="p-16 text-center bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 shadow-xs">
+                                        <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-4 text-2xl">
+                                            <i class="fa-solid fa-book-journal-whills"></i>
+                                        </div>
+                                        <h3 class="text-base font-bold text-slate-800 dark:text-white mb-1">Nenhum Diário de Bordo Encontrado</h3>
+                                        <p class="text-slate-500 dark:text-slate-400 text-xs max-w-md mx-auto mb-6">
+                                            Os treinadores registram os relatos diários por turma e todos os registros ficam visíveis aqui para analistas, gestores e desenvolvedores.
+                                        </p>
+                                        <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-2 mx-auto cursor-pointer">
+                                            <i class="fa-solid fa-plus"></i> Registrar Primeiro Diário de Bordo
+                                        </button>
+                                    </div>
+                                ` : `
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        ${listaFiltrada.map(item => {
+                                            const P = parseInt(item.previstosSala) || 0;
+                                            const A = Array.isArray(item.abs) ? item.abs.length : 0;
+                                            const D = Array.isArray(item.desligamentos) ? item.desligamentos.length : 0;
+                                            const AQ = Array.isArray(item.alteracoesQuadro) ? item.alteracoesQuadro.length : 0;
+                                            const PR = Math.max(0, P - A - D);
+                                            const pctPR = P > 0 ? ((PR / P) * 100).toFixed(1) : '0.0';
+                                            const pctA = P > 0 ? ((A / P) * 100).toFixed(1) : '0.0';
+                                            const pctD = P > 0 ? ((D / P) * 100).toFixed(1) : '0.0';
+                                            const dataFmt = item.data ? item.data.split('-').reverse().join('/') : '--/--/----';
+
+                                            return `
+                                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm hover:shadow-md border border-slate-200 dark:border-slate-700 transition flex flex-col justify-between group">
+                                                    <div>
+                                                        <!-- Topo do Card -->
+                                                        <div class="flex items-start justify-between gap-3 mb-4">
+                                                            <div class="flex-1 min-w-0">
+                                                                <span class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 mb-1.5">
+                                                                    ${item.operacao || 'Operação'}
+                                                                </span>
+                                                                <h4 class="text-base font-extrabold text-slate-800 dark:text-white truncate" title="${item.turma || 'Turma'}">
+                                                                    ${item.turma || 'Turma Sem Número'}
+                                                                </h4>
+                                                            </div>
+                                                            <div class="text-right shrink-0">
+                                                                <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 px-2.5 py-1 rounded-md">
+                                                                    <i class="fa-regular fa-calendar-check mr-1 text-emerald-500"></i> ${dataFmt}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <!-- Treinador Responsável -->
+                                                        <div class="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700/60 mb-4">
+                                                            <div class="w-9 h-9 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-700 shrink-0 flex items-center justify-center text-slate-500 dark:text-slate-300 font-bold text-xs">
+                                                                ${item.treinadorFoto ? `<img src="${item.treinadorFoto}" class="w-full h-full object-cover">` : `<i class="fa-solid fa-user-tie"></i>`}
+                                                            </div>
+                                                            <div class="min-w-0 flex-1">
+                                                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">Instrutor(a)</div>
+                                                                <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${item.treinadorNome || 'Treinador'}</div>
+                                                            </div>
+                                                            ${item.treinadorMatricula ? `<span class="text-[10px] text-slate-400 font-medium">Mat: ${item.treinadorMatricula}</span>` : ''}
+                                                        </div>
+
+                                                        <!-- Métricas Resumo do Bloco -->
+                                                        <div class="grid grid-cols-4 gap-2 text-center mb-4">
+                                                            <div class="p-2 rounded-xl bg-slate-100/80 dark:bg-slate-700/30">
+                                                                <div class="text-[10px] font-bold text-slate-400 uppercase">Prev.</div>
+                                                                <div class="text-xs font-black text-slate-700 dark:text-slate-200">${P}</div>
+                                                            </div>
+                                                            <div class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100/50 dark:border-emerald-800/30">
+                                                                <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Pres.</div>
+                                                                <div class="text-xs font-black text-emerald-700 dark:text-emerald-300">${PR} <span class="text-[9px] font-medium">(${pctPR}%)</span></div>
+                                                            </div>
+                                                            <div class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100/50 dark:border-amber-800/30">
+                                                                <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">ABS</div>
+                                                                <div class="text-xs font-black text-amber-700 dark:text-amber-300">${A} <span class="text-[9px] font-medium">(${pctA}%)</span></div>
+                                                            </div>
+                                                            <div class="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-100/50 dark:border-rose-800/30">
+                                                                <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">T.O</div>
+                                                                <div class="text-xs font-black text-rose-700 dark:text-rose-300">${D} <span class="text-[9px] font-medium">(${pctD}%)</span></div>
+                                                            </div>
+                                                        </div>
+
+                                                        <!-- Barra Visual de Proporção -->
+                                                        <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 flex overflow-hidden mb-4">
+                                                            <div style="width: ${pctPR}%" class="h-full bg-emerald-500" title="Presentes: ${pctPR}%"></div>
+                                                            <div style="width: ${pctA}%" class="h-full bg-amber-500" title="ABS: ${pctA}%"></div>
+                                                            <div style="width: ${pctD}%" class="h-full bg-rose-500" title="T.O: ${pctD}%"></div>
+                                                        </div>
+
+                                                        ${AQ > 0 ? `
+                                                            <div class="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold mb-3 flex items-center gap-1.5">
+                                                                <i class="fa-solid fa-arrows-split-up-and-left text-xs"></i> ${AQ} alteraç${AQ > 1 ? 'ões' : 'ão'} de quadro registrada${AQ > 1 ? 's' : ''}
+                                                            </div>
+                                                        ` : ''}
+
+                                                        ${item.relatoGeral ? `
+                                                            <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic mb-4">
+                                                                "${item.relatoGeral}"
+                                                            </p>
+                                                        ` : ''}
+                                                    </div>
+
+                                                    <!-- Ações do Card -->
+                                                    <div class="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-2">
+                                                        <div class="flex items-center gap-2">
+                                                            <button type="button" onclick="app.diarioBordo.editarDiario('${item.id}')" class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                                                <i class="fa-solid fa-pen-to-square text-xs text-emerald-600"></i> Visualizar / Editar
+                                                            </button>
+                                                            <button type="button" onclick="app.diarioBordo.gerarPDF('${item.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Gerar Relatório PDF Oficial">
+                                                                <i class="fa-solid fa-file-pdf text-xs text-rose-500"></i> PDF
+                                                            </button>
+                                                        </div>
+                                                        <button type="button" onclick="app.diarioBordo.excluirDiario('${item.id}')" class="w-8 h-8 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition flex items-center justify-center cursor-pointer" title="Excluir Diário">
+                                                            <i class="fa-solid fa-trash-can text-xs"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                `}
+                            </div>
+                        `;
+                    } else if (mode === 'form') {
+                        // Formulário de Criação / Edição do Diário de Bordo
+                        const d = app.diarioBordo.diarioEmEdicao;
+                        if (!d) {
+                            app.diarioBordo.viewMode = 'lista';
+                            return app.ui.renderTab('diario_bordo', true);
+                        }
+
+                        const operacoes = app.diarioBordo.getOperacoesDisponiveis();
+
+                        container.innerHTML = `
+                            <div class="max-w-[1500px] mx-auto pb-20 space-y-6 animate-fade-in">
+                                
+                                <!-- Header do Formulário -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4">
+                                    <div class="flex items-center gap-3">
+                                        <button type="button" onclick="app.diarioBordo.voltarLista()" class="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 transition flex items-center justify-center cursor-pointer" title="Voltar para a Lista de Turmas">
+                                            <i class="fa-solid fa-arrow-left"></i>
+                                        </button>
+                                        <div>
+                                            <div class="text-[11px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Treinamento Softmarketing</div>
+                                            <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Relato do Dia da Turma (Diário de Bordo)</h2>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <button type="button" onclick="app.diarioBordo.gerarPDF()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-2 cursor-pointer shadow-xs">
+                                            <i class="fa-solid fa-file-pdf text-rose-500"></i> Gerar PDF Oficial
+                                        </button>
+                                        <button type="button" onclick="app.diarioBordo.salvarDiario()" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                            <i class="fa-solid fa-floppy-disk"></i> Salvar Diário de Bordo
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Grid Superior: Identificação da Turma e Resumo com Gráfico -->
+                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                    
+                                    <!-- Identificação da Turma (Col 7) -->
+                                    <div class="lg:col-span-7 bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                        <div class="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-700">
+                                            <i class="fa-solid fa-graduation-cap text-emerald-600"></i>
+                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Identificação da Turma &amp; Instrutor</h3>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <!-- Operação -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Operação (Lista Suspensa):</label>
+                                                <select id="db-input-op" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                                    ${operacoes.map(op => `<option value="${op}" ${d.operacao === op ? 'selected' : ''}>${op}</option>`).join('')}
+                                                </select>
+                                            </div>
+
+                                            <!-- Número / Identificação da Turma -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Número da Turma:</label>
+                                                <input type="text" id="db-input-turma" value="${d.turma || ''}" placeholder="Ex: Turma 04, Turma Manhã 02..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+
+                                            <!-- Data do Relato -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data da Capacitação:</label>
+                                                <input type="date" id="db-input-data" value="${d.data || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+
+                                            <!-- Previstos para estar em sala -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1.5">
+                                                    <i class="fa-solid fa-users-viewfinder mr-1"></i> Previstos para Estar em Sala:
+                                                </label>
+                                                <input type="number" id="db-input-previstos" min="1" max="200" value="${d.previstosSala || 20}" oninput="app.diarioBordo.atualizarSecoesFormulario()" class="w-full px-3.5 py-2.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-700 text-xs font-black text-emerald-900 dark:text-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+                                        </div>
+
+                                        <!-- Bloco Treinador Responsável & Foto -->
+                                        <div class="pt-3 border-t border-slate-100 dark:border-slate-700">
+                                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+                                                <div class="sm:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Treinador:</label>
+                                                        <input type="text" id="db-input-treinador-nome" value="${d.treinadorNome || ''}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
+                                                        <input type="text" id="db-input-treinador-mat" value="${d.treinadorMatricula || ''}" placeholder="Matrícula" class="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                    </div>
+                                                </div>
+
+                                                <!-- Foto do Treinador com Preview e Upload -->
+                                                <div class="sm:col-span-4 flex items-center gap-3">
+                                                    <div class="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-700 overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-600 shadow-inner">
+                                                        <img id="db-preview-foto-treinador" src="${d.treinadorFoto || ''}" class="${d.treinadorFoto ? '' : 'hidden'} w-full h-full object-cover">
+                                                        <i id="db-preview-icon-treinador" class="fa-solid fa-user-tie text-slate-400 text-xl ${d.treinadorFoto ? 'hidden' : ''}"></i>
+                                                    </div>
+                                                    <div>
+                                                        <label class="cursor-pointer px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition flex items-center gap-1.5">
+                                                            <i class="fa-solid fa-camera"></i> Foto
+                                                            <input type="file" accept="image/*" onchange="app.diarioBordo.carregarFotoTreinador(event)" class="hidden">
+                                                        </label>
+                                                        <span class="text-[9px] text-slate-400 block mt-1">Exibida no PDF</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Resumo Executivo & Gráfico em Porcentagem (Col 5) -->
+                                    <div class="lg:col-span-5 bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                        <div>
+                                            <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700 mb-4">
+                                                <div class="flex items-center gap-2">
+                                                    <i class="fa-solid fa-chart-pie text-emerald-600"></i>
+                                                    <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Indicadores em Sala</h3>
+                                                </div>
+                                                <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Tempo Real</span>
+                                            </div>
+
+                                            <!-- 4 KPI Cards -->
+                                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                                <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-700/80">
+                                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Previstos</div>
+                                                    <div id="db-kpi-prev" class="text-base font-extrabold text-slate-800 dark:text-white mt-0.5">
+                                                        ${d.previstosSala || 0} <span class="text-xs font-normal text-slate-400">em sala</span>
+                                                    </div>
+                                                </div>
+                                                <div class="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                                                    <div class="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Presentes</div>
+                                                    <div id="db-kpi-pres" class="text-base font-extrabold text-emerald-800 dark:text-emerald-300 mt-0.5">
+                                                        0 <span class="text-xs font-normal text-emerald-600">(0.0%)</span>
+                                                    </div>
+                                                </div>
+                                                <div class="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                                                    <div class="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Absenteísmo (ABS)</div>
+                                                    <div id="db-kpi-abs" class="text-base font-extrabold text-amber-800 dark:text-amber-300 mt-0.5">
+                                                        ${(d.abs || []).length} <span class="text-xs font-normal text-amber-600">(0.0%)</span>
+                                                    </div>
+                                                </div>
+                                                <div class="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800">
+                                                    <div class="text-[10px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">Desligamentos (T.O)</div>
+                                                    <div id="db-kpi-desl" class="text-base font-extrabold text-rose-800 dark:text-rose-300 mt-0.5">
+                                                        ${(d.desligamentos || []).length} <span class="text-xs font-normal text-rose-600">(0.0%)</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Canvas Gráfico Doughnut em Porcentagem -->
+                                        <div class="relative w-full h-44 mt-2">
+                                            <canvas id="db-chart-resumo"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- SEÇÃO 1: ABS (Absenteísmo / Faltas) -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-user-clock text-amber-500"></i>
+                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">ABS - Registro de Absenteísmo e Faltas</h3>
+                                        </div>
+                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-3 py-1 rounded-full border border-amber-200 dark:border-amber-800">
+                                            ${(d.abs || []).length} falta${(d.abs || []).length !== 1 ? 's' : ''}
+                                        </span>
+                                    </div>
+
+                                    <!-- Linha de Inserção de ABS -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                        <div class="sm:col-span-3">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
+                                            <input type="text" id="db-add-abs-mat" oninput="app.diarioBordo.onMatriculaChange('abs', this.value)" placeholder="Digite a matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-4">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Colaborador:</label>
+                                            <input type="text" id="db-add-abs-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-3">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Motivo (Campo Aberto Curto):</label>
+                                            <input type="text" id="db-add-abs-mot" placeholder="Ex: Atestado, Sem contato, Transporte..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <button type="button" onclick="app.diarioBordo.adicionarAbs()" class="w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
+                                                <i class="fa-solid fa-plus"></i> Adicionar
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Tabela de ABS -->
+                                    <div class="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700/80">
+                                        <table class="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                    <th class="p-2.5 w-32">Matrícula</th>
+                                                    <th class="p-2.5">Nome do Colaborador</th>
+                                                    <th class="p-2.5">Motivo da Falta</th>
+                                                    <th class="p-2.5 w-16 text-right">Ação</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="db-tbody-abs">
+                                                <!-- Injetado via JS -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- SEÇÃO 2: DESLIGAMENTOS (T.O - Turnover) -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-user-xmark text-rose-500"></i>
+                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Desligamentos da Turma (T.O)</h3>
+                                        </div>
+                                        <span class="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-3 py-1 rounded-full border border-rose-200 dark:border-rose-800">
+                                            ${(d.desligamentos || []).length} desligamento${(d.desligamentos || []).length !== 1 ? 's' : ''}
+                                        </span>
+                                    </div>
+
+                                    <!-- Linha de Inserção de Desligamento -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                        <div class="sm:col-span-4">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
+                                            <input type="text" id="db-add-desl-mat" oninput="app.diarioBordo.onMatriculaChange('desl', this.value)" placeholder="Digite a matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-6">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Colaborador:</label>
+                                            <input type="text" id="db-add-desl-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <button type="button" onclick="app.diarioBordo.adicionarDesligamento()" class="w-full py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
+                                                <i class="fa-solid fa-plus"></i> Informar
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Tabela de Desligamentos -->
+                                    <div class="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700/80">
+                                        <table class="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                    <th class="p-2.5 w-36">Matrícula</th>
+                                                    <th class="p-2.5">Nome do Colaborador Desligado</th>
+                                                    <th class="p-2.5 w-16 text-right">Ação</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="db-tbody-desl">
+                                                <!-- Injetado via JS -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- SEÇÃO 3: ALTERAÇÕES DE QUADRO -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-people-arrows text-indigo-500"></i>
+                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Alterações de Quadro</h3>
+                                        </div>
+                                        <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
+                                            ${(d.alteracoesQuadro || []).length} alteraç${(d.alteracoesQuadro || []).length !== 1 ? 'ões' : 'ão'}
+                                        </span>
+                                    </div>
+
+                                    <!-- Linha de Inserção de Alteração de Quadro -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
+                                            <input type="text" id="db-add-alt-mat" oninput="app.diarioBordo.onMatriculaChange('alt', this.value)" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-4">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome:</label>
+                                            <input type="text" id="db-add-alt-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-3">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nº do Chamado:</label>
+                                            <input type="text" id="db-add-alt-chamado" placeholder="Ex: CH-10492" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Operação:</label>
+                                            <input type="text" id="db-add-alt-op" placeholder="Operação" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                        </div>
+                                        <div class="sm:col-span-1">
+                                            <button type="button" onclick="app.diarioBordo.adicionarAlteracaoQuadro()" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center justify-center shadow-sm cursor-pointer" title="Registrar Alteração">
+                                                <i class="fa-solid fa-plus"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Tabela de Alterações de Quadro -->
+                                    <div class="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700/80">
+                                        <table class="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                    <th class="p-2.5 w-32">Matrícula</th>
+                                                    <th class="p-2.5">Nome do Colaborador</th>
+                                                    <th class="p-2.5 w-36">Nº Chamado</th>
+                                                    <th class="p-2.5">Operação</th>
+                                                    <th class="p-2.5 w-16 text-right">Ação</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="db-tbody-alt">
+                                                <!-- Injetado via JS -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- SEÇÃO 4: RELATO GERAL DO DIA (OBSERVAÇÕES DO TREINADOR) -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
+                                    <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+                                        <i class="fa-solid fa-comment-dots text-emerald-600"></i>
+                                        <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Relato do Dia (Observações da Turma)</h3>
+                                    </div>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                                        Descreva como foi a dinâmica da turma no dia, conteúdos aplicados, evolução comportamental, pontos de atenção ou alinhamentos com a supervisão:
+                                    </p>
+                                    <textarea id="db-input-relato" rows="4" placeholder="Ex: Turma bastante participativa na revisão teórica. Tivemos 2 ausências justificadas por transporte. Foco da tarde em simulações de atendimento e navegação nos sistemas operacionais..." class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed">${d.relatoGeral || ''}</textarea>
+                                </div>
+
+                                <!-- Rodapé de Ações Finais -->
+                                <div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                                    <button type="button" onclick="app.diarioBordo.voltarLista()" class="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold text-xs transition flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-xmark"></i> Cancelar e Voltar
+                                    </button>
+                                    <div class="flex items-center gap-3">
+                                        <button type="button" onclick="app.diarioBordo.gerarPDF()" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-2 cursor-pointer shadow-xs">
+                                            <i class="fa-solid fa-file-pdf text-rose-500"></i> Gerar PDF Oficial
+                                        </button>
+                                        <button type="button" onclick="app.diarioBordo.salvarDiario()" class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                            <i class="fa-solid fa-check"></i> Concluir &amp; Salvar Diário
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        setTimeout(() => {
+                            if (app.diarioBordo && typeof app.diarioBordo.atualizarSecoesFormulario === 'function') {
+                                app.diarioBordo.atualizarSecoesFormulario();
+                            }
+                        }, 50);
+                    }
+                },
+
                 renderView_ControleEstoque(container) {
                     const itens = Object.values(app.estoqueItems || {});
                     const mesAtivo = app.currentMonth || new Date().toISOString().substring(0, 7);
@@ -15147,6 +17100,7 @@ storage: {
                         const outroGestor = u.gestorMatricula && u.gestorMatricula !== matriculaGestor ? app.users.find(g => g.matricula === u.gestorMatricula) : null;
                         const sp = app.getSpanUsuario(u);
                         const cargo = u.tipoAcesso || 'Qualidade';
+                        const rotuloCargo = cargo === 'Treinamento' ? `Treinamento • ${u.subclasse || 'Instrutor'}` : cargo;
                         const badgeColor = cargo === 'Treinamento' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300';
                         return `
                             <label class="flex items-center justify-between gap-3 p-3 rounded-2xl border ${isMembro ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} cursor-pointer hover:border-amber-400 transition">
@@ -15155,7 +17109,7 @@ storage: {
                                     <div class="min-w-0">
                                         <div class="flex items-center gap-2">
                                             <span class="font-bold text-xs text-slate-800 dark:text-white truncate">${u.nome}</span>
-                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${badgeColor}">${cargo}</span>
+                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${badgeColor}">${rotuloCargo}</span>
                                         </div>
                                         <div class="text-[10px] text-slate-400 truncate">
                                             ${outroGestor ? `Atualmente com: <strong>${outroGestor.nome}</strong>` : (isMembro ? '<span class="text-amber-600 font-bold">Já na equipe deste Gestor</span>' : 'Sem gestor definido')}
@@ -15213,8 +17167,15 @@ storage: {
                         <div class="space-y-4">
                             <div>
                                 <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Cargo</label>
-                                <select id="hier-edit-cargo" class="${selCls}">
+                                <select id="hier-edit-cargo" onchange="const sc = document.getElementById('hier-edit-subclasse-box'); if (sc) sc.style.display = this.value === 'Treinamento' ? 'block' : 'none';" class="${selCls}">
                                     ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div id="hier-edit-subclasse-box" style="display: ${cargo === 'Treinamento' ? 'block' : 'none'}">
+                                <label class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1.5 block">Subclasse de Treinamento</label>
+                                <select id="hier-edit-subclasse" class="${selCls}">
+                                    <option value="Instrutor" ${(u.subclasse || 'Instrutor') === 'Instrutor' ? 'selected' : ''}>Instrutor</option>
+                                    <option value="Analista" ${u.subclasse === 'Analista' ? 'selected' : ''}>Analista</option>
                                 </select>
                             </div>
                             <div>
@@ -15243,6 +17204,12 @@ storage: {
                         u.tipoAcesso = novoCargo;
                         const presets = this.getPresetsGruposAcesso();
                         if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
+                    }
+                    if (novoCargo === 'Treinamento') {
+                        const novoSub = document.getElementById('hier-edit-subclasse')?.value || 'Instrutor';
+                        u.subclasse = novoSub;
+                    } else {
+                        u.subclasse = null;
                     }
                     u.gestorMatricula = (novoCargo === 'Gerente' || novoCargo === 'Gestor') ? null : (novoGestor || null);
                     document.getElementById('global-modal').classList.add('hidden');
@@ -18296,8 +20263,16 @@ storage: {
                                         <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
                                             ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
                                         </select>
+                                        ${cargo === 'Treinamento' ? `
+                                            <select onchange="app.ui.alterarSubclasseTreinamentoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-black uppercase border cursor-pointer outline-none bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs" title="Denominação da Subclasse de Treinamento">
+                                                <option value="Instrutor" ${(u.subclasse || 'Instrutor') === 'Instrutor' ? 'selected' : ''}>Instrutor</option>
+                                                <option value="Analista" ${u.subclasse === 'Analista' ? 'selected' : ''}>Analista</option>
+                                            </select>
+                                        ` : ''}
                                     ` : `
-                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}">${cargo}</span>
+                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}">
+                                            ${cargo === 'Treinamento' ? `Treinamento • ${u.subclasse || 'Instrutor'}` : cargo}
+                                        </span>
                                     `}
                                     <button type="button" onclick="${podeGerenciar ? `app.ui.abrirModalOperacoesMonitor('${u.matricula}')` : ''}" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-right transition" title="Atribuir operações do setorial e ajustar Span">
                                         <div class="text-xs font-black text-slate-800 dark:text-slate-100 leading-none tabular-nums">${spanValor}</div>
@@ -19915,6 +21890,12 @@ storage: {
                     } else {
                         this.analiseFiltroMes.push(mes);
                     }
+                    // Quando o usuário filtra exatamente 1 mês, o modo evolutivo natural é acompanhar os ciclos (semanas) daquele mês
+                    if (this.analiseFiltroMes.length === 1 && !this.evolutivoModoManual) {
+                        this.evolutivoModo = 'ciclo';
+                    } else if (this.analiseFiltroMes.length !== 1 && !this.evolutivoModoManual) {
+                        this.evolutivoModo = null;
+                    }
                     app.admin.gerarInteligenciaCSV();
                     this._refreshComMemoriaDeScroll();
                 },
@@ -19965,6 +21946,7 @@ storage: {
 
                 setEvolutivoModo(modo) {
                     this.evolutivoModo = modo;
+                    this.evolutivoModoManual = true; // Usuário escolheu deliberadamente alternar a visualização
                     app.admin.gerarInteligenciaCSV();
                     this._refreshComMemoriaDeScroll();
                 },
@@ -21120,6 +23102,13 @@ storage: {
                             roteiro = `${primeiro}, aqui é da Equipe de Qualidade. Parabéns pelo resultado: você alcançou média ${nota} (${quadrante}) sem nenhuma falha crítica! Selecionamos seu atendimento como referência de boas práticas para a Equipe de Treinamento usar como áudio modelo nas turmas.`;
                         }
 
+                        const tmaObj = app.utils.getTMADoOperador(nome, data ? data.tmaSnapshot : null);
+                        const metaTMAPresc = (data && data.metaTMA) || app.config?.metaTMA || 360;
+                        const quadTMA = tmaObj ? app.utils.classificarQuadranteTMA(nota, tmaObj.tmaSegundos, qc.q2, metaTMAPresc) : null;
+                        if (quadTMA && pauta.length > 0) {
+                            pauta.push(`[Métrica TMA] ${quadTMA.rotuloCurto} (${app.utils.formatSecondsToTMA(tmaObj.tmaSegundos)}): ${quadTMA.acao}`);
+                        }
+
                         lista.push({
                             entrada: {
                                 operador: nome,
@@ -21133,7 +23122,11 @@ storage: {
                                 variacao_percentual: variacao,
                                 total_monitorias: (op.notas && op.notas.length) || op.count || 0,
                                 falhas_criticas,
-                                desvios_processuais
+                                desvios_processuais,
+                                tma_segundos: tmaObj ? tmaObj.tmaSegundos : null,
+                                tma_formatado: tmaObj ? app.utils.formatSecondsToTMA(tmaObj.tmaSegundos) : null,
+                                tma_quadrante: quadTMA ? quadTMA.id : null,
+                                tma_info: quadTMA
                             },
                             diagnostico: {
                                 operador: nome,
@@ -21250,7 +23243,10 @@ storage: {
 
                 // Modal interativo para inspecionar qualquer grupo, perfil, célula de maturidade ou item ofensor em "Onde Agir"
                 openOndeAgirModal(tipoFiltro, valor1Encoded, valor2Encoded) {
-                    const lista = this._prescCache || [];
+                    let lista = this._prescCache || [];
+                    if ((!lista || lista.length === 0) && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                        try { lista = this.buildPrescricoesOperacionais(app.analiseCSVDinamicoData.consolidado); this._prescCache = lista; } catch (e) {}
+                    }
                     const meta = this.getPrescricaoMeta();
                     const esc = s => app.utils.escapeHtml(String(s === null || s === undefined ? '' : s));
                     const val1 = valor1Encoded ? decodeURIComponent(valor1Encoded) : '';
@@ -21282,6 +23278,14 @@ storage: {
                         filtrados = lista.filter(p => p.entrada.faixa_maturidade === val1);
                         titulo = `Maturidade: ${val1} (Ativos RH)`;
                         subtitulo = `Todos os operadores ativos na faixa ${val1} e seus respectivos diagnósticos.`;
+                    } else if (tipoFiltro === 'tma_quad') {
+                        const metaNota = app.ui.getQuadCfg ? app.ui.getQuadCfg().q2 : 80;
+                        const metaTMA = (app.analiseCSVDinamicoData?.consolidado?.metaTMA) || (this._activeQTData?.metaTMA) || app.config?.metaTMA || 360;
+                        filtrados = lista.filter(p => p.entrada && p.entrada.tma_quadrante === val1);
+                        const infoSample = app.utils.classificarQuadranteTMA(val1 === 'Q1' || val1 === 'Q2' ? 95 : 65, val1 === 'Q1' || val1 === 'Q3' ? metaTMA - 10 : metaTMA + 10, metaNota, metaTMA) || {};
+                        titulo = infoSample.quadrante || `Quadrante TMA ${val1}`;
+                        subtitulo = `${infoSample.equipe || ''} • ${infoSample.perfil || ''} • Meta TMA: ${app.utils.formatSecondsToTMA(metaTMA)} • Meta Nota: ${metaNota}`;
+                        corTema = infoSample.corTema || 'indigo';
                     } else if (tipoFiltro === 'tema_equipe') {
                         // val1 = Equipe ('Equipe de Qualidade' ou 'Equipe de Treinamento'), val2 = 'Falha Crítica|Item' ou 'Desvio Processual|Item'
                         const [tp, ...rest] = val2.split('|');
@@ -21345,6 +23349,7 @@ storage: {
                                             </div>
                                         </div>
                                         <div class="flex flex-wrap items-center gap-1.5">
+                                            ${e.tma_formatado ? `<span class="text-[10px] font-black px-2 py-0.5 rounded ${e.tma_info?.badgeBg || 'bg-cyan-600'} text-white shadow-2xs"><i class="fa-solid fa-stopwatch mr-1"></i>${e.tma_formatado} &bull; ${e.tma_info?.rotuloCurto || 'TMA'}</span>` : ''}
                                             <span class="text-[10px] font-black px-2 py-0.5 rounded border ${gravCor[d.gravidade] || gravCor.NENHUMA}">${d.gravidade}</span>
                                             <span class="text-[10px] font-black px-2 py-0.5 rounded ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
                                             <span class="text-xs font-black ${varCor}">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</span>
@@ -21463,6 +23468,9 @@ storage: {
                             "Nota Período Anterior": e.nota_anterior !== null ? e.nota_anterior : 'Sem histórico anterior',
                             "Variação (%)": `${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%`,
                             "Qtd Monitorias": e.total_monitorias,
+                            "TMA (Formatado)": e.tma_formatado || 'Não informado',
+                            "Quadrante TMA": e.tma_info ? e.tma_info.quadrante : 'Não mapeado',
+                            "Equipe Designada TMA": e.tma_info ? e.tma_info.equipe : 'Não mapeado',
                             "Ligações Zeradas (Crítica)": e.ligs_zeradas_critica || 0,
                             "Nota Simulada Sem Crítica": e.nota_sem_critica || e.nota_atual,
                             "O Que Fazer (Ação Prescrita)": a ? a.acao : '-',
@@ -21714,6 +23722,7 @@ storage: {
                                 <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${e.faixa_maturidade}</span>
                                 <span class="text-[10px] font-black px-2 py-0.5 rounded ${quadCor[e.quadrante]}">${e.quadrante} &bull; ${e.nota_atual}</span>
                                 <span class="text-xs font-black ${varCor} tabular-nums">${e.variacao_percentual > 0 ? '+' : ''}${e.variacao_percentual.toFixed(1)}%</span>
+                                ${e.tma_formatado ? `<span class="text-[10px] font-black px-2 py-0.5 rounded ${e.tma_info?.badgeBg || 'bg-cyan-600'} text-white shadow-2xs" title="${e.tma_info?.quadrante || 'TMA'}"><i class="fa-solid fa-stopwatch mr-1"></i>${e.tma_formatado} &bull; ${e.tma_info?.rotuloCurto || 'TMA'}</span>` : ''}
                                 <i class="fa-solid fa-chevron-down text-xs text-slate-400 group-open:rotate-180 transition-transform"></i>
                             </summary>
                             <div class="p-4 md:p-5 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/30 grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs">
@@ -21898,9 +23907,245 @@ storage: {
                             }).join('') : '<tr><td colspan="5" class="py-4 italic text-slate-400">Nenhum ofensor identificado entre os operadores ativos.</td></tr>'}</tbody>
                         </table>
                     </div>`;
+
+                    // --- SEÇÃO DINÂMICA DE TMA DENTRO DE ONDE AGIR (SE BASE TMA ENVIADA) ---
+                    const opsComTMA = lista.filter(p => p.entrada && p.entrada.tma_quadrante);
+                    if (opsComTMA.length > 0) {
+                        const metaTMAPresc = (data && data.metaTMA) || app.config?.metaTMA || 360;
+                        const tmaQ1 = opsComTMA.filter(p => p.entrada.tma_quadrante === 'Q1');
+                        const tmaQ2 = opsComTMA.filter(p => p.entrada.tma_quadrante === 'Q2');
+                        const tmaQ3 = opsComTMA.filter(p => p.entrada.tma_quadrante === 'Q3');
+                        const tmaQ4 = opsComTMA.filter(p => p.entrada.tma_quadrante === 'Q4');
+
+                        h += `
+                        <div class="mb-6 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-cyan-200 dark:border-cyan-800/70 shadow-xs">
+                            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100 dark:border-slate-700">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center text-lg shadow-sm"><i class="fa-solid fa-stopwatch"></i></div>
+                                    <div>
+                                        <h3 class="text-base font-black text-slate-800 dark:text-white">Direcionamento Estratégico: Matriz Nota x TMA</h3>
+                                        <p class="text-[11px] text-slate-500">Divisão operacional nos 4 quadrantes cruzando Qualidade Técnica com Tempo Médio de Atendimento (${opsComTMA.length} colaboradores mapeados &bull; Meta TMA: ${app.utils.formatSecondsToTMA(metaTMAPresc)})</p>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button type="button" onclick="app.ui.openOndeAgirModal('tma_quad', 'Q2')" class="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold shadow-xs hover:bg-purple-100"><i class="fa-solid fa-graduation-cap mr-1"></i> Q2 Treinamento (${tmaQ2.length})</button>
+                                    <button type="button" onclick="app.ui.openOndeAgirModal('tma_quad', 'Q3')" class="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold shadow-xs hover:bg-blue-100"><i class="fa-solid fa-magnifying-glass-chart mr-1"></i> Q3 Qualidade (${tmaQ3.length})</button>
+                                    <button type="button" onclick="app.ui.exportarPlanoOndeAgirXLSX('custom', opsComTMA, 'Matriz_Completa_Nota_vs_TMA')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"><i class="fa-solid fa-file-excel"></i> Baixar XLSX Matriz TMA</button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5">
+                                <!-- Q1 BENCHMARK -->
+                                <div onclick="app.ui.openOndeAgirModal('tma_quad', 'Q1')" class="cursor-pointer bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-800/60 hover:border-emerald-400 transition-all flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">Qualidade &amp; Treinamento</span>
+                                            <span class="text-[10px] font-bold text-slate-400">Nota &ge; Meta &bull; TMA &le; Meta</span>
+                                        </div>
+                                        <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">${tmaQ1.length} <span class="text-xs font-bold text-slate-400">op.</span></div>
+                                        <div class="font-black text-slate-800 dark:text-white text-xs mt-1">Q1 &bull; Referência (Benchmark)</div>
+                                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">Operador eficiente e resolutivo. Domina os sistemas, cumpre a fraseologia e resolve sem enrolação.</p>
+                                    </div>
+                                    <div class="mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                        <i class="fa-solid fa-award mr-1"></i> Multiplicador &amp; Áudio Modelo
+                                    </div>
+                                </div>
+
+                                <!-- Q2 PROLIXO -->
+                                <div onclick="app.ui.openOndeAgirModal('tma_quad', 'Q2')" class="cursor-pointer bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-purple-200 dark:border-purple-800/60 hover:border-purple-400 transition-all flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[9px] font-black px-2 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300">Equipe de Treinamento</span>
+                                            <span class="text-[10px] font-bold text-slate-400">Nota &ge; Meta &bull; TMA &gt; Meta</span>
+                                        </div>
+                                        <div class="text-2xl font-black text-purple-600 dark:text-purple-400 tabular-nums">${tmaQ2.length} <span class="text-xs font-bold text-slate-400">op.</span></div>
+                                        <div class="font-black text-slate-800 dark:text-white text-xs mt-1">Q2 &bull; Prolixo / Cuidado Excessivo</div>
+                                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">Atendimento correto e sem falhas, mas colaborador é inseguro, prolixo ou lento na digitação/navegação.</p>
+                                    </div>
+                                    <div class="mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] font-bold text-purple-700 dark:text-purple-300">
+                                        <i class="fa-solid fa-graduation-cap mr-1"></i> Síntese &amp; Agilidade de Atendimento
+                                    </div>
+                                </div>
+
+                                <!-- Q3 DESPACHADOR -->
+                                <div onclick="app.ui.openOndeAgirModal('tma_quad', 'Q3')" class="cursor-pointer bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-blue-200 dark:border-blue-800/60 hover:border-blue-400 transition-all flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[9px] font-black px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">Equipe de Qualidade</span>
+                                            <span class="text-[10px] font-bold text-slate-400">Nota &lt; Meta &bull; TMA &le; Meta</span>
+                                        </div>
+                                        <div class="text-2xl font-black text-blue-600 dark:text-blue-400 tabular-nums">${tmaQ3.length} <span class="text-xs font-bold text-slate-400">op.</span></div>
+                                        <div class="font-black text-slate-800 dark:text-white text-xs mt-1">Q3 &bull; Despachador (Falsa Eficiência)</div>
+                                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">Derruba a ligação rápido para bater meta de tempo, mas queima etapas críticas (pula PID, não confirma dúvidas).</p>
+                                    </div>
+                                    <div class="mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] font-bold text-blue-700 dark:text-blue-300">
+                                        <i class="fa-solid fa-magnifying-glass-chart mr-1"></i> Auditoria Dirigida de Conformidade
+                                    </div>
+                                </div>
+
+                                <!-- Q4 ATENÇÃO CRÍTICA -->
+                                <div onclick="app.ui.openOndeAgirModal('tma_quad', 'Q4')" class="cursor-pointer bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-red-200 dark:border-red-800/60 hover:border-red-400 transition-all flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[9px] font-black px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300">Qualidade &amp; Treinamento</span>
+                                            <span class="text-[10px] font-bold text-slate-400">Nota &lt; Meta &bull; TMA &gt; Meta</span>
+                                        </div>
+                                        <div class="text-2xl font-black text-red-600 dark:text-red-400 tabular-nums">${tmaQ4.length} <span class="text-xs font-bold text-slate-400">op.</span></div>
+                                        <div class="font-black text-slate-800 dark:text-white text-xs mt-1">Q4 &bull; Atenção Crítica (Ofensor Duplo)</div>
+                                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">Prende a linha por muito tempo e ainda assim presta atendimento com desvios ou erros graves de procedimento.</p>
+                                    </div>
+                                    <div class="mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] font-bold text-red-700 dark:text-red-300">
+                                        <i class="fa-solid fa-triangle-exclamation mr-1"></i> Plano Duplo: Reciclagem + Auditoria
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- BOX EXPLICATIVO: A LÓGICA OPERACIONAL DA DIVISÃO -->
+                            <div class="bg-slate-50/80 dark:bg-slate-900/40 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80">
+                                <h4 class="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-lightbulb text-amber-500"></i> A Lógica Operacional da Divisão entre Qualidade &amp; Treinamento
+                                </h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs leading-relaxed">
+                                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">
+                                        <div class="font-bold text-purple-700 dark:text-purple-300 mb-1 flex items-center gap-1"><i class="fa-solid fa-graduation-cap"></i> Por que o Q2 é foco de Treinamento?</div>
+                                        <p class="text-slate-600 dark:text-slate-300 text-[11px]">O operador já sabe a regra e a política (ele tira nota alta), então o problema <strong>não é auditoria de conformidade</strong>. O gargalo é habilidade comportamental/motora: prolixidade, dificuldade de conduzir clientes difíceis, digitação lenta ou perda de tempo buscando informação no sistema. Treinamento resolve isso com técnicas de atendimento ágil e síntese.</p>
+                                    </div>
+                                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">
+                                        <div class="font-bold text-blue-700 dark:text-blue-300 mb-1 flex items-center gap-1"><i class="fa-solid fa-magnifying-glass-chart"></i> Por que o Q3 é foco de Qualidade?</div>
+                                        <p class="text-slate-600 dark:text-slate-300 text-[11px]">O operador geralmente sabe o que precisa ser feito, mas escolhe <strong>"queimar etapas"</strong> (pula verificação de dados, não confirma dúvidas, não faz tabulação correta) para derrubar o TMA e bater meta de tempo. Trata-se de um desvio de processo/procedimento que a Qualidade aponta e estanca junto à Supervisão.</p>
+                                    </div>
+                                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700">
+                                        <div class="font-bold text-emerald-700 dark:text-emerald-300 mb-1 flex items-center gap-1"><i class="fa-solid fa-people-arrows"></i> Por que o Q4 e o Q1 exigem Ambos (Q&amp;T)?</div>
+                                        <p class="text-slate-600 dark:text-slate-300 text-[11px]">No <strong>Q4 (Atenção Máxima)</strong>, o operador tem lacuna técnica e operacional simultâneas: Treinamento capacita na sala/módulo e Qualidade audita na esteira. No <strong>Q1 (Benchmark)</strong>, o colaborador domina nota e tempo: a Qualidade mapeia as melhores práticas e o Treinamento usa suas ligações como áudio modelo.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
                     } // Fim Aba 2
 
-                    // ---------- ABA 3: SIMULADOR WHAT-IF ----------
+                    // ---------- ABA 3: MAPA DE CALOR (MATURIDADE x PERFIL) ----------
+                    if (mod === 'todos' || mod === 'mapa_calor') {
+                        const faixas = ['Ramp-Up', 'Júnior', 'Pleno', 'Veterano'];
+                        const perfisKeys = Object.keys(meta);
+                        const matriz = {};
+                        faixas.forEach(f => {
+                            matriz[f] = {};
+                            perfisKeys.forEach(k => { matriz[f][k] = 0; });
+                        });
+                        let maxCel = 1;
+                        lista.forEach(p => {
+                            const f = p.entrada?.faixa_maturidade;
+                            const k = p.diagnostico?.perfil_identificado;
+                            if (matriz[f] && matriz[f][k] !== undefined) {
+                                matriz[f][k]++;
+                                if (matriz[f][k] > maxCel) maxCel = matriz[f][k];
+                            }
+                        });
+
+                        h += `
+                        <div class="mb-6 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-xs">
+                            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-700">
+                                <div>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                        <i class="fa-solid fa-table-cells text-indigo-500"></i> Mapa de Calor: Maturidade (Ativos RH) x Perfil de Intervenção
+                                    </h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                        Cruza o tempo de empresa dos operadores ativos com cada perfil de intervenção lógica. <strong>Clique em qualquer célula com número</strong> para abrir os operadores daquele cruzamento.
+                                    </p>
+                                </div>
+                                <button type="button" onclick="app.ui.exportarPlanoOndeAgirXLSX('todos')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-excel"></i> Exportar XLSX
+                                </button>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-center text-xs border-separate border-spacing-1.5">
+                                    <thead>
+                                        <tr>
+                                            <th class="text-left text-[10px] uppercase font-bold text-slate-400 p-2">Faixa (Ativos RH)</th>
+                                            ${perfisKeys.map(k => `
+                                                <th onclick="app.ui.openOndeAgirModal('perfil', '${k}')" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 p-2.5 transition-colors">
+                                                    ${esc(meta[k].label)}
+                                                    <span class="block text-[8px] font-bold ${meta[k].responsavel === 'Equipe de Qualidade' ? 'text-blue-500' : (meta[k].responsavel === 'Equipe de Treinamento' ? 'text-purple-500' : 'text-emerald-500')} mt-0.5">
+                                                        ${esc(meta[k].responsavel)}
+                                                    </span>
+                                                </th>
+                                            `).join('')}
+                                            <th class="text-[10px] uppercase font-bold text-slate-400 p-2">Ativos na Faixa</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${faixas.map(f => {
+                                            const totalFaixa = lista.filter(p => p.entrada?.faixa_maturidade === f).length;
+                                            return `
+                                                <tr>
+                                                    <td onclick="app.ui.openOndeAgirModal('faixa_ativos', '${encodeURIComponent(f)}')" class="cursor-pointer text-left font-black text-slate-700 dark:text-slate-200 hover:text-indigo-600 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                                                        ${esc(f)}
+                                                    </td>
+                                                    ${perfisKeys.map(k => {
+                                                        const n = matriz[f][k];
+                                                        const al = n === 0 ? 0 : Math.min(0.85, (0.18 + 0.65 * n / maxCel));
+                                                        const isQual = meta[k].responsavel === 'Equipe de Qualidade';
+                                                        const styleBg = n > 0 ? (isQual ? `background-color: rgba(59, 130, 246, ${al.toFixed(2)})` : `background-color: rgba(168, 85, 247, ${al.toFixed(2)})`) : '';
+                                                        const textCls = n > 0 ? 'text-slate-900 dark:text-white font-black cursor-pointer hover:scale-105 hover:ring-2 hover:ring-indigo-500 shadow-2xs' : 'text-slate-400 dark:text-slate-600 font-normal';
+                                                        return `
+                                                            <td ${n > 0 ? `onclick="app.ui.openOndeAgirModal('celula', '${encodeURIComponent(f)}', '${encodeURIComponent(k)}')"` : ''} style="${styleBg}" class="py-3 px-2 rounded-xl ${textCls} transition-all">
+                                                                ${n > 0 ? n : '-'}
+                                                            </td>
+                                                        `;
+                                                    }).join('')}
+                                                    <td onclick="app.ui.openOndeAgirModal('faixa_ativos', '${encodeURIComponent(f)}')" class="cursor-pointer py-3 px-2 rounded-xl bg-slate-100 dark:bg-slate-700/50 font-black text-slate-800 dark:text-white hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 transition-colors">
+                                                        ${totalFaixa}
+                                                    </td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="border-t-2 border-slate-200 dark:border-slate-700 font-black">
+                                            <td class="text-left text-[11px] font-black uppercase text-slate-500 p-2.5">Total Geral</td>
+                                            ${perfisKeys.map(k => {
+                                                const totPerfil = contPerfil[k] || 0;
+                                                return `
+                                                    <td onclick="app.ui.openOndeAgirModal('perfil', '${k}')" class="cursor-pointer py-2.5 px-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-black transition-colors">
+                                                        ${totPerfil}
+                                                    </td>
+                                                `;
+                                            }).join('')}
+                                            <td class="py-2.5 px-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-black">
+                                                ${lista.length}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+
+                            <!-- CARDS EXPLICATIVOS DOS 6 PERFIS DE INTERVENÇÃO -->
+                            <div class="mt-6 pt-5 border-t border-slate-100 dark:border-slate-700">
+                                <h4 class="text-xs font-black uppercase tracking-wider text-slate-400 mb-3">Diretrizes dos 6 Perfis Lógicos</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    ${perfisKeys.map(k => {
+                                        const m = meta[k];
+                                        const cnt = contPerfil[k] || 0;
+                                        return `
+                                            <div onclick="app.ui.openOndeAgirModal('perfil', '${k}')" class="cursor-pointer bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-700 hover:border-indigo-400 transition-all">
+                                                <div class="flex items-center justify-between gap-2 mb-1.5">
+                                                    <span class="text-[9px] font-black px-2 py-0.5 rounded ${equipeBadge[m.responsavel] || 'bg-slate-200'}">${m.responsavel}</span>
+                                                    <span class="text-[10px] font-bold text-slate-400">SLA ${m.sla}h &bull; <strong class="text-indigo-600 dark:text-indigo-400">${cnt} op.</strong></span>
+                                                </div>
+                                                <div class="font-black text-slate-800 dark:text-white text-xs mb-1">${esc(m.label)}</div>
+                                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mb-1 leading-snug"><strong>Critério:</strong> ${esc(m.regra)}</div>
+                                                <div class="text-[11px] text-slate-700 dark:text-slate-200 leading-snug"><strong>Ação:</strong> ${esc(m.acao)}</div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+
+                    // ---------- ABA 4: SIMULADOR WHAT-IF ----------
                     if (mod === 'todos' || mod === 'what_if') {
                         h += `<div id="whatif-live-root" class="mb-8">${this.renderWhatIfLiveHTML(data, lista)}</div>`;
                     }
@@ -21942,7 +24187,10 @@ storage: {
                     const rankTodos = data.rankOperadores || [];
                     const nTotalOps = rankTodos.length || 1;
                     const somaAtualTodos = rankTodos.reduce((s, o) => s + (parseFloat(o.media) || 0), 0);
-                    const mediaGlobalAtual = somaAtualTodos / nTotalOps;
+                    // Harmonização: Usa a média ponderada real da operação (data.mediaTotal) quando disponível
+                    const mediaGlobalAtual = (data && data.mediaTotal !== undefined && data.mediaTotal !== null && !isNaN(parseFloat(data.mediaTotal))) 
+                        ? parseFloat(data.mediaTotal) 
+                        : (somaAtualTodos / nTotalOps);
 
                     const somaAtualAtivos = lista.reduce((s, p) => s + (p.entrada.nota_atual || 0), 0);
                     const mediaAtivosAtual = lista.length > 0 ? (somaAtualAtivos / lista.length) : mediaGlobalAtual;
@@ -22674,7 +24922,33 @@ storage: {
                     this._refreshComMemoriaDeScroll();
                 },
 
+                limparFiltrosApresentacaoParaQT() {
+                    let resetouFiltro = false;
+                    if (this.analiseFiltroCargo) { this.analiseFiltroCargo = ''; resetouFiltro = true; }
+                    if (Array.isArray(this.analiseFiltroRelatorio) && this.analiseFiltroRelatorio.length > 0) { this.analiseFiltroRelatorio = []; resetouFiltro = true; }
+                    if (Array.isArray(this.analiseFiltroMes) && this.analiseFiltroMes.length > 0) { this.analiseFiltroMes = []; resetouFiltro = true; }
+                    if (Array.isArray(this.analiseFiltroCiclo) && this.analiseFiltroCiclo.length > 0) { this.analiseFiltroCiclo = []; resetouFiltro = true; }
+                    if (Array.isArray(this.analiseFiltroMaturidade) && this.analiseFiltroMaturidade.length > 0) { this.analiseFiltroMaturidade = []; resetouFiltro = true; }
+                    if (Array.isArray(this.analiseFiltroQuadrante) && this.analiseFiltroQuadrante.length > 0) { this.analiseFiltroQuadrante = []; resetouFiltro = true; }
+                    if (Array.isArray(this.analiseFiltroAssunto) && this.analiseFiltroAssunto.length > 0) { this.analiseFiltroAssunto = []; resetouFiltro = true; }
+                    if (this.analiseFiltroMonitor) { this.analiseFiltroMonitor = ''; resetouFiltro = true; }
+                    if (Array.isArray(this.evolutivoFiltroMes) && this.evolutivoFiltroMes.length > 0) { this.evolutivoFiltroMes = []; resetouFiltro = true; }
+
+                    // Reseta também os filtros internos da fila de Q&T para carregar a base 100% limpa
+                    this.prescFiltroPerfil = '';
+                    this.prescFiltroEquipe = '';
+                    this.qtFiltroStatusTratativa = '';
+                    this.whatIfCfg = null;
+                    this.prescExpandida = false;
+
+                    // Se havia filtros selecionados na apresentação, recalcula a base consolidada para garantir 100% dos dados
+                    if (resetouFiltro && app.analiseCSVDinamicoData && Array.isArray(app.analiseCSVDinamicoData.relatorios) && app.analiseCSVDinamicoData.relatorios.length > 0) {
+                        try { app.admin.gerarInteligenciaCSV(); } catch (e) { console.warn('Aviso ao regenerar base limpa para Q&T:', e); }
+                    }
+                },
+
                 abrirQualidadeTreinamentoDaSessao(aprId) {
+                    this.limparFiltrosApresentacaoParaQT();
                     this.qtFonteAtivaId = aprId || '__sessao_atual__';
                     if (aprId && aprId !== '__sessao_atual__') {
                         this._carregarDadosApresentacaoParaQT(aprId);
@@ -22693,10 +24967,24 @@ storage: {
                         app.analiseCSVDinamicoData = parsed;
                         if (parsed && Array.isArray(parsed.relatorios) && parsed.relatorios.length > 0 && (!parsed.consolidado || !parsed.consolidado.evolutivoMesLabels)) {
                             const rhSnapSave = parsed.consolidado ? parsed.consolidado.rhSnapshot : null;
+                            const tmaSnapSave = parsed.consolidado ? parsed.consolidado.tmaSnapshot : null;
+                            const metaTMASave = parsed.consolidado ? parsed.consolidado.metaTMA : null;
                             try { app.admin.gerarInteligenciaCSV(); } catch (errGen) {}
                             if (rhSnapSave && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado && !app.analiseCSVDinamicoData.consolidado.rhSnapshot) {
                                 app.analiseCSVDinamicoData.consolidado.rhSnapshot = rhSnapSave;
                             }
+                            if (tmaSnapSave && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado && !app.analiseCSVDinamicoData.consolidado.tmaSnapshot) {
+                                app.analiseCSVDinamicoData.consolidado.tmaSnapshot = tmaSnapSave;
+                            }
+                            if (metaTMASave && app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado && !app.analiseCSVDinamicoData.consolidado.metaTMA) {
+                                app.analiseCSVDinamicoData.consolidado.metaTMA = metaTMASave;
+                            }
+                        }
+                        if (parsed && parsed.consolidado && parsed.consolidado.tmaSnapshot) {
+                            if (!app.config.tmaData || Object.keys(app.config.tmaData).length === 0) {
+                                app.config.tmaData = { ...parsed.consolidado.tmaSnapshot };
+                            }
+                            if (parsed.consolidado.metaTMA) app.config.metaTMA = parsed.consolidado.metaTMA;
                         }
                         const finalConsolidado = (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) ? app.analiseCSVDinamicoData.consolidado : (parsed ? parsed.consolidado : null);
                         this._cachedQTPayload = { id: aprId, data: finalConsolidado };
@@ -22764,7 +25052,8 @@ storage: {
                                 ${[
                                     { id: 'prescricao', icon: 'fa-list-check', label: `1. Fila & Prescrições (${acionaveis.length})` },
                                     { id: 'onde_agir', icon: 'fa-bullseye', label: '2. Onde Agir' },
-                                    { id: 'what_if', icon: 'fa-sliders', label: '3. Simulador What-If' }
+                                    { id: 'mapa_calor', icon: 'fa-table-cells', label: '3. Mapa de Calor' },
+                                    { id: 'what_if', icon: 'fa-sliders', label: '4. Simulador What-If' }
                                 ].map(t => `<button type="button" onclick="app.ui.qtSubTab='${t.id}'; app.ui._refreshComMemoriaDeScroll()" class="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-colors ${subTab === t.id ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200'}"><i class="fa-solid ${t.icon}"></i>${t.label}</button>`).join('')}
                             </div>
 
@@ -22788,9 +25077,14 @@ storage: {
                                     <i class="fa-solid fa-cloud-arrow-up mr-1"></i>Salvar Setor
                                 </button>` : ''}
 
-                                <label class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors" title="Atualizar planilha de Tempo de Casa (Ativos do RH)">
+                                <label class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors shadow-xs" title="Atualizar planilha de Tempo de Casa (Ativos do RH)">
                                     <i class="fa-solid fa-user-clock"></i> Base RH
                                     <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                </label>
+
+                                <label class="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors shadow-xs" title="Importar planilha opcional de TMA (Cruza com Notas nos 4 Quadrantes)">
+                                    <i class="fa-solid fa-stopwatch"></i> Base TMA
+                                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarArquivoTMA(this)" onclick="this.value = null">
                                 </label>
                             </div>
                         </div>`;
@@ -22799,6 +25093,7 @@ storage: {
                 },
 
                 renderView_QualidadeTreinamento(container) {
+                    this.limparFiltrosApresentacaoParaQT();
                     if (!app.analiseCSVDinamicoData && !this.isFetchingAnaliseData && !this.hasTriedToFetchAnaliseData) {
                         this.isFetchingAnaliseData = true;
                         container.innerHTML = `<div class="p-12 text-center text-slate-400 glass-card rounded-2xl mt-6 border-dashed border border-slate-300">
@@ -23632,9 +25927,13 @@ storage: {
                                         <button onclick="app.admin.abrirModalImportacaoTripla()" class="px-4 py-3 text-left hover:bg-teal-50 dark:hover:bg-teal-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
                                             <i class="fa-solid fa-cubes-stacked text-teal-500 w-4 text-center"></i> <span>Unir 3 Arquivos</span>
                                         </button>
-                                        <label class="px-4 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors">
+                                        <label class="px-4 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
                                             <i class="fa-solid fa-user-clock text-emerald-500 w-4 text-center"></i> <span>Base de RH (Dias)</span>
                                             <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                        </label>
+                                        <label class="px-4 py-3 hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors">
+                                            <i class="fa-solid fa-stopwatch text-amber-500 w-4 text-center"></i> <span>Base TMA (Opcional)</span>
+                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarArquivoTMA(this)" onclick="this.value = null">
                                         </label>
                                     </div>
                                 </div>
@@ -23871,6 +26170,9 @@ storage: {
                         `;
                     };
                     
+                    const mediaOperacaoPonderada = (data.mediaTotal !== undefined && data.mediaTotal !== null && !isNaN(parseFloat(data.mediaTotal))) ? parseFloat(data.mediaTotal).toFixed(2) : '0.00';
+                    const mediaColabSimples = (data.rankOperadores && data.rankOperadores.length > 0) ? (data.rankOperadores.reduce((a, b) => a + parseFloat(b.media), 0) / data.rankOperadores.length).toFixed(2) : '0.00';
+
                     html += `
                         ${renderChapterTitle('Visão Executiva', 'Indicadores chave de performance (KPIs) e resumos métricos globais da operação no período.', 'fa-chart-pie', 'blue')}
                         ${renderAlertaSutilInativos('Visão Executiva')}
@@ -23880,7 +26182,7 @@ storage: {
                             
                             ${renderDashCard('conformidadePct', 'fa-shield-halved text-emerald-500', 'Conformidade Absoluta', `${data.conformidadePct}%`, 'Ligs em que o operador gabaritou com nota máxima (100).', 'bg-emerald-500', data.comments?.conformidadePct)}
 
-                            ${renderDashCard('mediaTotal', 'fa-chart-pie text-green-500', 'Média da Operação', `${data.rankOperadores.length > 0 ? (data.rankOperadores.reduce((a,b)=>a+parseFloat(b.media),0)/data.rankOperadores.length).toFixed(2) : '0.00'}`, 'Média geral dos colaboradores avaliados.', 'bg-green-500', data.comments?.mediaTotal)}
+                            ${renderDashCard('mediaTotal', 'fa-chart-pie text-green-500', 'Média da Operação', `${mediaOperacaoPonderada}`, `Ponderada (${data.totalLinhas} ligs) · Média por colab: ${mediaColabSimples}`, 'bg-green-500', data.comments?.mediaTotal)}
 
                             ${renderDashCard('desviosTotais', 'fa-layer-group text-orange-500', 'Desvios Totais', `${totalFalhasNormais}`, `Representa <strong class="text-orange-500">${pctErrosComuns}%</strong> dos erros na amostragem geral.`, 'bg-orange-500', data.comments?.desviosTotais)}
 
@@ -23950,6 +26252,9 @@ storage: {
                         const evolAmplitude = evolNums.length > 1 ? (evolMax - evolMin).toFixed(1) : '0.0';
                         const evolVarTotal = (evolVals.length > 1 && evolVals[0] > 0) ? (((evolVals[evolVals.length - 1] - evolVals[0]) / evolVals[0]) * 100).toFixed(1) : '0.0';
 
+                        const fMesUnico = (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.length === 1 && app.ui.analiseFiltroMes[0]) ? app.ui.analiseFiltroMes[0] : null;
+                        const idxMesSel = fMesUnico ? (data.mesesDisponiveis || []).indexOf(fMesUnico) : -1;
+
                         // Gera um gráfico SVG vetorial embutido (garante linha histórica visível instantaneamente na tela e no PDF, além do Chart.js interativo)
                         let svgCurvaHtml = '';
                         if (evolLabels.length >= 1) {
@@ -24000,7 +26305,7 @@ storage: {
                             <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative border-t-4 border-t-indigo-500 shadow-sm animate-fade-in">
                                 <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
                                     <div>
-                                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Curva de Evolução Temporal (${modoEvolAtivo === 'ciclo' ? `Ciclos Semanais: ${evolLabels[0] || ''} a ${evolLabels[evolLabels.length - 1] || ''}` : `Mensal: ${evolLabels[0] || ''} a ${evolLabels[evolLabels.length - 1] || ''}`}) & Destaques</h3>
+                                        <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-area text-indigo-500"></i> Curva de Evolução Temporal (${modoEvolAtivo === 'ciclo' ? `Ciclos Semanais: ${evolLabels[0] || ''} a ${evolLabels[evolLabels.length - 1] || ''}` : `Mensal: ${evolLabels[0] || ''} a ${evolLabels[evolLabels.length - 1] || ''}`}) · Média Ponderada: <span class="text-indigo-600 dark:text-indigo-400 font-extrabold">${mediaOperacaoPonderada}%</span></h3>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Acompanhe a linha histórica de nota média e a volatilidade operacional entre os ciclos/períodos avaliados.</p>
                                     </div>
                                     <div class="flex flex-wrap items-center gap-2 ${this.analiseEditMode ? 'hidden' : ''}">
@@ -24016,10 +26321,17 @@ storage: {
                                                 <div class="text-[9px] uppercase font-bold text-slate-400">Início (${evolLabels[0] || '-'})</div>
                                                 <div class="text-lg font-black text-slate-700 dark:text-slate-200 tabular-nums">${evolVals.length ? evolVals[0].toFixed(1) : '—'}%</div>
                                             </div>
+                                            ${(modoEvolAtivo === 'mes' && idxMesSel >= 0) ? `
+                                            <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-indigo-300 dark:border-indigo-700 shadow-xs">
+                                                <div class="text-[9px] uppercase font-bold text-indigo-500">Mês Filtrado (${evolLabels[idxMesSel] || '-'})</div>
+                                                <div class="text-lg font-black text-indigo-600 dark:text-indigo-400 tabular-nums">${evolVals[idxMesSel] !== undefined ? evolVals[idxMesSel].toFixed(1) : mediaOperacaoPonderada}%</div>
+                                            </div>
+                                            ` : `
                                             <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/70 dark:border-slate-700">
                                                 <div class="text-[9px] uppercase font-bold text-slate-400">Atual (${evolLabels[evolLabels.length - 1] || '-'})</div>
                                                 <div class="text-lg font-black text-indigo-600 dark:text-indigo-400 tabular-nums">${evolVals.length ? evolVals[evolVals.length - 1].toFixed(1) : '—'}%</div>
                                             </div>
+                                            `}
                                             <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/70 dark:border-slate-700">
                                                 <div class="text-[9px] uppercase font-bold text-slate-400">Tendência no Período</div>
                                                 <div class="text-lg font-black ${parseFloat(evolVarTotal) >= 0 ? 'text-emerald-600' : 'text-red-500'} tabular-nums">${parseFloat(evolVarTotal) > 0 ? '+' : ''}${evolVarTotal}%</div>
@@ -24309,6 +26621,218 @@ storage: {
                             </div>`;
                     }
                     
+                    // --- CAPÍTULO OPCIONAL: EFICIÊNCIA OPERACIONAL (NOTA vs. TMA) ---
+                    try { app.utils.reconciliarBaseTMAComRH(); } catch(e) {}
+                    const tmaSnapshotConsolidado = data ? (data.tmaSnapshot || (app.config.tmaData && Object.keys(app.config.tmaData).length > 0 ? app.config.tmaData : null)) : null;
+                    if (tmaSnapshotConsolidado && Object.keys(tmaSnapshotConsolidado).length > 0) {
+                        const metaNota = app.ui.getQuadCfg ? app.ui.getQuadCfg().q2 : 80;
+                        const metaTMA = (data && data.metaTMA) || app.config?.metaTMA || 360;
+
+                        const opsComTMA = [];
+                        let somaTMA = 0;
+                        let somaNota = 0;
+
+                        Object.values(data.operadores || {}).forEach(op => {
+                            const tmaObj = app.utils.getTMADoOperador(op.nome, tmaSnapshotConsolidado);
+                            if (tmaObj && tmaObj.tmaSegundos > 0) {
+                                const media = typeof op.media === 'number' ? op.media : (op.notas && op.notas.length ? op.notas.reduce((a, b) => a + b, 0) / op.notas.length : 0);
+                                const quad = app.utils.classificarQuadranteTMA(media, tmaObj.tmaSegundos, metaNota, metaTMA);
+                                opsComTMA.push({
+                                    nome: op.nome,
+                                    matricula: tmaObj.mat || app.utils.getMatriculaDoOperador(op.nome) || '-',
+                                    media: parseFloat(media.toFixed(2)),
+                                    tmaSegundos: tmaObj.tmaSegundos,
+                                    tmaFormatado: app.utils.formatSecondsToTMA(tmaObj.tmaSegundos),
+                                    quad,
+                                    diasCasa: app.utils.getTempoCasaDoOperador(op.nome)
+                                });
+                                somaTMA += tmaObj.tmaSegundos;
+                                somaNota += media;
+                            }
+                        });
+
+                        if (opsComTMA.length > 0) {
+                            const totalOpsTMA = opsComTMA.length;
+                            const mediaGeralTMA = Math.round(somaTMA / totalOpsTMA);
+                            const mediaGeralNota = parseFloat((somaNota / totalOpsTMA).toFixed(1));
+
+                            const q1List = opsComTMA.filter(o => o.quad && o.quad.id === 'Q1');
+                            const q2List = opsComTMA.filter(o => o.quad && o.quad.id === 'Q2');
+                            const q3List = opsComTMA.filter(o => o.quad && o.quad.id === 'Q3');
+                            const q4List = opsComTMA.filter(o => o.quad && o.quad.id === 'Q4');
+
+                            const pct = (cnt) => ((cnt / totalOpsTMA) * 100).toFixed(1);
+                            const aderentesTMA = q1List.length + q3List.length;
+                            const pctAderencia = pct(aderentesTMA);
+
+                            const allX = opsComTMA.map(p => p.tmaSegundos);
+                            const allY = opsComTMA.map(p => p.media);
+                            const minXTMA = Math.max(0, Math.floor(Math.min(...allX, metaTMA) * 0.8));
+                            const maxXTMA = Math.ceil(Math.max(...allX, metaTMA) * 1.15);
+                            const minYTMA = Math.max(0, Math.floor((Math.min(...allY, metaNota) - 5) / 5) * 5);
+                            const maxYTMA = 100;
+
+                            const wSvg = 860, hSvg = 380, padL = 60, padR = 30, padT = 32, padB = 40;
+                            const spanXTMA = Math.max(60, maxXTMA - minXTMA);
+                            const spanYTMA = Math.max(10, maxYTMA - minYTMA);
+                            const xAtTMA = (sec) => padL + ((sec - minXTMA) / spanXTMA) * (wSvg - padL - padR);
+                            const yAtTMA = (not) => padT + (1 - ((not - minYTMA) / spanYTMA)) * (hSvg - padT - padB);
+
+                            const xMetaSvg = xAtTMA(metaTMA);
+                            const yMetaSvg = yAtTMA(metaNota);
+
+                            const svgTmaScatterHtml = `
+                                <svg viewBox="0 0 ${wSvg} ${hSvg}" class="w-full h-80 md:h-[400px] select-none overflow-visible">
+                                    <!-- Fundo sutil dos 4 Quadrantes com cores temáticas -->
+                                    <rect x="${padL}" y="${padT}" width="${Math.max(0, xMetaSvg - padL)}" height="${Math.max(0, yMetaSvg - padT)}" fill="#10b981" fill-opacity="0.06"/>
+                                    <rect x="${xMetaSvg}" y="${padT}" width="${Math.max(0, wSvg - padR - xMetaSvg)}" height="${Math.max(0, yMetaSvg - padT)}" fill="#a855f7" fill-opacity="0.06"/>
+                                    <rect x="${padL}" y="${yMetaSvg}" width="${Math.max(0, xMetaSvg - padL)}" height="${Math.max(0, hSvg - padB - yMetaSvg)}" fill="#3b82f6" fill-opacity="0.06"/>
+                                    <rect x="${xMetaSvg}" y="${yMetaSvg}" width="${Math.max(0, wSvg - padR - xMetaSvg)}" height="${Math.max(0, hSvg - padB - yMetaSvg)}" fill="#ef4444" fill-opacity="0.06"/>
+
+                                    <!-- Borda do gráfico -->
+                                    <rect x="${padL}" y="${padT}" width="${wSvg - padL - padR}" height="${hSvg - padT - padB}" fill="none" stroke="currentColor" class="text-slate-200 dark:text-slate-700" stroke-width="1"/>
+
+                                    <!-- Linhas de Corte das Metas (Crosshair) -->
+                                    <line x1="${xMetaSvg.toFixed(1)}" y1="${padT}" x2="${xMetaSvg.toFixed(1)}" y2="${hSvg - padB}" stroke="#06b6d4" stroke-width="2" stroke-dasharray="5 4"/>
+                                    <line x1="${padL}" y1="${yMetaSvg.toFixed(1)}" x2="${wSvg - padR}" y2="${yMetaSvg.toFixed(1)}" stroke="#10b981" stroke-width="2" stroke-dasharray="5 4"/>
+
+                                    <!-- Selos e Textos dos Quadrantes -->
+                                    <text x="${padL + 12}" y="${padT + 18}" class="fill-emerald-700 dark:fill-emerald-400 text-[10px] font-black uppercase tracking-wider">Q1 · Benchmark (${q1List.length} ops &bull; ${pct(q1List.length)}%)</text>
+                                    <text x="${padL + 12}" y="${padT + 30}" class="fill-slate-400 text-[9px] font-medium">Nota Alta + TMA Baixo (Eficiente)</text>
+
+                                    <text x="${wSvg - padR - 12}" y="${padT + 18}" text-anchor="end" class="fill-purple-700 dark:fill-purple-400 text-[10px] font-black uppercase tracking-wider">Q2 · Prolixo (${q2List.length} ops &bull; ${pct(q2List.length)}%)</text>
+                                    <text x="${wSvg - padR - 12}" y="${padT + 30}" text-anchor="end" class="fill-slate-400 text-[9px] font-medium">Nota Alta + TMA Alto (Treinamento)</text>
+
+                                    <text x="${padL + 12}" y="${hSvg - padB - 22}" class="fill-blue-700 dark:fill-blue-400 text-[10px] font-black uppercase tracking-wider">Q3 · Despachador (${q3List.length} ops &bull; ${pct(q3List.length)}%)</text>
+                                    <text x="${padL + 12}" y="${hSvg - padB - 10}" class="fill-slate-400 text-[9px] font-medium">Nota Baixa + TMA Baixo (Qualidade)</text>
+
+                                    <text x="${wSvg - padR - 12}" y="${hSvg - padB - 22}" text-anchor="end" class="fill-red-700 dark:fill-red-400 text-[10px] font-black uppercase tracking-wider">Q4 · Atenção Crítica (${q4List.length} ops &bull; ${pct(q4List.length)}%)</text>
+                                    <text x="${wSvg - padR - 12}" y="${hSvg - padB - 10}" text-anchor="end" class="fill-slate-400 text-[9px] font-medium">Nota Baixa + TMA Alto (Duplo Ofensor)</text>
+
+                                    <!-- Marcadores das Metas nos Eixos -->
+                                    <text x="${xMetaSvg.toFixed(1)}" y="${hSvg - padB + 14}" text-anchor="middle" class="fill-cyan-600 dark:fill-cyan-400 text-[9px] font-black">Meta TMA (${app.utils.formatSecondsToTMA(metaTMA)})</text>
+                                    <text x="${padL - 8}" y="${Number(yMetaSvg.toFixed(1)) + 3}" text-anchor="end" class="fill-emerald-600 dark:fill-emerald-400 text-[9px] font-black">Meta ${metaNota}%</text>
+
+                                    <!-- Pontos Dispersos dos Colaboradores -->
+                                    ${opsComTMA.map(op => {
+                                        const cx = xAtTMA(op.tmaSegundos).toFixed(1);
+                                        const cy = yAtTMA(op.media).toFixed(1);
+                                        const cor = op.quad?.corHex || '#06b6d4';
+                                        return `<g class="cursor-pointer group" onclick="app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}')">
+                                            <circle cx="${cx}" cy="${cy}" r="6" fill="${cor}" fill-opacity="0.85" stroke="#ffffff" stroke-width="1.5" class="transition-all hover:scale-125 hover:stroke-slate-900"/>
+                                            <title>${op.nome} (${op.matricula})&#10;Nota: ${op.media}%&#10;TMA: ${op.tmaFormatado}&#10;${op.quad?.quadrante || ''}</title>
+                                        </g>`;
+                                    }).join('')}
+                                </svg>
+                            `;
+
+                            html += renderChapterTitle('Eficiência Operacional: Nota vs. TMA', 'Dispersão estratégica entre Qualidade Técnica (Nota) e Tempo Médio de Atendimento (TMA) nos 4 Quadrantes.', 'fa-stopwatch', 'cyan');
+                            html += renderAlertaSutilInativos('Eficiência Operacional: Nota vs. TMA');
+
+                            html += `
+                            <div class="hideable-box relative mb-8 animate-fade-in space-y-4">
+                                ${btnHideCode}
+                                <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 md:p-6 shadow-sm">
+                                    <!-- Top bar com Métricas Resumidas + Botão de atalho para Q&T -->
+                                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 rounded-2xl bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 flex items-center justify-center text-lg shadow-inner border border-cyan-100 dark:border-cyan-800/50">
+                                                <i class="fa-solid fa-chart-line"></i>
+                                            </div>
+                                            <div>
+                                                <h3 class="text-sm md:text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                    Mapa de Dispersão: Qualidade Técnica x Tempo Médio (TMA)
+                                                </h3>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400">
+                                                    ${totalOpsTMA} operadores avaliados &bull; TMA Médio Geral: <strong class="text-slate-700 dark:text-slate-200">${app.utils.formatSecondsToTMA(mediaGeralTMA)}</strong> (Meta: ${app.utils.formatSecondsToTMA(metaTMA)}) &bull; Meta Nota: <strong>${metaNota}%</strong>
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <button type="button" onclick="app.ui.renderTab('qualidade_treinamento')" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 text-xs font-bold transition-all border border-indigo-200 dark:border-indigo-800/80 shadow-xs flex items-center gap-1.5" title="Ir para a aba Qualidade & Treinamento">
+                                                <i class="fa-solid fa-arrow-up-right-from-square"></i> Ver Prescrição Operacional em Q&amp;T
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- 4 Badges de Contagem de Quadrantes -->
+                                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                                        <div class="bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 rounded-xl border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-between">
+                                            <div>
+                                                <div class="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">Q1 · Benchmark</div>
+                                                <div class="text-lg font-black text-emerald-600 dark:text-emerald-400 tabular-nums">${q1List.length} <span class="text-[10px] font-bold text-slate-400">(${pct(q1List.length)}%)</span></div>
+                                            </div>
+                                            <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-xs"></span>
+                                        </div>
+                                        <div class="bg-purple-50/60 dark:bg-purple-950/20 p-2.5 rounded-xl border border-purple-200/80 dark:border-purple-800/50 flex items-center justify-between">
+                                            <div>
+                                                <div class="text-[9px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider">Q2 · Prolixo</div>
+                                                <div class="text-lg font-black text-purple-600 dark:text-purple-400 tabular-nums">${q2List.length} <span class="text-[10px] font-bold text-slate-400">(${pct(q2List.length)}%)</span></div>
+                                            </div>
+                                            <span class="w-3 h-3 rounded-full bg-purple-500 shadow-xs"></span>
+                                        </div>
+                                        <div class="bg-blue-50/60 dark:bg-blue-950/20 p-2.5 rounded-xl border border-blue-200/80 dark:border-blue-800/50 flex items-center justify-between">
+                                            <div>
+                                                <div class="text-[9px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider">Q3 · Despachador</div>
+                                                <div class="text-lg font-black text-blue-600 dark:text-blue-400 tabular-nums">${q3List.length} <span class="text-[10px] font-bold text-slate-400">(${pct(q3List.length)}%)</span></div>
+                                            </div>
+                                            <span class="w-3 h-3 rounded-full bg-blue-500 shadow-xs"></span>
+                                        </div>
+                                        <div class="bg-red-50/60 dark:bg-red-950/20 p-2.5 rounded-xl border border-red-200/80 dark:border-red-800/50 flex items-center justify-between">
+                                            <div>
+                                                <div class="text-[9px] font-bold text-red-700 dark:text-red-300 uppercase tracking-wider">Q4 · Atenção Crítica</div>
+                                                <div class="text-lg font-black text-red-600 dark:text-red-400 tabular-nums">${q4List.length} <span class="text-[10px] font-bold text-slate-400">(${pct(q4List.length)}%)</span></div>
+                                            </div>
+                                            <span class="w-3 h-3 rounded-full bg-red-500 shadow-xs"></span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Área do Gráfico de Dispersão Interativo (Chart.js) -->
+                                    <div class="w-full h-80 md:h-[420px] relative">
+                                        <canvas id="chart-tma-dispersao" class="w-full h-full"></canvas>
+                                    </div>
+
+                                    <!-- Espelho Vetorial Garantido SVG (visível para impressão e renderização instantânea) -->
+                                    <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+                                            <span><i class="fa-solid fa-shapes text-cyan-500 mr-1"></i> Espelho Gráfico da Dispersão (${totalOpsTMA} colaboradores plotados)</span>
+                                            <span>Passe o mouse ou clique no ponto para abrir o perfil</span>
+                                        </div>
+                                        ${svgTmaScatterHtml}
+                                    </div>
+                                </div>
+                            </div>`;
+                        } else {
+                            html += renderChapterTitle('Eficiência Operacional: Nota vs. TMA', 'Cruzamento estratégico entre Qualidade Técnica (Nota) e Tempo Médio de Atendimento (TMA) nos 4 Quadrantes Operacionais.', 'fa-stopwatch', 'cyan');
+                            const qtdChaves = Object.keys(tmaSnapshotConsolidado).length;
+                            html += `
+                            <div class="mb-8 glass-card rounded-3xl p-6 border border-amber-300 dark:border-amber-700/60 bg-amber-50/60 dark:bg-amber-950/20">
+                                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-stopwatch"></i></div>
+                                        <div>
+                                            <h3 class="text-sm font-black text-slate-800 dark:text-white">Base TMA Integrada (${qtdChaves} registros em memória), mas nenhum operador da monitoria atual coincidiu</h3>
+                                            <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">O sistema leu a planilha de TMA com sucesso, porém as matrículas ou nomes dos operadores da avaliação não coincidiram com as chaves lidas. Dica: importe a <strong>Base de RH</strong> para conectar as matrículas aos nomes automaticamente ou diagnostique com o Raio-X.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                        <label class="cursor-pointer px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs inline-flex items-center gap-2 transition-all">
+                                            <i class="fa-solid fa-microscope"></i> Raio-X Diagnosticar TMA
+                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                        </label>
+                                        <label class="cursor-pointer px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs inline-flex items-center gap-2 transition-all">
+                                            <i class="fa-solid fa-user-clock"></i> Importar Base RH
+                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                        </label>
+                                        <button type="button" onclick="app.admin.reconciliarERecalcularTMA()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs inline-flex items-center gap-2 transition-all">
+                                            <i class="fa-solid fa-arrows-rotate"></i> Reconectar Chaves
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>`;
+                        }
+                    }
+                    
                     // --- NOVO CAPÍTULO: MOTIVOS DE CONTATO (ASSUNTOS) ---
                     if (data.assuntosDistribuicao && Object.keys(data.assuntosDistribuicao).length > 0) {
                         html += renderChapterTitle('Motivos de Contato', 'Análise detalhada por assunto ou tema abordado nas monitorias, listando ofensores e médias por tipo de ligação.', 'fa-tags', 'pink');
@@ -24371,7 +26895,7 @@ storage: {
                     
                     // NOVO CAPÍTULO: DISTRIBUIÇÃO E FREQUÊNCIA DE NOTAS
                     if (data.notasDistribuicao) {
-                        html += renderChapterTitle('Distribuição de Notas', 'Visão quantitativa de todas as notas absolutas aplicadas na operação e sua recorrência.', 'fa-ranking-star', 'orange');
+                        html += renderChapterTitle('Distribuição de Notas', `Visão quantitativa de todas as notas absolutas aplicadas na operação (${data.totalLinhas} avaliações · Média Geral Ponderada: ${mediaOperacaoPonderada}%).`, 'fa-ranking-star', 'orange');
                         
                         html += `
                             <div class="hideable-box relative grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 animate-fade-in">
@@ -27818,24 +30342,51 @@ storage: {
                     const file = input.files[0];
                     if (!file) return;
 
-                    app.ui.showAlert("Lendo Base RH...", "Cruzando matrículas com dias de empresa na base de dados...", "info");
+                    app.ui.showAlert("Lendo Base RH...", "Cruzando matrículas, nomes e tempo de empresa na base de dados...", "info");
 
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
                             const data = new Uint8Array(e.target.result);
-                            const workbook = XLSX.read(data, { type: 'array', raw: true });
+                            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                             const firstSheet = workbook.SheetNames[0];
-                            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+                            const worksheet = workbook.Sheets[firstSheet];
 
-                            if (rows.length === 0) return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
+                            // 1. Detecta cabeçalho real mesmo se houver títulos/linhas vazias no topo (até 10 linhas)
+                            const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                            if (rawMatrix.length === 0) return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
 
-                            // FORÇA A LIMPEZA DA MEMÓRIA: Apaga o arquivo antigo e cria um novo zerado
+                            let headerRowIndex = 0;
+                            for (let r = 0; r < Math.min(10, rawMatrix.length); r++) {
+                                const rowNorm = (rawMatrix[r] || []).map(c => String(c || '')
+                                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
+                                const temMat = rowNorm.some(v => v.includes('MATRICULA') || v.includes('CHAPA') || v.includes('LOGIN') || v.includes('RE') || v.includes('IDOPERADOR') || v.includes('CODIGO') || v.includes('ID'));
+                                const temNome = rowNorm.some(v => v.includes('NOME') || v.includes('COLABORADOR') || v.includes('OPERADOR') || v.includes('FUNCIONARIO') || v.includes('ATENDENTE') || v.includes('AGENTE'));
+                                const temDias = rowNorm.some(v => v.includes('DIAS') || v.includes('EMPRESA') || v.includes('ADMISSAO') || v.includes('TEMPODECASA') || v.includes('CONTRATACAO'));
+                                const preenchidas = rowNorm.filter(v => v.length > 0).length;
+                                if (preenchidas >= 2 && ((temMat && temNome) || (temNome && temDias) || (temMat && temDias))) {
+                                    headerRowIndex = r;
+                                    break;
+                                }
+                            }
+
+                            const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: "" });
+                            if (rows.length === 0) return app.ui.showAlert("Erro", "A planilha anexada está vazia ou sem linhas após o cabeçalho.", "error");
+
+                            // Inicializa cofres de RH
+                            if (!app.config.tempoDeCasa) app.config.tempoDeCasa = {};
+                            if (!app.config.headcountRH) app.config.headcountRH = {};
+                            if (!app.config.rhMatriculaPorNome) app.config.rhMatriculaPorNome = {};
+                            if (!app.config.rhNomePorMatricula) app.config.rhNomePorMatricula = {};
+
                             app.config.tempoDeCasa = {};
-                            app.config.headcountRH = {}; // Novo cofre para contar pessoas por setor
-                            let contagem = 0;
+                            app.config.headcountRH = {};
+                            app.config.rhMatriculaPorNome = {};
+                            app.config.rhNomePorMatricula = {};
 
-                            // Limpa caracteres proibidos pelo Firebase (., #, $, /, [, ] e quebras de linha)
+                            let contagemMapeados = 0;
+                            let contagemComTempo = 0;
+
                             const cleanFirebaseKey = (str) => app.utils.fixEncoding(String(str || ''))
                                 .toUpperCase()
                                 .replace(/\//g, ' - ')
@@ -27844,27 +30395,41 @@ storage: {
                                 .trim();
 
                             rows.forEach(row => {
-                                // Função blindada para lidar com problemas de codificação e quebras de linha no título
-                                const getVal = (keywords, exactMatch = false) => {
-                                    const key = Object.keys(row).find(k => {
-                                        const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
-                                        if (exactMatch) return keywords.includes(kClean);
-                                        const norm = app.utils.fixEncoding(kClean)
-                                            .normalize('NFD')
-                                            .replace(/[\u0300-\u036f]/g, '')
-                                            .toUpperCase()
-                                            .replace(/[^A-Z]/g, '');
-                                        return keywords.some(kw => norm.includes(kw));
-                                    });
-                                    return key ? row[key] : undefined;
+                                const getVal = (keywords, exclude = []) => {
+                                    for (const kw of keywords) {
+                                        const found = Object.keys(row).find(k => {
+                                            const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                            const norm = app.utils.fixEncoding(kClean)
+                                                .normalize('NFD')
+                                                .replace(/[\u0300-\u036f]/g, '')
+                                                .toUpperCase()
+                                                .replace(/[^A-Z0-9]/g, '');
+                                            if (exclude.some(ex => norm.includes(ex))) return false;
+                                            return norm === kw || norm.startsWith(kw);
+                                        });
+                                        if (found && row[found] !== undefined && row[found] !== "") return row[found];
+                                    }
+                                    for (const kw of keywords) {
+                                        const found = Object.keys(row).find(k => {
+                                            const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                            const norm = app.utils.fixEncoding(kClean)
+                                                .normalize('NFD')
+                                                .replace(/[\u0300-\u036f]/g, '')
+                                                .toUpperCase()
+                                                .replace(/[^A-Z0-9]/g, '');
+                                            if (exclude.some(ex => norm.includes(ex))) return false;
+                                            return norm.includes(kw);
+                                        });
+                                        if (found && row[found] !== undefined && row[found] !== "") return row[found];
+                                    }
+                                    return undefined;
                                 };
 
-                                const mat = getVal(['MATRICULA', 'MATRCULA', 'MATR', 'LOGIN']);
-                                const nome = getVal(['NOME', 'COLABORADOR', 'OPERADOR']);
-                                const dias = getVal(['DIASDEEMPRESA', 'DIAS', 'EMPRESA', 'TEMPO']);
-                                
-                                // Captura a coluna exata ou aproximações
-                                const setor = getVal(['OPERA\u00C3\u2021\u00C3\u0192O/SETOR', 'OPERAÇÃO/SETOR', 'OPERACAO', 'SETOR'], true) || getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
+                                const mat = getVal(['MATRICULA', 'MATRCULA', 'MATR', 'RE', 'CHAPA', 'LOGIN', 'CODIGO', 'IDOPERADOR', 'ID', 'REGISTRO', 'CADASTRO'], ['CIDADE', 'ATIVIDADE', 'VALIDADE', 'DIVISAO', 'SUPERVISOR', 'MONITOR']);
+                                const nome = getVal(['NOME', 'COLABORADOR', 'OPERADOR', 'FUNCIONARIO', 'ATENDENTE', 'AGENTE', 'NOMECOMPLETO'], ['SUPERVISOR', 'MONITOR', 'COORDENADOR', 'GESTOR', 'CLIENTE']);
+                                const diasRaw = getVal(['DIASDEEMPRESA', 'DIASEMPRESA', 'DIAS', 'EMPRESA', 'TEMPO', 'TEMPODECASA', 'TEMPOCASA']);
+                                const admissaoRaw = getVal(['ADMISSAO', 'DATAADMISSAO', 'DTADMISSAO', 'CONTRATACAO', 'INICIO']);
+                                const setor = getVal(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
 
                                 if (setor && typeof setor === 'string') {
                                     const setorLimpo = cleanFirebaseKey(setor);
@@ -27873,48 +30438,110 @@ storage: {
                                     }
                                 }
 
-                                if (dias !== undefined && dias !== "") {
-                                    const diasInt = parseInt(dias) || 0;
-                                    let added = false;
-                                    // Salva as duas chaves limpas no cofre para nunca falhar no Firebase nem no cruzamento
-                                    if (mat !== undefined && mat !== "") {
-                                        const matLimpa = cleanFirebaseKey(mat);
-                                        if (matLimpa !== "") {
-                                            app.config.tempoDeCasa[matLimpa] = diasInt;
-                                            added = true;
-                                        }
-                                    }
-                                    if (nome !== undefined && nome !== "") {
-                                        const nomeLimpo = cleanFirebaseKey(nome);
-                                        if (nomeLimpo !== "") {
-                                            app.config.tempoDeCasa[nomeLimpo] = diasInt;
-                                            added = true;
-                                        }
-                                    }
-                                    if(added) contagem++;
+                                // Cálculo robusto de Dias de Empresa (seja dias direto ou data de admissão)
+                                let diasInt = null;
+                                if (diasRaw !== undefined && diasRaw !== "") {
+                                    const parsedNum = parseInt(diasRaw);
+                                    if (!isNaN(parsedNum) && parsedNum >= 0) diasInt = parsedNum;
                                 }
+                                if (diasInt === null && admissaoRaw !== undefined && admissaoRaw !== "") {
+                                    let dt = null;
+                                    if (admissaoRaw instanceof Date) dt = admissaoRaw;
+                                    else if (typeof admissaoRaw === 'number' && admissaoRaw > 20000 && admissaoRaw < 80000) {
+                                        dt = new Date(Math.round((admissaoRaw - 25569) * 86400 * 1000));
+                                    } else {
+                                        const str = String(admissaoRaw).trim();
+                                        const mBR = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+                                        if (mBR) dt = new Date(parseInt(mBR[3]), parseInt(mBR[2]) - 1, parseInt(mBR[1]));
+                                        else {
+                                            const mISO = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+                                            if (mISO) dt = new Date(parseInt(mISO[1]), parseInt(mISO[2]) - 1, parseInt(mISO[3]));
+                                        }
+                                    }
+                                    if (dt && !isNaN(dt.getTime())) {
+                                        const diffMs = Date.now() - dt.getTime();
+                                        if (diffMs >= 0) diasInt = Math.floor(diffMs / 86400000);
+                                    }
+                                }
+
+                                const matLimpa = mat !== undefined ? cleanFirebaseKey(mat) : '';
+                                const nomeLimpo = nome !== undefined ? cleanFirebaseKey(nome) : '';
+
+                                let added = false;
+
+                                // 1. Mapeia Matrícula <-> Nome (INDEPENDENTE de ter coluna de dias ou não!)
+                                if (matLimpa && nomeLimpo) {
+                                    app.config.rhMatriculaPorNome[nomeLimpo] = matLimpa;
+                                    const normNome = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                                    app.config.rhMatriculaPorNome[normNome] = matLimpa;
+
+                                    app.config.rhNomePorMatricula[matLimpa] = nomeLimpo;
+                                    const matSemZero = matLimpa.replace(/^0+/, '');
+                                    if (matSemZero) app.config.rhNomePorMatricula[matSemZero] = nomeLimpo;
+                                    app.config.rhNomePorMatricula[matLimpa.padStart(6, '0')] = nomeLimpo;
+                                    added = true;
+                                }
+
+                                // 2. Registra Tempo de Casa
+                                if (diasInt !== null && diasInt >= 0) {
+                                    if (matLimpa) {
+                                        app.config.tempoDeCasa[matLimpa] = diasInt;
+                                        const matSemZero = matLimpa.replace(/^0+/, '');
+                                        if (matSemZero) app.config.tempoDeCasa[matSemZero] = diasInt;
+                                        added = true;
+                                    }
+                                    if (nomeLimpo) {
+                                        app.config.tempoDeCasa[nomeLimpo] = diasInt;
+                                        const normNome = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                                        app.config.tempoDeCasa[normNome] = diasInt;
+                                        added = true;
+                                    }
+                                    contagemComTempo++;
+                                }
+
+                                if (added) contagemMapeados++;
                             });
+
+                            if (contagemMapeados === 0) {
+                                return app.ui.showAlert("Aviso", "Não foi possível identificar colunas válidas de Matrícula e Nome na planilha.", "warning");
+                            }
 
                             // Salva na gaveta mensal do período ativo
                             if (!app.config.headcountRHPorMes) app.config.headcountRHPorMes = {};
                             app.config.headcountRHPorMes[app.currentMonth] = { ...app.config.headcountRH };
 
+                            try {
+                                localStorage.setItem('soft_rh_matricula_por_nome', JSON.stringify(app.config.rhMatriculaPorNome));
+                                localStorage.setItem('soft_rh_nome_por_matricula', JSON.stringify(app.config.rhNomePorMatricula));
+                            } catch (e) {}
+
                             // Salva as configurações de forma atômica
                             app.storage.saveConfig().then(() => {
-                                app.ui.showAlert("Importação Bem Sucedida!", `O sistema mapeou e memorizou o Tempo de Empresa de <b>${contagem} colaboradores</b>.<br><br>Esses dados agora poderão ser cruzados nos relatórios analíticos e na aba Qualidade & Treinamento!`, "success");
+                                // Se já houver Base TMA em memória, dispara a reconciliação automática imediata!
+                                let resTMA = { cruzados: 0 };
+                                if (app.config.tmaData && Object.keys(app.config.tmaData).length > 0) {
+                                    resTMA = app.utils.reconciliarBaseTMAComRH();
+                                }
+
+                                const msgExtraTMA = resTMA.cruzados > 0 ? `<br><br><span class="text-emerald-600 font-bold"><i class="fa-solid fa-circle-check"></i> Reconciliação Automática:</span> <b>${resTMA.cruzados} colaboradores</b> da Base TMA foram imediatamente conectados à monitoria atual!` : '';
+
+                                app.ui.showAlert("Importação Bem Sucedida!", `O sistema mapeou e memorizou <b>${contagemMapeados} colaboradores</b> da Base de RH (${contagemComTempo} com tempo de empresa calculado).<br><br>O vínculo entre Matrículas e Nomes está ativo e conectado à monitoria!${msgExtraTMA}`, "success");
+
                                 // Recalcula a tabela para aplicar possíveis atualizações instantaneamente
-                                if(app.analiseCSVDinamicoData) {
+                                if (app.analiseCSVDinamicoData) {
                                     app.admin.gerarInteligenciaCSV();
-                                    if(app.analiseCSVDinamicoData.consolidado) {
+                                    if (app.analiseCSVDinamicoData.consolidado) {
                                         const rhSnap = {};
                                         Object.keys(app.analiseCSVDinamicoData.consolidado.operadores || {}).forEach(nome => {
                                             const d = app.utils.getTempoCasaDoOperador(nome);
                                             if (d !== null && d !== undefined) rhSnap[nome] = d;
                                         });
                                         app.analiseCSVDinamicoData.consolidado.rhSnapshot = rhSnap;
+                                        app.analiseCSVDinamicoData.consolidado.rhMatriculaPorNome = { ...(app.config.rhMatriculaPorNome || {}) };
+                                        app.analiseCSVDinamicoData.consolidado.rhNomePorMatricula = { ...(app.config.rhNomePorMatricula || {}) };
                                     }
                                 }
-                                if(app.ui && app.ui._cachedQTPayload && app.ui._cachedQTPayload.consolidado) {
+                                if (app.ui && app.ui._cachedQTPayload && app.ui._cachedQTPayload.consolidado) {
                                     const rhSnapQT = {};
                                     Object.keys(app.ui._cachedQTPayload.consolidado.operadores || {}).forEach(nome => {
                                         const d = app.utils.getTempoCasaDoOperador(nome);
@@ -27928,7 +30555,189 @@ storage: {
 
                         } catch (error) {
                             console.error(error);
-                            app.ui.showAlert("Erro de Leitura", "Falha ao ler a planilha. Verifique se existem as colunas 'Matrícula' e 'Dias'.", "error");
+                            app.ui.showAlert("Erro de Leitura", "Falha ao ler a planilha. Verifique se o arquivo possui as colunas 'Matrícula' e 'Nome'.", "error");
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                },
+
+                processarArquivoTMA(input) {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    app.ui.showAlert("Lendo Base TMA...", "Cruzando Matrícula, Nome e TMA na base de dados...", "info");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                            const firstSheet = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheet];
+
+                            // 1. Detecta cabeçalho real mesmo se houver títulos/linhas vazias no topo (até 10 linhas)
+                            const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                            if (rawMatrix.length === 0) return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
+
+                            let headerRowIndex = 0;
+                            for (let r = 0; r < Math.min(10, rawMatrix.length); r++) {
+                                const rowVals = (rawMatrix[r] || []).map(c => String(c || '')
+                                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
+                                const temTMA = rowVals.some(v => v === 'TMA' || v.startsWith('TMA') || v.includes('TEMPOMEDIO') || v.includes('AHT') || v.includes('HANDLETIME') || v.includes('DURACAO'));
+                                const temId = rowVals.some(v => v.includes('MATRICULA') || v.includes('NOME') || v.includes('OPERADOR') || v.includes('COLABORADOR') || v.includes('LOGIN') || v.includes('CHAPA') || v.includes('RE') || v.includes('ID'));
+                                const preenchidas = rowVals.filter(v => v.length > 0).length;
+                                if (preenchidas >= 2 && (temTMA || temId)) {
+                                    headerRowIndex = r;
+                                    break;
+                                }
+                            }
+
+                            const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: "" });
+                            if (rows.length === 0) return app.ui.showAlert("Erro", "Nenhuma linha de dados encontrada na planilha após o cabeçalho.", "error");
+
+                            if (!app.config.tmaData) app.config.tmaData = {};
+                            app.config.tmaData = {};
+                            let contagem = 0;
+                            let somaSegundos = 0;
+
+                            const cleanFirebaseKey = (str) => app.utils.fixEncoding(String(str || ''))
+                                .toUpperCase()
+                                .replace(/\//g, ' - ')
+                                .replace(/[.#$\[\]]/g, '')
+                                .replace(/\s+/g, ' ')
+                                .trim();
+
+                            const mapaSessao = app.utils.mapearMatriculasDaSessao();
+
+                            rows.forEach(row => {
+                                const getVal = (keywords, exclude = []) => {
+                                    for (const kw of keywords) {
+                                        const found = Object.keys(row).find(k => {
+                                            const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                            const norm = app.utils.fixEncoding(kClean)
+                                                .normalize('NFD')
+                                                .replace(/[\u0300-\u036f]/g, '')
+                                                .toUpperCase()
+                                                .replace(/[^A-Z0-9]/g, '');
+                                            if (exclude.some(ex => norm.includes(ex))) return false;
+                                            return norm === kw || norm.startsWith(kw);
+                                        });
+                                        if (found && row[found] !== undefined && row[found] !== "") return row[found];
+                                    }
+                                    for (const kw of keywords) {
+                                        const found = Object.keys(row).find(k => {
+                                            const kClean = String(k || '').replace(/[\r\n]+/g, ' ').trim();
+                                            const norm = app.utils.fixEncoding(kClean)
+                                                .normalize('NFD')
+                                                .replace(/[\u0300-\u036f]/g, '')
+                                                .toUpperCase()
+                                                .replace(/[^A-Z0-9]/g, '');
+                                            if (exclude.some(ex => norm.includes(ex))) return false;
+                                            return norm.includes(kw);
+                                        });
+                                        if (found && row[found] !== undefined && row[found] !== "") return row[found];
+                                    }
+                                    return undefined;
+                                };
+
+                                const mat = getVal(['MATRICULA', 'MATRCULA', 'CHAPA', 'RE', 'LOGIN', 'IDOPERADOR', 'ID_OPERADOR', 'CODIGO', 'MATR', 'ID', 'REGISTRO', 'CADASTRO'], ['CIDADE', 'ATIVIDADE', 'VALIDADE', 'DIVISAO', 'SUPERVISOR', 'MONITOR']);
+                                const nome = getVal(['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'AGENTE', 'FUNCIONARIO'], ['SUPERVISOR', 'MONITOR', 'COORDENADOR', 'GESTOR', 'CLIENTE']);
+                                const tmaRaw = getVal(['TMA', 'AHT', 'TEMPOMEDIOATENDIMENTO', 'TEMPOMEDIO', 'HANDLETIME', 'DURACAO', 'TEMPO'], ['PAUSA', 'LOGADO', 'ESPERA', 'DISPONIVEL', 'REFEICAO', 'FEEDBACK']);
+
+                                const sec = app.utils.parseTMAToSeconds(tmaRaw);
+                                if (sec !== null && sec > 0) {
+                                    let matLimpa = mat !== undefined ? cleanFirebaseKey(mat) : '';
+                                    let nomeLimpo = nome !== undefined ? cleanFirebaseKey(nome) : '';
+
+                                    // Cruzamento dinâmico com Base de RH
+                                    if (matLimpa && !nomeLimpo) {
+                                        if (app.config.rhNomePorMatricula && app.config.rhNomePorMatricula[matLimpa]) {
+                                            nomeLimpo = app.config.rhNomePorMatricula[matLimpa];
+                                        } else if (app.config.rhNomePorMatricula && app.config.rhNomePorMatricula[matLimpa.replace(/^0+/, '')]) {
+                                            nomeLimpo = app.config.rhNomePorMatricula[matLimpa.replace(/^0+/, '')];
+                                        } else if (mapaSessao.matParaNome[matLimpa]) {
+                                            nomeLimpo = mapaSessao.matParaNome[matLimpa];
+                                        } else if (mapaSessao.matParaNome[matLimpa.replace(/^0+/, '')]) {
+                                            nomeLimpo = mapaSessao.matParaNome[matLimpa.replace(/^0+/, '')];
+                                        }
+                                    }
+                                    if (nomeLimpo && !matLimpa) {
+                                        if (app.config.rhMatriculaPorNome && app.config.rhMatriculaPorNome[nomeLimpo]) {
+                                            matLimpa = app.config.rhMatriculaPorNome[nomeLimpo];
+                                        } else if (mapaSessao.nomeParaMat[nomeLimpo]) {
+                                            matLimpa = mapaSessao.nomeParaMat[nomeLimpo];
+                                        }
+                                    }
+
+                                    const entry = {
+                                        tmaSegundos: sec,
+                                        mat: matLimpa,
+                                        nome: nomeLimpo,
+                                        tmaFormatado: app.utils.formatSecondsToTMA(sec)
+                                    };
+
+                                    let added = false;
+                                    if (matLimpa) {
+                                        app.config.tmaData[matLimpa] = entry;
+                                        const matSemZero = matLimpa.replace(/^0+/, '');
+                                        if (matSemZero) app.config.tmaData[matSemZero] = entry;
+                                        app.config.tmaData[matLimpa.padStart(6, '0')] = entry;
+                                        added = true;
+                                    }
+                                    if (nomeLimpo) {
+                                        app.config.tmaData[nomeLimpo] = entry;
+                                        const normN = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                                        app.config.tmaData[normN] = entry;
+                                        added = true;
+                                    }
+
+                                    if (added) {
+                                        contagem++;
+                                        somaSegundos += sec;
+                                    }
+                                }
+                            });
+
+                            if (contagem === 0) {
+                                return app.ui.showAlert("Aviso", "Não foi possível identificar colunas válidas de TMA e Matrícula/Nome na planilha.", "warning");
+                            }
+
+                            if (!app.config.metaTMA || app.config.metaTMA <= 0) {
+                                app.config.metaTMA = Math.round(somaSegundos / contagem) || 360;
+                            }
+
+                            // Dispara reconciliação profunda de 3 vias (TMA <-> RH <-> Monitoria)
+                            const resReconc = app.utils.reconciliarBaseTMAComRH();
+
+                            app.storage.saveConfig().then(() => {
+                                if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                                    app.analiseCSVDinamicoData.consolidado.tmaSnapshot = { ...app.config.tmaData };
+                                    app.analiseCSVDinamicoData.consolidado.metaTMA = app.config.metaTMA;
+                                    try { app.admin.gerarInteligenciaCSV(); } catch (e) {}
+                                    if (typeof localforage !== 'undefined') {
+                                        localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {});
+                                        localforage.setItem('soft_tma_data', app.config.tmaData).catch(() => {});
+                                    }
+                                }
+                                if (app.ui && app.ui._cachedQTPayload && app.ui._cachedQTPayload.data) {
+                                    app.ui._cachedQTPayload.data.tmaSnapshot = { ...app.config.tmaData };
+                                    app.ui._cachedQTPayload.data.metaTMA = app.config.metaTMA;
+                                }
+
+                                const tmaMedioFmt = app.utils.formatSecondsToTMA(Math.round(somaSegundos / contagem));
+                                const cruzadosTxt = resReconc.cruzados > 0 
+                                    ? `<b>${resReconc.cruzados} operadores</b> da avaliação atual foram vinculados com sucesso!`
+                                    : `Registros gravados, mas ainda não vinculados à monitoria atual (Dica: utilize o <b>Raio-X (Debug)</b> para auditar o cruzamento).`;
+
+                                app.ui.showAlert("Base TMA Integrada!", `Mapeado o TMA de <b>${contagem} colaboradores</b> (TMA Médio: <b>${tmaMedioFmt}</b>).<br><br>${cruzadosTxt}`, "success");
+
+                                const targetTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
+                                app.ui.renderTab(targetTab, true);
+                            });
+
+                        } catch (error) {
+                            console.error('Erro ao ler base TMA:', error);
+                            app.ui.showAlert("Erro de Leitura", "Falha ao processar arquivo de TMA. Verifique as colunas da planilha.", "error");
                         }
                     };
                     reader.readAsArrayBuffer(file);
@@ -28015,116 +30824,826 @@ storage: {
                     const file = input.files[0];
                     if (!file) return;
 
-                    app.ui.showAlert("Escaneando Pesos...", "Abrindo a planilha para diagnosticar o formato das colunas de avaliação...", "info");
+                    app.ui.showAlert("Escaneando Arquivo...", "Analisando estrutura, colunas e dados para o Raio-X...", "info");
 
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
-                            const data = e.target.result;
-                            const workbook = XLSX.read(data, { type: 'binary', raw: true });
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                             const firstSheet = workbook.SheetNames[0];
-                            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+                            const worksheet = workbook.Sheets[firstSheet];
 
-                            if (rows.length === 0) return app.ui.showAlert("Erro", "Planilha vazia.", "error");
+                            const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                            if (rawMatrix.length === 0) return app.ui.showAlert("Erro", "A planilha anexada está vazia.", "error");
 
-                            const chaves = Object.keys(rows[0]);
-                            // Procura colunas que tenham a palavra PESO no título
-                            const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
+                            // Detecta cabeçalho real nas primeiras 10 linhas
+                            let headerRowIndex = 0;
+                            let temTMAHeader = false;
+                            let temRHHeader = false;
+                            let temPesosHeader = false;
 
-                            if(colunasAvaliacao.length === 0) {
-                                return app.ui.showAlert("Erro de Estrutura", "Nenhuma coluna com a palavra 'PESO' encontrada no cabeçalho. O sistema não tem como classificar as falhas.", "error");
+                            for (let r = 0; r < Math.min(10, rawMatrix.length); r++) {
+                                const rowCells = (rawMatrix[r] || []).map(c => String(c || '').trim());
+                                const rowNorm = rowCells.map(c => c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
+
+                                if (rowCells.some(c => c.toUpperCase().includes('PESO'))) {
+                                    temPesosHeader = true;
+                                    headerRowIndex = r;
+                                    break;
+                                }
+                                const hasTMA = rowNorm.some(v => v === 'TMA' || v.startsWith('TMA') || v.includes('TEMPOMEDIO') || v.includes('AHT') || v.includes('HANDLETIME') || v.includes('DURACAO'));
+                                const hasMat = rowNorm.some(v => v.includes('MATRICULA') || v.includes('CHAPA') || v.includes('LOGIN') || v.includes('RE') || v.includes('IDOPERADOR') || v.includes('CODIGO') || v.includes('ID'));
+                                const hasNome = rowNorm.some(v => v.includes('NOME') || v.includes('COLABORADOR') || v.includes('OPERADOR') || v.includes('FUNCIONARIO') || v.includes('ATENDENTE') || v.includes('AGENTE'));
+                                const hasRH = rowNorm.some(v => v.includes('DIAS') || v.includes('EMPRESA') || v.includes('ADMISSAO') || v.includes('TEMPODECASA') || v.includes('CONTRATACAO'));
+
+                                const preenchidas = rowNorm.filter(x => x.length > 0).length;
+                                if (hasTMA && (hasMat || hasNome || preenchidas >= 2)) {
+                                    temTMAHeader = true;
+                                    headerRowIndex = r;
+                                    break;
+                                }
+                                if (hasRH && (hasMat || hasNome)) {
+                                    temRHHeader = true;
+                                    headerRowIndex = r;
+                                    break;
+                                }
                             }
 
-                            let htmlDebug = `<div class="text-left text-sm space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                                <p class="font-bold text-slate-700">Encontrei <span class="text-purple-600 bg-purple-50 px-2 py-1 rounded border border-purple-200">${colunasAvaliacao.length} colunas</span> de avaliação.</p>
-                                <p class="text-slate-500 text-xs leading-relaxed">Veja abaixo como o sistema separou essas colunas lendo o valor do "PESO" e como ele interpretou a resposta que está na 1ª linha da planilha:</p>
-                                <div class="space-y-4">`;
+                            const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: "" });
+                            if (rows.length === 0) return app.ui.showAlert("Erro", "Nenhuma linha de dados encontrada após o cabeçalho.", "error");
 
-                            colunasAvaliacao.forEach(col => {
-                                // A mesma lente que o sistema principal usa:
-                                let match = col.match(/=\s*PESO:\s*([0-9.,]+)/i);
-                                let pesoExtraido = match ? match[1] : 'NÃO ENCONTRADO';
-                                let pesoNum = match ? parseFloat(match[1].replace(',', '.')) : null;
-                                
-                                let classificacao = "Indefinido";
-                                let classColor = "bg-slate-100 text-slate-700 border-slate-300";
-                                let icone = "fa-circle-question";
-                                
-                                let isCritico = pesoNum === 100 || pesoNum === 0;
+                            const chaves = Object.keys(rows[0]);
 
-                                if (isCritico) {
-                                    classificacao = "FALHA CRÍTICA (Zera a Nota)";
-                                    classColor = "bg-red-50 text-red-700 border-red-300";
-                                    icone = "fa-circle-exclamation";
-                                } else if (pesoNum !== null) {
-                                    classificacao = "DESVIO NORMAL (Falha Comum)";
-                                    classColor = "bg-orange-50 text-orange-700 border-orange-300";
-                                    icone = "fa-layer-group";
-                                } else {
-                                    classificacao = "FALHA NA LEITURA (Padrão Incorreto)";
+                            if (!temTMAHeader && !temRHHeader && !temPesosHeader) {
+                                if (chaves.some(k => k.toUpperCase().includes('PESO'))) {
+                                    temPesosHeader = true;
+                                } else if (chaves.some(k => {
+                                    const norm = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                    return norm === 'TMA' || norm.startsWith('TMA') || norm.includes('TEMPOMEDIO') || norm.includes('AHT') || norm.includes('HANDLETIME');
+                                })) {
+                                    temTMAHeader = true;
+                                } else if (chaves.some(k => {
+                                    const norm = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                    return norm.includes('DIAS') || norm.includes('EMPRESA') || norm.includes('ADMISSAO') || norm.includes('CONTRATACAO');
+                                })) {
+                                    temRHHeader = true;
                                 }
+                            }
 
-                                // Testando como o sistema vê a resposta da Linha 1
-                                let valorLinha1 = rows[0][col];
-                                let valStr = (valorLinha1 || '').toString().trim().toUpperCase();
-                                
-                                let interpretacaoResp = "";
-                                if (isCritico) {
-                                    let isSim = valStr === 'SIM' || valStr === 'S';
-                                    interpretacaoResp = isSim 
-                                        ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
-                                        : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Não falhou)</span>";
-                                } else {
-                                    let isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
-                                    interpretacaoResp = isNao 
-                                        ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
-                                        : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Sim ou N/A)</span>";
-                                }
-
-                                htmlDebug += `
-                                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm transition-hover hover:border-purple-300">
-                                    <div class="font-black text-slate-500 text-[10px] uppercase tracking-widest mb-1">Nome exato da Coluna:</div>
-                                    <div class="text-xs tabular-nums mb-4 text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100 break-words leading-relaxed">${col}</div>
-                                    
-                                    <div class="grid grid-cols-2 gap-3 mb-4">
-                                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col justify-center items-center text-center">
-                                            <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Peso Extraído da Coluna:</div>
-                                            <div class="text-lg font-black text-slate-800">${pesoExtraido}</div>
-                                        </div>
-                                        <div class="${classColor} p-3 rounded-xl border flex flex-col justify-center items-center text-center">
-                                            <div class="text-[9px] uppercase font-bold opacity-70 mb-1">Classificação do Sistema:</div>
-                                            <div class="text-xs font-black"><i class="fa-solid ${icone} mb-1 block text-lg opacity-80"></i> ${classificacao}</div>
-                                        </div>
-                                    </div>
-
-                                    <div class="border-t border-slate-100 pt-3">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase mb-2">Simulação de Leitura (1ª Linha):</div>
-                                        <div class="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                                            Valor detectado na célula: <b class="tabular-nums bg-white px-1 border border-slate-200 rounded">"${valorLinha1}"</b><br>
-                                            <div class="mt-2 pt-2 border-t border-slate-200 border-dashed">${interpretacaoResp}</div>
-                                        </div>
-                                    </div>
-                                </div>`;
-                            });
-
-                            htmlDebug += `</div></div>`;
-
-                            // Ajuste do Modal para caber a análise
-                            const modalBox = document.querySelector('#global-modal > div');
-                            modalBox.classList.remove('max-w-lg', 'max-w-5xl');
-                            modalBox.classList.add('max-w-3xl');
-
-                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-microscope text-purple-500"></i> Raio-X de Pesos e Falhas`;
-                            document.getElementById('modal-content').innerHTML = htmlDebug;
-                            document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-slate-800 hover:bg-black text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5 w-full md:w-auto">Entendi e Fechar</button>`;
-                            document.getElementById('global-modal').classList.remove('hidden');
+                            if (temTMAHeader) {
+                                this.execDebugTMA(worksheet, rows, rawMatrix, headerRowIndex);
+                            } else if (temRHHeader) {
+                                this.execDebugRH(worksheet, rows, rawMatrix, headerRowIndex);
+                            } else if (temPesosHeader) {
+                                this.execDebugPesosFalhas(rows, chaves);
+                            } else {
+                                this.execDebugGenerico(worksheet, rows, rawMatrix, headerRowIndex);
+                            }
 
                         } catch (error) {
-                            console.error(error);
-                            app.ui.showAlert("Erro", "Falha ao analisar a estrutura de pesos da planilha. Certifique-se que é um formato válido.", "error");
+                            console.error('Erro no Raio-X:', error);
+                            app.ui.showAlert("Erro de Leitura", "Falha ao processar o arquivo no Raio-X. Verifique se é uma planilha válida (.xlsx, .xls ou .csv).", "error");
                         }
                     };
-                    reader.readAsBinaryString(file);
+                    reader.readAsArrayBuffer(file);
+                },
+
+                execDebugTMA(worksheet, rows, rawMatrix, headerRowIndex) {
+                    const chaves = Object.keys(rows[0]);
+                    const cleanFirebaseKey = (str) => app.utils.fixEncoding(String(str || ''))
+                        .toUpperCase()
+                        .replace(/\//g, ' - ')
+                        .replace(/[.#$\[\]]/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    const findCol = (keywords, exclude = []) => {
+                        for (const kw of keywords) {
+                            const found = chaves.find(k => {
+                                const norm = app.utils.fixEncoding(k).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                if (exclude.some(ex => norm.includes(ex))) return false;
+                                return norm === kw || norm.startsWith(kw);
+                            });
+                            if (found) return found;
+                        }
+                        for (const kw of keywords) {
+                            const found = chaves.find(k => {
+                                const norm = app.utils.fixEncoding(k).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                if (exclude.some(ex => norm.includes(ex))) return false;
+                                return norm.includes(kw);
+                            });
+                            if (found) return found;
+                        }
+                        return null;
+                    };
+
+                    const colMat = findCol(['MATRICULA', 'MATRCULA', 'CHAPA', 'RE', 'LOGIN', 'IDOPERADOR', 'ID_OPERADOR', 'CODIGO', 'MATR', 'ID', 'REGISTRO', 'CADASTRO'], ['CIDADE', 'ATIVIDADE', 'VALIDADE', 'DIVISAO', 'SUPERVISOR', 'MONITOR']);
+                    const colNome = findCol(['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'AGENTE', 'FUNCIONARIO'], ['SUPERVISOR', 'MONITOR', 'COORDENADOR', 'GESTOR', 'CLIENTE']);
+                    const colTMA = findCol(['TMA', 'AHT', 'TEMPOMEDIOATENDIMENTO', 'TEMPOMEDIO', 'HANDLETIME', 'DURACAO', 'TEMPO'], ['PAUSA', 'LOGADO', 'ESPERA', 'DISPONIVEL', 'REFEICAO', 'FEEDBACK']);
+
+                    const qtdRH = Object.keys(app.config.rhNomePorMatricula || {}).length;
+                    const opsMonitoria = app.analiseCSVDinamicoData?.consolidado?.operadores ? Object.keys(app.analiseCSVDinamicoData.consolidado.operadores) : [];
+                    const mapaSessao = app.utils.mapearMatriculasDaSessao();
+
+                    const parsedRows = [];
+                    let rhCasados = 0;
+                    let monCasados = 0;
+                    let somaSegundos = 0;
+                    let countValidos = 0;
+                    const parsedTMAData = {};
+
+                    rows.forEach((row, idx) => {
+                        const rawMat = colMat ? String(row[colMat] || '').trim() : '';
+                        const rawNome = colNome ? String(row[colNome] || '').trim() : '';
+                        const rawTMA = colTMA ? row[colTMA] : '';
+
+                        const sec = app.utils.parseTMAToSeconds(rawTMA);
+                        const tmaFmt = sec ? app.utils.formatSecondsToTMA(sec) : 'Inválido';
+
+                        let matLimpa = rawMat ? cleanFirebaseKey(rawMat) : '';
+                        let nomeLimpo = rawNome ? cleanFirebaseKey(rawNome) : '';
+                        let nomeRH = null;
+
+                        // 1. Busca no RH
+                        if (matLimpa) {
+                            nomeRH = (app.config.rhNomePorMatricula && (
+                                app.config.rhNomePorMatricula[matLimpa] ||
+                                app.config.rhNomePorMatricula[matLimpa.replace(/^0+/, '')] ||
+                                app.config.rhNomePorMatricula[matLimpa.padStart(6, '0')]
+                            )) || (mapaSessao.matParaNome[matLimpa] || mapaSessao.matParaNome[matLimpa.replace(/^0+/, '')]) || null;
+                        }
+
+                        if (nomeRH && !nomeLimpo) nomeLimpo = nomeRH;
+                        if (!nomeRH && nomeLimpo && app.config.rhMatriculaPorNome) {
+                            const normN = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                            if (app.config.rhMatriculaPorNome[nomeLimpo] || app.config.rhMatriculaPorNome[normN]) {
+                                nomeRH = nomeLimpo;
+                            }
+                        }
+
+                        // 2. Busca na Monitoria Atual
+                        let opMonitoria = null;
+                        const nomeParaBuscar = nomeRH || nomeLimpo;
+                        if (nomeParaBuscar && opsMonitoria.length > 0) {
+                            const normAlvo = nomeParaBuscar.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            for (let i = 0; i < opsMonitoria.length; i++) {
+                                const opN = opsMonitoria[i];
+                                const normOp = opN.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                                if (normOp === normAlvo) { opMonitoria = opN; break; }
+                                const p1 = normAlvo.split(/\s+/).filter(p => p.length > 2);
+                                const p2 = normOp.split(/\s+/).filter(p => p.length > 2);
+                                if (p1.length >= 2 && p2.length >= 2 && p1[0] === p2[0] && p1[p1.length - 1] === p2[p2.length - 1]) {
+                                    opMonitoria = opN; break;
+                                }
+                            }
+                        }
+
+                        // Se tem matrícula e não achou por nome, tenta achar operador que tenha essa matrícula
+                        if (!opMonitoria && matLimpa && opsMonitoria.length > 0) {
+                            for (let i = 0; i < opsMonitoria.length; i++) {
+                                const opN = opsMonitoria[i];
+                                const mOp = app.utils.getMatriculaDoOperador(opN);
+                                if (mOp && (mOp === matLimpa || mOp.replace(/^0+/, '') === matLimpa.replace(/^0+/, ''))) {
+                                    opMonitoria = opN;
+                                    if (!nomeRH) nomeRH = opN;
+                                    break;
+                                }
+                            }
+                        }
+
+                        let statusTipo = 'OK';
+                        let statusMsg = '';
+                        let statusBadge = '';
+
+                        if (!sec || sec <= 0) {
+                            statusTipo = 'ERRO_TMA';
+                            statusMsg = 'TMA não reconhecido';
+                            statusBadge = 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 border-red-200';
+                        } else if (opMonitoria) {
+                            statusTipo = 'OK';
+                            statusMsg = `Casado: ${opMonitoria}`;
+                            statusBadge = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-300';
+                            rhCasados++;
+                            monCasados++;
+                        } else if (nomeRH) {
+                            statusTipo = 'SEM_MONITORIA';
+                            statusMsg = `No RH (${nomeRH}), mas sem monitoria atual`;
+                            statusBadge = 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300';
+                            rhCasados++;
+                        } else {
+                            statusTipo = 'SEM_RH';
+                            statusMsg = 'Matrícula não consta no RH';
+                            statusBadge = 'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-300';
+                        }
+
+                        if (sec && sec > 0) {
+                            countValidos++;
+                            somaSegundos += sec;
+
+                            const entry = {
+                                tmaSegundos: sec,
+                                mat: matLimpa,
+                                nome: opMonitoria || nomeRH || nomeLimpo,
+                                tmaFormatado: tmaFmt
+                            };
+                            if (matLimpa) {
+                                parsedTMAData[matLimpa] = entry;
+                                const mSemZero = matLimpa.replace(/^0+/, '');
+                                if (mSemZero) parsedTMAData[mSemZero] = entry;
+                                parsedTMAData[matLimpa.padStart(6, '0')] = entry;
+                            }
+                            if (opMonitoria) parsedTMAData[opMonitoria] = entry;
+                            if (nomeRH) parsedTMAData[nomeRH] = entry;
+                            if (nomeLimpo) parsedTMAData[nomeLimpo] = entry;
+                        }
+
+                        parsedRows.push({
+                            num: idx + 1,
+                            mat: matLimpa || '-',
+                            nomeArquivo: rawNome || '-',
+                            rawTMA: String(rawTMA === null || rawTMA === undefined ? '' : rawTMA),
+                            tmaFmt,
+                            sec,
+                            nomeRH: nomeRH || '-',
+                            opMonitoria: opMonitoria || '-',
+                            statusTipo,
+                            statusMsg,
+                            statusBadge
+                        });
+                    });
+
+                    window._debugParsedTMA = parsedTMAData;
+                    window._debugTMAMeta = Math.round(somaSegundos / Math.max(1, countValidos));
+
+                    const mediaSec = Math.round(somaSegundos / Math.max(1, countValidos));
+                    const mediaFmt = app.utils.formatSecondsToTMA(mediaSec);
+
+                    let calloutHtml = '';
+                    if (qtdRH === 0) {
+                        calloutHtml = `
+                            <div class="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 rounded-2xl flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-600 text-base shrink-0 mt-0.5"></i>
+                                <div>
+                                    <strong class="font-black block text-sm mb-1">A Base de RH ainda não foi importada!</strong>
+                                    O arquivo de TMA contém matrículas telefônicas, mas os relatórios de monitoria utilizam os nomes dos colaboradores. O sistema utiliza a Base de RH como dicionário para vincular automaticamente <code>Matrícula &rarr; Nome</code>. Importe a Base de RH no menu "Importações" para que todas as matrículas sejam associadas aos operadores da monitoria.
+                                </div>
+                            </div>`;
+                    } else if (monCasados === 0) {
+                        calloutHtml = `
+                            <div class="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 rounded-2xl flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-600 text-base shrink-0 mt-0.5"></i>
+                                <div>
+                                    <strong class="font-black block text-sm mb-1">Nenhum operador da monitoria atual coincidiu com este TMA</strong>
+                                    Foram localizadas ${rhCasados} matrículas na Base de RH, porém esses colaboradores não possuem avaliações no relatório de monitoria carregado na sessão. Verifique se o arquivo de TMA pertence à mesma operação/setor e período da monitoria ativa.
+                                </div>
+                            </div>`;
+                    } else {
+                        calloutHtml = `
+                            <div class="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700 rounded-2xl flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-200">
+                                <i class="fa-solid fa-circle-check text-emerald-600 text-base shrink-0 mt-0.5"></i>
+                                <div>
+                                    <strong class="font-black block text-sm mb-1">Cruzamento Bem-Sucedido!</strong>
+                                    O sistema identificou <b>${monCasados} colaboradores</b> que coincidem diretamente com a monitoria da sessão. Você pode clicar no botão <b>"Aplicar e Integrar Base TMA Agora"</b> abaixo para carregar esses dados instantaneamente.
+                                </div>
+                            </div>`;
+                    }
+
+                    let tableRowsHtml = parsedRows.map(r => `
+                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors border-b border-slate-100 dark:border-slate-800">
+                            <td class="py-2.5 px-3 text-center text-slate-400 font-bold">${r.num}</td>
+                            <td class="py-2.5 px-3 font-mono font-black text-slate-800 dark:text-slate-200">${r.mat}</td>
+                            <td class="py-2.5 px-3 font-mono text-slate-500 text-[11px]">${r.rawTMA}</td>
+                            <td class="py-2.5 px-3 font-mono font-black text-cyan-600 dark:text-cyan-400">${r.tmaFmt}</td>
+                            <td class="py-2.5 px-3 text-slate-700 dark:text-slate-300 font-medium">${r.nomeRH !== '-' ? `<span class="text-indigo-600 dark:text-indigo-400 font-bold">${r.nomeRH}</span>` : '<span class="text-rose-500 italic">Não consta no RH</span>'}</td>
+                            <td class="py-2.5 px-3 text-slate-700 dark:text-slate-300 font-medium">${r.opMonitoria !== '-' ? `<span class="text-emerald-600 dark:text-emerald-400 font-black"><i class="fa-solid fa-check mr-1"></i>${r.opMonitoria}</span>` : '<span class="text-slate-400 italic">Sem avaliação</span>'}</td>
+                            <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded-lg text-[10px] font-black border ${r.statusBadge}">${r.statusMsg}</span></td>
+                        </tr>
+                    `).join('');
+
+                    let htmlDebug = `
+                    <div class="text-left space-y-4 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
+                        <!-- 4 CARDS SUPERIORES DE DIAGNÓSTICO -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total de Linhas no TMA</div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${parsedRows.length}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">Cabeçalho: Linha ${headerRowIndex + 1}</div>
+                            </div>
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">TMA Médio do Arquivo</div>
+                                <div class="text-2xl font-black text-cyan-600 dark:text-cyan-400 tabular-nums">${mediaFmt}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">Coluna: <b>${colTMA || 'TMA'}</b></div>
+                            </div>
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Localizados no RH</div>
+                                <div class="text-2xl font-black ${rhCasados > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-500'} tabular-nums">${rhCasados} <span class="text-xs font-bold text-slate-400">/ ${parsedRows.length}</span></div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">${qtdRH > 0 ? `${qtdRH} pessoas na base RH` : 'Base RH não carregada'}</div>
+                            </div>
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Presentes na Monitoria</div>
+                                <div class="text-2xl font-black ${monCasados > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'} tabular-nums">${monCasados} <span class="text-xs font-bold text-slate-400">/ ${parsedRows.length}</span></div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">${opsMonitoria.length} operadores avaliados</div>
+                            </div>
+                        </div>
+
+                        ${calloutHtml}
+
+                        <!-- TABELA DETALHADA LINHA POR LINHA -->
+                        <div class="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                <div class="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                                    <i class="fa-solid fa-list-check text-cyan-500 mr-1.5"></i> Auditoria Linha por Linha do Arquivo
+                                </div>
+                                <div class="text-[11px] text-slate-400">Mostrando todos os ${parsedRows.length} registros</div>
+                            </div>
+                            <div class="overflow-x-auto max-h-[42vh] custom-scrollbar">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead class="sticky top-0 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 shadow-xs z-10">
+                                        <tr>
+                                            <th class="py-2.5 px-3 text-center">#</th>
+                                            <th class="py-2.5 px-3">Matrícula (Arquivo)</th>
+                                            <th class="py-2.5 px-3">TMA Lido</th>
+                                            <th class="py-2.5 px-3">TMA Convertido</th>
+                                            <th class="py-2.5 px-3">Nome na Base RH</th>
+                                            <th class="py-2.5 px-3">Presença na Monitoria</th>
+                                            <th class="py-2.5 px-3">Status do Cruzamento</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                        ${tableRowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-3xl');
+                    modalBox.classList.add('max-w-5xl');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-microscope text-cyan-500"></i> Raio-X de TMA &bull; Diagnóstico de Cruzamento`;
+                    document.getElementById('modal-content').innerHTML = htmlDebug;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <div class="flex flex-wrap items-center justify-between gap-3 w-full">
+                            <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-5xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-white rounded-xl font-bold text-xs transition-colors">Fechar Diagnóstico</button>
+                            <button onclick="app.admin.confirmarEAplicarTMAdoDebug()" class="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2">
+                                <i class="fa-solid fa-check"></i> Aplicar e Integrar Base TMA Agora
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                confirmarEAplicarTMAdoDebug() {
+                    if (!window._debugParsedTMA || Object.keys(window._debugParsedTMA).length === 0) {
+                        return app.ui.showAlert("Aviso", "Nenhum dado válido de TMA para aplicar.", "warning");
+                    }
+                    if (!app.config.tmaData) app.config.tmaData = {};
+                    Object.assign(app.config.tmaData, window._debugParsedTMA);
+                    if (window._debugTMAMeta && (!app.config.metaTMA || app.config.metaTMA <= 0)) {
+                        app.config.metaTMA = window._debugTMAMeta;
+                    }
+                    const resReconc = app.utils.reconciliarBaseTMAComRH();
+
+                    app.storage.saveConfig().then(() => {
+                        if (typeof localforage !== 'undefined') {
+                            localforage.setItem('soft_tma_data', app.config.tmaData).catch(() => {});
+                            if (app.analiseCSVDinamicoData) {
+                                localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {});
+                            }
+                        }
+                        if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
+                            app.analiseCSVDinamicoData.consolidado.tmaSnapshot = { ...app.config.tmaData };
+                            app.analiseCSVDinamicoData.consolidado.metaTMA = app.config.metaTMA;
+                            try { app.admin.gerarInteligenciaCSV(); } catch(e) {}
+                        }
+                        if (app.ui && app.ui._cachedQTPayload && app.ui._cachedQTPayload.data) {
+                            app.ui._cachedQTPayload.data.tmaSnapshot = { ...app.config.tmaData };
+                            app.ui._cachedQTPayload.data.metaTMA = app.config.metaTMA;
+                        }
+
+                        const modalBox = document.querySelector('#global-modal > div');
+                        if (modalBox) {
+                            modalBox.classList.remove('max-w-4xl', 'max-w-5xl');
+                            modalBox.classList.add('max-w-lg');
+                        }
+                        document.getElementById('global-modal').classList.add('hidden');
+
+                        const cruzadosTxt = resReconc.cruzados > 0 
+                            ? `Foram vinculados com sucesso <b>${resReconc.cruzados} colaboradores</b> à avaliação atual!`
+                            : `Dados de TMA salvos com sucesso na memória do sistema.`;
+
+                        app.ui.showAlert("Base TMA Integrada!", cruzadosTxt, "success");
+                        const targetTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
+                        app.ui.renderTab(targetTab, true);
+                    });
+                },
+
+                execDebugRH(worksheet, rows, rawMatrix, headerRowIndex) {
+                    const chaves = Object.keys(rows[0]);
+                    const cleanFirebaseKey = (str) => app.utils.fixEncoding(String(str || ''))
+                        .toUpperCase()
+                        .replace(/\//g, ' - ')
+                        .replace(/[.#$\[\]]/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    const findCol = (keywords, exclude = []) => {
+                        for (const kw of keywords) {
+                            const found = chaves.find(k => {
+                                const norm = app.utils.fixEncoding(k).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                if (exclude.some(ex => norm.includes(ex))) return false;
+                                return norm === kw || norm.startsWith(kw);
+                            });
+                            if (found) return found;
+                        }
+                        for (const kw of keywords) {
+                            const found = chaves.find(k => {
+                                const norm = app.utils.fixEncoding(k).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                if (exclude.some(ex => norm.includes(ex))) return false;
+                                return norm.includes(kw);
+                            });
+                            if (found) return found;
+                        }
+                        return null;
+                    };
+
+                    const colMat = findCol(['MATRICULA', 'MATRCULA', 'CHAPA', 'RE', 'LOGIN', 'IDOPERADOR', 'ID_OPERADOR', 'CODIGO', 'MATR', 'ID', 'REGISTRO', 'CADASTRO'], ['CIDADE', 'ATIVIDADE', 'VALIDADE', 'DIVISAO', 'SUPERVISOR', 'MONITOR']);
+                    const colNome = findCol(['NOME', 'COLABORADOR', 'OPERADOR', 'ATENDENTE', 'AGENTE', 'FUNCIONARIO', 'NOMECOMPLETO'], ['SUPERVISOR', 'MONITOR', 'COORDENADOR', 'GESTOR', 'CLIENTE']);
+                    const colDias = findCol(['DIASDEEMPRESA', 'DIASEMPRESA', 'DIAS', 'EMPRESA', 'TEMPO', 'TEMPODECASA', 'TEMPOCASA']);
+                    const colAdmissao = findCol(['ADMISSAO', 'DATAADMISSAO', 'DTADMISSAO', 'CONTRATACAO', 'INICIO']);
+                    const colSetor = findCol(['OPERACAOSETOR', 'OPERAOSETOR', 'OPERACAO', 'OPERAO', 'SETOR', 'ILHA', 'CAMPANHA']);
+
+                    const opsMonitoria = app.analiseCSVDinamicoData?.consolidado?.operadores ? Object.keys(app.analiseCSVDinamicoData.consolidado.operadores) : [];
+
+                    const parsedRows = [];
+                    let comNomeCount = 0;
+                    let comTempoCount = 0;
+                    let monCasados = 0;
+
+                    const debugRH = {
+                        rhMatriculaPorNome: {},
+                        rhNomePorMatricula: {},
+                        tempoDeCasa: {}
+                    };
+
+                    rows.forEach((row, idx) => {
+                        const rawMat = colMat ? String(row[colMat] || '').trim() : '';
+                        const rawNome = colNome ? String(row[colNome] || '').trim() : '';
+                        const rawDias = colDias ? row[colDias] : '';
+                        const rawAdm = colAdmissao ? row[colAdmissao] : '';
+                        const rawSetor = colSetor ? String(row[colSetor] || '').trim() : '';
+
+                        let diasInt = null;
+                        if (rawDias !== undefined && rawDias !== "") {
+                            const p = parseInt(rawDias);
+                            if (!isNaN(p) && p >= 0) diasInt = p;
+                        }
+                        if (diasInt === null && rawAdm !== undefined && rawAdm !== "") {
+                            let dt = null;
+                            if (rawAdm instanceof Date) dt = rawAdm;
+                            else if (typeof rawAdm === 'number' && rawAdm > 20000 && rawAdm < 80000) {
+                                dt = new Date(Math.round((rawAdm - 25569) * 86400 * 1000));
+                            } else {
+                                const str = String(rawAdm).trim();
+                                const mBR = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+                                if (mBR) dt = new Date(parseInt(mBR[3]), parseInt(mBR[2]) - 1, parseInt(mBR[1]));
+                                else {
+                                    const mISO = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+                                    if (mISO) dt = new Date(parseInt(mISO[1]), parseInt(mISO[2]) - 1, parseInt(mISO[3]));
+                                }
+                            }
+                            if (dt && !isNaN(dt.getTime())) {
+                                const diffMs = Date.now() - dt.getTime();
+                                if (diffMs >= 0) diasInt = Math.floor(diffMs / 86400000);
+                            }
+                        }
+
+                        const matLimpa = rawMat ? cleanFirebaseKey(rawMat) : '';
+                        const nomeLimpo = rawNome ? cleanFirebaseKey(rawNome) : '';
+
+                        if (matLimpa && nomeLimpo) {
+                            comNomeCount++;
+                            debugRH.rhMatriculaPorNome[nomeLimpo] = matLimpa;
+                            const normN = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                            debugRH.rhMatriculaPorNome[normN] = matLimpa;
+
+                            debugRH.rhNomePorMatricula[matLimpa] = nomeLimpo;
+                            const matSemZero = matLimpa.replace(/^0+/, '');
+                            if (matSemZero) debugRH.rhNomePorMatricula[matSemZero] = nomeLimpo;
+                            debugRH.rhNomePorMatricula[matLimpa.padStart(6, '0')] = nomeLimpo;
+                        }
+
+                        if (diasInt !== null && diasInt >= 0) {
+                            comTempoCount++;
+                            if (matLimpa) {
+                                debugRH.tempoDeCasa[matLimpa] = diasInt;
+                                const mZero = matLimpa.replace(/^0+/, '');
+                                if (mZero) debugRH.tempoDeCasa[mZero] = diasInt;
+                            }
+                            if (nomeLimpo) {
+                                debugRH.tempoDeCasa[nomeLimpo] = diasInt;
+                                const normN = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                                debugRH.tempoDeCasa[normN] = diasInt;
+                            }
+                        }
+
+                        // Cruzamento com a monitoria ativa
+                        let opMonitoria = null;
+                        if (nomeLimpo && opsMonitoria.length > 0) {
+                            const normAlvo = nomeLimpo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            for (let i = 0; i < opsMonitoria.length; i++) {
+                                const opN = opsMonitoria[i];
+                                const normOp = opN.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                                if (normOp === normAlvo) { opMonitoria = opN; break; }
+                                const p1 = normAlvo.split(/\s+/).filter(p => p.length > 2);
+                                const p2 = normOp.split(/\s+/).filter(p => p.length > 2);
+                                if (p1.length >= 2 && p2.length >= 2 && p1[0] === p2[0] && p1[p1.length - 1] === p2[p2.length - 1]) {
+                                    opMonitoria = opN; break;
+                                }
+                            }
+                        }
+                        if (opMonitoria) monCasados++;
+
+                        parsedRows.push({
+                            num: idx + 1,
+                            mat: matLimpa || '-',
+                            nome: nomeLimpo || '-',
+                            dias: diasInt !== null ? `${diasInt} dias` : 'S/D',
+                            setor: rawSetor || '-',
+                            opMonitoria: opMonitoria || '-'
+                        });
+                    });
+
+                    window._debugParsedRH = debugRH;
+
+                    let tableRowsHtml = parsedRows.map(r => `
+                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors border-b border-slate-100 dark:border-slate-800">
+                            <td class="py-2.5 px-3 text-center text-slate-400 font-bold">${r.num}</td>
+                            <td class="py-2.5 px-3 font-mono font-black text-slate-800 dark:text-slate-200">${r.mat}</td>
+                            <td class="py-2.5 px-3 font-bold text-slate-700 dark:text-slate-300">${r.nome}</td>
+                            <td class="py-2.5 px-3 font-mono text-emerald-600 dark:text-emerald-400 font-bold">${r.dias}</td>
+                            <td class="py-2.5 px-3 text-slate-500 text-[11px]">${r.setor}</td>
+                            <td class="py-2.5 px-3">${r.opMonitoria !== '-' ? `<span class="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-300"><i class="fa-solid fa-check mr-1"></i>Presente na Monitoria</span>` : '<span class="text-slate-400 text-[11px] italic">Sem avaliação na sessão</span>'}</td>
+                        </tr>
+                    `).join('');
+
+                    let htmlDebug = `
+                    <div class="text-left space-y-4 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Total de Linhas no RH</div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${parsedRows.length}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">Cabeçalho: Linha ${headerRowIndex + 1}</div>
+                            </div>
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Matrículas com Nome</div>
+                                <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">${comNomeCount}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">Vínculos de identificação</div>
+                            </div>
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Com Tempo de Empresa</div>
+                                <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums">${comTempoCount}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">Dias ou Data de Admissão</div>
+                            </div>
+                            <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Presentes na Monitoria</div>
+                                <div class="text-2xl font-black ${monCasados > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} tabular-nums">${monCasados}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">De ${opsMonitoria.length} operadores ativos</div>
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700 rounded-2xl flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-200">
+                            <i class="fa-solid fa-circle-check text-emerald-600 text-base shrink-0 mt-0.5"></i>
+                            <div>
+                                <strong class="font-black block text-sm mb-1">Estrutura de RH Identificada!</strong>
+                                Foram mapeadas <b>${comNomeCount} relações entre Matrícula e Nome</b>. Ao confirmar, esses vínculos serão gravados e conectados imediatamente às avaliações da monitoria e a qualquer Base TMA existente.
+                            </div>
+                        </div>
+
+                        <div class="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                <div class="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                                    <i class="fa-solid fa-users text-emerald-500 mr-1.5"></i> Amostra dos Registros de RH
+                                </div>
+                                <div class="text-[11px] text-slate-400">${parsedRows.length} colaboradores listados</div>
+                            </div>
+                            <div class="overflow-x-auto max-h-[42vh] custom-scrollbar">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead class="sticky top-0 bg-slate-100 dark:bg-slate-800 text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 shadow-xs z-10">
+                                        <tr>
+                                            <th class="py-2.5 px-3 text-center">#</th>
+                                            <th class="py-2.5 px-3">Matrícula</th>
+                                            <th class="py-2.5 px-3">Nome do Colaborador</th>
+                                            <th class="py-2.5 px-3">Tempo de Empresa</th>
+                                            <th class="py-2.5 px-3">Setor / Operação</th>
+                                            <th class="py-2.5 px-3">Status na Monitoria</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                        ${tableRowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-3xl');
+                    modalBox.classList.add('max-w-5xl');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-microscope text-emerald-500"></i> Raio-X da Base de RH &bull; Diagnóstico de Identificação`;
+                    document.getElementById('modal-content').innerHTML = htmlDebug;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <div class="flex flex-wrap items-center justify-between gap-3 w-full">
+                            <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-5xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-white rounded-xl font-bold text-xs transition-colors">Fechar Diagnóstico</button>
+                            <button onclick="app.admin.confirmarEAplicarRHdoDebug()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2">
+                                <i class="fa-solid fa-check"></i> Aplicar e Salvar Base RH Agora
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                confirmarEAplicarRHdoDebug() {
+                    if (!window._debugParsedRH) return app.ui.showAlert("Aviso", "Nenhum dado válido de RH para aplicar.", "warning");
+                    if (!app.config.rhMatriculaPorNome) app.config.rhMatriculaPorNome = {};
+                    if (!app.config.rhNomePorMatricula) app.config.rhNomePorMatricula = {};
+                    if (!app.config.tempoDeCasa) app.config.tempoDeCasa = {};
+
+                    Object.assign(app.config.rhMatriculaPorNome, window._debugParsedRH.rhMatriculaPorNome || {});
+                    Object.assign(app.config.rhNomePorMatricula, window._debugParsedRH.rhNomePorMatricula || {});
+                    Object.assign(app.config.tempoDeCasa, window._debugParsedRH.tempoDeCasa || {});
+
+                    try {
+                        localStorage.setItem('soft_rh_matricula_por_nome', JSON.stringify(app.config.rhMatriculaPorNome));
+                        localStorage.setItem('soft_rh_nome_por_matricula', JSON.stringify(app.config.rhNomePorMatricula));
+                    } catch (e) {}
+
+                    app.storage.saveConfig().then(() => {
+                        let resTMA = { cruzados: 0 };
+                        if (app.config.tmaData && Object.keys(app.config.tmaData).length > 0) {
+                            resTMA = app.utils.reconciliarBaseTMAComRH();
+                        }
+                        if (app.analiseCSVDinamicoData) {
+                            app.admin.gerarInteligenciaCSV();
+                        }
+
+                        const modalBox = document.querySelector('#global-modal > div');
+                        if (modalBox) {
+                            modalBox.classList.remove('max-w-4xl', 'max-w-5xl');
+                            modalBox.classList.add('max-w-lg');
+                        }
+                        document.getElementById('global-modal').classList.add('hidden');
+
+                        const msgExtra = resTMA.cruzados > 0 ? `<br><br><b>${resTMA.cruzados} colaboradores</b> da Base TMA foram imediatamente conectados à monitoria!` : '';
+                        app.ui.showAlert("Base de RH Aplicada!", `Dados de RH salvos com sucesso na base do sistema!${msgExtra}`, "success");
+                        const targetTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
+                        app.ui.renderTab(targetTab, true);
+                    });
+                },
+
+                execDebugPesosFalhas(rows, chaves) {
+                    const colunasAvaliacao = chaves.filter(k => k.toUpperCase().includes('PESO'));
+
+                    let htmlDebug = `<div class="text-left text-sm space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                        <p class="font-bold text-slate-700 dark:text-slate-200">Encontrei <span class="text-purple-600 bg-purple-50 dark:bg-purple-950/40 px-2 py-1 rounded border border-purple-200 dark:border-purple-800">${colunasAvaliacao.length} colunas</span> de avaliação.</p>
+                        <p class="text-slate-500 text-xs leading-relaxed">Veja abaixo como o sistema separou essas colunas lendo o valor do "PESO" e como ele interpretou a resposta da 1ª linha da planilha:</p>
+                        <div class="space-y-4">`;
+
+                    colunasAvaliacao.forEach(col => {
+                        let match = col.match(/=\s*PESO:\s*([0-9.,]+)/i);
+                        let pesoExtraido = match ? match[1] : 'NÃO ENCONTRADO';
+                        let pesoNum = match ? parseFloat(match[1].replace(',', '.')) : null;
+                        
+                        let classificacao = "Indefinido";
+                        let classColor = "bg-slate-100 text-slate-700 border-slate-300";
+                        let icone = "fa-circle-question";
+                        
+                        let isCritico = pesoNum === 100 || pesoNum === 0;
+
+                        if (isCritico) {
+                            classificacao = "FALHA CRÍTICA (Zera a Nota)";
+                            classColor = "bg-red-50 text-red-700 border-red-300";
+                            icone = "fa-circle-exclamation";
+                        } else if (pesoNum !== null) {
+                            classificacao = "DESVIO NORMAL (Falha Comum)";
+                            classColor = "bg-orange-50 text-orange-700 border-orange-300";
+                            icone = "fa-layer-group";
+                        } else {
+                            classificacao = "FALHA NA LEITURA (Padrão Incorreto)";
+                        }
+
+                        let valorLinha1 = rows[0][col];
+                        let valStr = (valorLinha1 || '').toString().trim().toUpperCase();
+                        
+                        let interpretacaoResp = "";
+                        if (isCritico) {
+                            let isSim = valStr === 'SIM' || valStr === 'S';
+                            interpretacaoResp = isSim 
+                                ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
+                                : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Não falhou)</span>";
+                        } else {
+                            let isNao = valStr === 'NÃO' || valStr === 'NAO' || valStr === 'N';
+                            interpretacaoResp = isNao 
+                                ? "<span class='text-red-600 font-black'><i class='fa-solid fa-xmark'></i> Interpretado como ERRO (Falhou)</span>" 
+                                : "<span class='text-emerald-600 font-bold'><i class='fa-solid fa-check'></i> Interpretado como ACERTO (Sim ou N/A)</span>";
+                        }
+
+                        htmlDebug += `
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm transition-hover hover:border-purple-300">
+                            <div class="font-black text-slate-500 text-[10px] uppercase tracking-widest mb-1">Nome exato da Coluna:</div>
+                            <div class="text-xs tabular-nums mb-4 text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 break-words leading-relaxed">${col}</div>
+                            
+                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                <div class="bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col justify-center items-center text-center">
+                                    <div class="text-[9px] uppercase font-bold text-slate-400 mb-1">Peso Extraído da Coluna:</div>
+                                    <div class="text-lg font-black text-slate-800 dark:text-white">${pesoExtraido}</div>
+                                </div>
+                                <div class="${classColor} p-3 rounded-xl border flex flex-col justify-center items-center text-center">
+                                    <div class="text-[9px] uppercase font-bold opacity-70 mb-1">Classificação do Sistema:</div>
+                                    <div class="text-xs font-black"><i class="fa-solid ${icone} mb-1 block text-lg opacity-80"></i> ${classificacao}</div>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 dark:border-slate-700 pt-3">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase mb-2">Simulação de Leitura (1ª Linha):</div>
+                                <div class="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                                    Valor detectado na célula: <b class="tabular-nums bg-white dark:bg-slate-800 px-1 border border-slate-200 dark:border-slate-700 rounded">"${valorLinha1}"</b><br>
+                                    <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 border-dashed">${interpretacaoResp}</div>
+                                </div>
+                            </div>
+                        </div>`;
+                    });
+
+                    htmlDebug += `</div></div>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-5xl');
+                    modalBox.classList.add('max-w-3xl');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-microscope text-purple-500"></i> Raio-X de Pesos e Falhas`;
+                    document.getElementById('modal-content').innerHTML = htmlDebug;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-slate-800 hover:bg-black text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5 w-full md:w-auto">Entendi e Fechar</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                execDebugGenerico(worksheet, rows, rawMatrix, headerRowIndex) {
+                    const chaves = Object.keys(rows[0] || {});
+                    let sampleRows = rows.slice(0, 5);
+
+                    let htmlDebug = `
+                    <div class="text-left space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+                        <div class="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-2xl text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
+                            <strong class="font-black text-sm block mb-1.5"><i class="fa-solid fa-circle-info text-blue-500 mr-1.5"></i> Arquivo Lido com Sucesso (Estrutura Não Classificada)</strong>
+                            O sistema escaneou o arquivo mas ele não corresponde diretamente ao formato padrão de Monitoria (colunas com <code>= PESO: XX</code>), Base TMA (coluna <code>TMA</code>) nem Base RH (colunas <code>Matrícula</code> e <code>Dias</code>).
+                        </div>
+
+                        <div class="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Colunas Detectadas no Cabeçalho (${chaves.length}):</div>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${chaves.map(k => `<span class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-2xs">${k}</span>`).join('')}
+                            </div>
+                        </div>
+
+                        <div class="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-xs font-black uppercase text-slate-600 dark:text-slate-300">
+                                Amostra das Primeiras Linhas (${sampleRows.length})
+                            </div>
+                            <div class="overflow-x-auto max-h-[30vh] custom-scrollbar">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead class="bg-slate-100 dark:bg-slate-800 text-[10px] uppercase font-black text-slate-500">
+                                        <tr>${chaves.map(k => `<th class="py-2 px-3 whitespace-nowrap">${k}</th>`).join('')}</tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                        ${sampleRows.map(r => `<tr>${chaves.map(k => `<td class="py-2 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300">${r[k]}</td>`).join('')}</tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>`;
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    modalBox.classList.remove('max-w-lg', 'max-w-5xl');
+                    modalBox.classList.add('max-w-3xl');
+
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-microscope text-blue-500"></i> Raio-X da Estrutura`;
+                    document.getElementById('modal-content').innerHTML = htmlDebug;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-3xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-800 hover:bg-black text-white rounded-xl font-bold text-xs shadow-md transition-all">Fechar</button>`;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                reconciliarERecalcularTMA() {
+                    const res = app.utils.reconciliarBaseTMAComRH();
+                    if (res.cruzados > 0) {
+                        app.ui.showAlert("Cruzamento Bem-Sucedido!", `Sucesso! Foram conectados <b>${res.cruzados} operadores</b> da monitoria atual com os tempos da Base TMA.`, "success");
+                        if (app.analiseCSVDinamicoData) app.admin.gerarInteligenciaCSV();
+                        const targetTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
+                        app.ui.renderTab(targetTab, true);
+                    } else {
+                        app.ui.showAlert("Nenhum Operador Coincidiu", `Foram verificados ${res.total} registros de TMA, mas nenhum coincidiu com a Base de RH ou com a avaliação atual.<br><br>Utilize o <b>Raio-X (Debug)</b> para auditar os dados do arquivo de TMA e da Base de RH.`, "warning");
+                    }
                 },
 
                 autoMarkEquipePorSetor(setorStr) {
@@ -28348,6 +31867,12 @@ storage: {
                                     }
                                 });
                                 app.analiseCSVDinamicoData.consolidado.rhSnapshot = rhSnap;
+                                if (app.config.tmaData && Object.keys(app.config.tmaData).length > 0) {
+                                    app.analiseCSVDinamicoData.consolidado.tmaSnapshot = { ...(app.analiseCSVDinamicoData.consolidado.tmaSnapshot || {}), ...app.config.tmaData };
+                                }
+                                if (app.config.metaTMA) {
+                                    app.analiseCSVDinamicoData.consolidado.metaTMA = app.config.metaTMA;
+                                }
                             }
 
                             const userMat = String(app.currentUser?.matricula || (app.isAdmin ? 'gestaosoft' : '')).trim();
@@ -29132,6 +32657,8 @@ storage: {
                     let oldTitleColor = '';
                     let oldBgColor = '';
                     let oldRhSnapshot = null;
+                    let oldTmaSnapshot = null;
+                    let oldMetaTMA = null;
                     let oldChapterCustomData = {}; // <--- SALVA VIDAS DOS CAPÍTULOS
 
                     if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
@@ -29141,7 +32668,12 @@ storage: {
                         oldTitleColor = app.analiseCSVDinamicoData.consolidado.titleColor || '';
                         oldBgColor = app.analiseCSVDinamicoData.consolidado.bgColor || '';
                         oldRhSnapshot = app.analiseCSVDinamicoData.consolidado.rhSnapshot || null;
+                        oldTmaSnapshot = app.analiseCSVDinamicoData.consolidado.tmaSnapshot || (app.config.tmaData && Object.keys(app.config.tmaData).length > 0 ? { ...app.config.tmaData } : null);
+                        oldMetaTMA = app.analiseCSVDinamicoData.consolidado.metaTMA || app.config.metaTMA || null;
                         oldChapterCustomData = app.analiseCSVDinamicoData.consolidado.chapterCustomData || {}; // <--- RESGATA DA MEMÓRIA ANTERIOR
+                    } else if (app.config.tmaData && Object.keys(app.config.tmaData).length > 0) {
+                        oldTmaSnapshot = { ...app.config.tmaData };
+                        oldMetaTMA = app.config.metaTMA || null;
                     }
 
                     const data = {
@@ -29166,6 +32698,8 @@ storage: {
                         titleColor: oldTitleColor,
                         bgColor: oldBgColor,
                         rhSnapshot: oldRhSnapshot,
+                        tmaSnapshot: oldTmaSnapshot,
+                        metaTMA: oldMetaTMA,
                         chapterCustomData: oldChapterCustomData, // <--- DEVOLVE PRA ESTRUTURA BLINDADA
                         notasDistribuicao: {}, // <--- NOVO: Armazena a contagem exata de cada nota
                         assuntosDistribuicao: {} // <--- CORREÇÃO: A "estante" mestra que estava faltando para as caixinhas!
@@ -29493,7 +33027,18 @@ storage: {
                     data.evolutivoQuedas = [...opsComparacao].filter(o => o.diff < 0).sort((a,b) => a.diff - b.diff).slice(0, 5);
 
                     // Escolha inteligente da série principal do gráfico evolutivo (#chart-analise-evolutivo)
-                    const modoPref = app.ui.evolutivoModo || (ciclosComDado.length > activeMonthsForEvol.length && ciclosComDado.length > 1 ? 'ciclo' : (activeMonthsForEvol.length > 1 ? 'mes' : 'ciclo'));
+                    let modoPref = app.ui.evolutivoModo;
+                    if (!modoPref) {
+                        if (filtrosMes.length === 1 && filtrosMes[0] !== "" && ciclosComDado.length > 1) {
+                            modoPref = 'ciclo'; // Quando 1 único mês é filtrado, o evolutivo temporal natural é acompanhar as semanas daquele mês!
+                        } else if (ciclosComDado.length > activeMonthsForEvol.length && ciclosComDado.length > 1) {
+                            modoPref = 'ciclo';
+                        } else if (activeMonthsForEvol.length > 1) {
+                            modoPref = 'mes';
+                        } else {
+                            modoPref = ciclosComDado.length > 0 ? 'ciclo' : 'mes';
+                        }
+                    }
                     if (modoPref === 'ciclo' && data.evolutivoCicloLabels.length > 0) {
                         data.evolutivoModoAtivo = 'ciclo';
                         data.evolutivoChartLabels = data.evolutivoCicloLabels;
@@ -37794,13 +41339,29 @@ app.duolingo = {
                 ...m,
                 licoes: (m.licoes ? (Array.isArray(m.licoes) ? m.licoes : Object.values(m.licoes)) : []).filter(Boolean).map(l => ({
                     ...l,
-                    desafios: (l.desafios ? (Array.isArray(l.desafios) ? l.desafios : Object.values(l.desafios)) : []).filter(Boolean).map(d => ({
-                        ...d,
-                        opcoes: d.opcoes ? (Array.isArray(d.opcoes) ? d.opcoes : Object.values(d.opcoes)) : [],
-                        linhas: d.linhas ? (Array.isArray(d.linhas) ? d.linhas : Object.values(d.linhas)) : undefined,
-                        itens: d.itens ? (Array.isArray(d.itens) ? d.itens : Object.values(d.itens)) : undefined,
-                        gabarito: (d.tipo === 'ORDENAR_FLUXO' && d.gabarito && !Array.isArray(d.gabarito) && typeof d.gabarito === 'object') ? Object.values(d.gabarito) : d.gabarito
-                    }))
+                    desafios: (l.desafios ? (Array.isArray(l.desafios) ? l.desafios : Object.values(l.desafios)) : []).filter(Boolean).map(d => {
+                        const cleanD = { ...d };
+                        cleanD.opcoes = d.opcoes ? (Array.isArray(d.opcoes) ? d.opcoes : Object.values(d.opcoes)) : [];
+                        if (d.linhas && (Array.isArray(d.linhas) || typeof d.linhas === 'object')) {
+                            cleanD.linhas = Array.isArray(d.linhas) ? d.linhas : Object.values(d.linhas);
+                        } else {
+                            delete cleanD.linhas;
+                        }
+                        if (d.itens && (Array.isArray(d.itens) || typeof d.itens === 'object')) {
+                            cleanD.itens = Array.isArray(d.itens) ? d.itens : Object.values(d.itens);
+                        } else {
+                            delete cleanD.itens;
+                        }
+                        if (d.texto !== undefined && d.texto !== null && d.texto !== '') {
+                            cleanD.texto = String(d.texto);
+                        } else {
+                            delete cleanD.texto;
+                        }
+                        if (d.tipo === 'ORDENAR_FLUXO' && d.gabarito && !Array.isArray(d.gabarito) && typeof d.gabarito === 'object') {
+                            cleanD.gabarito = Object.values(d.gabarito);
+                        }
+                        return cleanD;
+                    })
                 }))
             }))
         }));
@@ -37968,12 +41529,22 @@ app.duolingo = {
 
     saveTemas(temas) {
         const clean = this.normalizeTemas(temas);
+        let safePayload = clean;
         try {
-            localStorage.setItem('softlingo_temas_backup', JSON.stringify(clean));
-        } catch (e) {}
-        app.softlingoTemas = clean;
+            safePayload = JSON.parse(JSON.stringify(clean));
+            localStorage.setItem('softlingo_temas_backup', JSON.stringify(safePayload));
+        } catch (e) {
+            console.warn('Erro ao salvar softlingo_temas no localStorage:', e);
+        }
+        app.softlingoTemas = safePayload;
         if (typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref('sistema_bonificacao/softlingo_temas').set(clean);
+            try {
+                firebase.database().ref('sistema_bonificacao/softlingo_temas').set(safePayload).catch(err => {
+                    console.warn('Erro assíncrono ao persistir softlingo_temas no Firebase:', err);
+                });
+            } catch (fbErr) {
+                console.warn('Erro síncrono ao persistir softlingo_temas no Firebase:', fbErr);
+            }
         }
     },
 
@@ -40045,7 +43616,7 @@ app.duolingo = {
         const temaEdit = editTemaId ? this.getTemaById(editTemaId) : null;
         const iconeInicial = temaEdit ? (temaEdit.icone || 'fa-graduation-cap') : 'fa-graduation-cap';
         const operacoesPermitidas = this.getOperacoesPermitidasCMS();
-        const opPadrao = temaEdit ? (temaEdit.operacao || 'Geral') : (this.cmsSelectedOperacao && this.cmsSelectedOperacao !== 'TODAS' ? this.cmsSelectedOperacao : operacoesPermitidas[0]);
+        const opPadrao = temaEdit ? (temaEdit.operacao || 'Geral') : (this.cmsSelectedOperacao && this.cmsSelectedOperacao !== 'TODAS' ? this.cmsSelectedOperacao : (operacoesPermitidas[0] || 'Geral'));
         const old = document.getElementById('modal-cms-novo-tema');
         if (old) old.remove();
 
@@ -40063,17 +43634,16 @@ app.duolingo = {
                 <form onsubmit="event.preventDefault(); app.duolingo.salvarNovoTema('${editTemaId || ''}');" class="space-y-3">
                     <div>
                         <label class="block text-xs font-bold mb-1">Operação do Tema</label>
-                        ${operacoesPermitidas.length > 1 ? `
-                            <select id="novo-tema-operacao" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold outline-none focus:border-purple-600 cursor-pointer">
-                                ${operacoesPermitidas.map(op => `<option value="${app.utils.escapeHtml(op)}" ${opPadrao === op ? 'selected' : ''}>${app.utils.escapeHtml(op)}</option>`).join('')}
-                            </select>
-                        ` : `
-                            <input type="text" id="novo-tema-operacao" value="${app.utils.escapeHtml(operacoesPermitidas[0] || 'Geral')}" readonly class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 text-xs font-bold cursor-not-allowed">
-                            <span class="text-[10px] text-slate-400 mt-0.5 block">Vinculado exclusivamente à sua operação autorizada.</span>
-                        `}
+                        <select id="novo-tema-operacao" onchange="const c = document.getElementById('novo-tema-op-custom-box'); if(c) c.classList.toggle('hidden', this.value !== '__NOVA__');" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold outline-none focus:border-purple-600 cursor-pointer">
+                            ${operacoesPermitidas.map(op => `<option value="${app.utils.escapeHtml(op)}" ${opPadrao === op ? 'selected' : ''}>${app.utils.escapeHtml(op)}</option>`).join('')}
+                            <option value="__NOVA__">+ Digitar Outra Operação...</option>
+                        </select>
+                        <div id="novo-tema-op-custom-box" class="hidden mt-2">
+                            <input type="text" id="novo-tema-operacao-custom" placeholder="Digite o nome da nova operação..." class="w-full px-3.5 py-2 rounded-xl border border-purple-300 dark:border-purple-600 bg-white dark:bg-slate-800 text-xs font-bold">
+                        </div>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold mb-1">Título do Tema</label>
+                        <label class="block text-xs font-bold mb-1">Título do Tema <span class="text-rose-500">*</span></label>
                         <input type="text" id="novo-tema-titulo" value="${temaEdit ? app.utils.escapeHtml(temaEdit.titulo) : ''}" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold" placeholder="Ex: Comunicação Não-Violenta no Call Center">
                     </div>
                     <div>
@@ -40095,8 +43665,9 @@ app.duolingo = {
                         <label class="block text-xs font-bold mb-1">Indicadores Impactados (Separados por vírgula)</label>
                         <input type="text" id="novo-tema-ind" value="${temaEdit ? app.utils.escapeHtml((temaEdit.indicadores || []).join(', ')) : ''}" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" placeholder="CSAT, Retenção, Aderência, FCR">
                     </div>
-                    <button type="submit" class="w-full mt-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition">
-                        ${temaEdit ? 'Salvar Alterações do Tema' : 'Criar Tema'}
+                    <button type="submit" class="w-full mt-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>${temaEdit ? 'Salvar Alterações do Tema' : 'Criar Tema'}</span>
                     </button>
                 </form>
             </div>
@@ -40105,16 +43676,30 @@ app.duolingo = {
     },
 
     salvarNovoTema(editTemaId = '') {
-        const operacao = document.getElementById('novo-tema-operacao')?.value.trim() || this.cmsSelectedOperacao || 'Geral';
-        const titulo = document.getElementById('novo-tema-titulo').value.trim();
-        const icone = document.getElementById('novo-tema-icone').value.trim() || 'fa-graduation-cap';
-        const desc = document.getElementById('novo-tema-desc').value.trim();
-        const indRaw = document.getElementById('novo-tema-ind').value.trim();
+        const opSelect = document.getElementById('novo-tema-operacao');
+        let operacao = opSelect?.value?.trim() || this.cmsSelectedOperacao || 'Geral';
+        if (operacao === '__NOVA__') {
+            const opCustom = document.getElementById('novo-tema-operacao-custom')?.value?.trim();
+            operacao = opCustom || 'Geral';
+        }
+        const titulo = document.getElementById('novo-tema-titulo')?.value?.trim() || '';
+        const icone = document.getElementById('novo-tema-icone')?.value?.trim() || 'fa-graduation-cap';
+        const desc = document.getElementById('novo-tema-desc')?.value?.trim() || '';
+        const indRaw = document.getElementById('novo-tema-ind')?.value?.trim() || '';
         const indicadores = indRaw ? indRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Qualidade Operacional'];
 
-        if (!titulo) return;
+        if (!titulo) {
+            if (app.ui && app.ui.showAlert) {
+                app.ui.showAlert("Atenção", "Por favor, preencha o título do tema.", "warning");
+            } else {
+                alert("Por favor, preencha o título do tema.");
+            }
+            return;
+        }
 
         const temas = this.getTemas();
+        let temaIdAtual = editTemaId;
+
         if (editTemaId) {
             const tExist = temas.find(t => t.id === editTemaId);
             if (tExist) {
@@ -40136,15 +43721,33 @@ app.duolingo = {
                 modulos: []
             };
             temas.push(novoTema);
+            temaIdAtual = novoTema.id;
             this.saveTemas(temas);
-            this.cmsSelectedOperacao = operacao;
-            this.cmsSelectedTemaId = novoTema.id;
-            this.cmsTargetModuloId = null;
-            this.cmsTargetLicaoId = null;
         }
+
+        if (this.cmsSelectedOperacao !== 'TODAS') {
+            this.cmsSelectedOperacao = operacao;
+        }
+        this.cmsSelectedTemaId = temaIdAtual;
+        this.cmsTargetModuloId = null;
+        this.cmsTargetLicaoId = null;
+        this.subaba = 'cms';
 
         const m = document.getElementById('modal-cms-novo-tema');
         if (m) m.remove();
+
+        if (typeof this.playSound === 'function') {
+            this.playSound('save');
+        }
+
+        if (app.ui && app.ui.showAlert) {
+            app.ui.showAlert(
+                editTemaId ? "Tema Atualizado!" : "Tema Criado com Sucesso!",
+                `O tema "${titulo}" (${operacao}) foi salvo com sucesso.`,
+                "success"
+            );
+        }
+
         this.render();
     },
 
@@ -40221,9 +43824,9 @@ app.duolingo = {
 
         let gabarito = '';
         let opcoes = [];
-        let linhas = undefined;
-        let itens = undefined;
-        let texto = undefined;
+        let linhas = null;
+        let itens = null;
+        let texto = null;
 
         if (tipo === 'VERDADEIRO_OU_FALSO') {
             const rad = document.querySelector('input[name="cms_vf_gabarito"]:checked');
@@ -40270,7 +43873,7 @@ app.duolingo = {
         }
 
         const mascoteEscolhido = document.getElementById('cms-q-mascote')?.value || 'auto';
-        return {
+        const questaoObj = {
             id: this.cmsEditingQuestaoId || ('q_' + Date.now()),
             temaId: temaId,
             moduloId: modId,
@@ -40279,14 +43882,15 @@ app.duolingo = {
             mascote: mascoteEscolhido,
             cenario: cenario || 'Cenário de Atendimento',
             enunciado: enunciado,
-            opcoes: opcoes,
-            linhas: linhas,
-            itens: itens,
-            texto: texto,
+            opcoes: opcoes || [],
             gabarito: gabarito,
             feedbackAcerto: feedbackAcerto,
             feedbackErro: feedbackErro
         };
+        if (linhas && linhas.length > 0) questaoObj.linhas = linhas;
+        if (itens && itens.length > 0) questaoObj.itens = itens;
+        if (texto) questaoObj.texto = texto;
+        return questaoObj;
     },
 
     salvarNovaQuestao(e) {
