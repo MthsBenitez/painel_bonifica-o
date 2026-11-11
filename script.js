@@ -1459,7 +1459,7 @@ storage: {
                     return tipo === 'Dev';
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
-                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
+                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
                 if (tabId) return userAbas.includes(tabId);
                 return isPerfilGestao;
@@ -3765,6 +3765,8 @@ storage: {
                 if (curMat && String(t.treinadorMatricula || '').trim().toLowerCase() === curMat) return true;
                 if (curMat && String(t.criadoPor || '').trim().toLowerCase() === curMat) return true;
                 if (curNome && String(t.treinadorNome || '').trim().toLowerCase() === curNome) return true;
+                if (curMat && String(t.responsavelIntegracaoMatricula || '').trim().toLowerCase() === curMat) return true;
+                if (curNome && String(t.responsavelIntegracaoNome || '').trim().toLowerCase() === curNome) return true;
                 return false;
             },
 
@@ -3839,25 +3841,32 @@ storage: {
                 const respIntMatEl = document.getElementById('turma-input-resp-int-mat');
 
                 if (tipoEl) t.tipoTurma = tipoEl.value;
-                if (opEl) t.operacao = opEl.value.trim();
-                if (numEl) t.numeroTurma = numEl.value.trim();
+                if (opEl) t.operacao = (opEl.value || '').trim().toUpperCase();
+                if (numEl) t.numeroTurma = (numEl.value || '').trim().toUpperCase();
                 if (dtIniEl) t.dataInicio = dtIniEl.value;
                 if (dtOpEl) t.dataInicioOperacao = dtOpEl.value;
                 if (diasAloEl) t.diasAloAcompanhado = parseInt(diasAloEl.value) || 4;
                 if (dtFimEl) t.previsaoEntrega = dtFimEl.value;
-                if (horaEl) t.horario = horaEl.value.trim();
-                if (matEl) t.treinadorMatricula = matEl.value.trim();
-                if (nomeEl) t.treinadorNome = nomeEl.value.trim();
-                if (respIntNomeEl) t.responsavelIntegracaoNome = respIntNomeEl.value.trim();
-                if (respIntMatEl) t.responsavelIntegracaoMatricula = respIntMatEl.value.trim();
+                if (horaEl) t.horario = (horaEl.value || '').trim();
+                if (matEl) t.treinadorMatricula = (matEl.value || '').trim().toUpperCase();
+                if (nomeEl) t.treinadorNome = (nomeEl.value || '').trim().toUpperCase();
+                if (respIntNomeEl) t.responsavelIntegracaoNome = (respIntNomeEl.value || '').trim().toUpperCase();
+                if (respIntMatEl) t.responsavelIntegracaoMatricula = (respIntMatEl.value || '').trim().toUpperCase();
 
                 if (!t.operacao) return app.ui.showAlert("Atenção", "Selecione a operação da turma.", "warning");
-                if (!t.numeroTurma) return app.ui.showAlert("Atenção", "Informe o número ou identificação da turma (ex: Turma 04).", "warning");
+                if (!t.numeroTurma) return app.ui.showAlert("Atenção", "Informe o número ou identificação da turma (ex: TURMA 04).", "warning");
                 if (!t.dataInicio) return app.ui.showAlert("Atenção", "Informe a data de início da capacitação.", "warning");
                 if (!t.previsaoEntrega) return app.ui.showAlert("Atenção", "Informe a previsão de entrega da turma.", "warning");
                 if (!Array.isArray(t.colaboradores) || t.colaboradores.length === 0) {
                     return app.ui.showAlert("Atenção", "Cadastre pelo menos 1 colaborador para esta turma.", "warning");
                 }
+
+                // Padronização rigorosa sem espaços e tudo em maiúsculo em toda a turma
+                t.colaboradores.forEach(c => {
+                    if (c.matricula) c.matricula = String(c.matricula).trim().toUpperCase();
+                    if (c.nome) c.nome = String(c.nome).trim().toUpperCase();
+                    if (c.cpf) c.cpf = String(c.cpf).trim();
+                });
 
                 if (t.travada && !this.canManageAll()) {
                     return app.ui.showAlert("Turma Travada", "Esta turma já foi salva e travada contra alterações manuais.", "warning");
@@ -4028,6 +4037,9 @@ storage: {
                 if (!t || !t.anexoListaPresenca) {
                     return app.ui.showAlert("Sem Anexo", "Nenhuma lista de presença assinada foi anexada para esta turma.", "info");
                 }
+                if (!this.canEditTurma(t)) {
+                    return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para visualizar o anexo desta turma.", "warning");
+                }
                 const anexo = t.anexoListaPresenca;
                 const modal = document.getElementById('anexo-visualizar-modal');
                 const titulo = document.getElementById('anexo-visualizar-titulo');
@@ -4090,8 +4102,8 @@ storage: {
                 const cpfEl = document.getElementById('turma-add-colab-cpf');
                 const admEl = document.getElementById('turma-add-colab-adm');
 
-                const mat = (matEl?.value || '').trim();
-                const nome = (nomeEl?.value || '').trim();
+                const mat = (matEl?.value || '').trim().toUpperCase();
+                const nome = (nomeEl?.value || '').trim().toUpperCase();
                 const cpf = (cpfEl?.value || '').trim();
                 const adm = admEl?.value || '';
 
@@ -4102,7 +4114,7 @@ storage: {
                 if (!Array.isArray(t.colaboradores)) t.colaboradores = [];
 
                 if (mat) {
-                    const duplicado = t.colaboradores.some(c => String(c.matricula).trim().toLowerCase() === mat.toLowerCase());
+                    const duplicado = t.colaboradores.some(c => String(c.matricula).trim().toUpperCase() === mat);
                     if (duplicado) {
                         return app.ui.showAlert("Atenção", `A matrícula ${mat} já está cadastrada nesta turma.`, "warning");
                     }
@@ -4111,7 +4123,7 @@ storage: {
                 t.colaboradores.push({
                     id: 'colab_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
                     matricula: mat || '-',
-                    nome: nome || 'Colaborador',
+                    nome: nome || 'COLABORADOR',
                     cpf: cpf || '',
                     dataAdmissao: adm || t.dataInicio || '',
                     statusGeral: 'Ativo'
@@ -4223,11 +4235,9 @@ storage: {
             canManageAll() {
                 if (app.isAdmin) return true;
                 const cur = app.currentUser || {};
-                const cargo = String(cur.tipoAcesso || '').toLowerCase();
-                const subclasse = String(cur.subclasse || '').toLowerCase();
-                if (['gestor', 'gerente', 'dev', 'administrador'].includes(cargo)) return true;
-                if (cargo === 'treinamento' && subclasse === 'analista') return true;
-                if (cur.matricula === 'admin') return true;
+                const cargo = String(cur.tipoAcesso || '').toLowerCase().trim();
+                if (['gestor', 'gerente', 'dev', 'administrador', 'admin'].includes(cargo)) return true;
+                if (String(cur.matricula || '').toLowerCase().trim() === 'admin') return true;
                 return false;
             },
 
@@ -4240,6 +4250,9 @@ storage: {
                 if (curMat && String(d.treinadorMatricula || '').trim().toLowerCase() === curMat) return true;
                 if (curMat && String(d.criadoPor || '').trim().toLowerCase() === curMat) return true;
                 if (curNome && String(d.treinadorNome || '').trim().toLowerCase() === curNome) return true;
+                if (d.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[d.turmaBaseId]) {
+                    if (this.canEditTurma(app.turmasTreinamentoList[d.turmaBaseId])) return true;
+                }
                 return false;
             },
 
@@ -4413,6 +4426,9 @@ storage: {
                 if (!turmaId) return;
                 const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                 if (!t || !this.diarioEmEdicao) return;
+                if (!this.canEditTurma(t)) {
+                    return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para utilizar a turma de outro colaborador.", "warning");
+                }
 
                 this.diarioEmEdicao.turmaBaseId = turmaId;
                 this.diarioEmEdicao.operacao = t.operacao || '';
@@ -4784,13 +4800,19 @@ storage: {
             },
 
             onMatriculaChange(tipo, valor) {
+                if (!valor) return;
                 const user = this.buscarColaboradorPorMatricula(valor);
                 if (!user) return;
-                const inputNome = (tipo === 'turma_colab') 
-                    ? document.getElementById('turma-add-colab-nome') 
-                    : document.getElementById(`db-add-${tipo}-nome`);
+                let inputNome = null;
+                if (tipo === 'turma_colab') inputNome = document.getElementById('turma-add-colab-nome');
+                else if (tipo === 'treinador') inputNome = document.getElementById('turma-input-treinador-nome');
+                else if (tipo === 'resp_int') inputNome = document.getElementById('turma-input-resp-int-nome');
+                else if (tipo === 'db_treinador') inputNome = document.getElementById('db-input-treinador-nome');
+                else if (tipo === 'abs') inputNome = document.getElementById('db-add-abs-nome');
+                else if (tipo === 'desl') inputNome = document.getElementById('db-add-desl-nome');
+                else if (tipo === 'alt') inputNome = document.getElementById('db-add-alt-nome');
                 if (inputNome && !inputNome.value) {
-                    inputNome.value = user.nome || '';
+                    inputNome.value = String(user.nome || '').trim().toUpperCase();
                 }
             },
 
@@ -4863,12 +4885,12 @@ storage: {
                 const chamEl = document.getElementById('db-add-alt-chamado');
                 const chkAddTurma = document.getElementById('db-add-alt-add-turma');
 
-                const mat = (matEl?.value || '').trim();
-                const nome = (nomeEl?.value || '').trim();
-                const origem = (origemEl?.value || '').trim();
-                const destino = (destinoEl?.value || '').trim();
+                const mat = (matEl?.value || '').trim().toUpperCase();
+                const nome = (nomeEl?.value || '').trim().toUpperCase();
+                const origem = (origemEl?.value || '').trim().toUpperCase();
+                const destino = (destinoEl?.value || '').trim().toUpperCase();
                 const observacao = (obsEl?.value || '').trim();
-                const chamado = (chamEl?.value || '').trim();
+                const chamado = (chamEl?.value || '').trim().toUpperCase();
                 const deveAdicionar = chkAddTurma ? chkAddTurma.checked : true;
 
                 if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador a ser remanejado.", "warning");
@@ -4877,7 +4899,7 @@ storage: {
                 this.diarioEmEdicao.alteracoesQuadro.push({
                     id: 'alt_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
                     matricula: mat || '-',
-                    nome: nome || 'Colaborador',
+                    nome: nome || 'COLABORADOR',
                     origem: origem || '-',
                     deOndeVeio: origem || '-',
                     destino: destino || '-',
@@ -5579,6 +5601,10 @@ storage: {
             },
 
             copiarEmailPronto(diarioId = null) {
+                const targetDiario = diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
+                if (targetDiario && !this.canEditDiario(targetDiario)) {
+                    return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para acessar o diário de bordo de outro colaborador.", "warning");
+                }
                 const texto = this.gerarTextoEmailFormatado(diarioId);
                 if (!texto) {
                     return app.ui.showAlert("Aviso", "Nenhum dado encontrado para gerar o e-mail.", "warning");
@@ -5615,6 +5641,9 @@ storage: {
                 }
                 const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                 if (!t) return app.ui.showAlert("Erro", "Turma não encontrada.", "error");
+                if (!this.canEditTurma(t)) {
+                    return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para visualizar o relatório final desta turma.", "warning");
+                }
 
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -11371,8 +11400,8 @@ storage: {
                 _calCharts: {},
 
                 isGestorGerenteDev() {
-                    const role = String(app.currentUser?.tipoAcesso || '').toLowerCase();
-                    return app.isAdmin || ['gestor', 'gerente', 'dev', 'administrador', 'treinamento'].includes(role) || app.currentUser?.matricula === 'admin';
+                    const role = String(app.currentUser?.tipoAcesso || '').toLowerCase().trim();
+                    return app.isAdmin || ['gestor', 'gerente', 'dev', 'administrador', 'admin'].includes(role) || String(app.currentUser?.matricula || '').toLowerCase().trim() === 'admin';
                 },
 
                 setCalSubView(subView) {
@@ -16237,7 +16266,7 @@ storage: {
                                         <!-- Número da Turma (Dito por quem cadastra) -->
                                         <div>
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Número da Turma (Digitado):</label>
-                                            <input type="text" id="turma-input-numero" value="${t.numeroTurma || ''}" placeholder="Ex: Turma 04, Turma Manhã 01..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            <input type="text" id="turma-input-numero" oninput="this.value = this.value.toUpperCase();" value="${t.numeroTurma || ''}" placeholder="Ex: TURMA 04, TURMA MANHÃ 01..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                                         </div>
 
                                         <!-- Horário -->
@@ -16263,13 +16292,13 @@ storage: {
                                         <!-- Treinador Responsável -->
                                         <div>
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nome do Treinador / Instrutor:</label>
-                                            <input type="text" id="turma-input-treinador-nome" value="${t.treinadorNome || ''}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            <input type="text" id="turma-input-treinador-nome" oninput="this.value = this.value.toUpperCase();" value="${t.treinadorNome || ''}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                         </div>
 
                                         <!-- Matrícula -->
                                         <div>
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Matrícula do Treinador:</label>
-                                            <input type="text" id="turma-input-treinador-mat" value="${t.treinadorMatricula || ''}" placeholder="Matrícula" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            <input type="text" id="turma-input-treinador-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('treinador', this.value);" value="${t.treinadorMatricula || ''}" placeholder="Matrícula" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                         </div>
                                     </div>
 
@@ -16304,11 +16333,11 @@ storage: {
                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <div>
                                                 <label class="block text-[11px] font-bold text-sky-900 dark:text-sky-200 uppercase tracking-wider mb-1">Responsável pela Integração (Nome):</label>
-                                                <input type="text" id="turma-input-resp-int-nome" value="${t.responsavelIntegracaoNome || ''}" placeholder="Nome do Responsável pela Integração" class="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="turma-input-resp-int-nome" oninput="this.value = this.value.toUpperCase();" value="${t.responsavelIntegracaoNome || ''}" placeholder="Nome do Responsável pela Integração" class="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                             <div>
                                                 <label class="block text-[11px] font-bold text-sky-900 dark:text-sky-200 uppercase tracking-wider mb-1">Matrícula do Responsável:</label>
-                                                <input type="text" id="turma-input-resp-int-mat" value="${t.responsavelIntegracaoMatricula || ''}" placeholder="Matrícula do Responsável" class="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="turma-input-resp-int-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('resp_int', this.value);" value="${t.responsavelIntegracaoMatricula || ''}" placeholder="Matrícula do Responsável" class="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                         </div>
                                         <div>
@@ -16355,11 +16384,11 @@ storage: {
                                     <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
                                         <div class="sm:col-span-2">
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
-                                            <input type="text" id="turma-add-colab-mat" oninput="app.diarioBordo.onMatriculaChange('turma_colab', this.value)" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            <input type="text" id="turma-add-colab-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('turma_colab', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                         </div>
                                         <div class="sm:col-span-4">
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome Completo do Aluno:</label>
-                                            <input type="text" id="turma-add-colab-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                            <input type="text" id="turma-add-colab-nome" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                         </div>
                                         <div class="sm:col-span-2">
                                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">CPF (Opcional):</label>
@@ -16841,19 +16870,19 @@ storage: {
                                         <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
                                             <div class="sm:col-span-2">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
-                                                <input type="text" id="db-add-alt-mat" oninput="app.diarioBordo.onMatriculaChange('alt', this.value)" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="db-add-alt-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('alt', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                             <div class="sm:col-span-4">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome:</label>
-                                                <input type="text" id="db-add-alt-nome" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="db-add-alt-nome" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                             <div class="sm:col-span-3">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-right-from-bracket text-amber-500 mr-1"></i> De onde veio (Origem):</label>
-                                                <input type="text" id="db-add-alt-origem" placeholder="Ex: Operação A / Turma 01" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="db-add-alt-origem" oninput="this.value = this.value.toUpperCase();" placeholder="Ex: Operação A / Turma 01" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                             <div class="sm:col-span-3">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-right-to-bracket text-emerald-500 mr-1"></i> Para onde vai (Destino):</label>
-                                                <input type="text" id="db-add-alt-destino" placeholder="Ex: Operação B / Turma 02" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="db-add-alt-destino" oninput="this.value = this.value.toUpperCase();" placeholder="Ex: Operação B / Turma 02" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                         </div>
                                         <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
@@ -16863,7 +16892,7 @@ storage: {
                                             </div>
                                             <div class="sm:col-span-3">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nº Chamado (Opcional):</label>
-                                                <input type="text" id="db-add-alt-chamado" placeholder="Ex: CH-10492" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                <input type="text" id="db-add-alt-chamado" oninput="this.value = this.value.toUpperCase();" placeholder="Ex: CH-10492" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
                                             </div>
                                             <div class="sm:col-span-2">
                                                 <button type="button" onclick="app.diarioBordo.adicionarAlteracaoQuadro()" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer" title="Adicionar Remanejamento">
@@ -19727,10 +19756,7 @@ storage: {
                     const hcDe = (op) => parseInt(op.headcount) || 0;
 
                     const isGestor = app.isGestor();
-                    const subordinados = app.getSubordinados();
-                    const monitores = isGestor
-                        ? subordinados.filter(u => app.isUserQualidade(u))
-                        : app.users.filter(u => app.isUserQualidade(u));
+                    const monitores = app.users.filter(u => app.isUserQualidade(u));
 
                     // Mapa operação -> monitores responsáveis
                     const mapaOps = {};
@@ -19739,10 +19765,7 @@ storage: {
                         (mapaOps[k] = mapaOps[k] || []).push(m);
                     }));
 
-                    const linhasOps = (isGestor
-                        ? ops.filter(op => (mapaOps[op.nome.toUpperCase()] || []).length > 0)
-                        : ops
-                    ).map(op => {
+                    const linhasOps = ops.map(op => {
                         const resp = mapaOps[op.nome.toUpperCase()] || [];
                         return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp };
                     }).sort((a, b) => b.hc - a.hc);
@@ -22696,7 +22719,7 @@ storage: {
 
                     const cargoDe = (u) => u.tipoAcesso || 'Qualidade';
                     const isGestor = app.isGestor();
-                    const isSuper = app.isSuperAdmin();
+                    const isSuper = app.isSuperAdmin() || isGestor;
 
                     const gerentes = app.users.filter(u => cargoDe(u) === 'Gerente');
                     const gestores = app.users.filter(u => cargoDe(u) === 'Gestor');
@@ -22726,7 +22749,7 @@ storage: {
                             : nomesOps.slice(0, 2).join(' · ') + (nomesOps.length > 2 ? ` <span class="text-slate-400">+${nomesOps.length - 2}</span>` : '');
                         const searchMeta = `${nomeClean} ${u.matricula} ${cargo} ${nomesOps.join(' ')}`.replace(/"/g, '');
 
-                        const podeGerenciar = isSuper || (isGestor && String(u.gestorMatricula || '').trim() === String(app.currentUser?.matricula || '').trim());
+                        const podeGerenciar = isSuper || isGestor;
 
                         return `
                             <div data-search="${searchMeta}" data-role="${cargo}" class="hierarquia-user-row group flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
@@ -22806,56 +22829,7 @@ storage: {
                         </div>
                     `;
 
-                    // SE FOR GESTOR: Visão Restrita Exclusivamente à sua Equipe
-                    if (isGestor) {
-                        const gestor = app.currentUser;
-                        const matGestor = String(gestor?.matricula || '').trim();
-                        const liderados = operacionais.filter(u => String(u.gestorMatricula || '').trim() === matGestor);
-                        const monitoresEquipe = liderados.filter(u => app.isUserQualidade(u));
-                        const spanEquipe = liderados.reduce((acc, m) => acc + (app.getSpanUsuario(m).span || 0), 0);
-                        const mediaSpanEquipe = monitoresEquipe.length > 0 ? Math.round(spanEquipe / monitoresEquipe.length) : 0;
-
-                        const corpo = renderPessoa(gestor) +
-                            `<div class="mx-3 my-1.5 border-t border-dashed border-slate-200 dark:border-slate-700"></div>` +
-                            (liderados.length > 0
-                                ? liderados.map(renderPessoa).join('')
-                                : `<div class="text-xs text-slate-400 italic px-3 py-3">Nenhum liderado vinculado à sua gestão.</div>`);
-                        const btn = `<button type="button" onclick="app.ui.abrirModalAlocarEquipeGestor('${gestor.matricula}')" class="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-indigo-600 transition"><i class="fa-solid fa-user-plus mr-1"></i>Alocar Equipe</button>`;
-                        const equipePanel = painel(`Minha Equipe (${app.utils.fixEncoding(gestor.nome).split(' ')[0]})`, `${liderados.length} liderado(s) · span total ${spanEquipe} op.`, corpo, 'bg-amber-500', btn);
-
-                        container.innerHTML = `
-                            <div class="space-y-5 animate-fade-in max-w-7xl mx-auto">
-                                <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-                                    <div>
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <span class="px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-300 dark:border-amber-800">
-                                                <i class="fa-solid fa-user-tie mr-1"></i> Painel do Gestor
-                                            </span>
-                                        </div>
-                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Minha Equipe & Liderados</h2>
-                                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gestão focada dos monitores vinculados diretamente à sua liderança.</p>
-                                    </div>
-                                    <div class="flex flex-wrap gap-2">
-                                        <button type="button" onclick="app.ui.abrirModalAlocarEquipeGestor('${gestor.matricula}')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"><i class="fa-solid fa-user-plus mr-1.5"></i>Alocar Monitores</button>
-                                    </div>
-                                </div>
-
-                                <div class="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                                    ${kpi('Liderados Vinculados', liderados.length, `${monitoresEquipe.length} monitores de qualidade`)}
-                                    ${kpi('Span Total da Equipe', spanEquipe, 'operadores sob gestão')}
-                                    ${kpi('Span Médio / Monitor', mediaSpanEquipe, 'operadores por monitor')}
-                                    ${kpi('Acesso Ativo', liderados.filter(u => u.loginCount > 0).length, 'colaboradores já acessaram')}
-                                </div>
-
-                                <div class="space-y-4">
-                                    ${equipePanel}
-                                </div>
-                            </div>
-                        `;
-                        return;
-                    }
-
-                    // SE FOR SUPERADMIN (DEV / GERENTE): Visão Geral Completa
+                    // Visão Geral Completa (SuperAdmin, Dev, Gerente e Gestor)
                     const mediaSpanMonitor = monitoresQualidade.length > 0
                         ? Math.round(monitoresQualidade.reduce((acc, m) => acc + (app.getSpanUsuario(m).span || 0), 0) / monitoresQualidade.length)
                         : 0;
@@ -38159,38 +38133,26 @@ Object.assign(app, {
             getSubordinados(user = null) {
                 const u = user || this.currentUser;
                 if (!u) return [];
-                if (this.isSuperAdmin() && !user) {
+                if ((this.isSuperAdmin() || this.isGestor()) && !user) {
                     return this.users || [];
                 }
                 const tipo = u.tipoAcesso;
-                if (tipo === 'Gerente' || tipo === 'Dev') {
+                if (tipo === 'Gerente' || tipo === 'Dev' || tipo === 'Gestor') {
                     return this.users || [];
-                }
-                if (tipo === 'Gestor') {
-                    const mat = String(u.matricula || '').trim();
-                    return (this.users || []).filter(sub => String(sub.gestorMatricula || '').trim() === mat);
                 }
                 return (this.users || []).filter(sub => String(sub.matricula || '').trim() === String(u.matricula || '').trim());
             },
 
             canAccessUser(targetMatricula) {
-                if (this.isSuperAdmin()) return true;
+                if (this.isSuperAdmin() || this.isGestor()) return true;
                 if (!this.currentUser) return false;
                 const mat = String(targetMatricula || '').trim();
                 if (String(this.currentUser.matricula || '').trim() === mat) return true;
-                if (this.isGestor()) {
-                    const subs = this.getSubordinados();
-                    return subs.some(s => String(s.matricula || '').trim() === mat);
-                }
                 return false;
             },
 
             getUsersAcesso() {
-                if (this.isSuperAdmin()) return this.users || [];
-                if (this.isGestor()) {
-                    const subs = this.getSubordinados();
-                    return [this.currentUser, ...subs];
-                }
+                if (this.isSuperAdmin() || this.isGestor()) return this.users || [];
                 return this.currentUser ? [this.currentUser] : [];
             },
 
