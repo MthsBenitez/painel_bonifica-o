@@ -977,7 +977,9 @@ storage: {
                                     if (userObj) {
                                         app.isAdmin = false;
                                         app.currentUser = userObj;
-                                        app.currentTab = localStorage.getItem("soft_session_tab") || "home";
+                                        const userTabs = app.ui ? app.ui.getEffectiveUserTabs(userObj) : [];
+                                        const savedTab = localStorage.getItem("soft_session_tab");
+                                        app.currentTab = (savedTab && (userTabs.includes(savedTab) || userTabs.length === 0)) ? savedTab : (userTabs[0] || 'home');
                                         const ws = document.getElementById("session-wait-screen");
                                         if (ws) ws.classList.add("hidden");
                                         document.getElementById("view-login").classList.add("hidden");
@@ -1089,6 +1091,10 @@ storage: {
                     }
                 },
                 saveUsers() { 
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
+                        console.warn("Ambiente de teste detectado: escrita em banco de produção bloqueada.");
+                        return Promise.resolve();
+                    }
                     if (!Array.isArray(app.users) || app.users.length < 5) {
                         console.warn("Seguranca de Integridade: tentativa de salvar lista de usuarios incompleta abortada (" + (app.users ? app.users.length : 0) + " registros).");
                         return Promise.resolve();
@@ -1102,8 +1108,53 @@ storage: {
                     try {
                         localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
                     } catch(e) {}
+
                     if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/users').set(app.users);
+                        return firebase.database().ref('sistema_bonificacao/users').once('value').then(snap => {
+                            const val = snap.val();
+                            let remoteList = [];
+                            if (Array.isArray(val)) {
+                                remoteList = val.filter(x => x !== null && x !== undefined);
+                            } else if (val && typeof val === 'object') {
+                                remoteList = Object.values(val).filter(x => x !== null && x !== undefined);
+                            }
+
+                            // SAFE MERGE MAP: preserva 100% dos usuários remotos existentes
+                            const userMap = new Map();
+                            remoteList.forEach(u => {
+                                if (u && u.matricula) {
+                                    userMap.set(String(u.matricula).trim(), Object.assign({}, u));
+                                }
+                            });
+
+                            // Mescla com os usuários locais (mantendo fotos, senhas e campos atualizados)
+                            app.users.forEach(u => {
+                                if (u && u.matricula) {
+                                    const mKey = String(u.matricula).trim();
+                                    const existing = userMap.get(mKey);
+                                    if (existing) {
+                                        const merged = Object.assign({}, existing, u);
+                                        if (!u.foto && existing.foto) merged.foto = existing.foto;
+                                        if (!u.senha && existing.senha) merged.senha = existing.senha;
+                                        userMap.set(mKey, merged);
+                                    } else {
+                                        userMap.set(mKey, Object.assign({}, u));
+                                    }
+                                }
+                            });
+
+                            const mergedUsers = Array.from(userMap.values());
+                            app.users = mergedUsers;
+
+                            try {
+                                localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                            } catch(e) {}
+
+                            return firebase.database().ref('sistema_bonificacao/users').set(mergedUsers);
+                        }).catch(err => {
+                            console.error("Erro no merge seguro de usuarios:", err);
+                            return firebase.database().ref('sistema_bonificacao/users').set(app.users);
+                        });
                     }
                     return Promise.resolve();
                 },
@@ -3928,6 +3979,9 @@ storage: {
                     const existingIdx = app.users.findIndex(u => String(u.matricula || '').trim().toUpperCase() === mat);
                     if (existingIdx > -1) {
                         const u = app.users[existingIdx];
+                        u.tipoAcesso = 'Operador';
+                        u.cargo = 'Operador em Treinamento';
+                        u.subclasse = null;
                         u.turmaId = t.id;
                         u.turmaNumero = t.numeroTurma || '';
                         u.turmaTreinadorMatricula = t.treinadorMatricula || '';
@@ -3935,8 +3989,7 @@ storage: {
                         if (rawCpf && !u.cpf) u.cpf = rawCpf;
                         if (!Array.isArray(u.operacoes)) u.operacoes = [];
                         if (t.operacao && !u.operacoes.includes(t.operacao)) u.operacoes.push(t.operacao);
-                        if (!Array.isArray(u.abasLiberadas)) u.abasLiberadas = ['home', 'pesquisa_treinamento', 'meu_painel'];
-                        if (!u.abasLiberadas.includes('pesquisa_treinamento')) u.abasLiberadas.push('pesquisa_treinamento');
+                        u.abasLiberadas = ['pesquisa_treinamento'];
                         usersModificados = true;
                     } else {
                         app.users.push({
@@ -3948,7 +4001,7 @@ storage: {
                             cargo: 'Operador em Treinamento',
                             subclasse: null,
                             operacoes: t.operacao ? [t.operacao] : [],
-                            abasLiberadas: ['home', 'pesquisa_treinamento', 'meu_painel'],
+                            abasLiberadas: ['pesquisa_treinamento'],
                             turmaId: t.id,
                             turmaNumero: t.numeroTurma || '',
                             turmaTreinadorMatricula: t.treinadorMatricula || '',
@@ -7812,11 +7865,13 @@ storage: {
                             }
 
                             app.currentUser = app.users[userIdx];
-                            app.currentTab = "home";
+                            const userTabs = app.ui.getEffectiveUserTabs(app.currentUser);
+                            const initialTab = (userTabs.length > 0 && !userTabs.includes('home')) ? userTabs[0] : 'home';
+                            app.currentTab = initialTab;
                             localStorage.setItem("soft_session_date", new Date().toLocaleDateString("pt-BR"));
                             localStorage.setItem("soft_session_mat", app.users[userIdx].matricula);
                             localStorage.setItem("soft_session_admin", "false");
-                            localStorage.setItem("soft_session_tab", "home");
+                            localStorage.setItem("soft_session_tab", initialTab);
 
                             app.storage.saveSingleUserField(userIdx, { 
                                 loginCount: newLoginCount, 
@@ -9800,6 +9855,10 @@ storage: {
 
                 getEffectiveUserTabs(user) {
                     if (!user) return [];
+                    // Operadores criados pelas turmas têm acesso exclusivo à aba de pesquisa de satisfação
+                    if (user && (user.turmaId || (user.tipoAcesso === 'Operador' && user.cargo === 'Operador em Treinamento'))) {
+                        return ['pesquisa_treinamento'];
+                    }
                     const presets = this.getPresetsGruposAcesso();
                     const tipo = user.tipoAcesso || 'Qualidade';
                     const presetTabs = presets[tipo] || presets['Qualidade'] || [];
@@ -11115,13 +11174,16 @@ storage: {
                     // Rotina Diária de Agenda
                     app.notifications.checkDailySchedule();
                     
-                    // Resgata aba inicial da URL ou padrão Home
+                    // Resgata aba inicial da URL ou padrão permitido
                     const urlTab = app.urlState ? app.urlState.get('tab') : null;
-                    if (urlTab) {
+                    const effectiveTabs = this.getEffectiveUserTabs(app.currentUser);
+                    if (urlTab && (app.isAdmin || effectiveTabs.includes(urlTab))) {
                         app.currentTab = urlTab;
-                    } else if (!app.currentTab || app.currentTab === 'dashboard_adm' || app.currentTab === 'meu_painel') {
+                    } else if (!app.isAdmin && effectiveTabs.length > 0 && (!app.currentTab || !effectiveTabs.includes(app.currentTab))) {
+                        app.currentTab = effectiveTabs[0];
+                    } else if (!app.currentTab || app.currentTab === 'dashboard_adm' || app.currentTab === 'meu_painel' || (!app.isAdmin && !effectiveTabs.includes('home') && app.currentTab === 'home')) {
                         const savedTab = localStorage.getItem("soft_session_tab");
-                        app.currentTab = (savedTab && savedTab !== 'dashboard_adm' && savedTab !== 'meu_painel') ? savedTab : 'home';
+                        app.currentTab = (savedTab && (app.isAdmin || effectiveTabs.includes(savedTab))) ? savedTab : (effectiveTabs[0] || 'home');
                     }
                     
                     this.renderNav();
@@ -11321,6 +11383,12 @@ storage: {
 
                     if (tabId === 'gestao_equipe' || tabId === 'operacoes') { tabId = 'hierarquia'; }
                     if (tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') { tabId = 'treinamentos'; }
+                    if (!app.isAdmin && app.currentUser) {
+                        const allowedTabs = this.getEffectiveUserTabs(app.currentUser);
+                        if (allowedTabs.length > 0 && !allowedTabs.includes(tabId)) {
+                            tabId = allowedTabs[0];
+                        }
+                    }
                     // Limpar cronômetro e renderizações pendentes ao mudar de tela ou trocar de mês
                     if(this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
                     if(this.renderTimeoutId) { clearTimeout(this.renderTimeoutId); this.renderTimeoutId = null; }
