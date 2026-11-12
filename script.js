@@ -165,6 +165,7 @@ const app = {
             // Helpers de Perfil (Bonificação exclusiva para Qualidade)
             isUserQualidade(u) {
                 if (!u) return false;
+                if (u.tipoAcesso === 'Operador' || u.turmaId || (u.cargo && u.cargo.includes('Operador'))) return false;
                 return (u.tipoAcesso || 'Qualidade') === 'Qualidade';
             },
             getQualidadeUsers() {
@@ -9934,14 +9935,20 @@ storage: {
                     if (novoGrupo === 'Treinamento' && !app.users[idx].subclasse) {
                         app.users[idx].subclasse = 'Instrutor';
                     }
-                    app.users[idx].abasLiberadas = [...(presets[novoGrupo] || [])];
+                    if (novoGrupo === 'Operador') {
+                        app.users[idx].cargo = 'Operador em Treinamento';
+                        app.users[idx].subclasse = null;
+                        app.users[idx].abasLiberadas = ['pesquisa_treinamento'];
+                    } else {
+                        app.users[idx].abasLiberadas = [...(presets[novoGrupo] || [])];
+                    }
                     if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
                         app.currentUser = app.users[idx];
                         this.renderNav();
                     }
                     app.storage.saveUsers().then(() => {
                         this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
-                        this.showAlert("Perfil Atualizado!", `<b>${app.users[idx].nome}</b> agora possui o perfil <b>${novoGrupo}</b> com a barra personalizada de ADM ativa.`, "success");
+                        this.showAlert("Perfil Atualizado!", `<b>${app.users[idx].nome}</b> agora possui o perfil <b>${novoGrupo}</b>.`, "success");
                     });
                 },
 
@@ -20844,7 +20851,7 @@ storage: {
                             <div>
                                 <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Cargo</label>
                                 <select id="hier-edit-cargo" onchange="const sc = document.getElementById('hier-edit-subclasse-box'); if (sc) sc.style.display = this.value === 'Treinamento' ? 'block' : 'none';" class="${selCls}">
-                                    ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                    ${['Operador', 'Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
                                 </select>
                             </div>
                             <div id="hier-edit-subclasse-box" style="display: ${cargo === 'Treinamento' ? 'block' : 'none'}">
@@ -20878,8 +20885,13 @@ storage: {
                     const novoGestor = document.getElementById('hier-edit-gestor').value;
                     if (novoCargo !== (u.tipoAcesso || 'Qualidade')) {
                         u.tipoAcesso = novoCargo;
-                        const presets = this.getPresetsGruposAcesso();
-                        if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
+                        if (novoCargo === 'Operador') {
+                            u.cargo = 'Operador em Treinamento';
+                            u.abasLiberadas = ['pesquisa_treinamento'];
+                        } else {
+                            const presets = this.getPresetsGruposAcesso();
+                            if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
+                        }
                     }
                     if (novoCargo === 'Treinamento') {
                         const novoSub = document.getElementById('hier-edit-subclasse')?.value || 'Instrutor';
@@ -23879,7 +23891,11 @@ storage: {
                     const opsSetoriais = app.getOperacoesSetoriais();
                     const totalOperadoresGlobal = opsSetoriais.reduce((acc, op) => acc + (parseInt(op.headcount) || 0), 0);
 
-                    const cargoDe = (u) => u.tipoAcesso || 'Qualidade';
+                    const cargoDe = (u) => {
+                        if (u.tipoAcesso) return u.tipoAcesso;
+                        if (u.turmaId || (u.cargo && u.cargo.includes('Operador'))) return 'Operador';
+                        return 'Qualidade';
+                    };
                     const isGestor = app.isGestor();
                     const isSuper = app.isSuperAdmin() || isGestor;
 
@@ -23889,8 +23905,16 @@ storage: {
                     const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u));
                     const logados = app.users.filter(u => u.loginCount > 0).length;
 
-                    const dot = { Gerente: 'bg-rose-500', Gestor: 'bg-amber-500', Qualidade: 'bg-blue-500', Treinamento: 'bg-emerald-500', Dev: 'bg-purple-500' };
+                    const dot = { 
+                        Gerente: 'bg-rose-500', 
+                        Gestor: 'bg-amber-500', 
+                        Qualidade: 'bg-blue-500', 
+                        Treinamento: 'bg-emerald-500', 
+                        Dev: 'bg-purple-500',
+                        Operador: 'bg-teal-500' 
+                    };
                     const roleBadgeStyle = {
+                        'Operador': 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800',
                         'Qualidade': 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
                         'Treinamento': 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
                         'Dev': 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
@@ -23906,10 +23930,12 @@ storage: {
                         const sp = app.getSpanUsuario(u);
                         const spanValor = sp.span !== undefined ? sp.span : (sp.totalOperadores || 0);
                         const nomesOps = sp.detalhes.map(d => app.utils.fixEncoding(d.nome));
-                        const opsResumo = nomesOps.length === 0
-                            ? '<span class="text-slate-400">Sem operações</span>'
-                            : nomesOps.slice(0, 2).join(' · ') + (nomesOps.length > 2 ? ` <span class="text-slate-400">+${nomesOps.length - 2}</span>` : '');
-                        const searchMeta = `${nomeClean} ${u.matricula} ${cargo} ${nomesOps.join(' ')}`.replace(/"/g, '');
+                        const opsResumo = cargo === 'Operador'
+                            ? `<span class="text-teal-600 dark:text-teal-400 font-bold">${u.turmaNumero ? 'Turma ' + u.turmaNumero : 'Aluno(a)'} ${u.operacoes && u.operacoes.length > 0 ? ' · ' + u.operacoes.join(', ') : ''}</span>`
+                            : (nomesOps.length === 0
+                                ? '<span class="text-slate-400">Sem operações</span>'
+                                : nomesOps.slice(0, 2).join(' · ') + (nomesOps.length > 2 ? ` <span class="text-slate-400">+${nomesOps.length - 2}</span>` : ''));
+                        const searchMeta = `${nomeClean} ${u.matricula} ${cargo} ${u.turmaNumero || ''} ${nomesOps.join(' ')}`.replace(/"/g, '');
 
                         const podeGerenciar = isSuper || isGestor;
 
@@ -23931,7 +23957,7 @@ storage: {
                                 <div class="flex items-center gap-2 shrink-0 ml-auto">
                                     ${isSuper ? `
                                         <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
-                                            ${['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
+                                            ${['Operador', 'Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
                                         </select>
                                         ${cargo === 'Treinamento' ? `
                                             <select onchange="app.ui.alterarSubclasseTreinamentoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-black uppercase border cursor-pointer outline-none bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs" title="Denominação da Subclasse de Treinamento">
@@ -23941,7 +23967,7 @@ storage: {
                                         ` : ''}
                                     ` : `
                                         <span class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}">
-                                            ${cargo === 'Treinamento' ? `Treinamento • ${u.subclasse || 'Instrutor'}` : cargo}
+                                            ${cargo === 'Treinamento' ? `Treinamento • ${u.subclasse || 'Instrutor'}` : (cargo === 'Operador' ? `Operador • ${u.turmaNumero ? 'Turma ' + u.turmaNumero : 'Treinamento'}` : cargo)}
                                         </span>
                                     `}
                                     <button type="button" onclick="${podeGerenciar ? `app.ui.abrirModalOperacoesMonitor('${u.matricula}')` : ''}" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-right transition" title="Atribuir operações do setorial e ajustar Span">
@@ -24031,6 +24057,7 @@ storage: {
                         { id: 'Gestor', label: 'Gestores', count: gestores.length },
                         { id: 'Qualidade', label: 'Qualidade', count: app.users.filter(u => cargoDe(u) === 'Qualidade').length },
                         { id: 'Treinamento', label: 'Treinamento', count: app.users.filter(u => cargoDe(u) === 'Treinamento').length },
+                        { id: 'Operador', label: 'Operadores (Turmas)', count: app.users.filter(u => cargoDe(u) === 'Operador').length },
                         { id: 'Dev', label: 'Dev', count: app.users.filter(u => cargoDe(u) === 'Dev').length }
                     ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5 tabular-nums">${r.count}</span></button>`).join('');
 
