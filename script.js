@@ -8876,6 +8876,9 @@ storage: {
                     document.getElementById('content-container').innerHTML = '';
                     const overlay = document.getElementById('legendary-overlay');
                     if (overlay) overlay.classList.add('hidden');
+                    if (app.ui && typeof app.ui.stopGtdFloatingTimerMemoryOnly === 'function') {
+                        app.ui.stopGtdFloatingTimerMemoryOnly();
+                    }
                     
                     document.getElementById('view-login').classList.remove('hidden');
                 },
@@ -10585,6 +10588,74 @@ storage: {
                 resetReviewChecklist() {
                     try { localStorage.setItem(this.getChecklistKey(), JSON.stringify({})); } catch (e) {}
                     return {};
+                },
+
+                getFocusKey() {
+                    return 'soft_user_gtd_focus_' + this.getUserMat();
+                },
+
+                defaultFocusState() {
+                    return {
+                        active: false,
+                        noteId: null,
+                        focusText: '',
+                        mode: 25,
+                        phase: 'foco',
+                        running: false,
+                        endAt: null,
+                        remainingSeconds: 1500,
+                        completedCycles: 0,
+                        minimized: false,
+                        updatedAt: Date.now()
+                    };
+                },
+
+                loadFocusState() {
+                    const def = this.defaultFocusState();
+                    let parsed = null;
+                    try { parsed = JSON.parse(localStorage.getItem(this.getFocusKey()) || 'null'); } catch (e) { parsed = null; }
+                    if (!parsed || typeof parsed !== 'object') return def;
+
+                    const mode = [2, 5, 25].includes(Number(parsed.mode)) ? Number(parsed.mode) : 25;
+                    const phase = ['foco', 'pausa', 'rapido'].includes(parsed.phase)
+                        ? parsed.phase
+                        : (mode === 5 ? 'pausa' : (mode === 2 ? 'rapido' : 'foco'));
+                    const running = !!parsed.running;
+                    const endAt = (typeof parsed.endAt === 'number' && isFinite(parsed.endAt)) ? parsed.endAt : null;
+                    let remaining = (typeof parsed.remainingSeconds === 'number' && isFinite(parsed.remainingSeconds))
+                        ? Math.max(0, Math.floor(parsed.remainingSeconds))
+                        : mode * 60;
+
+                    if (running && endAt) {
+                        remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+                    }
+
+                    return {
+                        active: !!parsed.active,
+                        noteId: parsed.noteId || null,
+                        focusText: typeof parsed.focusText === 'string' ? parsed.focusText : '',
+                        mode,
+                        phase,
+                        running,
+                        endAt,
+                        remainingSeconds: remaining,
+                        completedCycles: Math.max(0, parseInt(parsed.completedCycles, 10) || 0),
+                        minimized: !!parsed.minimized,
+                        updatedAt: parsed.updatedAt || Date.now()
+                    };
+                },
+
+                saveFocusState(state) {
+                    const clean = Object.assign(this.defaultFocusState(), state || {}, { updatedAt: Date.now() });
+                    try { localStorage.setItem(this.getFocusKey(), JSON.stringify(clean)); } catch (e) {}
+                    return clean;
+                },
+
+                formatClock(sec) {
+                    const s = Math.max(0, Math.floor(Number(sec) || 0));
+                    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+                    const ss = String(s % 60).padStart(2, '0');
+                    return `${mm}:${ss}`;
                 }
             }
 ,
@@ -12013,6 +12084,7 @@ storage: {
                     this.renderNav();
                     this.renderTab(app.currentTab, true);
                     app.notifications.updateBadge();
+                    if (typeof this.syncGtdFocusOnBoot === 'function') this.syncGtdFocusOnBoot();
                 },
 
                 renderNav() {
@@ -12252,6 +12324,7 @@ storage: {
                     }
 
                     this.renderNav();
+                    if (typeof this.syncGtdFloatingTimer === 'function') this.syncGtdFloatingTimer();
                     const mainContainer = document.getElementById('content-container');
                     
                     // Remove abas inativas do DOM para liberar memória e evitar peso com milhares de elementos ocultos
@@ -32202,6 +32275,7 @@ storage: {
                         });
                     }
 
+                    if (typeof this.syncGtdFloatingTimer === 'function') this.syncGtdFloatingTimer();
                     const container = document.getElementById('view-container-apresentacao_dental_uni');
                     if (container) this.renderView_ApresentacaoDentalUni(container);
                 },
@@ -46680,10 +46754,7 @@ Object.assign(app.ui, {
                                 quickStage: 'inbox',
                                 quickContext: '',
                                 quickTwoMin: false,
-                                focusNoteId: null,
-                                focusMode: 25,
-                                focusSecondsLeft: 1500,
-                                focusRunning: false
+                                changingFocusTarget: false
                             };
                         }
                         return this._gtdUi;
@@ -46691,18 +46762,29 @@ Object.assign(app.ui, {
 
                     renderView_ProdutividadeGTD(container) {
                         const st = this._initGtdUiState();
+                        const focus = this.getGtdFocusState();
                         const notes = app.gtd.loadNotes();
                         const metrics = app.gtd.computeMetrics(notes);
                         const esc = app.utils.escapeHtml;
 
-                        const fmtClock = (sec) => {
-                            const s = Math.max(0, Math.floor(sec));
-                            const mm = String(Math.floor(s / 60)).padStart(2, '0');
-                            const ss = String(s % 60).padStart(2, '0');
-                            return `${mm}:${ss}`;
-                        };
+                        const focusNote = focus.noteId ? notes.find(n => n.id === focus.noteId) : null;
+                        const activeTargetText = focusNote
+                            ? (focusNote.text || '(Bloco sem texto)')
+                            : (focus.focusText || '');
 
-                        const focusNote = st.focusNoteId ? notes.find(n => n.id === st.focusNoteId) : null;
+                        const activeCandidates = notes
+                            .filter(n => n.gtdStatus !== 'concluida' && String(n.text || '').trim())
+                            .sort((a, b) => {
+                                const rank = (n) => (n.gtdStatus === 'proxima' ? 0 : (n.gtdStatus === 'projeto' ? 1 : 2)) + (n.triad === 'importante' ? 0 : 0.2);
+                                return rank(a) - rank(b);
+                            });
+
+                        const phaseMeta = {
+                            foco: { badge: 'FOCO 25m', badgeCls: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40' },
+                            pausa: { badge: 'DESCANSO 5m', badgeCls: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
+                            rapido: { badge: 'REGRA 2m', badgeCls: 'bg-amber-500/20 text-amber-300 border-amber-400/40' }
+                        }[focus.phase] || { badge: 'FOCO 25m', badgeCls: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40' };
+
                         const toneCardCls = {
                             ideal: 'border-emerald-300 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200',
                             urgente: 'border-rose-300 dark:border-rose-800/70 bg-rose-50/70 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200',
@@ -46713,7 +46795,7 @@ Object.assign(app.ui, {
 
                         container.innerHTML = `
                             <div class="w-full px-2 sm:px-6 py-6 animate-fade-in space-y-6">
-                                <!-- Cabeçalho Executivo + Cronômetro de Foco -->
+                                <!-- Cabeçalho Executivo + Cronômetro Contínuo de Foco (25m / 5m / 2m) -->
                                 <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-5 border-b border-slate-200 dark:border-slate-800">
                                     <div>
                                         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-black uppercase tracking-wider mb-2 border border-amber-300/60 dark:border-amber-800/60">
@@ -46727,57 +46809,145 @@ Object.assign(app.ui, {
                                         </p>
                                     </div>
 
-                                    <!-- Bloco Guia Rápido + Timer de Foco -->
+                                    <!-- Bloco Guia Rápido + Timer Persistente -->
                                     <div class="flex flex-wrap items-center gap-3">
                                         <button type="button" onclick="app.ui.gtdToggleHelp()" class="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-extrabold shadow-xs transition flex items-center gap-2">
                                             <i class="fa-solid fa-circle-question text-indigo-500 text-sm"></i>
                                             <span>${st.showHelp ? 'Ocultar Guia Rápido' : 'Como usar em 30s'}</span>
                                         </button>
 
-                                        <div class="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-slate-900 dark:bg-slate-950 text-white border border-slate-800 shadow-lg">
-                                            <div class="flex items-center gap-1.5">
-                                                <button type="button" onclick="app.ui.gtdSetFocusMode(2)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${st.focusMode === 2 ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Regra GTD dos 2 Minutos">2m</button>
-                                                <button type="button" onclick="app.ui.gtdSetFocusMode(25)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${st.focusMode === 25 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Bloco de Foco Profundo (25 min)">25m</button>
+                                        <div class="flex flex-wrap items-center gap-2.5 px-4 py-2 rounded-2xl bg-slate-900 dark:bg-slate-950 text-white border border-slate-800 shadow-lg">
+                                            <span id="gtd-timer-phase-badge" class="px-2 py-0.5 rounded-lg border text-[10px] font-black tracking-wide ${phaseMeta.badgeCls}">
+                                                ${phaseMeta.badge}
+                                            </span>
+                                            <div class="flex items-center gap-1">
+                                                <button type="button" onclick="app.ui.gtdSetFocusMode(2)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${focus.mode === 2 ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Regra GTD dos 2 Minutos: tarefas rápidas para matar agora">2m</button>
+                                                <button type="button" onclick="app.ui.gtdSetFocusMode(25)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${focus.mode === 25 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Foco Total de 25 min em 1 única Próxima Ação">25m</button>
+                                                <button type="button" onclick="app.ui.gtdSetFocusMode(5)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${focus.mode === 5 ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Descanso de 5 min após bloco de 25 min">5m</button>
                                             </div>
-                                            <div id="gtd-timer-display" class="text-lg font-black tabular-nums tracking-tight px-1">${fmtClock(st.focusSecondsLeft)}</div>
-                                            <button id="gtd-timer-toggle-btn" type="button" onclick="app.ui.gtdToggleFocusRun()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition flex items-center gap-1">
-                                                <i class="fa-solid ${st.focusRunning ? 'fa-pause' : 'fa-play'}"></i>
-                                                <span>${st.focusRunning ? 'Pausar' : 'Focar'}</span>
+                                            <div id="gtd-timer-display" class="text-lg font-black tabular-nums tracking-tight px-1">${app.gtd.formatClock(focus.remainingSeconds)}</div>
+                                            <button id="gtd-timer-toggle-btn" type="button" onclick="app.ui.gtdToggleFocusRun()" class="px-3 py-1.5 rounded-xl ${focus.running ? 'bg-amber-500 hover:bg-amber-400' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-xs font-black transition flex items-center gap-1">
+                                                <i class="fa-solid ${focus.running ? 'fa-pause' : 'fa-play'}"></i>
+                                                <span>${focus.running ? 'Pausar' : (focus.phase === 'pausa' ? 'Descansar' : 'Focar')}</span>
                                             </button>
                                             <button type="button" onclick="app.ui.gtdResetFocus()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Reiniciar cronômetro">
                                                 <i class="fa-solid fa-rotate-left"></i>
                                             </button>
+                                            ${focus.active ? `
+                                                <button type="button" onclick="app.ui.gtdClearFocus()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-xs transition" title="Encerrar sessão do cronômetro">
+                                                    <i class="fa-solid fa-xmark"></i>
+                                                </button>
+                                            ` : ''}
+                                            ${focus.completedCycles > 0 ? `
+                                                <span class="px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-bold text-slate-200" title="Blocos de 25 min concluídos nesta sessão">
+                                                    ${focus.completedCycles}x 25m
+                                                </span>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 </div>
 
-                                ${focusNote ? `
-                                    <div class="p-3.5 rounded-2xl bg-indigo-600 text-white shadow-lg flex flex-wrap items-center justify-between gap-3">
-                                        <div class="flex items-center gap-2.5 min-w-0">
-                                            <i class="fa-solid fa-crosshairs text-amber-300 animate-pulse"></i>
-                                            <span class="text-xs font-bold uppercase tracking-wider text-indigo-200 shrink-0">Em Foco Agora:</span>
-                                            <span class="text-sm font-black truncate">${esc(focusNote.text || '(Bloco sem texto)')}</span>
+                                <!-- Faixa Didática + Escolha de Alvo ("Dedicar 25 min no quê + Descansar 5 min") -->
+                                ${focus.phase === 'pausa' ? `
+                                    <div class="p-4 rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                        <div class="flex items-start gap-3">
+                                            <div class="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center shrink-0 text-lg">
+                                                <i class="fa-solid fa-mug-hot animate-pulse"></i>
+                                            </div>
+                                            <div>
+                                                <div class="text-sm font-black">Hora do Descanso (5 minutos) — Recupere o Foco</div>
+                                                <p class="text-xs text-emerald-50 mt-0.5">
+                                                    Você finalizou um bloco de foco! Agora <strong>levante, beba água, alongue e tire os olhos da tela por 5 min</strong>. Evite iniciar outra tarefa pesada durante a pausa para não acumular fadiga mental.
+                                                </p>
+                                            </div>
                                         </div>
                                         <div class="flex items-center gap-2 shrink-0">
-                                            <button type="button" onclick="app.ui.gtdToggleDone('${focusNote.id}', true)" class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black transition flex items-center gap-1">
-                                                <i class="fa-solid fa-check"></i> Terminei! Concluir
+                                            <button type="button" onclick="app.ui.gtdSkipBreak()" class="px-3.5 py-2 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 text-xs font-black transition flex items-center gap-1.5 shadow-sm">
+                                                <i class="fa-solid fa-forward-step"></i> Pular pausa e voltar p/ 25m
                                             </button>
-                                            <button type="button" onclick="app.ui.gtdClearFocus()" class="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition">
-                                                Sair do foco
+                                            <button type="button" onclick="app.ui.gtdClearFocus()" class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition">
+                                                Encerrar
                                             </button>
                                         </div>
                                     </div>
-                                ` : ''}
+                                ` : `
+                                    <div class="p-4 rounded-3xl bg-white dark:bg-slate-900 border ${activeTargetText ? 'border-indigo-300 dark:border-indigo-800/80' : 'border-slate-200 dark:border-slate-800'} shadow-sm grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+                                        <div class="lg:col-span-6 space-y-2">
+                                            ${activeTargetText && !st.changingFocusTarget ? `
+                                                <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-indigo-600 text-white shadow-md">
+                                                    <div class="flex items-center gap-2.5 min-w-0">
+                                                        <i class="fa-solid fa-crosshairs text-amber-300 ${focus.running ? 'animate-pulse' : ''}"></i>
+                                                        <div class="min-w-0">
+                                                            <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-200">Em Foco Agora (${focus.mode === 2 ? 'Regra 2 min' : 'Bloco 25 min'}):</div>
+                                                            <div class="text-sm font-black truncate">${esc(activeTargetText)}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex items-center gap-1.5 shrink-0">
+                                                        ${focusNote ? `
+                                                            <button type="button" onclick="app.ui.gtdToggleDone('${focusNote.id}', true)" class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black transition flex items-center gap-1">
+                                                                <i class="fa-solid fa-check"></i> Concluir
+                                                            </button>
+                                                        ` : ''}
+                                                        <button type="button" onclick="app.ui.gtdToggleChangeFocusTarget(true)" class="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition" title="Escolher outra tarefa para os 25 min">
+                                                            Trocar
+                                                        </button>
+                                                        <button type="button" onclick="app.ui.gtdClearFocus()" class="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-rose-500 text-white text-xs font-bold transition" title="Limpar foco atual">
+                                                            Sair
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ` : `
+                                                <div>
+                                                    <div class="flex items-center justify-between mb-1.5">
+                                                        <label class="text-[11px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                                                            <i class="fa-solid fa-crosshairs"></i> Em qual tarefa vai dedicar os 25 min?
+                                                        </label>
+                                                        ${st.changingFocusTarget && activeTargetText ? `
+                                                            <button type="button" onclick="app.ui.gtdToggleChangeFocusTarget(false)" class="text-[11px] font-bold text-slate-400 hover:text-slate-700">Cancelar</button>
+                                                        ` : ''}
+                                                    </div>
+                                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        <select id="gtd-focus-task-select" onchange="app.ui.gtdSelectFocusTask(this.value)"
+                                                            class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500">
+                                                            <option value="">Escolher tarefa da lista...</option>
+                                                            ${activeCandidates.map(c => {
+                                                                const stLbl = app.gtd.GTD_STAGES[c.gtdStatus]?.short || 'Lista';
+                                                                const trLbl = c.triad ? (' · ' + (app.gtd.TRIAD_SPHERES[c.triad]?.short || '')) : '';
+                                                                const txtShort = String(c.text || '').trim().slice(0, 52);
+                                                                return `<option value="${c.id}" ${focus.noteId === c.id ? 'selected' : ''}>[${stLbl}${trLbl}] ${esc(txtShort)}</option>`;
+                                                            }).join('')}
+                                                        </select>
+                                                        <input type="text" value="${esc(focus.noteId ? '' : (focus.focusText || ''))}"
+                                                            placeholder="Ou digite no quê focar agora..."
+                                                            onchange="app.ui.gtdSetFocusCustomText(this.value)"
+                                                            onkeydown="if(event.key==='Enter'){event.preventDefault();app.ui.gtdSetFocusCustomText(this.value, true);}"
+                                                            class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500" />
+                                                    </div>
+                                                </div>
+                                            `}
+                                        </div>
+
+                                        <div class="lg:col-span-6 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/70 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                            <div class="font-black text-slate-800 dark:text-white flex items-center gap-1.5 mb-1">
+                                                <i class="fa-solid fa-stopwatch text-indigo-500"></i> Como funciona o ciclo 25 min Foco + 5 min Descanso:
+                                            </div>
+                                            <p>
+                                                <strong>25 min (No quê focar):</strong> escolha <strong>1 única Próxima Ação</strong> (de preferência esfera <em>Importante</em>) e trabalhe nela sem trocar de assunto ou abrir distrações.
+                                                <strong>5 min (Descanso):</strong> ao terminar os 25 min, o relógio muda sozinho para 5 min de pausa (água, alongar, olhos longe da tela). Ao sair da aba, o timer continua rodando no cantinho da tela.
+                                            </p>
+                                        </div>
+                                    </div>
+                                `}
 
                                 ${st.showHelp ? `
-                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-fade-in">
+                                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fade-in">
                                         <div class="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 shadow-sm">
                                             <h3 class="text-sm font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-2 mb-3">
-                                                <i class="fa-solid fa-diagram-next"></i> Método GTD em 5 passos práticos
+                                                <i class="fa-solid fa-diagram-next"></i> Método GTD em 4 passos práticos
                                             </h3>
-                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-600 dark:text-slate-300">
+                                            <div class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
                                                 <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>1. Capturar:</strong> Anote tudo na Caixa de Entrada sem filtrar na hora.</div>
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>2. Regra dos 2 Minutos:</strong> Se leva menos de 2 min, faça imediatamente e conclua.</div>
+                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>2. Regra dos 2 Minutos:</strong> Se leva menos de 2 min, use o modo <strong>2m</strong> e conclua imediatamente.</div>
                                                 <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>3. Organizar:</strong> Separe entre <em>Próxima Ação</em> (eu faço), <em>Aguardando</em> (cobrar) ou <em>Projeto</em>.</div>
                                                 <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>4. Revisar & Agir:</strong> Cheque @Contexto (@PC, @Reunião) e zere sua Caixa de Entrada.</div>
                                             </div>
@@ -46790,6 +46960,16 @@ Object.assign(app.ui, {
                                                 <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-emerald-500"><strong>Importante (Meta 70%):</strong> Gera resultado real, metas, projetos, prevenção — feita no prazo sem desespero.</div>
                                                 <div class="p-2.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 border-l-4 border-rose-500"><strong>Urgente (Meta até 20%):</strong> Estoura hoje ou virou incêndio por falta de planejamento ou imprevisto.</div>
                                                 <div class="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border-l-4 border-amber-500"><strong>Circunstancial (Meta até 10%):</strong> Tarefas sem ganho real, interrupções e burocracias. Delegue ou corte.</div>
+                                            </div>
+                                        </div>
+                                        <div class="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 shadow-sm">
+                                            <h3 class="text-sm font-black text-amber-700 dark:text-amber-300 flex items-center gap-2 mb-3">
+                                                <i class="fa-solid fa-stopwatch"></i> Ciclo 25 min Foco + 5 min Descanso
+                                            </h3>
+                                            <div class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                                                <div class="p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border-l-4 border-indigo-500"><strong>Dedicar 25 min no quê:</strong> Escolha <strong>apenas 1 Próxima Ação</strong> clara (ex.: um relatório, monitoria ou plano de ação). Não alterne tarefas nem pare para olhar mensagens no meio do bloco.</div>
+                                                <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-emerald-500"><strong>Descansar 5 min (Por quê):</strong> Pausar 5 minutos reais (água, respirar, sair da tela) evita fadiga de decisão e mantém seu rendimento alto nos blocos seguintes.</div>
+                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>Sempre visível no portal:</strong> Você pode navegar para qualquer outra aba do portal — o relógio segue ativo no cantinho inferior esquerdo!</div>
                                             </div>
                                         </div>
                                     </div>
@@ -47501,11 +47681,16 @@ Object.assign(app.ui, {
                         if (!cur) return;
                         const nextStatus = cur.gtdStatus === 'concluida' ? 'proxima' : 'concluida';
                         app.gtd.updateNote(id, { gtdStatus: nextStatus });
-                        if (fromFocus && nextStatus === 'concluida') {
+                        const fState = this.getGtdFocusState();
+                        if (nextStatus === 'concluida' && (fromFocus || fState.noteId === id)) {
                             this.gtdClearFocus();
                         }
                         this.showNotification(nextStatus === 'concluida' ? 'Entrega concluída!' : 'Tarefa reaberta.', 'success', 1600);
                         this.gtdRefresh(false);
+                        if (app.currentTab === 'home') {
+                            const hc = document.getElementById('view-container-home');
+                            if (hc) this.renderView_Home(hc);
+                        }
                     },
 
                     gtdToggleTwoMin(id) {
@@ -47530,8 +47715,8 @@ Object.assign(app.ui, {
                     },
 
                     gtdDeleteNote(id) {
-                        const st = this._initGtdUiState();
-                        if (st.focusNoteId === id) this.gtdClearFocus();
+                        const fState = this.getGtdFocusState();
+                        if (fState.noteId === id) this.gtdClearFocus();
                         app.gtd.deleteNote(id);
                         this.showNotification('Bloco excluído.', 'info', 1500);
                         this.gtdRefresh(false);
@@ -47587,81 +47772,405 @@ Object.assign(app.ui, {
                         this.gtdRefresh(false);
                     },
 
-                    gtdSetFocusMode(mins) {
+                    getGtdFocusState() {
+                        return app.gtd.loadFocusState();
+                    },
+
+                    _saveAndSyncGtdFocus(focusState) {
+                        const saved = app.gtd.saveFocusState(focusState);
+                        this.syncGtdFloatingTimer();
+                        return saved;
+                    },
+
+                    gtdToggleChangeFocusTarget(flag) {
                         const st = this._initGtdUiState();
+                        st.changingFocusTarget = !!flag;
+                        this.gtdRefresh(false);
+                    },
+
+                    gtdSelectFocusTask(noteId) {
+                        const st = this._initGtdUiState();
+                        const focus = this.getGtdFocusState();
+                        st.changingFocusTarget = false;
+                        focus.noteId = noteId || null;
+                        if (noteId) {
+                            focus.focusText = '';
+                            focus.active = true;
+                        } else if (!focus.focusText && !focus.running) {
+                            focus.active = false;
+                        }
+                        this._saveAndSyncGtdFocus(focus);
+                        this.gtdRefresh(false);
+                    },
+
+                    gtdSetFocusCustomText(text, autoStart = false) {
+                        const clean = String(text || '').trim();
+                        const st = this._initGtdUiState();
+                        const focus = this.getGtdFocusState();
+                        st.changingFocusTarget = false;
+                        focus.noteId = null;
+                        focus.focusText = clean;
+                        if (clean) focus.active = true;
+                        if (autoStart && clean && !focus.running) {
+                            focus.phase = focus.mode === 5 ? 'pausa' : (focus.mode === 2 ? 'rapido' : 'foco');
+                            if (focus.remainingSeconds <= 0) focus.remainingSeconds = focus.mode * 60;
+                            focus.running = true;
+                            focus.endAt = Date.now() + focus.remainingSeconds * 1000;
+                            this._saveAndSyncGtdFocus(focus);
+                            this._startGtdTimerInterval();
+                        } else {
+                            this._saveAndSyncGtdFocus(focus);
+                        }
+                        this.gtdRefresh(false);
+                    },
+
+                    gtdSetFocusMode(mins) {
                         clearInterval(this._gtdTimerInterval);
                         this._gtdTimerInterval = null;
-                        st.focusRunning = false;
-                        st.focusMode = mins === 2 ? 2 : 25;
-                        st.focusSecondsLeft = st.focusMode * 60;
+                        const cur = this.getGtdFocusState();
+                        const mode = mins === 2 ? 2 : (mins === 5 ? 5 : 25);
+                        const phase = mode === 5 ? 'pausa' : (mode === 2 ? 'rapido' : 'foco');
+                        this._saveAndSyncGtdFocus({
+                            ...cur,
+                            mode,
+                            phase,
+                            running: false,
+                            endAt: null,
+                            remainingSeconds: mode * 60,
+                            active: cur.active || mode === 5 || !!cur.noteId || !!cur.focusText
+                        });
                         this.gtdRefresh(false);
                     },
 
                     gtdStartFocus(noteId, mins = 25) {
                         const st = this._initGtdUiState();
-                        st.focusNoteId = noteId;
-                        st.focusMode = mins === 2 ? 2 : 25;
-                        st.focusSecondsLeft = st.focusMode * 60;
-                        st.focusRunning = true;
+                        st.changingFocusTarget = false;
+                        const cur = this.getGtdFocusState();
+                        const mode = mins === 2 ? 2 : (mins === 5 ? 5 : 25);
+                        const phase = mode === 5 ? 'pausa' : (mode === 2 ? 'rapido' : 'foco');
+                        this._saveAndSyncGtdFocus({
+                            ...cur,
+                            active: true,
+                            noteId: noteId || null,
+                            focusText: '',
+                            mode,
+                            phase,
+                            remainingSeconds: mode * 60,
+                            running: true,
+                            endAt: Date.now() + mode * 60 * 1000
+                        });
                         this._startGtdTimerInterval();
                         this.gtdRefresh(false);
                     },
 
                     gtdToggleFocusRun() {
-                        const st = this._initGtdUiState();
-                        st.focusRunning = !st.focusRunning;
-                        if (st.focusRunning) {
-                            if (st.focusSecondsLeft <= 0) st.focusSecondsLeft = st.focusMode * 60;
+                        const cur = this.getGtdFocusState();
+                        if (!cur.running) {
+                            const rem = cur.remainingSeconds > 0 ? cur.remainingSeconds : (cur.mode * 60);
+                            this._saveAndSyncGtdFocus({
+                                ...cur,
+                                active: true,
+                                phase: cur.mode === 5 ? 'pausa' : (cur.mode === 2 ? 'rapido' : 'foco'),
+                                remainingSeconds: rem,
+                                running: true,
+                                endAt: Date.now() + rem * 1000
+                            });
                             this._startGtdTimerInterval();
                         } else {
                             clearInterval(this._gtdTimerInterval);
                             this._gtdTimerInterval = null;
+                            const rem = cur.endAt ? Math.max(0, Math.ceil((cur.endAt - Date.now()) / 1000)) : cur.remainingSeconds;
+                            this._saveAndSyncGtdFocus({
+                                ...cur,
+                                active: true,
+                                running: false,
+                                endAt: null,
+                                remainingSeconds: rem
+                            });
                         }
                         this.gtdRefresh(false);
                     },
 
                     gtdResetFocus() {
-                        const st = this._initGtdUiState();
                         clearInterval(this._gtdTimerInterval);
                         this._gtdTimerInterval = null;
-                        st.focusRunning = false;
-                        st.focusSecondsLeft = st.focusMode * 60;
+                        const cur = this.getGtdFocusState();
+                        this._saveAndSyncGtdFocus({
+                            ...cur,
+                            running: false,
+                            endAt: null,
+                            remainingSeconds: cur.mode * 60
+                        });
+                        this.gtdRefresh(false);
+                    },
+
+                    gtdSkipBreak() {
+                        clearInterval(this._gtdTimerInterval);
+                        this._gtdTimerInterval = null;
+                        const cur = this.getGtdFocusState();
+                        this._saveAndSyncGtdFocus({
+                            ...cur,
+                            active: true,
+                            mode: 25,
+                            phase: 'foco',
+                            running: false,
+                            endAt: null,
+                            remainingSeconds: 1500
+                        });
+                        this.showNotification('Pausa encerrada. Pronto para o próximo bloco de 25 min!', 'info', 2200);
                         this.gtdRefresh(false);
                     },
 
                     gtdClearFocus() {
                         const st = this._initGtdUiState();
+                        st.changingFocusTarget = false;
                         clearInterval(this._gtdTimerInterval);
                         this._gtdTimerInterval = null;
-                        st.focusRunning = false;
-                        st.focusNoteId = null;
-                        st.focusSecondsLeft = st.focusMode * 60;
+                        const cur = this.getGtdFocusState();
+                        this._saveAndSyncGtdFocus({
+                            ...app.gtd.defaultFocusState(),
+                            completedCycles: cur.completedCycles || 0
+                        });
                         this.gtdRefresh(false);
+                    },
+
+                    gtdToggleFloatingMinimize() {
+                        const cur = this.getGtdFocusState();
+                        this._saveAndSyncGtdFocus({ ...cur, minimized: !cur.minimized });
+                    },
+
+                    stopGtdFloatingTimerMemoryOnly() {
+                        clearInterval(this._gtdTimerInterval);
+                        this._gtdTimerInterval = null;
+                        const existing = document.getElementById('gtd-floating-timer');
+                        if (existing) existing.remove();
+                    },
+
+                    syncGtdFocusOnBoot() {
+                        if (!window._gtdVisibilityBound) {
+                            window._gtdVisibilityBound = true;
+                            document.addEventListener('visibilitychange', () => {
+                                if (!document.hidden && app.currentUser && app.ui.getGtdFocusState().running) {
+                                    app.ui._tickGtdTimer();
+                                }
+                            });
+                        }
+                        if (!app.currentUser) {
+                            this.stopGtdFloatingTimerMemoryOnly();
+                            return;
+                        }
+                        const isOpUser = !app.isAdmin && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                        if (isOpUser) {
+                            this.stopGtdFloatingTimerMemoryOnly();
+                            return;
+                        }
+                        const focus = this.getGtdFocusState();
+                        if (focus.running) {
+                            if (focus.remainingSeconds <= 0) {
+                                this._handleGtdTimerCompletion();
+                            } else {
+                                this._startGtdTimerInterval();
+                            }
+                        }
+                        this.syncGtdFloatingTimer();
+                    },
+
+                    syncGtdFloatingTimer() {
+                        const loginView = document.getElementById('view-login');
+                        const isLoginVisible = loginView && !loginView.classList.contains('hidden');
+                        const isOpUser = app.currentUser && !app.isAdmin && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                        const focus = app.currentUser ? this.getGtdFocusState() : null;
+                        const shouldShow = !!(
+                            app.currentUser &&
+                            !isOpUser &&
+                            !isLoginVisible &&
+                            !this._dentalUniApresentacaoMode &&
+                            focus &&
+                            focus.active &&
+                            app.currentTab !== 'produtividade_gtd'
+                        );
+
+                        let el = document.getElementById('gtd-floating-timer');
+                        if (!shouldShow) {
+                            if (el) el.remove();
+                            return;
+                        }
+                        if (!el) {
+                            el = document.createElement('div');
+                            el.id = 'gtd-floating-timer';
+                            el.className = 'fixed bottom-5 left-5 z-[9990] print:hidden animate-fade-in';
+                            document.body.appendChild(el);
+                        }
+
+                        const esc = app.utils.escapeHtml;
+                        const notes = app.gtd.loadNotes();
+                        const focusNote = focus.noteId ? notes.find(n => n.id === focus.noteId) : null;
+                        const targetLabel = focus.phase === 'pausa'
+                            ? 'Descanso 5 min: água e olhos fora da tela'
+                            : (focusNote ? (focusNote.text || '(Bloco sem texto)') : (focus.focusText || 'Foco livre (escolha 1 Próxima Ação na aba GTD)'));
+
+                        const phaseTheme = {
+                            foco: { pill: 'bg-indigo-600 text-white border-indigo-400/50', dot: 'bg-indigo-400', label: 'FOCO 25m', cardRing: 'border-indigo-500/40' },
+                            pausa: { pill: 'bg-emerald-600 text-white border-emerald-400/50', dot: 'bg-emerald-400', label: 'PAUSA 5m', cardRing: 'border-emerald-500/50' },
+                            rapido: { pill: 'bg-amber-600 text-white border-amber-400/50', dot: 'bg-amber-400', label: 'REGRA 2m', cardRing: 'border-amber-500/50' }
+                        }[focus.phase] || { pill: 'bg-indigo-600 text-white border-indigo-400/50', dot: 'bg-indigo-400', label: 'FOCO 25m', cardRing: 'border-indigo-500/40' };
+
+                        const clockStr = app.gtd.formatClock(focus.remainingSeconds);
+
+                        if (focus.minimized) {
+                            el.innerHTML = `
+                                <div class="flex items-center gap-2 px-3 py-2 rounded-full bg-slate-900/95 text-white border ${phaseTheme.cardRing} shadow-2xl">
+                                    <button type="button" onclick="app.ui.gtdToggleFloatingMinimize()" class="flex items-center gap-2 text-xs font-black" title="Expandir cronômetro GTD (${esc(targetLabel)})">
+                                        <span class="w-2.5 h-2.5 rounded-full ${phaseTheme.dot} ${focus.running ? 'animate-pulse' : ''}"></span>
+                                        <span class="text-[10px] uppercase tracking-wider opacity-80">${phaseTheme.label}</span>
+                                        <span id="gtd-floating-display" class="text-sm font-black tabular-nums">${clockStr}</span>
+                                    </button>
+                                    <button type="button" onclick="app.ui.gtdToggleFocusRun()" class="w-6 h-6 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-[10px] transition" title="${focus.running ? 'Pausar' : 'Retomar'}">
+                                        <i class="fa-solid ${focus.running ? 'fa-pause' : 'fa-play'}"></i>
+                                    </button>
+                                </div>
+                            `;
+                            return;
+                        }
+
+                        el.innerHTML = `
+                            <div class="w-72 sm:w-80 rounded-2xl bg-slate-900/95 text-white border ${phaseTheme.cardRing} shadow-2xl overflow-hidden">
+                                <div class="px-3.5 py-2 flex items-center justify-between gap-2 bg-slate-950/60 border-b border-white/10">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="w-2.5 h-2.5 rounded-full ${phaseTheme.dot} ${focus.running ? 'animate-pulse' : ''} shrink-0"></span>
+                                        <span class="px-2 py-0.5 rounded-md border text-[10px] font-black tracking-wide ${phaseTheme.pill} shrink-0">${phaseTheme.label}</span>
+                                        <span id="gtd-floating-display" class="text-base font-black tabular-nums tracking-tight">${clockStr}</span>
+                                    </div>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <button type="button" onclick="app.ui.renderTab('produtividade_gtd', true)" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-indigo-600 text-[10px] font-bold transition" title="Abrir aba GTD & Tríade">
+                                            GTD
+                                        </button>
+                                        <button type="button" onclick="app.ui.gtdToggleFloatingMinimize()" class="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-[10px] transition" title="Minimizar no cantinho">
+                                            <i class="fa-solid fa-minus"></i>
+                                        </button>
+                                        <button type="button" onclick="app.ui.gtdClearFocus()" class="w-6 h-6 rounded-lg bg-white/10 hover:bg-rose-600 flex items-center justify-center text-[10px] transition" title="Encerrar cronômetro">
+                                            <i class="fa-solid fa-xmark"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="px-3.5 py-2.5 space-y-2">
+                                    <div class="text-xs font-bold text-slate-100 leading-snug line-clamp-2" title="${esc(targetLabel)}">
+                                        ${esc(targetLabel)}
+                                    </div>
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-1.5">
+                                            <button type="button" onclick="app.ui.gtdToggleFocusRun()" class="px-2.5 py-1 rounded-lg ${focus.running ? 'bg-amber-500 hover:bg-amber-400' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-[11px] font-black transition flex items-center gap-1">
+                                                <i class="fa-solid ${focus.running ? 'fa-pause' : 'fa-play'} text-[10px]"></i>
+                                                <span>${focus.running ? 'Pausar' : 'Retomar'}</span>
+                                            </button>
+                                            ${focus.phase === 'pausa' ? `
+                                                <button type="button" onclick="app.ui.gtdSkipBreak()" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold transition" title="Voltar para próximo bloco de 25 min">
+                                                    Ir p/ 25m
+                                                </button>
+                                            ` : (focusNote ? `
+                                                <button type="button" onclick="app.ui.gtdToggleDone('${focusNote.id}', true)" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black transition flex items-center gap-1" title="Marcar tarefa em foco como concluída">
+                                                    <i class="fa-solid fa-check text-[10px]"></i> Concluir
+                                                </button>
+                                            ` : '')}
+                                        </div>
+                                        ${focus.completedCycles > 0 ? `<span class="text-[10px] font-bold text-slate-400">${focus.completedCycles}x 25m</span>` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    },
+
+                    _playGtdChime() {
+                        try {
+                            const Ctx = window.AudioContext || window.webkitAudioContext;
+                            if (!Ctx) return;
+                            const ctx = new Ctx();
+                            const playTone = (freq, startOffset, dur) => {
+                                const osc = ctx.createOscillator();
+                                const gain = ctx.createGain();
+                                osc.type = 'sine';
+                                osc.frequency.value = freq;
+                                gain.gain.setValueAtTime(0.08, ctx.currentTime + startOffset);
+                                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startOffset + dur);
+                                osc.connect(gain);
+                                gain.connect(ctx.destination);
+                                osc.start(ctx.currentTime + startOffset);
+                                osc.stop(ctx.currentTime + startOffset + dur);
+                            };
+                            playTone(660, 0, 0.18);
+                            playTone(880, 0.2, 0.28);
+                            setTimeout(() => { try { ctx.close(); } catch (e) {} }, 700);
+                        } catch (e) {}
+                    },
+
+                    _handleGtdTimerCompletion() {
+                        clearInterval(this._gtdTimerInterval);
+                        this._gtdTimerInterval = null;
+                        const focus = this.getGtdFocusState();
+                        this._playGtdChime();
+
+                        if (focus.phase === 'foco') {
+                            this._saveAndSyncGtdFocus({
+                                ...focus,
+                                active: true,
+                                mode: 5,
+                                phase: 'pausa',
+                                remainingSeconds: 300,
+                                running: true,
+                                endAt: Date.now() + 300000,
+                                completedCycles: (focus.completedCycles || 0) + 1
+                            });
+                            this._startGtdTimerInterval();
+                            this.showNotification('25 min de foco concluídos! Iniciando descanso de 5 min: levante, beba água e descanse os olhos.', 'success', 9000);
+                        } else if (focus.phase === 'pausa') {
+                            this._saveAndSyncGtdFocus({
+                                ...focus,
+                                active: true,
+                                mode: 25,
+                                phase: 'foco',
+                                remainingSeconds: 1500,
+                                running: false,
+                                endAt: null
+                            });
+                            this.showNotification('Descanso de 5 min encerrado! Escolha 1 Próxima Ação e inicie o próximo bloco de 25 min.', 'info', 8000);
+                        } else {
+                            this._saveAndSyncGtdFocus({
+                                ...focus,
+                                active: true,
+                                remainingSeconds: 0,
+                                running: false,
+                                endAt: null
+                            });
+                            this.showNotification('Regra 2 Min finalizada! Conclua a tarefa ou passe para um bloco de 25 min se precisar de mais tempo.', 'success', 8000);
+                        }
+                        this.gtdRefresh(false);
+                    },
+
+                    _tickGtdTimer() {
+                        if (!app.currentUser) {
+                            this.stopGtdFloatingTimerMemoryOnly();
+                            return;
+                        }
+                        const focus = this.getGtdFocusState();
+                        if (!focus.running) {
+                            clearInterval(this._gtdTimerInterval);
+                            this._gtdTimerInterval = null;
+                            return;
+                        }
+                        if (focus.remainingSeconds <= 0) {
+                            this._handleGtdTimerCompletion();
+                            return;
+                        }
+                        const txt = app.gtd.formatClock(focus.remainingSeconds);
+                        const disp = document.getElementById('gtd-timer-display');
+                        if (disp && disp.textContent !== txt) disp.textContent = txt;
+                        const floatDisp = document.getElementById('gtd-floating-display');
+                        if (floatDisp && floatDisp.textContent !== txt) floatDisp.textContent = txt;
                     },
 
                     _startGtdTimerInterval() {
                         clearInterval(this._gtdTimerInterval);
-                        this._gtdTimerInterval = setInterval(() => {
-                            const st = this._initGtdUiState();
-                            const disp = document.getElementById('gtd-timer-display');
-                            if (!disp || !st.focusRunning) {
-                                clearInterval(this._gtdTimerInterval);
-                                this._gtdTimerInterval = null;
-                                return;
-                            }
-                            if (st.focusSecondsLeft > 0) {
-                                st.focusSecondsLeft--;
-                                const mm = String(Math.floor(st.focusSecondsLeft / 60)).padStart(2, '0');
-                                const ss = String(st.focusSecondsLeft % 60).padStart(2, '0');
-                                disp.textContent = `${mm}:${ss}`;
-                            } else {
-                                st.focusRunning = false;
-                                clearInterval(this._gtdTimerInterval);
-                                this._gtdTimerInterval = null;
-                                this.showAlert('Bloco de Foco Concluído!', 'Tempo encerrado. Se terminou a atividade, marque como Concluída ou faça uma pausa de 5 minutos.', 'success');
-                                this.gtdRefresh(false);
-                            }
-                        }, 1000);
+                        this._gtdTimerInterval = setInterval(() => this._tickGtdTimer(), 1000);
                     },
 
                     gtdToggleReview(stepId) {

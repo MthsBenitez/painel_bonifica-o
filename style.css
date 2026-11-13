@@ -372,6 +372,7 @@
     body:not(:has(#diploma-modal)) .parallax-layer,
     body:not(:has(#diploma-modal)) #particles-js,
     body:not(:has(#diploma-modal)) #btn-sair-apresentacao,
+    body:not(:has(#diploma-modal)) #gtd-floating-timer,
     body:not(:has(#diploma-modal)) .hidden-in-print {
         display: none !important;
     }
