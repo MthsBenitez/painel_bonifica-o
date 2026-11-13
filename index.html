@@ -334,22 +334,23 @@
 <!-- Modal de Troca de Senha -->
     <div id="pwd-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
         <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 border border-slate-200 dark:border-dark-border">
-            <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mr-3 text-green-600 dark:text-green-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
+            <h3 class="text-lg font-bold mb-2 text-slate-800 dark:text-white flex items-center"><div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mr-3 text-green-600 dark:text-green-400"><i class="fa-solid fa-key"></i></div> Trocar Senha</h3>
+            <p id="pwd-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mb-4">Defina uma senha pessoal com pelo menos 4 caracteres (diferente da senha padr&#227;o 12345).</p>
             <div class="relative mb-3">
-                <input type="password" id="new-password-input" placeholder="Nova senha..." class="w-full p-3 pr-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
+                <input type="password" id="new-password-input" onkeydown="if(event.key==='Enter') document.getElementById('confirm-password-input').focus()" placeholder="Nova senha..." class="w-full p-3 pr-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
                 <button type="button" onclick="app.ui.togglePasswordVisibility('new-password-input', this)" class="pwd-toggle-btn absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-green-600 transition-colors p-1" title="Mostrar/Ocultar Senha">
                     <i class="fa-solid fa-eye text-sm"></i>
                 </button>
             </div>
             <div class="relative mb-6">
-                <input type="password" id="confirm-password-input" placeholder="Confirme a nova senha..." class="w-full p-3 pr-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
+                <input type="password" id="confirm-password-input" onkeydown="if(event.key==='Enter') app.auth.executeChangePassword()" placeholder="Confirme a nova senha..." class="w-full p-3 pr-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-green-500 dark:text-white outline-none transition-all">
                 <button type="button" onclick="app.ui.togglePasswordVisibility('confirm-password-input', this)" class="pwd-toggle-btn absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-green-600 transition-colors p-1" title="Mostrar/Ocultar Senha">
                     <i class="fa-solid fa-eye text-sm"></i>
                 </button>
             </div>
             <div class="flex justify-end gap-3">
-                <button onclick="app.ui.closePwdModal()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
-                <button onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar</button>
+                <button type="button" onclick="app.ui.closePwdModal(true)" class="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-sm transition-colors">Cancelar</button>
+                <button type="button" id="btn-save-new-pwd" onclick="app.auth.executeChangePassword()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm shadow-md transition-colors">Atualizar</button>
             </div>
         </div>
     </div>
@@ -805,19 +806,19 @@
         </div>
     </div>
 
-    <!-- MODAL: VISUALIZADOR DE ANEXO DE LISTA DE PRESENÇA (FOTO OU PDF) -->
+    <!-- MODAL: VISUALIZADOR DE ANEXOS DA INTEGRAÇÃO / LISTA DE PRESENÇA -->
     <div id="anexo-visualizar-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4" onclick="if(event.target === this) this.classList.add('hidden')">
-        <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-3xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
+        <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-4xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
             <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
-                <div class="flex items-center gap-2.5">
-                    <i class="fa-solid fa-file-signature text-emerald-600 text-lg"></i>
-                    <h3 id="anexo-visualizar-titulo" class="text-sm font-extrabold text-slate-800 dark:text-white">Lista de Presença Assinada</h3>
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <i class="fa-solid fa-paperclip text-emerald-600 text-lg shrink-0"></i>
+                    <h3 id="anexo-visualizar-titulo" class="text-sm font-extrabold text-slate-800 dark:text-white truncate">Anexos da Integração</h3>
                 </div>
-                <button type="button" onclick="document.getElementById('anexo-visualizar-modal').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center cursor-pointer transition">
+                <button type="button" onclick="document.getElementById('anexo-visualizar-modal').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center cursor-pointer transition shrink-0">
                     <i class="fa-solid fa-xmark text-sm"></i>
                 </button>
             </div>
-            <div id="anexo-visualizar-corpo" class="py-4 flex-1 overflow-y-auto flex items-center justify-center">
+            <div id="anexo-visualizar-corpo" class="py-4 flex-1 overflow-y-auto w-full flex flex-col gap-3">
                 <!-- Injetado via JS -->
             </div>
             <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2 shrink-0">
@@ -1154,7 +1155,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261113_v50"></script>
+    <script src="script.js?v=20261113_v53"></script>
 </body>
 </html>
 

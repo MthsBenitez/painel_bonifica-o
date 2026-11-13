@@ -615,8 +615,14 @@ storage: {
                             }
                             
                             if (data.users) {
-                                const rawUsers = Array.isArray(data.users) ? data.users : Object.values(data.users);
-                                app.users = rawUsers.filter(u => u !== null && u !== undefined).map(u => {
+                                this._userKeyMap = new Map();
+                                if (!this._plaintextPwdMats) this._plaintextPwdMats = new Set();
+                                const rawEntries = Array.isArray(data.users)
+                                    ? data.users.map((u, idx) => [String(idx), u])
+                                    : Object.entries(data.users);
+                                app.users = [];
+                                rawEntries.forEach(([fbKey, u]) => {
+                                    if (u === null || u === undefined) return;
                                     if(u.results && typeof u.results !== 'object') {
                                         u.results = {};
                                     } else if(u.results && (u.results.g1 || u.results.g2)) {
@@ -630,7 +636,11 @@ storage: {
                                     } else {
                                         u.operacoes = [];
                                     }
+                                    const mKey = this._normalizeMat(u.matricula);
                                     if (u.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
+                                        if (!String(u.senha).startsWith('enc$v1$') && mKey) {
+                                            this._plaintextPwdMats.add(mKey);
+                                        }
                                         u.senha = app.utils.encryptPassword(u.senha);
                                     }
                                     // Denominação automática dos usuários atuais de Treinamento
@@ -645,9 +655,13 @@ storage: {
                                             }
                                         }
                                     }
-                                    return u;
+                                    if (mKey && !this._userKeyMap.has(mKey)) {
+                                        this._userKeyMap.set(mKey, String(fbKey));
+                                    }
+                                    app.users.push(u);
                                 });
                             } else {
+                                this._userKeyMap = new Map();
                                 app.users = [];
                             }
 
@@ -674,9 +688,11 @@ storage: {
                                 } else {
                                     app.atasList = {};
                                 }
+                                app._atasLoadedFromCloud = true;
                                 try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                                 if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
                             } else {
+                                app._atasLoadedFromCloud = true;
                                 try {
                                     const localAtasRaw = localStorage.getItem('soft_atas_backup');
                                     if (localAtasRaw) {
@@ -974,7 +990,8 @@ storage: {
                                     document.getElementById("view-login").classList.add("hidden");
                                     app.ui.showApp();
                                 } else {
-                                    const userObj = (app.users || []).find(u => String(u.matricula).trim() === String(savedMat).trim());
+                                    const targetMatNorm = String(savedMat || '').trim().toUpperCase();
+                                    const userObj = (app.users || []).find(u => String(u.matricula || '').trim().toUpperCase() === targetMatNorm);
                                     if (userObj) {
                                         app.isAdmin = false;
                                         app.currentUser = userObj;
@@ -1091,13 +1108,82 @@ storage: {
                         localforage.removeItem('soft_core_cache_hd').catch(() => {});
                     }
                 },
-                saveUsers() { 
+                _normalizeMat(mat) {
+                    return String(mat || '').trim().toUpperCase();
+                },
+                markUserPasswordDirty(mat) {
+                    if (!this._dirtyPwdMats) this._dirtyPwdMats = new Set();
+                    const mKey = this._normalizeMat(mat);
+                    if (mKey) this._dirtyPwdMats.add(mKey);
+                },
+                _enqueueUserSave(taskFn) {
+                    const run = () => Promise.resolve().then(taskFn);
+                    const next = this._userSaveChain ? this._userSaveChain.then(run, run) : run();
+                    this._userSaveChain = next.catch(() => {});
+                    return next;
+                },
+                _extractUsersSnapshot(val) {
+                    const entries = [];
+                    if (Array.isArray(val)) {
+                        val.forEach((u, idx) => {
+                            if (u && typeof u === 'object') entries.push({ key: String(idx), user: u });
+                        });
+                    } else if (val && typeof val === 'object') {
+                        Object.keys(val).forEach(k => {
+                            const u = val[k];
+                            if (u && typeof u === 'object') entries.push({ key: String(k), user: u });
+                        });
+                    }
+                    const keyByMat = new Map();
+                    entries.forEach(item => {
+                        const mKey = this._normalizeMat(item.user.matricula);
+                        if (mKey && !keyByMat.has(mKey)) keyByMat.set(mKey, item.key);
+                    });
+                    return { entries, keyByMat };
+                },
+                _nextNumericUserKey(val) {
+                    if (Array.isArray(val)) return String(val.length);
+                    if (!val || typeof val !== 'object') return '0';
+                    let maxIdx = -1;
+                    Object.keys(val).forEach(k => {
+                        const n = parseInt(k, 10);
+                        if (!isNaN(n) && String(n) === String(k) && n > maxIdx) maxIdx = n;
+                    });
+                    return String(maxIdx + 1);
+                },
+                _mergeUserRecord(existing, localU, mKey) {
+                    const merged = Object.assign({}, existing, localU);
+                    if (!localU.foto && existing.foto) merged.foto = existing.foto;
+                    const remoteTs = Number(existing.pwdUpdatedAt || 0);
+                    const localTs = Number(localU.pwdUpdatedAt || 0);
+                    const localPwdDirty = !!(this._dirtyPwdMats && this._dirtyPwdMats.has(mKey));
+                    const remoteHasPwd = !!(existing.senha && String(existing.senha).trim() !== '');
+                    const keepLocalPwd = localPwdDirty || (localTs > remoteTs) || (!remoteHasPwd && !!localU.senha);
+
+                    if (!keepLocalPwd && remoteHasPwd) {
+                        merged.senha = existing.senha;
+                        if (existing.primeiroAcesso !== undefined) merged.primeiroAcesso = existing.primeiroAcesso;
+                        if (existing.pwdUpdatedAt !== undefined) merged.pwdUpdatedAt = existing.pwdUpdatedAt;
+                    }
+                    if (!localU.aceiteTermos && existing.aceiteTermos) merged.aceiteTermos = existing.aceiteTermos;
+                    if (!localU.aceiteDiretrizes && existing.aceiteDiretrizes) merged.aceiteDiretrizes = existing.aceiteDiretrizes;
+                    const existingLogins = Number(existing.loginCount || 0);
+                    const localLogins = Number(localU.loginCount || 0);
+                    if (existingLogins > localLogins) merged.loginCount = existingLogins;
+                    return merged;
+                },
+                saveUsers(options) { 
                     if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
                         console.warn("Ambiente de teste detectado: escrita em banco de produção bloqueada.");
                         return Promise.resolve();
                     }
-                    if (!Array.isArray(app.users) || app.users.length < 5) {
-                        console.warn("Seguranca de Integridade: tentativa de salvar lista de usuarios incompleta abortada (" + (app.users ? app.users.length : 0) + " registros).");
+                    const removedSet = new Set(
+                        (options && Array.isArray(options.removedMats) ? options.removedMats : [])
+                            .map(m => this._normalizeMat(m))
+                            .filter(Boolean)
+                    );
+                    if (!Array.isArray(app.users) || (app.users.length === 0 && !(options && options.allowEmpty) && removedSet.size === 0)) {
+                        console.warn("Seguranca de Integridade: tentativa de salvar lista de usuarios vazia abortada.");
                         return Promise.resolve();
                     }
                     if (app.utils && typeof app.utils.encryptPassword === 'function') {
@@ -1111,68 +1197,170 @@ storage: {
                     } catch(e) {}
 
                     if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/users').once('value').then(snap => {
-                            const val = snap.val();
-                            let remoteList = [];
-                            if (Array.isArray(val)) {
-                                remoteList = val.filter(x => x !== null && x !== undefined);
-                            } else if (val && typeof val === 'object') {
-                                remoteList = Object.values(val).filter(x => x !== null && x !== undefined);
-                            }
+                        return this._enqueueUserSave(() => {
+                            const usersRef = firebase.database().ref('sistema_bonificacao/users');
+                            return usersRef.once('value').then(snap => {
+                                const { entries } = this._extractUsersSnapshot(snap.val());
 
-                            // SAFE MERGE MAP: preserva 100% dos usuários remotos existentes
-                            const userMap = new Map();
-                            remoteList.forEach(u => {
-                                if (u && u.matricula) {
-                                    userMap.set(String(u.matricula).trim(), Object.assign({}, u));
-                                }
-                            });
+                                // SAFE MERGE MAP: preserva 100% dos usuários remotos existentes e senhas atualizadas na nuvem
+                                const userMap = new Map();
+                                entries.forEach(item => {
+                                    const u = item.user;
+                                    const mKey = this._normalizeMat(u && u.matricula);
+                                    if (mKey && !removedSet.has(mKey)) {
+                                        userMap.set(mKey, Object.assign({}, u));
+                                    }
+                                });
 
-                            // Mescla com os usuários locais (mantendo fotos, senhas e campos atualizados)
-                            app.users.forEach(u => {
-                                if (u && u.matricula) {
-                                    const mKey = String(u.matricula).trim();
+                                // Mescla com os usuários locais preservando senhas mais novas remotas
+                                app.users.forEach(u => {
+                                    const mKey = this._normalizeMat(u && u.matricula);
+                                    if (!mKey || removedSet.has(mKey)) return;
                                     const existing = userMap.get(mKey);
                                     if (existing) {
-                                        const merged = Object.assign({}, existing, u);
-                                        if (!u.foto && existing.foto) merged.foto = existing.foto;
-                                        if (!u.senha && existing.senha) merged.senha = existing.senha;
-                                        userMap.set(mKey, merged);
+                                        userMap.set(mKey, this._mergeUserRecord(existing, u, mKey));
                                     } else {
                                         userMap.set(mKey, Object.assign({}, u));
                                     }
+                                });
+
+                                const mergedUsers = Array.from(userMap.values());
+                                if (entries.length >= 5 && mergedUsers.length < entries.length && removedSet.size === 0) {
+                                    return Promise.reject(new Error("Seguranca de Integridade: merge reduziu quantidade de usuarios remotamente."));
                                 }
+                                app.users = mergedUsers;
+                                this._userKeyMap = new Map();
+                                mergedUsers.forEach((mu, idx) => {
+                                    const mKey = this._normalizeMat(mu && mu.matricula);
+                                    if (mKey) {
+                                        this._userKeyMap.set(mKey, String(idx));
+                                        if (this._dirtyPwdMats) this._dirtyPwdMats.delete(mKey);
+                                    }
+                                });
+
+                                try {
+                                    localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                                } catch(e) {}
+
+                                return usersRef.set(mergedUsers);
+                            }).catch(err => {
+                                console.error("Erro no merge seguro de usuarios:", err);
+                                return Promise.reject(err);
                             });
+                        });
+                    }
+                    return Promise.resolve();
+                },
+                saveUserByMatricula(mat, fieldsObj) {
+                    const mKey = this._normalizeMat(mat);
+                    if (!mKey || !fieldsObj || typeof fieldsObj !== 'object') return Promise.resolve();
 
-                            const mergedUsers = Array.from(userMap.values());
-                            app.users = mergedUsers;
+                    const payload = Object.assign({}, fieldsObj);
+                    if (payload.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
+                        payload.senha = app.utils.encryptPassword(payload.senha);
+                        if (payload.pwdUpdatedAt === undefined) payload.pwdUpdatedAt = Date.now();
+                    }
 
-                            try {
-                                localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
-                            } catch(e) {}
+                    const idx = (app.users || []).findIndex(u => u && this._normalizeMat(u.matricula) === mKey);
+                    if (idx > -1) {
+                        Object.assign(app.users[idx], payload);
+                        if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
+                            Object.assign(app.currentUser, payload);
+                        }
+                    }
 
-                            return firebase.database().ref('sistema_bonificacao/users').set(mergedUsers);
-                        }).catch(err => {
-                            console.error("Erro no merge seguro de usuarios:", err);
-                            return firebase.database().ref('sistema_bonificacao/users').set(app.users);
+                    this.invalidateCoreCache();
+                    try {
+                        if (Array.isArray(app.users) && app.users.length > 0) {
+                            localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                        }
+                    } catch(e) {}
+
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
+                        console.warn("Ambiente de teste detectado: escrita em banco de produção bloqueada.");
+                        return Promise.resolve();
+                    }
+
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        return this._enqueueUserSave(() => {
+                            const usersRef = firebase.database().ref('sistema_bonificacao/users');
+                            return usersRef.once('value').then(snap => {
+                                const val = snap.val();
+                                const { entries, keyByMat } = this._extractUsersSnapshot(val);
+                                const remoteKey = keyByMat.get(mKey);
+                                if (remoteKey !== undefined) {
+                                    const remoteEntry = entries.find(e => e.key === remoteKey);
+                                    if (idx > -1 && remoteEntry && remoteEntry.user) {
+                                        const mergedLocal = Object.assign({}, remoteEntry.user, app.users[idx], payload);
+                                        if (!app.users[idx].foto && remoteEntry.user.foto) mergedLocal.foto = remoteEntry.user.foto;
+                                        app.users[idx] = mergedLocal;
+                                        if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
+                                            app.currentUser = mergedLocal;
+                                        }
+                                    }
+                                    if (!this._userKeyMap) this._userKeyMap = new Map();
+                                    this._userKeyMap.set(mKey, remoteKey);
+                                    return firebase.database().ref('sistema_bonificacao/users/' + remoteKey).update(payload);
+                                } else if (idx > -1) {
+                                    const newKey = this._nextNumericUserKey(val);
+                                    if (!this._userKeyMap) this._userKeyMap = new Map();
+                                    this._userKeyMap.set(mKey, newKey);
+                                    return firebase.database().ref('sistema_bonificacao/users/' + newKey).set(app.users[idx]);
+                                } else {
+                                    return Promise.reject(new Error("Usuário não localizado no servidor para atualização."));
+                                }
+                            }).then(() => {
+                                if (payload.senha !== undefined && this._dirtyPwdMats) {
+                                    this._dirtyPwdMats.delete(mKey);
+                                }
+                                try {
+                                    if (Array.isArray(app.users) && app.users.length > 0) {
+                                        localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                                    }
+                                } catch(e) {}
+                            });
                         });
                     }
                     return Promise.resolve();
                 },
                 saveSingleUserField(userIdx, fieldsObj) {
-                    if (userIdx < 0 || !app.users || !app.users[userIdx]) return Promise.resolve();
-                    Object.assign(app.users[userIdx], fieldsObj);
-                    if (app.users[userIdx].senha && app.utils && typeof app.utils.encryptPassword === 'function') {
-                        app.users[userIdx].senha = app.utils.encryptPassword(app.users[userIdx].senha);
-                        if (fieldsObj.senha) fieldsObj.senha = app.users[userIdx].senha;
-                    }
+                    if (userIdx < 0 || !app.users || !app.users[userIdx] || !app.users[userIdx].matricula) return Promise.resolve();
+                    return this.saveUserByMatricula(app.users[userIdx].matricula, fieldsObj);
+                },
+                commitMultiPathWithUsersResults(updates, touchedUsers) {
+                    const safeUpdates = Object.assign({}, updates || {});
+                    this.invalidateCoreCache();
                     try {
-                        localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                        if (Array.isArray(app.users) && app.users.length > 0) {
+                            localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                        }
                     } catch(e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/users/' + userIdx).update(fieldsObj);
+
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
+                        return Promise.resolve();
                     }
-                    return Promise.resolve();
+                    if (typeof firebase === 'undefined' || !firebase.database) {
+                        return Promise.resolve();
+                    }
+
+                    const targetList = Array.isArray(touchedUsers) ? touchedUsers.filter(u => u && u.matricula) : [];
+                    if (targetList.length === 0) {
+                        return firebase.database().ref('sistema_bonificacao').update(safeUpdates);
+                    }
+
+                    return this._enqueueUserSave(() => {
+                        return firebase.database().ref('sistema_bonificacao/users').once('value').then(snap => {
+                            const { keyByMat } = this._extractUsersSnapshot(snap.val());
+                            targetList.forEach(u => {
+                                const mKey = this._normalizeMat(u.matricula);
+                                const remoteKey = keyByMat.get(mKey);
+                                if (remoteKey !== undefined) {
+                                    safeUpdates[`users/${remoteKey}/results`] = u.results || {};
+                                }
+                            });
+                            return firebase.database().ref('sistema_bonificacao').update(safeUpdates);
+                        });
+                    });
                 },
                 iniciarHeartbeatPresenca() {
                     try {
@@ -1239,8 +1427,7 @@ storage: {
                     });
                 },
                 ensureAtasLoaded(callback) {
-                    if (app._atasLoadedFromCloud || (app.atasList && Object.keys(app.atasList).length > 0)) {
-                        app._atasLoadedFromCloud = true;
+                    if (app._atasLoadedFromCloud) {
                         if (typeof callback === 'function') callback();
                         return Promise.resolve(app.atasList);
                     }
@@ -1250,32 +1437,40 @@ storage: {
                             const parsed = JSON.parse(localAtas);
                             if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
                                 app.atasList = { ...parsed, ...(app.atasList || {}) };
-                                app._atasLoadedFromCloud = true;
                             }
                         }
                     } catch(e) {}
                     
                     if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/atas').once('value').then(snap => {
+                        if (this._atasLoadingPromise) {
+                            return this._atasLoadingPromise.then(() => {
+                                if (typeof callback === 'function') callback();
+                                return app.atasList || {};
+                            });
+                        }
+                        this._atasLoadingPromise = firebase.database().ref('sistema_bonificacao/atas').once('value').then(snap => {
                             const val = snap.val();
-                            if (val) {
-                                if (Array.isArray(val)) {
-                                    val.forEach((a, idx) => { if (a) app.atasList[a.id || ('ata_' + idx)] = a; });
-                                } else if (typeof val === 'object') {
-                                    app.atasList = { ...(app.atasList || {}), ...val };
-                                }
-                                try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch(e) {}
-                                if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
+                            const remoteMap = {};
+                            if (Array.isArray(val)) {
+                                val.forEach((a, idx) => { if (a) remoteMap[a.id || ('ata_' + idx)] = a; });
+                            } else if (val && typeof val === 'object') {
+                                Object.assign(remoteMap, val);
                             }
+                            app.atasList = { ...remoteMap, ...(app.atasList || {}) };
+                            try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch(e) {}
+                            if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
                             app._atasLoadedFromCloud = true;
+                            this._atasLoadingPromise = null;
                             if (typeof callback === 'function') callback();
                             return app.atasList;
                         }).catch(err => {
                             console.warn("Falha ao carregar atas sob demanda:", err);
                             app._atasLoadedFromCloud = true;
+                            this._atasLoadingPromise = null;
                             if (typeof callback === 'function') callback();
                             return app.atasList || {};
                         });
+                        return this._atasLoadingPromise;
                     }
                     app._atasLoadedFromCloud = true;
                     if (typeof callback === 'function') callback();
@@ -1344,13 +1539,18 @@ storage: {
                 saveOperacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
                 saveAtas(singleId = null) {
                     this.invalidateCoreCache();
-                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
                     
                     // Backup local imediato de segurança
                     try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList || {})); } catch (e) {}
                     if (typeof localforage !== 'undefined' && app.atasList) {
                         localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
                     }
+
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
+                        console.warn("Ambiente de teste detectado: escrita de atas em banco de produção bloqueada.");
+                        return Promise.resolve();
+                    }
+                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
 
                     if (singleId && app.atasList && app.atasList[singleId]) {
                         const sanitizedItem = this.sanitizeFirebaseObject(app.atasList[singleId]);
@@ -2719,19 +2919,21 @@ storage: {
                     let updates = {};
                     
                     // SEGURANÇA: Se a ação já estava aprovada, removemos o ponto do painel do usuário para não dar bônus indevido
+                    const touchedUsers = [];
                     if (act.status === 'aprovado') {
-                        const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                        const normActMat = app.storage._normalizeMat(act.matricula);
+                        const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
                         if (userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
                             let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
                             app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
-                            updates['users'] = app.users; // Prepara o envio da remoção do ponto
+                            touchedUsers.push(app.users[userIdx]);
                         }
                     }
 
                     updates[`actions/${id}`] = null; // Apaga a ação inteira do Firebase
                     
-                    // Faz as duas coisas ao mesmo tempo no banco de dados
-                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                    // Atualiza somente actions/${id} e results do usuário afetado (sem sobrescrever senhas de outros usuários)
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
                         delete app.actionsList[id]; // Limpa da memória local da tela
                         try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         app.ui.renderTab(app.currentTab, true); // Mantém a pessoa na aba em que ela estava (seja ADM ou Usuário)
@@ -2846,12 +3048,14 @@ storage: {
                     let updates = {};
                     
                     // Se já estava aprovado, precisamos remover o ponto do usuário de forma atômica
+                    const touchedUsers = [];
                     if (act.status === 'aprovado') {
-                        const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                        const normActMat = app.storage._normalizeMat(act.matricula);
+                        const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
                         if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
                             let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
                             app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
-                            updates['users'] = app.users; // Prepara para envio em lote
+                            touchedUsers.push(app.users[userIdx]);
                         }
                     }
 
@@ -2859,8 +3063,8 @@ storage: {
                     act.comentario = reason;
                     updates[`actions/${id}`] = act;
                     
-                    // Envio blindado (Multi-path Update)
-                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                    // Envio blindado sem sobrescrever nó completo de usuários
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
                         try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
                         
@@ -3078,9 +3282,11 @@ storage: {
                     act.status = 'aprovado';
                     let updates = {};
                     updates[`actions/${id}`] = act;
+                    const touchedUsers = [];
                     
                     try {
-                        const userIdx = app.users.findIndex(x => x.matricula === act.matricula);
+                        const normActMat = app.storage._normalizeMat(act.matricula);
+                        const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
                         if(userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
                             if(!app.users[userIdx].results) app.users[userIdx].results = {};
                             if(!app.users[userIdx].results[act.month]) app.users[userIdx].results[act.month] = { status: 'pendente' };
@@ -3089,18 +3295,18 @@ storage: {
                             let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
                             app.users[userIdx].results[act.month]['g4'].val = (currentVal + 1).toString();
                             
-                            if(app.currentUser && app.currentUser.matricula === act.matricula) {
+                            if(app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normActMat) {
                                 app.currentUser = app.users[userIdx];
                             }
                             
-                            updates['users'] = app.users; // Prepara para envio em lote
+                            touchedUsers.push(app.users[userIdx]);
                         }
                     } catch (err) {
                         console.error("Erro ao creditar ação:", err);
                     }
                     
-                    // Envio blindado (Multi-path Update)
-                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                    // Envio blindado apenas do result do colaborador afetado
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
                         try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
                         app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
@@ -3254,9 +3460,10 @@ storage: {
 
                 findQualidadeUsersForAta(ata) {
                     if (!ata) return [];
-                    const ataMat = String(ata.matricula || '').trim();
-                    const ataMatQ1 = String(ata.matriculaQualidade || '').trim();
-                    const ataMatQ2 = String(ata.matriculaQualidade2 || '').trim();
+                    const norm = (v) => String(v || '').trim().toUpperCase();
+                    const ataMat = norm(ata.matricula);
+                    const ataMatQ1 = norm(ata.matriculaQualidade);
+                    const ataMatQ2 = norm(ata.matriculaQualidade2);
                     
                     let rawTargets = [];
                     if (ata.qualidade) rawTargets.push(...String(ata.qualidade).split(/[/,e&+-]/));
@@ -3265,17 +3472,17 @@ storage: {
 
                     return (app.users || []).filter(u => {
                         if (!u) return false;
-                        const uMat = String(u.matricula || '').trim();
+                        const uMat = norm(u.matricula);
                         const isQualidadeUser = app.isUserQualidade(u) || (u.results && Object.values(u.results).some(r => r && r.g3));
                         
-                        // 1. Match estrito por matrícula (criador ou responsável direto da qualidade)
+                        // 1. Match estrito por matrícula normalizada (criador ou responsável direto da qualidade)
                         if (uMat && (uMat === ataMat || uMat === ataMatQ1 || uMat === ataMatQ2) && isQualidadeUser) {
                             return true;
                         }
                         
-                        // 2. Match estrito por nome
+                        // 2. Match estrito por nome ou matrícula informada no campo texto
                         for (const target of cleanTargets) {
-                            if (uMat && target === uMat) return true;
+                            if (uMat && norm(target) === uMat) return true;
                             if (u.nome && this.isStrictNameMatch(u.nome, target)) {
                                 return true;
                             }
@@ -3391,136 +3598,186 @@ storage: {
                         </body></html>
                     `;
                 },
+                _resolveUserMatByName(nomeStr) {
+                    const target = String(nomeStr || '').trim();
+                    if (!target || !Array.isArray(app.users)) return '';
+                    if (app.currentUser && app.currentUser.nome && this.isStrictNameMatch(app.currentUser.nome, target)) {
+                        return String(app.currentUser.matricula || '').trim();
+                    }
+                    const found = app.users.find(u => u && u.nome && this.isStrictNameMatch(u.nome, target));
+                    return found ? String(found.matricula || '').trim() : '';
+                },
                 saveAtaToDB(isAuto = false) {
-                    const d = document.getElementById('ata-data').value;
-                    const h = document.getElementById('ata-hora').value;
-                    const t = document.getElementById('ata-tema').value;
-                    const o = document.getElementById('ata-op').value;
-                    const q = document.getElementById('ata-qualidade').value;
+                    const d = document.getElementById('ata-data')?.value || '';
+                    const h = document.getElementById('ata-hora')?.value || '';
+                    const t = document.getElementById('ata-tema')?.value || '';
+                    const o = document.getElementById('ata-op')?.value || '';
+                    const q = document.getElementById('ata-qualidade')?.value || '';
                     
                     if(!d || !t || !o || !q || !h) {
-                        if(!isAuto) app.ui.showAlert("Aviso", "Preencha a Hora de Início, Operação, Tema e Qualidade 1.", "error");
+                        if(!isAuto) app.ui.showAlert("Aviso", "Preencha Data, Hora de Início, Operação, Tema e Qualidade 1.", "error");
                         return false; 
                     }
 
                     const editIdEl = document.getElementById('ata-edit-id');
                     const editId = editIdEl ? editIdEl.value : '';
+                    const q2Val = document.getElementById('ata-qualidade2')?.value || '';
 
-                    const prevStatus = (editId && app.atasList[editId] && app.atasList[editId].status) ? app.atasList[editId].status : 'concluido';
+                    const prevAta = (editId && app.atasList && app.atasList[editId]) ? app.atasList[editId] : null;
+                    const prevStatus = (prevAta && prevAta.status) ? prevAta.status : 'concluido';
                     const targetMonth = this.getAtaMonth({ data: d, timestamp: Date.now() }) || app.currentMonth;
+                    const curMat = app.currentUser ? String(app.currentUser.matricula || '').trim() : (app.isAdmin ? 'ADM' : '');
+                    const curAutor = app.currentUser ? String(app.currentUser.nome || '').trim() : 'ADM';
+
+                    const matQ1 = this._resolveUserMatByName(q) || (prevAta ? (prevAta.matriculaQualidade || '') : '') || curMat;
+                    const matQ2 = q2Val ? (this._resolveUserMatByName(q2Val) || (prevAta ? (prevAta.matriculaQualidade2 || '') : '')) : '';
 
                     const payload = {
-                        id: editId || ('ata_' + Date.now()),
-                        data: d, hora: h, horaFim: document.getElementById('ata-hora-fim').value || '',
+                        id: editId || ('ata_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+                        data: d, hora: h, horaFim: document.getElementById('ata-hora-fim')?.value || '',
                         month: targetMonth,
                         tema: t, op: o, qualidade: q, 
-                        qualidade2: document.getElementById('ata-qualidade2').value || '',
-                        sup: document.getElementById('ata-sup1').value || '',
+                        qualidade2: q2Val,
+                        matriculaQualidade: matQ1,
+                        matriculaQualidade2: matQ2,
+                        sup: document.getElementById('ata-sup1')?.value || '',
                         fortes: (document.getElementById('ata-fortes-rich') ? document.getElementById('ata-fortes-rich').innerHTML : (document.getElementById('ata-fortes')?.value || '')),
                         acoes: this.getAcoesData(),
                         extras: this.getPartsData(),
                         rawAcoes: this.getRawAcoes(),
                         rawExtras: this.getRawExtras(),
-                        autor: app.currentUser ? app.currentUser.nome : 'ADM',
-                        matricula: app.currentUser ? app.currentUser.matricula : 'ADM',
-                        timestamp: editId && app.atasList[editId] ? app.atasList[editId].timestamp : Date.now(),
+                        autor: (prevAta && prevAta.autor) ? prevAta.autor : curAutor,
+                        matricula: (prevAta && prevAta.matricula) ? prevAta.matricula : curMat,
+                        timestamp: (prevAta && prevAta.timestamp) ? prevAta.timestamp : Date.now(),
                         status: prevStatus,
-                        comentario: (editId && app.atasList[editId]) ? (app.atasList[editId].comentario || '') : ''
+                        comentario: (prevAta && prevAta.comentario) ? prevAta.comentario : ''
                     };
 
+                    if (!app.atasList || typeof app.atasList !== 'object') app.atasList = {};
                     app.atasList[payload.id] = payload;
-                    app.storage.saveAtas(payload.id).then(() => {
-                        if(!isAuto) app.ui.showAlert("Sucesso", "Ata registrada com sucesso no banco de dados.", "success");
+                    try { localStorage.removeItem('soft_ata_data_draft'); } catch(e) {}
+
+                    this._lastSavedAtaPromise = app.storage.saveAtas(payload.id).then(() => {
+                        if(!isAuto) app.ui.showAlert("Sucesso", "Ata registrada com sucesso no seu histórico.", "success");
+                        return payload;
+                    }).catch(err => {
+                        console.error("Erro ao gravar Ata no Firebase:", err);
+                        app.ui.showAlert("Erro ao Salvar Ata", "A ata foi mantida no backup local, mas falhou ao sincronizar com o servidor. Tente novamente.", "error");
+                        return Promise.reject(err);
                     });
 
                     if (editIdEl) editIdEl.value = '';
-                    
                     return true;
+                },
+                salvarApenas() {
+                    const ok = this.saveAtaToDB(true);
+                    if (!ok) return;
+                    const p = this._lastSavedAtaPromise || Promise.resolve();
+                    p.then(() => {
+                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = 'todos';
+                        app.ui.showAlert("Sucesso", "Ata salva no seu histórico e enviada para acompanhamento.", "success");
+                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
+                    }).catch(() => {});
                 },
                 gerarWord() {
                     const html = this.gerarTemplateHTML();
                     const valid = this.saveAtaToDB(true);
-                    if(!valid) return app.ui.showAlert("Campos Obrigatórios", "Para salvar e gerar a Ata, preencha a Hora, Operação, Tema e Qualidade.", "error");
+                    if(!valid) return app.ui.showAlert("Campos Obrigatórios", "Para salvar e gerar a Ata, preencha Data, Hora, Operação, Tema e Qualidade.", "error");
                     
                     const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
                     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Ata_${Date.now()}.doc`;
                     document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                    app.ui.showAlert("Concluído", "O Download começou e a ata já consta no histórico do sistema.", "success");
-                    setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
+
+                    const p = this._lastSavedAtaPromise || Promise.resolve();
+                    p.then(() => {
+                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = 'todos';
+                        app.ui.showAlert("Concluído", "O Download começou e a ata já consta no seu histórico.", "success");
+                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
+                    }).catch(() => {});
                 },
                 gerarPDF() {
-                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "Aguarde, gerador PDF carregando...", "error");
-                    
                     const valid = this.saveAtaToDB(true);
-                    if(!valid) return app.ui.showAlert("Campos Obrigatórios", "Para salvar e gerar o PDF, preencha a Hora, Operação, Tema e Qualidade.", "error");
-                    
-                    const doc = new window.jspdf.jsPDF();
-                    
-                    const d = document.getElementById('ata-data').value || '';
-                    const h = document.getElementById('ata-hora').value || '';
-                    const hf = document.getElementById('ata-hora-fim').value || '';
-                    const t = document.getElementById('ata-tema').value || 'Tema Não Definido';
-                    const o = document.getElementById('ata-op').value || 'Operação Não Definida';
-                    const q = document.getElementById('ata-qualidade').value || 'Não Definido';
-                    const q2 = document.getElementById('ata-qualidade2').value || '-';
-                    const sup = document.getElementById('ata-sup1').value || '-';
-                    const extras = this.getPartsData(); 
-                    const fortesEl = document.getElementById('ata-fortes-rich') || document.getElementById('ata-fortes');
-                    const fortesRaw = fortesEl ? (fortesEl.innerHTML || fortesEl.value || 'Nada registrado.') : 'Nada registrado.';
-                    const fortes = fortesRaw
-                        .replace(/<br\s*[\/]?>/gi, '\n')
-                        .replace(/<\/p>/gi, '\n')
-                        .replace(/<\/div>/gi, '\n')
-                        .replace(/<li>/gi, '• ')
-                        .replace(/<[^>]+>/g, '')
-                        .trim() || 'Nada registrado.';
-                    const acoes = this.getAcoesData();
+                    if(!valid) return app.ui.showAlert("Campos Obrigatórios", "Para salvar e gerar o PDF, preencha Data, Hora, Operação, Tema e Qualidade.", "error");
 
-                    doc.setFontSize(15); doc.setTextColor(51, 65, 85); doc.setFont("helvetica", "bold");
-                    doc.text("Ata de Reunião e Calibração", 105, 16, { align: "center" });
-                    
-                    const baseStyles = { fontSize: 9, cellPadding: 2.5, textColor: [71, 85, 105], lineColor: [226, 232, 240], lineWidth: 0.1 };
-                    const baseHeadStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontSize: 9.5, fontStyle: 'bold' };
+                    let pdfOk = false;
+                    if (window.jspdf && window.jspdf.jsPDF) {
+                        try {
+                            const doc = new window.jspdf.jsPDF();
+                            const d = document.getElementById('ata-data').value || '';
+                            const h = document.getElementById('ata-hora').value || '';
+                            const hf = document.getElementById('ata-hora-fim').value || '';
+                            const t = document.getElementById('ata-tema').value || 'Tema Não Definido';
+                            const o = document.getElementById('ata-op').value || 'Operação Não Definida';
+                            const q = document.getElementById('ata-qualidade').value || 'Não Definido';
+                            const q2 = document.getElementById('ata-qualidade2').value || '-';
+                            const sup = document.getElementById('ata-sup1').value || '-';
+                            const extras = this.getPartsData(); 
+                            const fortesEl = document.getElementById('ata-fortes-rich') || document.getElementById('ata-fortes');
+                            const fortesRaw = fortesEl ? (fortesEl.innerHTML || fortesEl.value || 'Nada registrado.') : 'Nada registrado.';
+                            const fortes = fortesRaw
+                                .replace(/<br\s*[\/]?>/gi, '\n')
+                                .replace(/<\/p>/gi, '\n')
+                                .replace(/<\/div>/gi, '\n')
+                                .replace(/<li>/gi, '• ')
+                                .replace(/<[^>]+>/g, '')
+                                .trim() || 'Nada registrado.';
+                            const acoes = this.getAcoesData();
 
-                    doc.autoTable({
-                        startY: 24,
-                        head: [['Informações Gerais']],
-                        body: [
-                            [`Data: ${d ? d.split('-').reverse().join('/') : ''}   |   Horário: ${h} às ${hf}`],
-                            [`Tema / Foco: ${t}`],
-                            [`Operação: ${o}`]
-                        ],
-                        theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
-                    });
+                            doc.setFontSize(15); doc.setTextColor(51, 65, 85); doc.setFont("helvetica", "bold");
+                            doc.text("Ata de Reunião e Calibração", 105, 16, { align: "center" });
+                            
+                            const baseStyles = { fontSize: 9, cellPadding: 2.5, textColor: [71, 85, 105], lineColor: [226, 232, 240], lineWidth: 0.1 };
+                            const baseHeadStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontSize: 9.5, fontStyle: 'bold' };
 
-                    doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 4,
-                        head: [['Participantes da Reunião']],
-                        body: [
-                            [`Líderes de Qualidade: ${q} ${q2 !== '-' ? ' / ' + q2 : ''}`],
-                            [`Supervisor Operacional: ${sup}`],
-                            [`Outros Participantes: ${extras}`]
-                        ],
-                        theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
-                    });
+                            doc.autoTable({
+                                startY: 24,
+                                head: [['Informações Gerais']],
+                                body: [
+                                    [`Data: ${d ? d.split('-').reverse().join('/') : ''}   |   Horário: ${h} às ${hf}`],
+                                    [`Tema / Foco: ${t}`],
+                                    [`Operação: ${o}`]
+                                ],
+                                theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
+                            });
 
-                    doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 4,
-                        head: [['1. Pontos Discutidos']],
-                        body: [[fortes]],
-                        theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
-                    });
+                            doc.autoTable({
+                                startY: doc.lastAutoTable.finalY + 4,
+                                head: [['Participantes da Reunião']],
+                                body: [
+                                    [`Líderes de Qualidade: ${q} ${q2 !== '-' ? ' / ' + q2 : ''}`],
+                                    [`Supervisor Operacional: ${sup}`],
+                                    [`Outros Participantes: ${extras}`]
+                                ],
+                                theme: 'grid', headStyles: { ...baseHeadStyles, halign: 'center' }, styles: baseStyles
+                            });
 
-                    doc.autoTable({
-                        startY: doc.lastAutoTable.finalY + 4,
-                        head: [['2. Ações Definidas (Cronograma)']],
-                        body: [[acoes]],
-                        theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
-                    });
+                            doc.autoTable({
+                                startY: doc.lastAutoTable.finalY + 4,
+                                head: [['1. Pontos Discutidos']],
+                                body: [[fortes]],
+                                theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
+                            });
 
-                    doc.save(`Ata_${Date.now()}.pdf`);
-                    app.ui.showAlert("Concluído", "O Download do PDF começou e a ata foi gravada no sistema.", "success");
-                    setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
+                            doc.autoTable({
+                                startY: doc.lastAutoTable.finalY + 4,
+                                head: [['2. Ações Definidas (Cronograma)']],
+                                body: [[acoes]],
+                                theme: 'grid', headStyles: baseHeadStyles, styles: { ...baseStyles, cellPadding: 3.5 }
+                            });
+
+                            doc.save(`Ata_${Date.now()}.pdf`);
+                            pdfOk = true;
+                        } catch (pdfErr) {
+                            console.warn("Aviso na geração do PDF (Ata salva normalmente):", pdfErr);
+                        }
+                    }
+
+                    const p = this._lastSavedAtaPromise || Promise.resolve();
+                    p.then(() => {
+                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = 'todos';
+                        app.ui.showAlert("Concluído", pdfOk ? "O Download do PDF começou e a ata foi gravada no seu histórico." : "Ata gravada no seu histórico (o gerador de PDF ainda estava carregando; baixe o PDF direto pelo histórico).", "success");
+                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
+                    }).catch(() => {});
                 },
                 gerarPDFById(id) {
                     if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Aviso", "Aguarde, gerador PDF carregando...", "error");
@@ -3628,27 +3885,30 @@ storage: {
 
                         let usersEncontrados = this.findQualidadeUsersForAta(ata);
 
-                        let atualizouAlguem = false;
+                        const touchedUsers = [];
                         usersEncontrados.forEach(userEncontrado => {
                             if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef][gId]) {
                                 let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
                                 userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
                                 
-                                if (app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
+                                if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
                                     app.currentUser = userEncontrado;
                                 }
-                                atualizouAlguem = true;
+                                touchedUsers.push(userEncontrado);
                             }
                         });
                         
-                        if (atualizouAlguem) updates['users'] = app.users;
+                        updates._touchedAtaUsers = touchedUsers;
                     }
+
+                    const ataTouchedUsers = updates._touchedAtaUsers || [];
+                    delete updates._touchedAtaUsers;
 
                     ata.status = 'devolvido';
                     ata.comentario = reason;
                     updates[`atas/${id}`] = ata;
                     
-                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                    app.storage.commitMultiPathWithUsersResults(updates, ataTouchedUsers).then(() => {
                         try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                         try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
@@ -3698,24 +3958,23 @@ storage: {
                     const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gId = goalCalib ? goalCalib.id : 'g3';
 
-                    let atualizouAlguem = false;
+                    const touchedUsers = [];
                     usersEncontrados.forEach(userEncontrado => {
                         if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef][gId]) {
                             let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
                             userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
                             
-                            if (app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
+                            if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
                                 app.currentUser = userEncontrado;
                             }
-                            atualizouAlguem = true;
+                            touchedUsers.push(userEncontrado);
                         }
                     });
 
                     ata.status = 'aprovado_sem_bonus';
                     updates[`atas/${id}`] = ata;
-                    if (atualizouAlguem) updates['users'] = app.users;
 
-                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
                         try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                         try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
@@ -3894,7 +4153,7 @@ storage: {
                     const gId = goalCalib ? goalCalib.id : 'g3';
                     
                     let updates = {};
-                    let atualizouAlguem = false;
+                    const touchedUsers = [];
                     
                     usersEncontrados.forEach(userEncontrado => {
                         if(!userEncontrado.results) userEncontrado.results = {};
@@ -3904,19 +4163,18 @@ storage: {
                         let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
                         userEncontrado.results[mesRef][gId].val = (atual + 1).toString();
                         
-                        if(app.currentUser && app.currentUser.matricula === userEncontrado.matricula) {
+                        if(app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
                             app.currentUser = userEncontrado;
                         }
-                        atualizouAlguem = true;
+                        touchedUsers.push(userEncontrado);
                     });
                     
                     ata.status = 'aprovado';
                     ata.month = mesRef;
                     updates[`atas/${id}`] = ata;
-                    if(atualizouAlguem) updates['users'] = app.users;
 
-                    // Multi-path update previne tela de piscar e bugs de aba
-                    firebase.database().ref('sistema_bonificacao').update(updates).then(() => {
+                    // Multi-path update seguro apenas dos results dos colaboradores
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
                         try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                         try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         const nomesGanhadores = usersEncontrados.map(u => u.nome.split(' ')[0]).join(', ');
@@ -4036,6 +4294,7 @@ storage: {
                     responsavelIntegracaoNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a)'),
                     responsavelIntegracaoMatricula: curUser.matricula || (app.isAdmin ? 'admin' : '-'),
                     anexoListaPresenca: null,
+                    anexosListaPresenca: [],
                     status: 'Em Andamento',
                     travada: false,
                     consideracoesFinais: '',
@@ -4207,11 +4466,15 @@ storage: {
                             turmaTreinadorMatricula: t.treinadorMatricula || '',
                             turmaTreinadorNome: t.treinadorNome || '',
                             primeiroAcesso: true,
+                            pwdUpdatedAt: Date.now(),
                             loginCount: 0,
                             results: {},
                             aceiteTermos: null,
                             aceiteDiretrizes: null
                         });
+                        if (app.storage && typeof app.storage.markUserPasswordDirty === 'function') {
+                            app.storage.markUserPasswordDirty(mat);
+                        }
                         usersModificados = true;
                     }
                 });
@@ -4681,72 +4944,306 @@ storage: {
                 });
             },
 
-            carregarAnexoListaPresenca(event) {
-                const file = event.target.files && event.target.files[0];
-                if (!file) return;
-                const t = this.turmaEmEdicao;
-                if (!t) return;
+            _escapeAnexoHtml(str) {
+                return String(str == null ? '' : str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            },
 
-                if (file.size > 8 * 1024 * 1024) {
-                    return app.ui.showAlert("Arquivo Muito Grande", "Selecione uma foto ou PDF de no máximo 8MB.", "warning");
+            getAnexosTurma(t) {
+                if (!t) return [];
+                const rawList = Array.isArray(t.anexosListaPresenca)
+                    ? t.anexosListaPresenca
+                    : (t.anexosListaPresenca && typeof t.anexosListaPresenca === 'object'
+                        ? Object.keys(t.anexosListaPresenca).sort((a, b) => Number(a) - Number(b)).map(k => t.anexosListaPresenca[k])
+                        : []);
+                const list = rawList.filter(a => a && a.dataUrl);
+                if (t.anexoListaPresenca && t.anexoListaPresenca.dataUrl) {
+                    const leg = t.anexoListaPresenca;
+                    const exists = list.some(a =>
+                        a.nome === leg.nome &&
+                        a.tamanho === leg.tamanho &&
+                        String(a.dataUrl).slice(0, 80) === String(leg.dataUrl).slice(0, 80)
+                    );
+                    if (!exists) list.unshift(leg);
                 }
+                return list;
+            },
 
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    t.anexoListaPresenca = {
-                        nome: file.name,
-                        tipo: file.type,
-                        tamanho: file.size,
-                        dataUrl: e.target.result,
-                        enviadoEm: Date.now()
-                    };
-                    const container = document.getElementById('turma-anexo-info');
-                    if (container) {
-                        container.innerHTML = `
-                            <div class="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs">
-                                <div class="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold truncate max-w-xs">
-                                    <i class="fa-solid ${file.type.includes('pdf') ? 'fa-file-pdf text-rose-500' : 'fa-image text-emerald-600'}"></i>
-                                    <span class="truncate">${file.name}</span>
-                                </div>
-                                <button type="button" onclick="app.diarioBordo.turmaEmEdicao.anexoListaPresenca = null; document.getElementById('turma-anexo-info').innerHTML = '';" class="text-rose-500 hover:text-rose-700 p-1 cursor-pointer" title="Remover anexo">
+            formatarTamanhoArquivo(bytes) {
+                const n = Number(bytes) || 0;
+                if (n < 1024) return `${n} B`;
+                if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+                return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+            },
+
+            getAnexoFileIcon(anexo) {
+                const nome = String(anexo?.nome || '').toLowerCase();
+                const tipo = String(anexo?.tipo || '').toLowerCase();
+                if (tipo.includes('pdf') || nome.endsWith('.pdf')) return 'fa-file-pdf text-rose-500';
+                if (tipo.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|heic|jfif)$/.test(nome)) return 'fa-image text-emerald-600';
+                if (tipo.includes('word') || /\.(docx?|odt|rtf)$/.test(nome)) return 'fa-file-word text-blue-600';
+                if (tipo.includes('excel') || tipo.includes('spreadsheet') || /\.(xlsx?|ods|csv)$/.test(nome)) return 'fa-file-excel text-emerald-700';
+                if (tipo.includes('powerpoint') || tipo.includes('presentation') || /\.(pptx?|odp)$/.test(nome)) return 'fa-file-powerpoint text-orange-500';
+                if (tipo.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/.test(nome)) return 'fa-file-audio text-violet-500';
+                if (tipo.startsWith('video/') || /\.(mp4|webm|mov|avi|mkv)$/.test(nome)) return 'fa-file-video text-indigo-500';
+                if (/\.(zip|rar|7z|tar|gz)$/.test(nome)) return 'fa-file-zipper text-amber-600';
+                if (tipo.startsWith('text/') || /\.(txt|json|log|md)$/.test(nome)) return 'fa-file-lines text-slate-600';
+                return 'fa-file text-sky-600';
+            },
+
+            renderAnexosListaHtml(t) {
+                const anexos = this.getAnexosTurma(t);
+                if (anexos.length === 0) return '';
+                const safeTurmaId = this._escapeAnexoHtml(t.id || '');
+                const rows = anexos.map((anexo, idx) => {
+                    const safeNome = this._escapeAnexoHtml(anexo.nome || `Arquivo ${idx + 1}`);
+                    const iconCls = this.getAnexoFileIcon(anexo);
+                    const tamLabel = this.formatarTamanhoArquivo(anexo.tamanho);
+                    return `
+                        <div class="flex items-center justify-between gap-2 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs">
+                            <div class="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 font-bold min-w-0 flex-1">
+                                <i class="fa-solid ${iconCls} text-base shrink-0"></i>
+                                <span class="truncate" title="${safeNome}">${safeNome}</span>
+                                ${anexo.tamanho ? `<span class="text-[10px] font-semibold text-emerald-700/70 dark:text-emerald-400/70 shrink-0">(${tamLabel})</span>` : ''}
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button type="button" data-turma-id="${safeTurmaId}" data-idx="${idx}" onclick="app.diarioBordo.visualizarAnexoLista(this.getAttribute('data-turma-id'), Number(this.getAttribute('data-idx')))" class="text-sky-600 hover:text-sky-800 dark:text-sky-400 p-1.5 cursor-pointer" title="Visualizar arquivo">
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                                <button type="button" data-turma-id="${safeTurmaId}" data-idx="${idx}" onclick="app.diarioBordo.baixarAnexoIntegracao(this.getAttribute('data-turma-id'), Number(this.getAttribute('data-idx')))" class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 p-1.5 cursor-pointer" title="Baixar arquivo">
+                                    <i class="fa-solid fa-download"></i>
+                                </button>
+                                <button type="button" onclick="app.diarioBordo.removerAnexoListaPresenca(${idx})" class="text-rose-500 hover:text-rose-700 p-1.5 cursor-pointer" title="Remover anexo">
                                     <i class="fa-solid fa-trash-can"></i>
                                 </button>
                             </div>
-                        `;
-                    }
-                    app.ui.showAlert("Lista Anexada", `Arquivo "${file.name}" carregado com sucesso.`, "success");
-                };
-                reader.readAsDataURL(file);
+                        </div>
+                    `;
+                }).join('');
+                return `
+                    <div class="space-y-2">
+                        <div class="text-[11px] font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-check"></i> ${anexos.length} arquivo(s) anexado(s) nesta turma
+                        </div>
+                        <div class="space-y-2 max-h-64 overflow-y-auto pr-1">${rows}</div>
+                    </div>
+                `;
             },
 
-            visualizarAnexoLista(turmaId) {
-                const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
-                if (!t || !t.anexoListaPresenca) {
-                    return app.ui.showAlert("Sem Anexo", "Nenhuma lista de presença assinada foi anexada para esta turma.", "info");
+            atualizarAnexosIntegracaoUI() {
+                const container = document.getElementById('turma-anexo-info');
+                if (!container || !this.turmaEmEdicao) return;
+                container.innerHTML = this.renderAnexosListaHtml(this.turmaEmEdicao);
+            },
+
+            removerAnexoListaPresenca(idx) {
+                const t = this.turmaEmEdicao;
+                if (!t) return;
+                const anexos = this.getAnexosTurma(t);
+                if (idx < 0 || idx >= anexos.length) return;
+                anexos.splice(idx, 1);
+                t.anexosListaPresenca = anexos;
+                t.anexoListaPresenca = anexos[0] || null;
+                this.atualizarAnexosIntegracaoUI();
+            },
+
+            baixarAnexoIntegracao(turmaId, idx = 0) {
+                const t = (app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId]) ||
+                          (this.turmaEmEdicao && this.turmaEmEdicao.id === turmaId ? this.turmaEmEdicao : null);
+                const anexos = this.getAnexosTurma(t);
+                const anexo = anexos[idx];
+                if (!anexo || !anexo.dataUrl) {
+                    return app.ui.showAlert("Arquivo Indisponível", "Não foi possível localizar o arquivo para download.", "warning");
+                }
+                const a = document.createElement('a');
+                a.href = anexo.dataUrl;
+                a.download = anexo.nome || `anexo_${idx + 1}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            },
+
+            carregarAnexoListaPresenca(event) {
+                const inputEl = event.target;
+                const files = inputEl && inputEl.files ? Array.from(inputEl.files) : [];
+                if (files.length === 0) return;
+                const t = this.turmaEmEdicao;
+                if (!t) return;
+
+                const maxSize = 12 * 1024 * 1024;
+                const validFiles = [];
+                const rejectedNames = [];
+                files.forEach(file => {
+                    if (file.size > maxSize) rejectedNames.push(file.name);
+                    else validFiles.push(file);
+                });
+
+                if (rejectedNames.length > 0 && validFiles.length === 0) {
+                    if (inputEl) inputEl.value = '';
+                    return app.ui.showAlert("Arquivo Muito Grande", "Cada arquivo deve ter no máximo 12MB.", "warning");
+                }
+
+                Promise.all(validFiles.map(file => new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve({
+                        nome: file.name,
+                        tipo: file.type || 'application/octet-stream',
+                        tamanho: file.size,
+                        dataUrl: e.target.result,
+                        enviadoEm: Date.now()
+                    });
+                    reader.onerror = () => resolve(null);
+                    reader.readAsDataURL(file);
+                }))).then(results => {
+                    const anexosAtuais = this.getAnexosTurma(t);
+                    const carregados = results.filter(Boolean);
+                    carregados.forEach(item => anexosAtuais.push(item));
+                    t.anexosListaPresenca = anexosAtuais;
+                    t.anexoListaPresenca = anexosAtuais[0] || null;
+                    if (inputEl) inputEl.value = '';
+                    this.atualizarAnexosIntegracaoUI();
+
+                    if (rejectedNames.length > 0) {
+                        app.ui.showAlert(
+                            "Anexo Parcial",
+                            `${carregados.length} arquivo(s) carregado(s). Ignorado(s) por exceder 12MB: ${rejectedNames.join(', ')}.`,
+                            "warning"
+                        );
+                    } else if (carregados.length === 1) {
+                        app.ui.showAlert("Arquivo Anexado", `"${carregados[0].nome}" carregado com sucesso (Total: ${anexosAtuais.length}).`, "success");
+                    } else if (carregados.length > 1) {
+                        app.ui.showAlert("Arquivos Anexados", `${carregados.length} arquivos carregados com sucesso (Total: ${anexosAtuais.length}).`, "success");
+                    }
+                });
+            },
+
+            visualizarAnexoLista(turmaId, selectedIdx = 0) {
+                const t = (app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId]) ||
+                          (this.turmaEmEdicao && this.turmaEmEdicao.id === turmaId ? this.turmaEmEdicao : null);
+                const anexos = this.getAnexosTurma(t);
+                if (!t || anexos.length === 0) {
+                    return app.ui.showAlert("Sem Anexo", "Nenhum arquivo foi anexado para esta turma.", "info");
                 }
                 if (!this.canEditTurma(t)) {
-                    return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para visualizar o anexo desta turma.", "warning");
+                    return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para visualizar os anexos desta turma.", "warning");
                 }
-                const anexo = t.anexoListaPresenca;
+                const safeIdx = Math.max(0, Math.min(Number(selectedIdx) || 0, anexos.length - 1));
+                const anexo = anexos[safeIdx];
                 const modal = document.getElementById('anexo-visualizar-modal');
                 const titulo = document.getElementById('anexo-visualizar-titulo');
                 const corpo = document.getElementById('anexo-visualizar-corpo');
 
-                if (titulo) titulo.textContent = `Lista de Presença Assinada - ${t.operacao} (${t.numeroTurma})`;
+                if (titulo) titulo.textContent = `Anexos da Integração (${anexos.length}) - ${t.operacao} (${t.numeroTurma})`;
                 if (corpo) {
-                    if (anexo.tipo && anexo.tipo.includes('pdf')) {
-                        corpo.innerHTML = `
-                            <div class="w-full h-[65vh] flex flex-col items-center justify-center p-2">
-                                <iframe src="${anexo.dataUrl}" class="w-full h-full rounded-2xl border border-slate-200 dark:border-slate-700"></iframe>
-                            </div>
-                        `;
-                    } else {
-                        corpo.innerHTML = `
-                            <div class="max-h-[65vh] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-700 p-2 bg-slate-100 dark:bg-slate-900 w-full flex items-center justify-center">
-                                <img src="${anexo.dataUrl}" alt="Lista de Presença Assinada" class="max-w-full h-auto max-h-[60vh] mx-auto rounded-xl shadow-md object-contain">
+                    const safeTurmaId = this._escapeAnexoHtml(t.id || '');
+                    const safeNome = this._escapeAnexoHtml(anexo.nome || `Arquivo ${safeIdx + 1}`);
+                    const nomeLower = String(anexo.nome || '').toLowerCase();
+                    const tipoLower = String(anexo.tipo || '').toLowerCase();
+                    const tamLabel = this.formatarTamanhoArquivo(anexo.tamanho);
+
+                    let tabsHtml = '';
+                    if (anexos.length > 1) {
+                        tabsHtml = `
+                            <div class="w-full flex flex-wrap gap-2 mb-3 pb-3 border-b border-slate-200 dark:border-slate-700 max-h-28 overflow-y-auto">
+                                ${anexos.map((item, idx) => {
+                                    const active = idx === safeIdx;
+                                    const itemName = this._escapeAnexoHtml(item.nome || `Arquivo ${idx + 1}`);
+                                    const iconCls = this.getAnexoFileIcon(item);
+                                    return `
+                                        <button type="button" data-turma-id="${safeTurmaId}" data-idx="${idx}" onclick="app.diarioBordo.visualizarAnexoLista(this.getAttribute('data-turma-id'), Number(this.getAttribute('data-idx')))"
+                                            class="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 max-w-[230px] border transition cursor-pointer ${active
+                                                ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'}">
+                                            <i class="fa-solid ${active ? 'fa-file text-white' : iconCls} shrink-0"></i>
+                                            <span class="truncate">${itemName}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
                             </div>
                         `;
                     }
+
+                    const actionBar = `
+                        <div class="w-full flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
+                            <div class="flex items-center gap-2 min-w-0 text-xs font-bold text-slate-700 dark:text-slate-200">
+                                <i class="fa-solid ${this.getAnexoFileIcon(anexo)} text-base shrink-0"></i>
+                                <span class="truncate">${safeNome}</span>
+                                ${anexo.tamanho ? `<span class="text-slate-400 font-medium shrink-0">(${tamLabel})</span>` : ''}
+                            </div>
+                            <button type="button" data-turma-id="${safeTurmaId}" data-idx="${safeIdx}" onclick="app.diarioBordo.baixarAnexoIntegracao(this.getAttribute('data-turma-id'), Number(this.getAttribute('data-idx')))"
+                                class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                <i class="fa-solid fa-download"></i> Baixar Arquivo
+                            </button>
+                        </div>
+                    `;
+
+                    let previewHtml = '';
+                    if (tipoLower.includes('pdf') || nomeLower.endsWith('.pdf')) {
+                        previewHtml = `
+                            <div class="w-full h-[60vh] flex flex-col items-center justify-center p-1">
+                                <iframe src="${anexo.dataUrl}" class="w-full h-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white"></iframe>
+                            </div>
+                        `;
+                    } else if (tipoLower.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|jfif)$/.test(nomeLower)) {
+                        previewHtml = `
+                            <div class="max-h-[60vh] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-700 p-2 bg-slate-100 dark:bg-slate-900 w-full flex items-center justify-center">
+                                <img src="${anexo.dataUrl}" alt="${safeNome}" class="max-w-full h-auto max-h-[56vh] mx-auto rounded-xl shadow-md object-contain">
+                            </div>
+                        `;
+                    } else if (tipoLower.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac)$/.test(nomeLower)) {
+                        previewHtml = `
+                            <div class="w-full py-12 px-6 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex flex-col items-center gap-4">
+                                <i class="fa-solid fa-file-audio text-4xl text-violet-500"></i>
+                                <audio controls src="${anexo.dataUrl}" class="w-full max-w-md"></audio>
+                            </div>
+                        `;
+                    } else if (tipoLower.startsWith('video/') || /\.(mp4|webm|mov)$/.test(nomeLower)) {
+                        previewHtml = `
+                            <div class="w-full max-h-[60vh] rounded-2xl border border-slate-200 dark:border-slate-700 bg-black flex items-center justify-center overflow-hidden">
+                                <video controls src="${anexo.dataUrl}" class="max-w-full max-h-[58vh]"></video>
+                            </div>
+                        `;
+                    } else {
+                        let decodedText = '';
+                        if ((tipoLower.startsWith('text/') || /\.(txt|csv|log|json|md)$/.test(nomeLower)) && String(anexo.dataUrl).includes(',')) {
+                            try {
+                                const b64 = String(anexo.dataUrl).split(',')[1];
+                                const bin = atob(b64);
+                                const bytes = new Uint8Array(bin.length);
+                                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                                decodedText = new TextDecoder('utf-8', { fatal: false }).decode(bytes).slice(0, 15000);
+                            } catch (e) { decodedText = ''; }
+                        }
+                        if (decodedText) {
+                            previewHtml = `
+                                <div class="w-full max-h-[58vh] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-4 text-left">
+                                    <pre class="whitespace-pre-wrap break-words text-xs text-slate-700 dark:text-slate-200" style="font-family: inherit;">${this._escapeAnexoHtml(decodedText)}</pre>
+                                </div>
+                            `;
+                        } else {
+                            previewHtml = `
+                                <div class="w-full py-12 px-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 flex flex-col items-center justify-center text-center gap-3">
+                                    <div class="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-center">
+                                        <i class="fa-solid ${this.getAnexoFileIcon(anexo)} text-3xl"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-extrabold text-slate-800 dark:text-white">${safeNome}</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Este formato de arquivo não possui pré-visualização embutida no navegador. Clique abaixo para fazer o download e abrir no programa correspondente.</p>
+                                    </div>
+                                    <button type="button" data-turma-id="${safeTurmaId}" data-idx="${safeIdx}" onclick="app.diarioBordo.baixarAnexoIntegracao(this.getAttribute('data-turma-id'), Number(this.getAttribute('data-idx')))"
+                                        class="mt-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-md">
+                                        <i class="fa-solid fa-download"></i> Baixar "${safeNome}"
+                                    </button>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    corpo.innerHTML = `<div class="w-full flex flex-col">${tabsHtml}${actionBar}${previewHtml}</div>`;
                 }
                 if (modal) modal.classList.remove('hidden');
             },
@@ -5504,6 +6001,7 @@ storage: {
                 };
 
                 const dataFmt = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '';
+                const qtdAnexos = this.getAnexosTurma(t).length;
 
                 // Confirmação 1 de 2:
                 app.ui.showConfirm(
@@ -5512,7 +6010,7 @@ storage: {
                     <div class="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-xs text-sky-900 dark:text-sky-200 space-y-1">
                         <div><strong>Presenteísmo Apurado:</strong> ${taxa}% (${presentes} presentes de ${total} convocados)</div>
                         <div><strong>Responsável:</strong> ${t.responsavelIntegracaoNome || '-'}</div>
-                        <div><strong>Lista Assinada:</strong> ${t.anexoListaPresenca ? '<span class="text-emerald-600 font-bold"><i class="fa-solid fa-check"></i> Foto anexada</span>' : '<span class="text-amber-600 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Sem foto anexada</span>'}</div>
+                        <div><strong>Arquivos Anexados:</strong> ${qtdAnexos > 0 ? `<span class="text-emerald-600 font-bold"><i class="fa-solid fa-check"></i> ${qtdAnexos} arquivo(s) anexado(s)</span>` : '<span class="text-amber-600 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Nenhum arquivo anexado</span>'}</div>
                     </div>`,
                     () => {
                         // Confirmação 2 de 2:
@@ -8740,8 +9238,9 @@ storage: {
                                 if (pwd === String(u.cpf).trim()) return true;
                             }
 
-                            // Fallback para primeiro acesso com senha padrão 12345
-                            if (pwd === '12345' && (u.primeiroAcesso || app.utils.isDefaultPassword(u.senha))) return true;
+                            // Fallback para primeiro acesso com senha padrão 12345 (somente se a senha ainda for padrão ou vazia)
+                            const hasSavedPassword = !!(u.senha && String(u.senha).trim() !== '');
+                            if (pwd === '12345' && (!hasSavedPassword || app.utils.isDefaultPassword(u.senha))) return true;
 
                             return false;
                         });
@@ -8751,9 +9250,16 @@ storage: {
                             const newLoginCount = (app.users[userIdx].loginCount || 0) + 1;
                             app.users[userIdx].loginCount = newLoginCount;
 
-                            // Se a senha armazenada ainda não estiver criptografada com SHA-256, atualiza
-                            if (pwd && !String(app.users[userIdx].senha || '').startsWith('enc$v1$')) {
-                                app.users[userIdx].senha = app.utils.encryptPassword(pwd);
+                            const mKey = app.storage._normalizeMat(app.users[userIdx].matricula);
+                            const wasPlaintextRemote = !!(app.storage._plaintextPwdMats && app.storage._plaintextPwdMats.has(mKey));
+                            const loginFields = { loginCount: newLoginCount };
+
+                            // Somente grava senha no login se o registro no banco ainda estava sem criptografia SHA-256
+                            if (pwd && (!app.users[userIdx].senha || !String(app.users[userIdx].senha).startsWith('enc$v1$') || wasPlaintextRemote)) {
+                                const encMigrated = app.utils.encryptPassword(app.users[userIdx].senha || pwd);
+                                app.users[userIdx].senha = encMigrated;
+                                loginFields.senha = encMigrated;
+                                if (wasPlaintextRemote && app.storage._plaintextPwdMats) app.storage._plaintextPwdMats.delete(mKey);
                             }
 
                             app.currentUser = app.users[userIdx];
@@ -8765,10 +9271,7 @@ storage: {
                             localStorage.setItem("soft_session_admin", "false");
                             localStorage.setItem("soft_session_tab", initialTab);
 
-                            app.storage.saveSingleUserField(userIdx, { 
-                                loginCount: newLoginCount, 
-                                senha: app.users[userIdx].senha 
-                            });
+                            app.storage.saveSingleUserField(userIdx, loginFields);
 
                             const ws = document.getElementById("session-wait-screen");
                             if (ws) ws.classList.add("hidden");
@@ -8810,9 +9313,9 @@ storage: {
                     if(!app.currentUser) return;
                     const u = app.currentUser;
                     
-                    // ALERTA DE SENHA PADRAO 12345 (compatível com hash criptografado)
-                    if(app.utils.isDefaultPassword(u.senha)) {
-                        app.ui.showAlert("Aviso de Seguran\u00e7a Cr\u00edtico", "Sua senha atual \u00e9 muito fraca (12345). Por favor, altere sua senha agora mesmo para proteger seus dados.", "error");
+                    // ALERTA DE SENHA PADRAO 12345 ou primeiro acesso pendente (compatível com hash criptografado)
+                    if(u.primeiroAcesso || app.utils.isDefaultPassword(u.senha)) {
+                        app.ui.showAlert("Aviso de Seguran\u00e7a Cr\u00edtico", "Sua senha atual \u00e9 a senha padr\u00e3o (12345) ou precisa ser personalizada no primeiro acesso. Por favor, crie sua senha pessoal agora mesmo.", "error");
                         app.ui.openPwdModal();
                         return; // Trava o fluxo ate ele mudar a senha
                     }
@@ -8826,22 +9329,34 @@ storage: {
                     }
                 },
                 acceptTerms() {
-                    const userIdx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
-                    if(userIdx > -1) {
-                        app.users[userIdx].aceiteTermos = new Date().toISOString();
-                        app.currentUser = app.users[userIdx];
-                        app.storage.saveUsers();
+                    if (app.currentUser) {
+                        const isoNow = new Date().toISOString();
+                        const curMatNorm = app.storage._normalizeMat(app.currentUser.matricula);
+                        const userIdx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === curMatNorm);
+                        if (userIdx > -1) {
+                            app.users[userIdx].aceiteTermos = isoNow;
+                            app.currentUser = app.users[userIdx];
+                        } else {
+                            app.currentUser.aceiteTermos = isoNow;
+                        }
+                        app.storage.saveUserByMatricula(app.currentUser.matricula, { aceiteTermos: isoNow });
                     }
                     document.getElementById('terms-modal').classList.add('hidden');
                     this.processAcceptances(); 
                 },
 
                 acceptGuidelines() {
-                    const userIdx = app.users.findIndex(u => u.matricula === app.currentUser.matricula);
-                    if(userIdx > -1) {
-                        app.users[userIdx].aceiteDiretrizes = new Date().toISOString();
-                        app.currentUser = app.users[userIdx];
-                        app.storage.saveUsers();
+                    if (app.currentUser) {
+                        const isoNow = new Date().toISOString();
+                        const curMatNorm = app.storage._normalizeMat(app.currentUser.matricula);
+                        const userIdx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === curMatNorm);
+                        if (userIdx > -1) {
+                            app.users[userIdx].aceiteDiretrizes = isoNow;
+                            app.currentUser = app.users[userIdx];
+                        } else {
+                            app.currentUser.aceiteDiretrizes = isoNow;
+                        }
+                        app.storage.saveUserByMatricula(app.currentUser.matricula, { aceiteDiretrizes: isoNow });
                     }
                     document.getElementById('guidelines-modal').classList.add('hidden');
                     this.processAcceptances(); 
@@ -8898,46 +9413,81 @@ storage: {
                     app.ui.showAlert('Acesso Restrito', 'O cadastro de novos colaboradores é realizado exclusivamente pelo setor de Treinamento e pela Coordenação ao registrar turmas.', 'info');
                 },
 
-                executeChangePassword() {
-                    const newPwd = document.getElementById('new-password-input').value.trim();
-                    const confPwd = document.getElementById('confirm-password-input').value.trim();
+                async executeChangePassword() {
+                    if (this._changingPassword) return;
+                    const newEl = document.getElementById('new-password-input');
+                    const confEl = document.getElementById('confirm-password-input');
+                    const newPwd = newEl ? newEl.value.trim() : '';
+                    const confPwd = confEl ? confEl.value.trim() : '';
                     
                     if(newPwd.length < 4) return app.ui.showAlert("Aviso", "A senha deve ter pelo menos 4 caracteres.", "error");
+                    if(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(newPwd)) {
+                        return app.ui.showAlert("Senha Inválida", "Por segurança, escolha uma nova senha diferente da senha padrão (12345).", "error");
+                    }
                     if(newPwd !== confPwd) return app.ui.showAlert("Erro", "As senhas não coincidem. Tente novamente.", "error");
                     
-                    if(app.currentUser) {
-                        const curMat = String(app.currentUser.matricula || '').trim().toUpperCase();
-                        const idx = app.users.findIndex(u => String(u.matricula || '').trim().toUpperCase() === curMat);
-                        if(idx > -1) {
-                            const encPwd = app.utils.encryptPassword(newPwd);
+                    if(!app.currentUser) {
+                        return app.ui.showAlert("Erro", "Sessão de usuário não encontrada.", "error");
+                    }
+
+                    const curMat = app.storage._normalizeMat(app.currentUser.matricula);
+                    const idx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === curMat);
+                    if(idx === -1) {
+                        return app.ui.showAlert("Erro", "Usuário não localizado no sistema.", "error");
+                    }
+
+                    const btnSave = document.getElementById('btn-save-new-pwd');
+                    const origBtnHtml = btnSave ? btnSave.innerHTML : 'Atualizar';
+                    this._changingPassword = true;
+                    if (btnSave) {
+                        btnSave.disabled = true;
+                        btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Salvando...';
+                    }
+
+                    const prevSnapshot = {
+                        senha: app.users[idx].senha,
+                        primeiroAcesso: app.users[idx].primeiroAcesso,
+                        pwdUpdatedAt: app.users[idx].pwdUpdatedAt
+                    };
+                    const encPwd = app.utils.encryptPassword(newPwd);
+                    const nowTs = Date.now();
+                    app.storage.markUserPasswordDirty(curMat);
+
+                    try {
+                        await app.storage.saveUserByMatricula(app.currentUser.matricula, {
+                            senha: encPwd,
+                            primeiroAcesso: false,
+                            pwdUpdatedAt: nowTs
+                        });
+
+                        if (app.users[idx]) {
                             app.users[idx].senha = encPwd;
                             app.users[idx].primeiroAcesso = false;
+                            app.users[idx].pwdUpdatedAt = nowTs;
+                        }
+                        if (app.currentUser) {
                             app.currentUser.senha = encPwd;
                             app.currentUser.primeiroAcesso = false;
-                            
-                            // Atualização segura e imediata no Firebase e no backup local
-                            try {
-                                localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
-                            } catch(e) {}
-                            
-                            if (typeof firebase !== 'undefined' && firebase.database) {
-                                firebase.database().ref('sistema_bonificacao/users/' + idx).update({
-                                    senha: encPwd,
-                                    primeiroAcesso: false
-                                }).then(() => {
-                                    app.storage.saveUsers();
-                                }).catch(() => {
-                                    app.storage.saveUsers();
-                                });
-                            } else {
-                                app.storage.saveUsers();
-                            }
-                            
-                            app.ui.closePwdModal();
-                            app.ui.showAlert("Sucesso", "Sua nova senha foi atualizada e salva com sucesso!", "success");
-                            this.processAcceptances(); // Retoma o fluxo após trocar a senha
-                        } else {
-                            app.ui.showAlert("Erro", "Usuário não localizado no sistema.", "error");
+                            app.currentUser.pwdUpdatedAt = nowTs;
+                        }
+
+                        if (newEl) { newEl.value = ''; newEl.type = 'password'; }
+                        if (confEl) { confEl.value = ''; confEl.type = 'password'; }
+
+                        app.ui.closePwdModal(false);
+                        app.ui.showAlert("Sucesso", "Sua nova senha foi atualizada e salva com sucesso!", "success");
+                        this.processAcceptances(); // Retoma o fluxo após confirmar persistência real
+                    } catch (err) {
+                        console.error("Falha ao persistir nova senha:", err);
+                        if (app.users[idx]) Object.assign(app.users[idx], prevSnapshot);
+                        if (app.currentUser) Object.assign(app.currentUser, prevSnapshot);
+                        try { localStorage.setItem("soft_users_backup", JSON.stringify(app.users)); } catch(e) {}
+                        app.ui.showAlert("Erro ao Salvar Senha", "Não foi possível gravar sua nova senha no banco de dados. Verifique sua conexão e tente novamente.", "error");
+                    } finally {
+                        this._changingPassword = false;
+                        if (btnSave) {
+                            btnSave.disabled = false;
+                            btnSave.innerHTML = origBtnHtml;
                         }
                     }
                 }
@@ -10780,6 +11330,7 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
                     if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('qualidade_treinamento')) savedTabs.push('qualidade_treinamento');
                     if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('produtividade_gtd')) savedTabs.push('produtividade_gtd');
+                    if (!app.isAdmin && (savedTabs.includes('ata_reuniao') || tipo === 'Qualidade') && !savedTabs.includes('minhas_atas')) savedTabs.push('minhas_atas');
 
                     // Se o usuário teve suas abas sobrescritas apenas com 'implantacao_ia', restaura os presets do perfil
                     if (savedTabs.length <= 2 && savedTabs.includes('implantacao_ia')) {
@@ -11384,8 +11935,26 @@ storage: {
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
-                openPwdModal() { document.getElementById('new-password-input').value = ''; document.getElementById('pwd-modal').classList.remove('hidden'); },
-                closePwdModal() { document.getElementById('pwd-modal').classList.add('hidden'); },
+                openPwdModal() {
+                    const nEl = document.getElementById('new-password-input');
+                    const cEl = document.getElementById('confirm-password-input');
+                    if (nEl) { nEl.value = ''; nEl.type = 'password'; }
+                    if (cEl) { cEl.value = ''; cEl.type = 'password'; }
+                    const modal = document.getElementById('pwd-modal');
+                    if (modal) modal.classList.remove('hidden');
+                },
+                closePwdModal(isUserCancel) {
+                    const modal = document.getElementById('pwd-modal');
+                    if (modal) modal.classList.add('hidden');
+                    if (isUserCancel && app.currentUser) {
+                        const appView = document.getElementById('view-app');
+                        const isBlockedPreApp = appView && appView.classList.contains('hidden');
+                        const needsPwd = !!(app.currentUser.primeiroAcesso || (app.utils && app.utils.isDefaultPassword(app.currentUser.senha)));
+                        if (isBlockedPreApp && needsPwd && app.auth && typeof app.auth.logout === 'function') {
+                            app.auth.logout();
+                        }
+                    }
+                },
 
                 openCardCommentModal(cardId) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
@@ -12384,8 +12953,15 @@ storage: {
                             else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
                             else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
                             else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
-                            else if(tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
-                            else if(tabId === 'minhas_atas') this.renderView_MinhasAtas(viewDiv);
+                            else if(tabId === 'gestao_atas' || tabId === 'minhas_atas') {
+                                if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
+                                    app.storage.ensureAtasLoaded().then(() => {
+                                        if (app.currentTab === tabId) app.ui.renderTab(tabId, true);
+                                    });
+                                }
+                                if (tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
+                                else this.renderView_MinhasAtas(viewDiv);
+                            }
                             else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
                             else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
                             else if(tabId === 'gestao_campanha') this.renderView_GestaoCampanha(viewDiv);
@@ -14279,16 +14855,23 @@ storage: {
                 },
 
                 renderView_AtaReuniao(container) {
-                    const today = localStorage.getItem('soft_ata_data_draft') || new Date().toISOString().split('T')[0];
+                    const hojeIso = new Date().toISOString().split('T')[0];
+                    const draftData = localStorage.getItem('soft_ata_data_draft');
+                    const today = (draftData && /^\d{4}-\d{2}-\d{2}$/.test(draftData) && draftData.slice(0, 7) === hojeIso.slice(0, 7))
+                        ? draftData
+                        : hojeIso;
                     // NOVO: Puxando a lista de operações dinamicamente
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
 
                     const html = `
-                        <div class="mb-8 flex justify-between items-center">
+                        <div class="mb-8 flex flex-wrap justify-between items-center gap-3">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ata de Reunião e Calibração</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário e faça o download (salvamento automático).</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário e salve ou faça o download (salvamento automático no histórico).</p>
                             </div>
+                            <button type="button" onclick="app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true)" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-xs flex items-center gap-2 cursor-pointer transition">
+                                <i class="fa-solid fa-clock-rotate-left text-indigo-600"></i> Ver Meu Histórico
+                            </button>
                         </div>
                         <div class="glass-card p-6 md:p-8 rounded-3xl w-full border-t-4 border-t-blue-600 shadow-xl">
                             <input type="hidden" id="ata-edit-id" value="">
@@ -14316,7 +14899,7 @@ storage: {
                                     <button type="button" onclick="app.ata.addParticipante()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">+ Participante</button>
                                 </div>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 1 *</label><input type="text" id="ata-qualidade" value="${app.currentUser ? app.currentUser.nome : ''}" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
+                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 1 *</label><input type="text" id="ata-qualidade" value="${String(app.currentUser ? app.currentUser.nome : '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
                                     <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 2</label><input type="text" id="ata-qualidade2" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
                                     <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Supervisor Operacional</label><input type="text" id="ata-sup1" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
                                 </div>
@@ -14421,13 +15004,17 @@ storage: {
                             </div>
                             
                             <div class="flex flex-col md:flex-row gap-4 mt-10 pt-6 border-t border-slate-200">
-                                <button type="button" onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2"><i class="fa-solid fa-file-pdf"></i> Salvar e Baixar PDF</button>
-                                <button type="button" onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2"><i class="fa-solid fa-file-word"></i> Salvar e Baixar (.doc)</button>
+                                <button type="button" onclick="app.ata.salvarApenas()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"><i class="fa-solid fa-floppy-disk"></i> Salvar Ata (Sem Baixar)</button>
+                                <button type="button" onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"><i class="fa-solid fa-file-pdf"></i> Salvar e Baixar PDF</button>
+                                <button type="button" onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"><i class="fa-solid fa-file-word"></i> Salvar e Baixar (.doc)</button>
                             </div>
                         </div>
                     `;
                     container.innerHTML = html;
-                    setTimeout(() => { if(!document.getElementById('ata-dynamic-actions').innerHTML.trim()) { app.ata.initForm(); } }, 100);
+                    setTimeout(() => {
+                        const actEl = document.getElementById('ata-dynamic-actions');
+                        if (actEl && !actEl.innerHTML.trim()) { app.ata.initForm(); }
+                    }, 100);
                 },
 
                 renderView_MeuPainel(container) {
@@ -17689,14 +18276,14 @@ storage: {
                                                                     </div>
                                                                 </div>
 
-                                                                <!-- Anexo da Lista Assinada -->
+                                                                <!-- Anexos da Integração -->
                                                                 <div class="pt-2 border-t border-sky-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
                                                                     <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-camera text-sky-500"></i> Lista Assinada:
+                                                                        <i class="fa-solid fa-paperclip text-sky-500"></i> Anexos:
                                                                     </span>
-                                                                    ${t.anexoListaPresenca ? `
+                                                                    ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
                                                                         <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="text-emerald-700 dark:text-emerald-400 font-extrabold hover:underline flex items-center gap-1 cursor-pointer">
-                                                                            <i class="fa-solid fa-file-signature"></i> Ver Anexo
+                                                                            <i class="fa-solid fa-folder-open"></i> Ver Anexos (${app.diarioBordo.getAnexosTurma(t).length})
                                                                         </button>
                                                                     ` : `
                                                                         <span class="text-slate-400 italic">Sem anexo</span>
@@ -17726,8 +18313,8 @@ storage: {
                                                                         <i class="fa-solid fa-list-check"></i> Ver Lista de Participantes
                                                                     </button>
                                                                 `}
-                                                                ${t.anexoListaPresenca ? `
-                                                                    <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="py-2 px-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Visualizar Lista de Presença Assinada">
+                                                                ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
+                                                                    <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="py-2 px-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Visualizar Arquivos Anexados (${app.diarioBordo.getAnexosTurma(t).length})">
                                                                         <i class="fa-solid fa-eye"></i>
                                                                     </button>
                                                                 ` : ''}
@@ -17847,10 +18434,10 @@ storage: {
                                                             </div>
                                                         </div>
 
-                                                        <!-- Anexo de Lista Assinada (Se houver) -->
-                                                        ${t.anexoListaPresenca ? `
+                                                        <!-- Anexos da Integração (Se houver) -->
+                                                        ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
                                                             <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="w-full py-1.5 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-sky-200 dark:border-sky-800 cursor-pointer">
-                                                                <i class="fa-solid fa-file-signature text-sky-600"></i> Ver Lista de Presença Assinada
+                                                                <i class="fa-solid fa-paperclip text-sky-600"></i> Ver Anexos (${app.diarioBordo.getAnexosTurma(t).length})
                                                             </button>
                                                         ` : ''}
 
@@ -18114,36 +18701,27 @@ storage: {
                                         </div>
                                     </div>
 
-                                    <!-- Bloco de Anexo: Lista de Presença Física Assinada -->
+                                    <!-- Bloco de Anexos da Integração (Múltiplos arquivos de qualquer tipo) -->
                                     <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
-                                        <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
-                                            <i class="fa-solid fa-paperclip text-sky-600"></i>
-                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Lista de Presença Física Assinada (Anexo Obrigatório)</h3>
+                                        <div class="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+                                            <div class="flex items-center gap-2">
+                                                <i class="fa-solid fa-paperclip text-sky-600"></i>
+                                                <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Documentos e Anexos da Integração</h3>
+                                            </div>
+                                            <span class="text-[11px] font-bold text-sky-600 dark:text-sky-400">Quantidade ilimitada</span>
                                         </div>
                                         <p class="text-xs text-slate-500 dark:text-slate-400">
-                                            Anexe a foto legível ou o PDF da folha física de presença assinada por todos os participantes presentes na integração.
+                                            Anexe quantos arquivos forem necessários (fotos da lista de presença assinada, PDFs, documentos Word .doc/.docx, planilhas ou qualquer outro formato).
                                         </p>
                                         <div class="flex flex-wrap items-center gap-3 pt-1">
                                             <label class="cursor-pointer px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border-2 border-dashed border-sky-300 dark:border-sky-700 hover:bg-sky-50 dark:hover:bg-slate-700/60 text-sky-800 dark:text-sky-200 text-xs font-bold transition flex items-center gap-2.5 shadow-xs">
-                                                <i class="fa-solid fa-cloud-arrow-up text-sky-600 text-base"></i> Selecionar Foto ou PDF Assinado
-                                                <input type="file" accept="image/*,.pdf" onchange="app.diarioBordo.carregarAnexoListaPresenca(event)" class="hidden">
+                                                <i class="fa-solid fa-cloud-arrow-up text-sky-600 text-base"></i> Adicionar Arquivos (Fotos, PDF, DOC, Qualquer Tipo)
+                                                <input type="file" multiple onchange="app.diarioBordo.carregarAnexoListaPresenca(event)" class="hidden">
                                             </label>
-                                            <span class="text-xs text-slate-400">Formatos aceitos: PDF, JPG, PNG (máx. 8MB)</span>
+                                            <span class="text-xs text-slate-400">Qualquer formato de arquivo (máx. 12MB por arquivo)</span>
                                         </div>
                                         <div id="turma-anexo-info" class="mt-2">
-                                            ${t.anexoListaPresenca ? `
-                                                <div class="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs">
-                                                    <div class="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 font-bold truncate max-w-md">
-                                                        <i class="fa-solid ${t.anexoListaPresenca.tipo && t.anexoListaPresenca.tipo.includes('pdf') ? 'fa-file-pdf text-rose-500' : 'fa-image text-emerald-600'} text-base"></i>
-                                                        <span class="truncate">${t.anexoListaPresenca.nome}</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <button type="button" onclick="app.diarioBordo.turmaEmEdicao.anexoListaPresenca = null; document.getElementById('turma-anexo-info').innerHTML = '';" class="text-rose-500 hover:text-rose-700 p-1.5 cursor-pointer" title="Remover anexo">
-                                                            <i class="fa-solid fa-trash-can"></i>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ` : ''}
+                                            ${app.diarioBordo.renderAnexosListaHtml(t)}
                                         </div>
                                     </div>
 
@@ -21522,32 +22100,35 @@ storage: {
 
                 renderView_MinhasAtas(container) {
                     if(app.isAdmin) return;
-                    const curMat = String(app.currentUser?.matricula || '').trim();
+                    const curMatRaw = String(app.currentUser?.matricula || '').trim();
+                    const curMat = curMatRaw.toUpperCase();
                     const curNome = String(app.currentUser?.nome || '').trim();
 
-                    const mesFiltro = this.minhasAtasFiltroMes || app.currentMonth;
+                    const mesFiltro = this.minhasAtasFiltroMes || 'todos';
                     const allAtas = Object.values(app.atasList || {}).filter(a => {
                         if (!a) return false;
-                        const aMat = String(a.matricula || '').trim();
+                        const aMat = String(a.matricula || '').trim().toUpperCase();
                         // 1. O próprio autor/criador da ata
                         if (curMat && aMat === curMat) return true;
                         
                         // 2. Vinculação por matrícula direta de qualidade
-                        const aMatQual1 = String(a.matriculaQualidade || '').trim();
-                        const aMatQual2 = String(a.matriculaQualidade2 || '').trim();
+                        const aMatQual1 = String(a.matriculaQualidade || '').trim().toUpperCase();
+                        const aMatQual2 = String(a.matriculaQualidade2 || '').trim().toUpperCase();
                         if (curMat && (aMatQual1 === curMat || aMatQual2 === curMat)) return true;
 
                         // 3. Usuários identificados de forma estrita pela função mestre de calibração
                         if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
                             const matchedUsers = app.ata.findQualidadeUsersForAta(a);
-                            if (matchedUsers.some(u => String(u.matricula).trim() === curMat)) return true;
+                            if (matchedUsers.some(u => String(u.matricula || '').trim().toUpperCase() === curMat)) return true;
                         }
 
-                        // 4. Checagem estrita por nome (primeiro nome + sobrenome significativo idêntico; bloqueia primeiro nome isolado)
-                        const aQual = String(a.qualidade || '').trim();
-                        const aQual2 = String(a.qualidade2 || '').trim();
+                        // 4. Checagem estrita por nome (autor, qualidade, supervisor ou participante adicional)
                         if (curNome && app.ata && typeof app.ata.isStrictNameMatch === 'function') {
-                            if (app.ata.isStrictNameMatch(curNome, aQual) || app.ata.isStrictNameMatch(curNome, aQual2)) return true;
+                            const camposNome = [a.autor, a.qualidade, a.qualidade2, a.sup];
+                            if (Array.isArray(a.rawExtras)) {
+                                a.rawExtras.forEach(p => { if (p && p.nome) camposNome.push(p.nome); });
+                            }
+                            if (camposNome.some(c => c && app.ata.isStrictNameMatch(curNome, String(c).trim()))) return true;
                         }
 
                         return false;
@@ -21559,11 +22140,11 @@ storage: {
                     
                     const mesesPresentes = [...new Set(allAtas.map(a => app.ata.getAtaMonth(a)).filter(Boolean))].sort().reverse();
                     const atasOutrosMeses = (mesFiltro !== 'todos') ? allAtas.filter(a => app.ata.getAtaMonth(a) !== mesFiltro) : [];
-                    let mesesOpts = `<option value="${app.currentMonth}" ${(mesFiltro === app.currentMonth) ? 'selected' : ''}>Mês Atual (${app.ui.formatMonthLabel(app.currentMonth)})</option>`;
-                    ['2026-10', '2026-11', ...mesesPresentes].filter((v, i, a) => a.indexOf(v) === i && v !== app.currentMonth).sort().reverse().forEach(m => {
+                    let mesesOpts = `<option value="todos" ${mesFiltro === 'todos' ? 'selected' : ''}>Todas as Minhas Atas (Histórico Completo)</option>`;
+                    mesesOpts += `<option value="${app.currentMonth}" ${(mesFiltro === app.currentMonth) ? 'selected' : ''}>Mês Atual (${app.ui.formatMonthLabel(app.currentMonth)})</option>`;
+                    [app.currentMonth, ...mesesPresentes].filter((v, i, a) => v && a.indexOf(v) === i && v !== app.currentMonth).sort().reverse().forEach(m => {
                         mesesOpts += `<option value="${m}" ${mesFiltro === m ? 'selected' : ''}>${app.ui.formatMonthLabel(m)}</option>`;
                     });
-                    mesesOpts += `<option value="todos" ${mesFiltro === 'todos' ? 'selected' : ''}>Todas as Minhas Atas</option>`;
 
                     let html = `
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -21571,19 +22152,21 @@ storage: {
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Atas Abertas / Histórico</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acervo detalhado de reuniões e calibrações vinculadas a você.</p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <select onchange="app.ui.minhasAtasFiltroMes=this.value; app.ui.renderTab('minhas_atas', true)" class="p-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white font-bold shadow-sm">
                                     ${mesesOpts}
                                 </select>
+                                <button type="button" onclick="app.ui.renderTab('ata_reuniao', true)" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer transition">
+                                    <i class="fa-solid fa-plus"></i> Nova Ata
+                                </button>
                             </div>
                         </div>
 
-                        ${(atasOutrosMeses.length > 0 && mesFiltro === app.currentMonth) ? `
+                        ${(atasOutrosMeses.length > 0 && mesFiltro !== 'todos') ? `
                             <div class="mb-6 p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center justify-between gap-3 text-xs">
                                 <span class="font-bold text-blue-800 dark:text-blue-300"><i class="fa-solid fa-bell mr-1.5"></i> Você tem <strong>${atasOutrosMeses.length}</strong> ata(s) em outro(s) mês(es) (${[...new Set(atasOutrosMeses.map(a => app.ui.formatMonthLabel(app.ata.getAtaMonth(a))))].join(', ')}).</span>
                                 <div class="flex gap-2">
-                                    <button onclick="app.ui.minhasAtasFiltroMes='2026-10'; app.ui.renderTab('minhas_atas', true)" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors"><i class="fa-solid fa-calendar mr-1"></i> Ir para Outubro/2026</button>
-                                    <button onclick="app.ui.minhasAtasFiltroMes='todos'; app.ui.renderTab('minhas_atas', true)" class="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold transition-colors"><i class="fa-solid fa-layer-group mr-1"></i> Ver Todas</button>
+                                    <button type="button" onclick="app.ui.minhasAtasFiltroMes='todos'; app.ui.renderTab('minhas_atas', true)" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors cursor-pointer"><i class="fa-solid fa-layer-group mr-1"></i> Ver Todas</button>
                                 </div>
                             </div>
                         ` : ''}
@@ -30579,6 +31162,238 @@ storage: {
                     this.renderTab('analise_csv_dinamico', true);
                 },
 
+                _escapeAnaliseModalHtml(str) {
+                    return String(str == null ? '' : str)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                },
+
+                getAnaliseSignature(d) {
+                    if (!d || !Array.isArray(d.relatorios)) return '';
+                    const relSig = d.relatorios.map(r => `${r.id}:${r.nome || ''}:${Array.isArray(r.rows) ? r.rows.length : 0}`).join('|');
+                    const c = d.consolidado || {};
+                    const uiSig = JSON.stringify({
+                        customTitle: c.customTitle || '',
+                        titleColor: c.titleColor || '',
+                        bgColor: c.bgColor || '',
+                        comments: c.comments || {},
+                        capitulosOcultos: c.capitulosOcultos || {},
+                        chapterCustomData: c.chapterCustomData || {},
+                        acoesSelecionadas: Array.isArray(c.acoesSelecionadas) ? c.acoesSelecionadas : []
+                    });
+                    return `${relSig}::${uiSig}`;
+                },
+
+                markAnaliseDirty() {
+                    if (app.analiseCSVDinamicoData && typeof app.analiseCSVDinamicoData === 'object') {
+                        app.analiseCSVDinamicoData._unsaved = true;
+                    }
+                },
+
+                hasAnaliseUnsavedChanges() {
+                    const d = app.analiseCSVDinamicoData;
+                    if (!d || !Array.isArray(d.relatorios) || d.relatorios.length === 0) return false;
+                    if (d._unsaved === true) return true;
+                    if (!d._savedAprId || !(app.apresentacoesList && app.apresentacoesList[d._savedAprId])) {
+                        return d._unsaved !== false;
+                    }
+                    if (d._savedSignature && d._savedSignature !== this.getAnaliseSignature(d)) {
+                        return true;
+                    }
+                    return d._unsaved !== false;
+                },
+
+                _resetAnaliseFiltrosEEstado() {
+                    this.analiseFiltroRelatorio = [];
+                    this.analiseFiltroMes = [];
+                    this.analiseFiltroCiclo = [];
+                    this.analiseFiltroMaturidade = [];
+                    this.analiseFiltroQuadrante = [];
+                    this.analiseFiltroAssunto = [];
+                    this.analiseFiltroCargo = '';
+                    this.analiseFiltroMonitor = '';
+                    if (this.analiseEditMode) {
+                        this.analiseEditMode = false;
+                        const header = document.querySelector('header');
+                        if (header) header.style.display = '';
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen().catch(() => {});
+                        }
+                    }
+                },
+
+                voltarParaTelaInicialApresentacao() {
+                    if (typeof localforage !== 'undefined') {
+                        localforage.removeItem('soft_analise_data').catch(() => {});
+                    }
+                    app.analiseCSVDinamicoData = null;
+                    this._afterSaveTrocarApresentacao = null;
+                    this._resetAnaliseFiltrosEEstado();
+                    const modal = document.getElementById('global-modal');
+                    if (modal) modal.classList.add('hidden');
+                    this.renderTab('analise_csv_dinamico', true);
+                },
+
+                openTrocarApresentacaoModal() {
+                    let lista = Object.values(app.apresentacoesList || {}).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    const userMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
+                    const userCargo = String(app.currentUser?.tipoAcesso || '').trim();
+                    const isGestaoOuDev = app.isAdmin ||
+                        (app.isSuperAdmin && app.isSuperAdmin()) ||
+                        (app.isGestor && app.isGestor()) ||
+                        ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
+
+                    if (!isGestaoOuDev && app.currentUser) {
+                        lista = lista.filter(a => {
+                            if (app.ui && app.ui.userCanAccessApresentacaoQT && app.ui.userCanAccessApresentacaoQT(a, app.currentUser)) return true;
+                            if (a.criadorMatricula && String(a.criadorMatricula).trim().toUpperCase() === userMat) return true;
+                            if (Array.isArray(a.allowedUsers) && a.allowedUsers.some(m => String(m).trim().toUpperCase() === userMat)) return true;
+                            return false;
+                        });
+                    }
+
+                    const curId = app.analiseCSVDinamicoData?._savedAprId || '';
+                    let bodyListHtml = '';
+                    if (lista.length === 0) {
+                        bodyListHtml = `
+                            <div class="p-6 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+                                <i class="fa-solid fa-folder-open text-2xl text-slate-400 mb-2 block"></i>
+                                Nenhuma apresentação salva encontrada na nuvem para o seu perfil. Você pode limpar a sessão atual abaixo para iniciar uma nova importação.
+                            </div>
+                        `;
+                    } else {
+                        const pastas = {};
+                        lista.forEach(a => {
+                            const keyPasta = a.setor || a.pasta || 'Geral';
+                            if (!pastas[keyPasta]) pastas[keyPasta] = [];
+                            pastas[keyPasta].push(a);
+                        });
+                        bodyListHtml = `<div class="space-y-4 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">` +
+                            Object.keys(pastas).sort().map(nomePasta => {
+                                const safePasta = this._escapeAnaliseModalHtml(nomePasta);
+                                const itensHtml = pastas[nomePasta].map(apr => {
+                                    const safeId = this._escapeAnaliseModalHtml(apr.id);
+                                    const safeNome = this._escapeAnaliseModalHtml(apr.nome || 'Sem Nome');
+                                    const safeData = this._escapeAnaliseModalHtml(apr.dataStr || '');
+                                    const safeCriador = this._escapeAnaliseModalHtml(apr.criadorNome || '');
+                                    const isAtual = curId && curId === apr.id;
+                                    return `
+                                        <button type="button" data-apr-id="${safeId}" onclick="app.admin.loadApresentacaoFromDB(this.getAttribute('data-apr-id'), true)"
+                                            class="w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${isAtual
+                                                ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-700'
+                                                : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:bg-blue-50/60 dark:hover:bg-slate-800'}">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <span class="font-bold text-xs text-slate-800 dark:text-white truncate">${safeNome}</span>
+                                                    ${isAtual ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-600 text-white">Atual</span>' : ''}
+                                                </div>
+                                                <div class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-2">
+                                                    <span><i class="fa-regular fa-clock mr-1"></i>${safeData}</span>
+                                                    ${safeCriador ? `<span><i class="fa-regular fa-user mr-1"></i>${safeCriador}</span>` : ''}
+                                                </div>
+                                            </div>
+                                            <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
+                                                <i class="fa-solid fa-arrow-right-to-bracket mr-1"></i>Abrir
+                                            </span>
+                                        </button>
+                                    `;
+                                }).join('');
+                                return `
+                                    <div class="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900/50">
+                                        <div class="px-4 py-2.5 bg-slate-100/80 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                            <span class="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-2"><i class="fa-solid fa-folder-open text-blue-500"></i>${safePasta}</span>
+                                            <span class="text-[10px] font-bold text-slate-500">${pastas[nomePasta].length}</span>
+                                        </div>
+                                        <div class="p-2.5 space-y-2">${itensHtml}</div>
+                                    </div>
+                                `;
+                            }).join('') +
+                        `</div>`;
+                    }
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    if (modalBox) {
+                        modalBox.classList.remove('max-w-lg', 'max-w-3xl', 'max-w-4xl', 'max-w-5xl');
+                        modalBox.classList.add('max-w-2xl');
+                    }
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-repeat text-indigo-500"></i> Trocar de Apresentação`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
+                            Escolha abaixo uma apresentação salva na nuvem para carregar na tela ou limpe a sessão atual para iniciar uma nova importação.
+                        </p>
+                        ${bodyListHtml}
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="app.ui.voltarParaTelaInicialApresentacao()" class="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 mr-auto">
+                            <i class="fa-solid fa-file-circle-plus"></i> Nova Apresentação / Tela Limpa
+                        </button>
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl font-bold text-xs transition-colors cursor-pointer">
+                            Fechar
+                        </button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
+                continuarSemSalvarTrocarApresentacao(targetAprId = null) {
+                    if (app.analiseCSVDinamicoData) {
+                        app.analiseCSVDinamicoData._unsaved = false;
+                    }
+                    this._afterSaveTrocarApresentacao = null;
+                    if (targetAprId) {
+                        app.admin.loadApresentacaoFromDB(targetAprId, true);
+                    } else {
+                        this.openTrocarApresentacaoModal();
+                    }
+                },
+
+                salvarAntesTrocarApresentacao(targetAprId = null) {
+                    this._afterSaveTrocarApresentacao = targetAprId || '__PICKER__';
+                    app.admin.openSaveApresentacaoModal();
+                },
+
+                solicitarTrocarApresentacao(targetAprId = null) {
+                    if (!this.hasAnaliseUnsavedChanges()) {
+                        if (targetAprId) return app.admin.loadApresentacaoFromDB(targetAprId, true);
+                        return this.openTrocarApresentacaoModal();
+                    }
+
+                    const c = app.analiseCSVDinamicoData?.consolidado || {};
+                    const nomeAtual = this._escapeAnaliseModalHtml(c.customTitle || c.infoOperacao || 'Apresentação Atual');
+                    const safeTargetAttr = targetAprId ? `'${String(targetAprId).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'` : 'null';
+
+                    const modalBox = document.querySelector('#global-modal > div');
+                    if (modalBox) {
+                        modalBox.classList.remove('max-w-2xl', 'max-w-3xl', 'max-w-4xl', 'max-w-5xl');
+                        modalBox.classList.add('max-w-lg');
+                    }
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-500"></i> Apresentação Não Salva`;
+                    document.getElementById('modal-content').innerHTML = `
+                        <div class="space-y-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                            <p>A apresentação <strong>${nomeAtual}</strong> ainda <strong>não foi salva</strong> na nuvem (ou possui alterações pendentes desde o último salvamento).</p>
+                            <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 text-amber-900 dark:text-amber-200 text-xs font-semibold flex items-start gap-2">
+                                <i class="fa-solid fa-circle-info mt-0.5 text-amber-600 shrink-0"></i>
+                                <span>Se você continuar sem salvar, os dados e personalizações feitos nesta sessão serão descartados ao trocar de apresentação.</span>
+                            </div>
+                            <p class="font-bold text-slate-700 dark:text-slate-200">Deseja salvar antes de trocar ou continuar sem salvar?</p>
+                        </div>
+                    `;
+                    document.getElementById('modal-actions').innerHTML = `
+                        <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl font-bold text-xs transition-colors cursor-pointer">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="app.ui.continuarSemSalvarTrocarApresentacao(${safeTargetAttr})" class="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl font-bold text-xs transition-colors cursor-pointer">
+                            <i class="fa-solid fa-forward-step mr-1"></i> Continuar sem Salvar
+                        </button>
+                        <button type="button" onclick="app.ui.salvarAntesTrocarApresentacao(${safeTargetAttr})" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors cursor-pointer">
+                            <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Apresentação
+                        </button>
+                    `;
+                    document.getElementById('global-modal').classList.remove('hidden');
+                },
+
                 toggleEditModeAnalise() {
                     this.analiseEditMode = !this.analiseEditMode;
                     const header = document.querySelector('header');
@@ -31000,7 +31815,7 @@ storage: {
                                         <button onclick="app.ui.analiseFiltroCargo=''; app.ui.analiseFiltroRelatorio=[]; app.ui.analiseFiltroMes=[]; app.ui.analiseFiltroCiclo=[]; app.ui.analiseFiltroMaturidade=[]; app.ui.analiseFiltroQuadrante=[]; app.ui.analiseFiltroAssunto=[]; app.admin.gerarInteligenciaCSV(); app.ui._refreshComMemoriaDeScroll()" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm"><i class="fa-solid fa-rotate-left mr-1"></i> Limpar Filtros</button>
                                         ` : ''}
                                         <button onclick="app.ui.openGerenciarBasesModal()" class="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-database mr-1"></i> Gerenciar Bases</button>
-                                        <button onclick="app.ui.showConfirm('Limpar Tudo?', 'Apagar TODOS os relatórios importados desta sessão?', 'localforage.removeItem(\\'soft_analise_data\\'); app.analiseCSVDinamicoData = null; app.ui.analiseFiltroRelatorio = []; app.ui.analiseFiltroMes = []; app.ui.analiseFiltroCiclo = []; app.ui.analiseFiltroMaturidade = []; app.ui.analiseFiltroQuadrante = []; app.ui.analiseFiltroMonitor = \\'\\'; app.ui._refreshComMemoriaDeScroll()', true)" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${this.analiseEditMode ? 'hidden' : ''}"><i class="fa-solid fa-trash-can mr-1"></i> Excluir Base Total</button>
+                                        <button type="button" onclick="app.ui.solicitarTrocarApresentacao()" class="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer ${(this.analiseEditMode || app.isGuest) ? 'hidden' : ''}"><i class="fa-solid fa-repeat mr-1"></i> Trocar de Apresentação</button>
                                     </div>
                                 </div>
                                 
@@ -36040,11 +36855,10 @@ storage: {
                     });
                     
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
-                    // ATUALIZAÇÃO ATÔMICA: Salva usuários e limpa monitorias ao mesmo tempo!
-                    firebase.database().ref('sistema_bonificacao').update({
-                        users: app.users,
+                    // ATUALIZAÇÃO ATÔMICA: Salva apenas monitorias e results de usuários (sem sobrescrever senhas)
+                    app.storage.commitMultiPathWithUsersResults({
                         monitorias: app.allMonitorias
-                    }).then(() => {
+                    }, app.users).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         app.ui.showAlert("Reset Concluído", "Todos os relatórios do mês atual foram apagados com sucesso.", "success");
                     });
@@ -36397,11 +37211,10 @@ storage: {
                     });
             
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
-                    // ATUALIZAÇÃO ATÔMICA: Previne a corrida de dados do Firebase
-                    firebase.database().ref('sistema_bonificacao').update({
-                        users: app.users,
+                    // ATUALIZAÇÃO ATÔMICA: Salva monitorias e results sem sobrescrever senhas de outros usuários
+                    app.storage.commitMultiPathWithUsersResults({
                         monitorias: app.allMonitorias
-                    }).then(() => {
+                    }, app.users).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         if (customMsgSucesso) {
                             app.ui.showAlert("Sucesso", customMsgSucesso, "success");
@@ -37190,6 +38003,7 @@ storage: {
                                     rows: agrupamentoPorIlha[ilhaName]
                                 });
                             });
+                            app.analiseCSVDinamicoData._unsaved = true;
 
                             localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => console.error(err));
                             this.gerarInteligenciaCSV();
@@ -37431,6 +38245,7 @@ storage: {
                                     rows: agrupamentoPorIlha[ilhaName]
                                 });
                             });
+                            app.analiseCSVDinamicoData._unsaved = true;
 
                             localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(err => console.error(err));
                             this.gerarInteligenciaCSV();
@@ -39226,7 +40041,7 @@ storage: {
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
+                        <button onclick="app.ui._afterSaveTrocarApresentacao = null; document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">Cancelar</button>
                         <button onclick="app.admin.executeSaveApresentacao(event, false)" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center"><i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Salvar Apresentação</button>
                         <button onclick="app.admin.executeSaveApresentacao(event, true)" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-sm shadow-md transition-all flex items-center justify-center"><i class="fa-solid fa-compass-drafting mr-1.5"></i> Salvar e Abrir Backoffice Q&T</button>
                     `;
@@ -39306,6 +40121,23 @@ storage: {
                                 }
                             });
 
+                            const prevUnsavedState = app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData._unsaved : undefined;
+                            const prevSavedAprId = app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData._savedAprId : undefined;
+                            const prevSavedSig = app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData._savedSignature : undefined;
+                            const restoreUnsavedState = () => {
+                                if (!app.analiseCSVDinamicoData) return;
+                                app.analiseCSVDinamicoData._unsaved = prevUnsavedState;
+                                app.analiseCSVDinamicoData._savedAprId = prevSavedAprId;
+                                app.analiseCSVDinamicoData._savedSignature = prevSavedSig;
+                            };
+                            if (app.analiseCSVDinamicoData) {
+                                app.analiseCSVDinamicoData._unsaved = false;
+                                app.analiseCSVDinamicoData._savedAprId = id;
+                                if (app.ui && typeof app.ui.getAnaliseSignature === 'function') {
+                                    app.analiseCSVDinamicoData._savedSignature = app.ui.getAnaliseSignature(app.analiseCSVDinamicoData);
+                                }
+                            }
+
                             const payload = {
                                 id: id,
                                 nome: nome,
@@ -39330,6 +40162,7 @@ storage: {
                             // Validação pós-compressão (Se passar de 9MB COMPACTADO, o usuário subiu dados demais mesmo)
                             const stringSize = new Blob([payload.payloadData]).size;
                             if(stringSize > 9 * 1024 * 1024) {
+                                restoreUnsavedState();
                                 if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
                                 return app.ui.showAlert("Projeto Colossal", `Mesmo após a compressão máxima, sua apresentação possui o equivalente a centenas de planilhas e ultrapassou ${Math.round(stringSize / 1024 / 1024)}MB. O banco de dados rejeitou a conexão.<br><br><b>Dica:</b> Apague relatórios do mês retrasado no botão "Gerenciar Bases" antes de salvar.`, "error");
                             }
@@ -39338,6 +40171,9 @@ storage: {
                             app.apresentacoesList[id] = payload;
 
                             app.storage.saveApresentacoes(id).then(() => {
+                                if (typeof localforage !== 'undefined' && app.analiseCSVDinamicoData) {
+                                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {});
+                                }
                                 const modal = document.getElementById('global-modal');
                                 if (modal && !modal.classList.contains('hidden')) {
                                     modal.classList.add('hidden');
@@ -39346,6 +40182,20 @@ storage: {
                                 app.ui.qtFonteAtivaId = id;
                                 app.ui._cachedQTFonteId = id;
                                 app.ui._cachedQTPayload = { id: id, data: app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData.consolidado : null };
+
+                                const pendingSwitch = app.ui._afterSaveTrocarApresentacao;
+                                app.ui._afterSaveTrocarApresentacao = null;
+                                if (pendingSwitch) {
+                                    if (pendingSwitch === '__PICKER__') {
+                                        app.ui.openTrocarApresentacaoModal();
+                                    } else {
+                                        app.admin.loadApresentacaoFromDB(pendingSwitch, true);
+                                    }
+                                    if (typeof app.ui.showNotification === 'function') {
+                                        app.ui.showNotification(`Apresentação "${pasta} (${nome})" salva na nuvem!`, 'success');
+                                    }
+                                    return;
+                                }
 
                                 if (abrirQTAposSalvar) {
                                     app.ui.renderTab('qualidade_treinamento', true);
@@ -39356,6 +40206,7 @@ storage: {
                                 }
                             }).catch(err => {
                                 console.error(err);
+                                restoreUnsavedState();
                                 if(btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Salvar Projeto'; btnSave.classList.remove('opacity-70', 'cursor-not-allowed'); }
                                 app.ui.showAlert("Erro de Conexão", "Sua internet pode ter oscilado ou o Firebase bloqueou a transação. Tente novamente.", "error");
                             });
@@ -39569,18 +40420,33 @@ storage: {
                     }
                 },
 
-                loadApresentacaoFromDB(id) {
+                loadApresentacaoFromDB(id, skipUnsavedCheck = false) {
                     const apr = app.apresentacoesList[id];
                     if(!apr) return;
+                    if (!skipUnsavedCheck && app.ui && typeof app.ui.hasAnaliseUnsavedChanges === 'function' && app.ui.hasAnaliseUnsavedChanges()) {
+                        return app.ui.solicitarTrocarApresentacao(id);
+                    }
                     try {
                         // Verifica se os dados estão no formato antigo (texto puro começando com '{') ou no novo (compactado)
                         const isCompressed = !apr.payloadData.trim().startsWith('{');
                         const jsonDescompactado = isCompressed ? LZString.decompressFromBase64(apr.payloadData) : apr.payloadData;
                         
                         app.analiseCSVDinamicoData = JSON.parse(jsonDescompactado);
+                        if (app.ui && typeof app.ui._resetAnaliseFiltrosEEstado === 'function') {
+                            app.ui._resetAnaliseFiltrosEEstado();
+                        }
                         if (app.analiseCSVDinamicoData && Array.isArray(app.analiseCSVDinamicoData.relatorios) && app.analiseCSVDinamicoData.relatorios.length > 0 && (!app.analiseCSVDinamicoData.consolidado || !Array.isArray(app.analiseCSVDinamicoData.consolidado.evolutivoMesLabels))) {
                             try { app.admin.gerarInteligenciaCSV(); } catch (errG) {}
                         }
+                        if (app.analiseCSVDinamicoData && typeof app.analiseCSVDinamicoData === 'object') {
+                            app.analiseCSVDinamicoData._unsaved = false;
+                            app.analiseCSVDinamicoData._savedAprId = id;
+                            if (app.ui && typeof app.ui.getAnaliseSignature === 'function') {
+                                app.analiseCSVDinamicoData._savedSignature = app.ui.getAnaliseSignature(app.analiseCSVDinamicoData);
+                            }
+                        }
+                        const modal = document.getElementById('global-modal');
+                        if (modal) modal.classList.add('hidden');
                         localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); // Salva no local HD
                         app.ui.renderTab('analise_csv_dinamico', true);
                         app.ui.showAlert("Restaurado", "Apresentação recuperada, descompactada e montada na tela com sucesso!", "success");
@@ -39603,6 +40469,7 @@ storage: {
                         return app.ui.showAlert("Base Vazia", "Todas as bases integradas foram excluídas com sucesso.", "info");
                     }
                     
+                    app.analiseCSVDinamicoData._unsaved = true;
                     localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).then(() => {
                         app.admin.gerarInteligenciaCSV();
                         app.ui.openGerenciarBasesModal(); // Mantém o modal aberto e atualizado
@@ -39810,6 +40677,7 @@ storage: {
                         nome: nomeForm,
                         rows: window.tempCSVAnaliseData
                     });
+                    app.analiseCSVDinamicoData._unsaved = true;
                     
                     window.tempCSVAnaliseData = null; // Limpa cache
                     
@@ -40549,12 +41417,22 @@ storage: {
                     app.ui.showConfirm("Atenção", "Isso forçará a senha deste colaborador a voltar para '12345' (Padrão). Continuar?", `app.admin.execForcePwd('${mat}')`, true);
                 },
                 execForcePwd(mat) {
-                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(mat).trim());
+                    const normMat = app.storage._normalizeMat(mat);
+                    const idx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === normMat);
                     if(idx > -1) {
                         const encDefault = app.utils.encryptPassword('12345');
-                        app.users[idx].senha = encDefault;
-                        app.storage.saveSingleUserField(idx, { senha: encDefault }).then(() => app.storage.saveUsers());
-                        app.ui.showAlert("Feito", "Senha resetada para 12345 (criptografada).", "success");
+                        const nowTs = Date.now();
+                        app.storage.markUserPasswordDirty(normMat);
+                        app.storage.saveUserByMatricula(app.users[idx].matricula, {
+                            senha: encDefault,
+                            primeiroAcesso: true,
+                            pwdUpdatedAt: nowTs
+                        }).then(() => {
+                            app.ui.showAlert("Feito", "Senha resetada para 12345 (criptografada). No próximo acesso será solicitada uma nova senha.", "success");
+                        }).catch(err => {
+                            console.error("Erro ao resetar senha:", err);
+                            app.ui.showAlert("Erro", "Falha ao salvar o reset de senha no servidor.", "error");
+                        });
                     }
                 },
 
@@ -40572,15 +41450,21 @@ storage: {
                     const abasLiberadas = Array.from(abasCheckboxes).map(cb => cb.value);
 
                     if(!nome || !mat || !pwd) return app.ui.showAlert("Aviso", "Preencha Nome, Matrícula e Senha", "error");
-                    if(app.users.find(u => String(u.matricula).trim() === mat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
+                    const normMat = app.storage._normalizeMat(mat);
+                    if(app.users.find(u => app.storage._normalizeMat(u.matricula) === normMat)) return app.ui.showAlert("Aviso", "Matrícula já existe", "error");
 
                     const saveFinal = (fotoBase64) => {
                         const encPwd = app.utils.encryptPassword(pwd);
-                        app.users.push({ nome, matricula: mat, senha: encPwd, tipoAcesso, subclasse, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        const isDef = !!(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(pwd));
+                        app.users.push({ nome, matricula: mat, senha: encPwd, primeiroAcesso: isDef, pwdUpdatedAt: Date.now(), tipoAcesso, subclasse, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        app.storage.markUserPasswordDirty(normMat);
                         app.storage.saveUsers().then(() => {
                             app.ui.closeAddUserModal();
                             app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
                             app.ui.showAlert("Sucesso", "Colaborador cadastrado com senha criptografada.", "success");
+                        }).catch(err => {
+                            console.error("Erro ao cadastrar usuário:", err);
+                            app.ui.showAlert("Erro", "Falha ao salvar novo colaborador no servidor.", "error");
                         });
                     };
 
@@ -40681,10 +41565,15 @@ storage: {
                         app.users[idx].subclasse = subclasse;
                         app.users[idx].operacoes = operacoes;
                         app.users[idx].abasLiberadas = abasLiberadas;
-                        if(pwd) app.users[idx].senha = app.utils.encryptPassword(pwd);
+                        if(pwd) {
+                            app.users[idx].senha = app.utils.encryptPassword(pwd);
+                            app.users[idx].primeiroAcesso = !!(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(pwd));
+                            app.users[idx].pwdUpdatedAt = Date.now();
+                            app.storage.markUserPasswordDirty(app.users[idx].matricula);
+                        }
                         if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
 
-                        if (app.currentUser && String(app.currentUser.matricula).trim() === String(originalMat).trim()) {
+                        if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(originalMat)) {
                             app.currentUser = app.users[idx];
                             localStorage.setItem("soft_session_mat", mat);
                             app.ui.renderNav();
@@ -40694,6 +41583,9 @@ storage: {
                             document.getElementById('edit-user-modal').classList.add('hidden');
                             app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
                             app.ui.showAlert("Sucesso", "Dados e permissões do colaborador salvos e sincronizados.", "success");
+                        }).catch(err => {
+                            console.error("Erro ao salvar edição:", err);
+                            app.ui.showAlert("Erro", "Falha ao sincronizar alteração com o banco de dados.", "error");
                         });
                     };
 
@@ -40711,8 +41603,9 @@ storage: {
                 },
 
                 execDeleteUser(mat) {
-                    app.users = app.users.filter(u => u.matricula !== mat);
-                    app.storage.saveUsers().then(() => { 
+                    const normDel = app.storage._normalizeMat(mat);
+                    app.users = app.users.filter(u => app.storage._normalizeMat(u.matricula) !== normDel);
+                    app.storage.saveUsers({ removedMats: [mat] }).then(() => { 
                         app.ui.renderTab('gestao_equipe', true); 
                         app.ui.showAlert("Sucesso", "Usuário excluído.", "success"); 
                     });
@@ -42476,9 +43369,7 @@ storage: {
 
                         const savePromise = (app.storage && typeof app.storage.saveUsers === 'function')
                             ? app.storage.saveUsers()
-                            : ((typeof firebase !== 'undefined' && firebase.database)
-                                ? firebase.database().ref('sistema_bonificacao/users').set(app.users)
-                                : Promise.resolve());
+                            : Promise.resolve();
 
                         savePromise.then(() => {
                             if (app.currentUser) {
