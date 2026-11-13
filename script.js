@@ -3839,20 +3839,21 @@ storage: {
                 const dataFim = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
                 const curUser = app.currentUser || {};
                 const ops = this.getOperacoesDisponiveis();
+                const isIntegracao = (tipo === 'integracao');
                 this.turmaEmEdicao = {
                     id: 'turma_' + Date.now(),
                     tipoTurma: tipo, // 'treinamento' ou 'integracao'
-                    operacao: ops.length > 0 ? ops[0] : '',
-                    numeroTurma: '',
+                    operacao: isIntegracao ? 'INTEGRAÇÃO GERAL' : (ops.length > 0 ? ops[0] : ''),
+                    numeroTurma: isIntegracao ? ('INTEGRAÇÃO ' + hoje.split('-').reverse().join('/')) : '',
                     dataInicio: hoje,
-                    dataInicioOperacao: dataOp,
-                    diasAloAcompanhado: 4,
-                    previsaoEntrega: dataFim,
-                    horario: '08:00 às 17:00',
-                    treinadorMatricula: curUser.matricula || (app.isAdmin ? 'admin' : ''),
-                    treinadorNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a) de Treinamento'),
-                    responsavelIntegracaoNome: curUser.nome || '',
-                    responsavelIntegracaoMatricula: curUser.matricula || '',
+                    dataInicioOperacao: isIntegracao ? hoje : dataOp,
+                    diasAloAcompanhado: isIntegracao ? 0 : 4,
+                    previsaoEntrega: isIntegracao ? hoje : dataFim,
+                    horario: isIntegracao ? 'Integral' : '__personalizado__',
+                    treinadorMatricula: curUser.matricula || (app.isAdmin ? 'admin' : '-'),
+                    treinadorNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a)'),
+                    responsavelIntegracaoNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a)'),
+                    responsavelIntegracaoMatricula: curUser.matricula || (app.isAdmin ? 'admin' : '-'),
                     anexoListaPresenca: null,
                     status: 'Em Andamento',
                     travada: false,
@@ -3865,6 +3866,10 @@ storage: {
                 };
                 this.viewMode = 'turma_form';
                 app.ui.renderTab('diario_bordo', true);
+            },
+
+            novaIntegracao() {
+                this.novaTurma('integracao');
             },
 
             editarTurma(id) {
@@ -3885,6 +3890,9 @@ storage: {
             salvarTurma() {
                 const t = this.turmaEmEdicao;
                 if (!t) return;
+                if (t.tipoTurma === 'integracao') {
+                    return this.salvarIntegracao();
+                }
                 const tipoEl = document.getElementById('turma-input-tipo');
                 const opEl = document.getElementById('turma-input-op');
                 const numEl = document.getElementById('turma-input-numero');
@@ -3906,8 +3914,18 @@ storage: {
                 if (diasAloEl) t.diasAloAcompanhado = parseInt(diasAloEl.value) || 4;
                 if (dtFimEl) t.previsaoEntrega = dtFimEl.value;
                 if (horaEl) t.horario = (horaEl.value || '').trim();
-                if (matEl) t.treinadorMatricula = (matEl.value || '').trim().toUpperCase();
-                if (nomeEl) t.treinadorNome = (nomeEl.value || '').trim().toUpperCase();
+                if (!t.horario || t.horario === '__personalizado__') {
+                    const hIni = document.getElementById('turma-horario-inicio')?.value || '08:00';
+                    const hFim = document.getElementById('turma-horario-fim')?.value || '17:00';
+                    t.horario = `${hIni} às ${hFim}`;
+                }
+                if (app.currentUser?.matricula && !app.isAdmin) {
+                    t.treinadorMatricula = app.currentUser.matricula;
+                    t.treinadorNome = app.currentUser.nome || app.currentUser.nomeCompleto || app.currentUser.usuario || t.treinadorNome;
+                } else {
+                    if (matEl) t.treinadorMatricula = (matEl.value || '').trim().toUpperCase();
+                    if (nomeEl) t.treinadorNome = (nomeEl.value || '').trim().toUpperCase();
+                }
                 if (respIntNomeEl) t.responsavelIntegracaoNome = (respIntNomeEl.value || '').trim().toUpperCase();
                 if (respIntMatEl) t.responsavelIntegracaoMatricula = (respIntMatEl.value || '').trim().toUpperCase();
 
@@ -4056,6 +4074,61 @@ storage: {
                 });
             },
 
+            calcularCSATVerdadeiro(turma) {
+                const respostas = Array.isArray(turma?.respostasCSAT) ? turma.respostasCSAT : [];
+                const total = respostas.length;
+                if (total === 0) {
+                    return {
+                        total: 0,
+                        satisfeitos: 0,
+                        neutros: 0,
+                        insatisfeitos: 0,
+                        percentualCSAT: 0,
+                        pctNeutros: 0,
+                        pctInsatisfeitos: 0,
+                        mediaGeral: '0.0',
+                        temDados: false
+                    };
+                }
+
+                // CÁLCULO OFICIAL DE CSAT (CUSTOMER SATISFACTION SCORE):
+                // CSAT % = (Respondentes Satisfeitos / Total de Respondentes) * 100
+                // Top-2 Box: notas individuais 4 e 5 (média individual >= 4.0) são Satisfeitos
+                // Neutros: média individual entre 3.0 e 3.99
+                // Insatisfeitos: média individual < 3.0
+                let satisfeitos = 0;
+                let neutros = 0;
+                let insatisfeitos = 0;
+                let somaMedias = 0;
+
+                respostas.forEach(r => {
+                    const m = parseFloat(r.media) || (Array.isArray(r.notas) && r.notas.length > 0 ? (r.notas.reduce((a, b) => a + b, 0) / r.notas.length) : 0);
+                    somaMedias += m;
+                    if (m >= 4.0) {
+                        satisfeitos++;
+                    } else if (m >= 3.0) {
+                        neutros++;
+                    } else {
+                        insatisfeitos++;
+                    }
+                });
+
+                const percentualCSAT = Math.round((satisfeitos / total) * 100);
+                const mediaGeral = (somaMedias / total).toFixed(1);
+
+                return {
+                    total,
+                    satisfeitos,
+                    neutros,
+                    insatisfeitos,
+                    percentualCSAT,
+                    pctNeutros: Math.round((neutros / total) * 100),
+                    pctInsatisfeitos: Math.round((insatisfeitos / total) * 100),
+                    mediaGeral,
+                    temDados: true
+                };
+            },
+
             abrirModalCSATConsolidado(turmaId) {
                 const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                 if (!t) return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
@@ -4066,16 +4139,18 @@ storage: {
                 const body = document.getElementById('turma-csat-modal-body');
                 if (!modal || !body) return;
 
+                const isDev = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev');
                 titulo.innerText = `CSAT Turma ${t.numeroTurma || ''} - ${t.operacao || 'Treinamento'}`;
-                subtitulo.innerText = `Instrutor(a): ${t.treinadorNome || 'Não informado'} | Avaliações 100% Anônimas`;
+                subtitulo.innerText = `Instrutor(a): ${t.treinadorNome || 'Não informado'} | Avaliações Anônimas & Auditoria`;
 
                 const respostas = Array.isArray(t.respostasCSAT) ? t.respostasCSAT : [];
                 const totalAlunos = (t.colaboradores && t.colaboradores.length) || 0;
                 const totalAvaliacoes = respostas.length;
+                const csat = this.calcularCSATVerdadeiro(t);
 
                 if (totalAvaliacoes === 0) {
                     body.innerHTML = `
-                        <div class="p-8 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                        <div class="p-8 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
                             <div class="w-12 h-12 mx-auto rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-500 flex items-center justify-center text-xl">
                                 <i class="fa-solid fa-hourglass-half"></i>
                             </div>
@@ -4083,20 +4158,22 @@ storage: {
                             <p class="text-xs text-slate-500 max-w-sm mx-auto">
                                 ${t.status === 'Entregue' || t.status === 'Integrados' 
                                     ? 'A turma já foi finalizada, mas os alunos ainda não enviaram suas pesquisas CSAT no portal.' 
-                                    : 'A pesquisa de satisfação CSAT será liberada automaticamente aos alunos assim que a turma for finalizada.'}
+                                    : 'A pesquisa de satisfação CSAT será liberada aos alunos assim que a turma for finalizada.'}
                             </p>
+                            ${isDev ? `
+                                <div class="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-center">
+                                    <button type="button" onclick="app.pesquisaTreinamento.abrirTesteDev('${t.id}')" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                        <i class="fa-solid fa-flask"></i> Testar Resposta nesta Turma (DEV)
+                                    </button>
+                                </div>
+                            ` : ''}
                         </div>
                     `;
                     modal.classList.remove('hidden');
                     return;
                 }
 
-                // Cálculo das médias gerais
-                const mediaGeralNum = (respostas.reduce((acc, r) => acc + (parseFloat(r.media) || 0), 0) / totalAvaliacoes);
-                const mediaGeral = mediaGeralNum.toFixed(1);
-                const csatPct = Math.min(100, Math.round((mediaGeralNum / 5) * 100));
-
-                // Média de cada uma das 5 perguntas
+                // Cálculo detalhado por pergunta
                 const titulosPerguntas = [
                     "Domínio do Conteúdo e Segurança Técnica",
                     "Didática, Clareza e Ritmo das Aulas",
@@ -4105,64 +4182,110 @@ storage: {
                     "Satisfação Geral e Preparo para a Operação"
                 ];
 
-                const mediasPerguntas = titulosPerguntas.map((titulo, idx) => {
+                const metricasPerguntas = titulosPerguntas.map((titulo, idx) => {
                     const notas = respostas.map(r => (Array.isArray(r.notas) && r.notas[idx] !== undefined) ? Number(r.notas[idx]) : 0).filter(n => n > 0);
+                    const satCount = notas.filter(n => n >= 4).length;
+                    const pctSat = notas.length > 0 ? Math.round((satCount / notas.length) * 100) : 0;
                     const mediaP = notas.length > 0 ? (notas.reduce((a, b) => a + b, 0) / notas.length).toFixed(1) : '0.0';
-                    return { titulo, media: mediaP, pct: Math.min(100, Math.round((parseFloat(mediaP) / 5) * 100)) };
+                    return { titulo, media: mediaP, pctSat, totalNotas: notas.length, satCount };
                 });
 
-                // Comentários anônimos
                 const comentariosAnonimos = respostas.filter(r => r.comentario && r.comentario.trim().length > 0);
 
                 body.innerHTML = `
-                    <!-- CARD DE SCORE PRINCIPAL -->
+                    ${isDev ? `
+                        <!-- BARRA DE CONTROLE EXCLUSIVA DO DESENVOLVEDOR (DEV) -->
+                        <div class="p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+                            <div class="flex items-center gap-2 text-xs font-bold text-purple-900 dark:text-purple-200">
+                                <i class="fa-solid fa-code text-purple-600 text-sm"></i>
+                                <span>Ambiente do Desenvolvedor (DEV): Gestão de Notas &amp; Testes</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="app.pesquisaTreinamento.abrirTesteDev('${t.id}')" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                                    <i class="fa-solid fa-flask"></i> Testar Resposta (DEV)
+                                </button>
+                                <button type="button" onclick="app.diarioBordo.excluirNotasCSATTurma('${t.id}')" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                                    <i class="fa-solid fa-trash-can"></i> Excluir Notas desta Turma
+                                </button>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <!-- CARDS DE SCORE CSAT OFICIAL -->
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div class="p-4 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-md flex flex-col justify-between">
-                            <span class="text-[11px] font-bold uppercase tracking-wider opacity-90">Média Geral CSAT</span>
+                        <!-- SCORE CSAT VERDADEIRO (TOP-2 BOX) -->
+                        <div class="p-4 rounded-2xl bg-gradient-to-br ${csat.percentualCSAT >= 80 ? 'from-emerald-500 to-teal-600' : (csat.percentualCSAT >= 70 ? 'from-amber-500 to-amber-600' : 'from-rose-500 to-rose-600')} text-white shadow-md flex flex-col justify-between">
+                            <span class="text-[11px] font-bold uppercase tracking-wider opacity-90">Score CSAT Oficial (% Satisfeitos)</span>
                             <div class="flex items-baseline gap-2 my-1">
-                                <span class="text-3xl font-black">${mediaGeral}</span>
-                                <span class="text-sm opacity-80">/ 5.0</span>
+                                <span class="text-3xl font-black">${csat.percentualCSAT}%</span>
+                                <span class="text-xs opacity-90 font-bold">Top-2 Box (Notas 4 e 5)</span>
                             </div>
                             <div class="flex items-center gap-1 text-[11px] font-extrabold bg-white/20 rounded-lg px-2 py-0.5 w-fit">
-                                <i class="fa-solid fa-star text-yellow-300"></i> ${csatPct}% de Aprovação
+                                <i class="fa-solid fa-face-smile text-white"></i> ${csat.satisfeitos} de ${csat.total} respondentes satisfeitos
                             </div>
                         </div>
 
+                        <!-- ADESÃO & DISTRIBUIÇÃO DAS RESPOSTAS -->
                         <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-                            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Adesão dos Alunos</span>
+                            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Adesão &amp; Amostra</span>
                             <div class="flex items-baseline gap-2 my-1">
                                 <span class="text-2xl font-black text-slate-800 dark:text-white">${totalAvaliacoes}</span>
                                 <span class="text-xs text-slate-500">de ${totalAlunos} alunos</span>
                             </div>
-                            <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                ${totalAlunos > 0 ? Math.round((totalAvaliacoes / totalAlunos) * 100) : 100}% responderam
-                            </span>
+                            <div class="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                                <span class="text-emerald-600">${csat.satisfeitos} Sat.</span> • 
+                                <span class="text-amber-600">${csat.neutros} Neut.</span> • 
+                                <span class="text-rose-600">${csat.insatisfeitos} Insat.</span>
+                            </div>
                         </div>
 
+                        <!-- PRIVACIDADE & SIGILO AUDITADO -->
                         <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-                            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Privacidade & Sigilo</span>
+                            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Privacidade &amp; Sigilo</span>
                             <div class="flex items-center gap-2 my-1 text-slate-800 dark:text-white font-extrabold text-sm">
                                 <i class="fa-solid fa-user-shield text-emerald-500 text-lg"></i>
                                 <span>100% Anônimo</span>
                             </div>
-                            <span class="text-[10px] text-slate-400">Respostas protegidas sem identificação</span>
+                            <span class="text-[10px] text-slate-400">Respostas protegidas sem ligação nominal</span>
                         </div>
                     </div>
 
-                    <!-- MÉDIAS DETALHADAS POR CRITÉRIO -->
+                    <!-- BARRA DE DISTRIBUIÇÃO DAS AVALIAÇÕES (SATISFEITOS / NEUTROS / INSATISFEITOS) -->
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                        <div class="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300">
+                            <span>Distribuição das Avaliações:</span>
+                            <div class="flex items-center gap-3 text-[11px]">
+                                <span class="text-emerald-600"><i class="fa-solid fa-circle text-[8px] mr-1"></i>Satisfeitos: ${csat.percentualCSAT}%</span>
+                                <span class="text-amber-600"><i class="fa-solid fa-circle text-[8px] mr-1"></i>Neutros: ${csat.pctNeutros}%</span>
+                                <span class="text-rose-600"><i class="fa-solid fa-circle text-[8px] mr-1"></i>Insatisfeitos: ${csat.pctInsatisfeitos}%</span>
+                            </div>
+                        </div>
+                        <div class="w-full h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden flex">
+                            <div class="bg-emerald-500 h-full transition-all duration-500" style="width: ${csat.percentualCSAT}%" title="Satisfeitos: ${csat.percentualCSAT}%"></div>
+                            <div class="bg-amber-400 h-full transition-all duration-500" style="width: ${csat.pctNeutros}%" title="Neutros: ${csat.pctNeutros}%"></div>
+                            <div class="bg-rose-500 h-full transition-all duration-500" style="width: ${csat.pctInsatisfeitos}%" title="Insatisfeitos: ${csat.pctInsatisfeitos}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- CSAT DETALHADO POR CRITÉRIO (TOP-2 BOX) -->
                     <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-3">
                         <h4 class="font-bold text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                            <i class="fa-solid fa-list-check text-amber-500"></i> Desempenho por Critério Avaliado
+                            <i class="fa-solid fa-list-check text-amber-500"></i> CSAT por Pergunta Avaliada (% Satisfeitos com Notas 4 e 5)
                         </h4>
-                        <div class="space-y-2.5">
-                            ${mediasPerguntas.map((q, idx) => `
+                        <div class="space-y-3">
+                            ${metricasPerguntas.map((q, idx) => `
                                 <div>
                                     <div class="flex items-center justify-between text-xs mb-1">
                                         <span class="font-bold text-slate-700 dark:text-slate-200">${idx + 1}. ${q.titulo}</span>
-                                        <span class="font-extrabold text-slate-800 dark:text-white">${q.media} / 5.0</span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-extrabold ${q.pctSat >= 80 ? 'text-emerald-600 dark:text-emerald-400' : (q.pctSat >= 70 ? 'text-amber-600' : 'text-rose-600')} text-xs">
+                                                ${q.pctSat}% CSAT
+                                            </span>
+                                            <span class="text-[10px] text-slate-400">(${q.satCount} de ${q.totalNotas} sat.)</span>
+                                        </div>
                                     </div>
                                     <div class="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                                        <div class="h-full rounded-full ${q.pct >= 80 ? 'bg-emerald-500' : q.pct >= 60 ? 'bg-blue-500' : 'bg-amber-500'}" style="width: ${q.pct}%"></div>
+                                        <div class="h-full rounded-full ${q.pctSat >= 80 ? 'bg-emerald-500' : (q.pctSat >= 70 ? 'bg-amber-500' : 'bg-rose-500')}" style="width: ${q.pctSat}%"></div>
                                     </div>
                                 </div>
                             `).join('')}
@@ -4175,7 +4298,7 @@ storage: {
                             <h4 class="font-bold text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
                                 <i class="fa-solid fa-comments text-amber-500"></i> Comentários e Elogios Anônimos (${comentariosAnonimos.length})
                             </h4>
-                            <span class="text-[10px] text-slate-400 italic">Identidade preservada</span>
+                            <span class="text-[10px] text-slate-400 italic">Identidade protegida</span>
                         </div>
 
                         ${comentariosAnonimos.length === 0 ? `
@@ -4201,6 +4324,32 @@ storage: {
                 modal.classList.remove('hidden');
             },
 
+            excluirNotasCSATTurma(turmaId) {
+                const isDev = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev');
+                if (!isDev) {
+                    return app.ui.showAlert("Acesso Restrito", "Apenas desenvolvedores (perfil Dev) podem excluir notas de avaliação CSAT.", "error");
+                }
+                const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
+                if (!t) return;
+
+                app.ui.showConfirm(
+                    "Atenção Dev: Excluir Todas as Notas CSAT?",
+                    `Deseja realmente <strong>excluir e zerar todas as avaliações CSAT</strong> da turma <strong>${t.numeroTurma || ''}</strong>?<br><br>Esta ação removerá todas as notas gravadas e permitirá que os alunos (ou o próprio dev em teste) avaliem novamente.`,
+                    () => {
+                        t.respostasCSAT = [];
+                        t.avaliadosMatriculas = [];
+                        t.atualizadoEm = Date.now();
+                        app.storage.saveTurmasTreinamento(turmaId).then(() => {
+                            app.ui.showAlert("Notas Excluídas!", "Todas as avaliações CSAT desta turma foram removidas pelo Dev com sucesso.", "success");
+                            const modal = document.getElementById('turma-csat-consolidado-modal');
+                            if (modal) modal.classList.add('hidden');
+                            app.ui.renderTab('diario_bordo', true);
+                        });
+                    },
+                    true
+                );
+            },
+
             abrirModalFinalizarTurma(turmaId) {
                 const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                 if (!t) return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
@@ -4211,6 +4360,8 @@ storage: {
                 const dtInput = document.getElementById('finalizar-turma-data');
                 const resumoEl = document.getElementById('finalizar-turma-resumo-info');
                 const parecerEl = document.getElementById('finalizar-turma-parecer');
+                const timelineEl = document.getElementById('finalizar-turma-timeline-operadores');
+                const badgeOpsEl = document.getElementById('finalizar-turma-badge-operadores');
 
                 if (idInput) idInput.value = turmaId;
                 if (dtInput) dtInput.value = new Date().toISOString().split('T')[0];
@@ -4221,22 +4372,100 @@ storage: {
                 const toCount = colabs.length - ativos;
                 
                 const todosDiarios = Object.values(app.diarioBordoList || {}).filter(Boolean);
-                const diariosDaTurma = todosDiarios.filter(d => d && (d.turmaBaseId === turmaId || (d.operacao === t.operacao && d.turma === t.numeroTurma)));
+                const diariosDaTurma = todosDiarios.filter(d => d && (d.turmaBaseId === turmaId || (d.operacao === t.operacao && d.turma === t.numeroTurma))).sort((a,b) => String(a.data||'').localeCompare(String(b.data||'')));
                 const diasSala = diariosDaTurma.filter(d => (d.faseDoDia || 'sala') === 'sala').length;
                 const diasAlo = diariosDaTurma.filter(d => d.faseDoDia === 'alo_acompanhado').length;
 
                 if (resumoEl) {
                     resumoEl.innerHTML = `
                         <div class="font-black text-slate-800 dark:text-white text-sm mb-1">${t.operacao} • ${t.numeroTurma}</div>
-                        <div class="grid grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-slate-300">
                             <div>• Início: <strong>${t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '-'}</strong></div>
                             <div>• Prev. Entrega: <strong>${t.previsaoEntrega ? t.previsaoEntrega.split('-').reverse().join('/') : '-'}</strong></div>
-                            <div>• Alunos Formados: <strong class="text-emerald-600 font-black">${ativos} ativos</strong></div>
+                            <div>• Total Inicial: <strong>${colabs.length} alunos</strong></div>
+                            <div>• Formados: <strong class="text-emerald-600 font-black">${ativos} ativos</strong></div>
                             <div>• Evasões / T.O: <strong class="text-rose-600 font-black">${toCount}</strong></div>
-                            <div>• Diários em Sala: <strong>${diasSala} dias</strong></div>
-                            <div>• Alô Acompanhado: <strong>${diasAlo} de ${t.diasAloAcompanhado || 4} dias</strong></div>
+                            <div>• Diários Registrados: <strong>${diariosDaTurma.length} dias (${diasSala} sala / ${diasAlo} alô)</strong></div>
                         </div>
                     `;
+                }
+
+                if (badgeOpsEl) {
+                    badgeOpsEl.textContent = `${colabs.length} operadores • ${diariosDaTurma.length} dias de diário`;
+                }
+
+                if (timelineEl) {
+                    if (colabs.length === 0) {
+                        timelineEl.innerHTML = `<div class="p-4 text-center text-xs text-slate-400 italic">Nenhum colaborador cadastrado nesta turma.</div>`;
+                    } else if (diariosDaTurma.length === 0) {
+                        timelineEl.innerHTML = colabs.map((c, idx) => `
+                            <div class="p-2.5 flex items-center justify-between text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-[10px] text-slate-400">${idx + 1}</span>
+                                    <div>
+                                        <div class="font-bold text-slate-800 dark:text-white">${c.nome}</div>
+                                        <div class="text-[10px] text-slate-400">Matrícula: ${c.matricula || '-'}</div>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] font-bold text-slate-400 italic">Sem diários diários vinculados ainda</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        timelineEl.innerHTML = colabs.map((c, idx) => {
+                            const cMat = String(c.matricula || '').trim().toUpperCase();
+                            let presCount = 0;
+                            let absCount = 0;
+                            let isTO = (c.statusGeral === 'T.O' || c.statusGeral === 'Declínio');
+                            let dataTO = '';
+
+                            const badgesDia = diariosDaTurma.map((d, dIdx) => {
+                                const dtFmt = d.data ? d.data.slice(8, 10) + '/' + d.data.slice(5, 7) : `D${dIdx + 1}`;
+                                const colabChamada = Array.isArray(d.chamada) ? d.chamada.find(item => String(item.matricula || '').trim().toUpperCase() === cMat) : null;
+                                const st = colabChamada ? colabChamada.statusDia : (isTO ? 'T.O' : 'Presente');
+
+                                if (st === 'Presente') {
+                                    presCount++;
+                                    return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" title="${dtFmt} (${dIdx + 1}º Dia): Presente">D${dIdx + 1}: P</span>`;
+                                } else if (st === 'T.O' || st === 'Declínio') {
+                                    isTO = true;
+                                    if (!dataTO) dataTO = dtFmt;
+                                    return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800" title="${dtFmt} (${dIdx + 1}º Dia): Desligamento (T.O)">D${dIdx + 1}: T.O</span>`;
+                                } else {
+                                    absCount++;
+                                    return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800" title="${dtFmt} (${dIdx + 1}º Dia): Falta (${st})">D${dIdx + 1}: ${st === 'Atestado' ? 'AT' : 'F'}</span>`;
+                                }
+                            }).join(' ');
+
+                            const totalDias = diariosDaTurma.length;
+                            const taxaPres = totalDias > 0 ? Math.round((presCount / totalDias) * 100) : 100;
+
+                            return `
+                                <div class="p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-800 transition text-xs space-y-1.5 ${isTO ? 'opacity-70 bg-rose-50/30' : ''}">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-[10px] text-slate-500">${idx + 1}</span>
+                                            <div>
+                                                <span class="font-bold text-slate-800 dark:text-white ${isTO ? 'line-through text-rose-600' : ''}">${c.nome}</span>
+                                                <span class="text-[10px] text-slate-400 ml-1.5">Matrícula: <strong>${c.matricula || '-'}</strong></span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] font-extrabold px-2 py-0.5 rounded-md ${isTO ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'}">
+                                                ${isTO ? `Desligado (T.O ${dataTO})` : 'Aprovado / Entregue'}
+                                            </span>
+                                            <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                                                ${presCount}P / ${absCount}F (${taxaPres}%)
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-1 pl-8">
+                                        <span class="text-[9px] font-bold uppercase text-slate-400 mr-1">Linha do Tempo:</span>
+                                        ${badgesDia}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
                 }
 
                 if (modal) modal.classList.remove('hidden');
@@ -4397,13 +4626,14 @@ storage: {
 
             getHorariosPadraoOptions(horarioAtual = '') {
                 const padroes = this.getHorariosPadrao();
-                const cur = (horarioAtual || '08:00 às 17:00').trim();
+                const cur = (horarioAtual || '__personalizado__').trim();
                 const matchesPadrao = padroes.includes(cur);
-                let html = '<option value="" disabled ' + (!cur ? 'selected' : '') + '>Selecione o horário padronizado...</option>';
+                const isCustom = !matchesPadrao || cur === '__personalizado__';
+                let html = '<option value="" disabled>Selecione o horário padronizado...</option>';
                 padroes.forEach(h => {
-                    html += '<option value="' + h + '" ' + (cur === h ? 'selected' : '') + '>' + h + '</option>';
+                    html += '<option value="' + h + '" ' + (!isCustom && cur === h ? 'selected' : '') + '>' + h + '</option>';
                 });
-                html += '<option value="__personalizado__" ' + (!matchesPadrao && cur ? 'selected' : '') + '>Outro Horário (Definir no Relógio)</option>';
+                html += '<option value="__personalizado__" ' + (isCustom ? 'selected' : '') + '>Outro Horário (Definir no Relógio)</option>';
                 return html;
             },
 
@@ -4556,8 +4786,21 @@ storage: {
                         remaining.push(col);
                     }
 
-                    if (remaining.length === 1) {
-                        const val = remaining[0];
+                    let presenca = 'Presente';
+                    const remainingFinal = [];
+                    for (let item of remaining) {
+                        const low = (item || '').toLowerCase().trim();
+                        if (['presente', 'pres', 'sim', 'ok', 'ativo', 'p'].includes(low)) {
+                            presenca = 'Presente';
+                        } else if (['faltou', 'falta', 'ausente', 'nao', 'não', 'abs', 'f'].includes(low)) {
+                            presenca = 'Faltou';
+                        } else {
+                            remainingFinal.push(item);
+                        }
+                    }
+
+                    if (remainingFinal.length === 1) {
+                        const val = remainingFinal[0];
                         if (/^\d+$/.test(val)) {
                             matricula = val;
                             nome = 'COLABORADOR ' + val;
@@ -4565,15 +4808,15 @@ storage: {
                             nome = val;
                             matricula = '-';
                         }
-                    } else if (remaining.length >= 2) {
-                        const idxNum = remaining.findIndex(v => /^\d{3,10}$/.test(v.replace(/\s+/g, '')));
+                    } else if (remainingFinal.length >= 2) {
+                        const idxNum = remainingFinal.findIndex(v => /^\d{3,10}$/.test(v.replace(/\s+/g, '')));
                         if (idxNum !== -1) {
-                            matricula = remaining[idxNum];
-                            remaining.splice(idxNum, 1);
-                            nome = remaining.join(' ');
+                            matricula = remainingFinal[idxNum];
+                            remainingFinal.splice(idxNum, 1);
+                            nome = remainingFinal.join(' ');
                         } else {
-                            matricula = remaining[0];
-                            nome = remaining.slice(1).join(' ');
+                            matricula = remainingFinal[0];
+                            nome = remainingFinal.slice(1).join(' ');
                         }
                     }
 
@@ -4586,7 +4829,8 @@ storage: {
                             matricula,
                             nome,
                             cpf: cpf || '',
-                            dataAdmissao
+                            dataAdmissao,
+                            presenca
                         });
                     }
                 }
@@ -4594,7 +4838,8 @@ storage: {
                 return resultado;
             },
 
-            abrirModalColarAlunos() {
+            abrirModalColarAlunos(modo = null) {
+                this._modoColar = modo || (this.turmaEmEdicao?.tipoTurma === 'integracao' ? 'integracao' : 'treinamento');
                 const modal = document.getElementById('turma-colar-alunos-modal');
                 const ta = document.getElementById('turma-colar-alunos-textarea');
                 const container = document.getElementById('turma-colar-alunos-preview-container');
@@ -4619,17 +4864,23 @@ storage: {
                     return;
                 }
 
+                const isIntegracao = (this._modoColar === 'integracao');
                 container.classList.remove('hidden');
                 countEl.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-600 mr-1.5"></i> ' + alunos.length + (alunos.length !== 1 ? ' colaboradores detectados' : ' colaborador detectado');
 
                 const amostra = alunos.slice(0, 5);
-                listEl.innerHTML = amostra.map(a => `
-                    <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60">
-                        <span class="font-extrabold text-slate-700 dark:text-slate-200">${a.matricula}</span>
-                        <span class="font-medium text-slate-800 dark:text-slate-100 truncate mx-2 flex-1">${a.nome}</span>
-                        <span class="text-slate-500 dark:text-slate-400 text-[10px]">${a.dataAdmissao ? a.dataAdmissao.split('-').reverse().join('/') : '-'}</span>
-                    </div>
-                `).join('') + (alunos.length > 5 ? '<div class="text-[10px] text-slate-400 italic text-center pt-1">+ mais ' + (alunos.length - 5) + ' colaboradores...</div>' : '');
+                listEl.innerHTML = amostra.map(a => {
+                    const cpfValido = (a.cpf || '').replace(/\D/g, '').length >= 11;
+                    return `
+                        <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60">
+                            <span class="font-extrabold text-slate-700 dark:text-slate-200">${a.matricula}</span>
+                            <span class="font-medium text-slate-800 dark:text-slate-100 truncate mx-2 flex-1">${a.nome}</span>
+                            <span class="text-[10px] ${cpfValido ? 'text-slate-500 dark:text-slate-400' : (isIntegracao ? 'text-rose-500 font-extrabold' : 'text-slate-400')} mr-2">${a.cpf ? a.cpf : (isIntegracao ? 'Sem CPF *' : '-')}</span>
+                            <span class="text-slate-500 dark:text-slate-400 text-[10px]">${a.dataAdmissao ? a.dataAdmissao.split('-').reverse().join('/') : '-'}</span>
+                            ${isIntegracao ? `<span class="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded ${a.presenca === 'Faltou' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">${a.presenca || 'Presente'}</span>` : ''}
+                        </div>
+                    `;
+                }).join('') + (alunos.length > 5 ? '<div class="text-[10px] text-slate-400 italic text-center pt-1">+ mais ' + (alunos.length - 5) + ' colaboradores...</div>' : '');
             },
 
             processarAlunosColados() {
@@ -4645,10 +4896,24 @@ storage: {
                 if (!Array.isArray(t.colaboradores)) t.colaboradores = [];
                 let adicionados = 0;
                 let duplicados = 0;
+                const isIntegracao = (this._modoColar === 'integracao' || t.tipoTurma === 'integracao');
+
+                if (isIntegracao) {
+                    const semCpf = alunos.filter(a => !a.cpf || a.cpf.replace(/\D/g, '').length < 11);
+                    if (semCpf.length > 0) {
+                        return app.ui.showAlert(
+                            "CPF Obrigatório na Integração",
+                            `Detectamos ${semCpf.length} participante(s) sem CPF válido nas linhas coladas (ex: ${semCpf[0].nome || semCpf[0].matricula}). O CPF é obrigatório para cadastrar na integração.`,
+                            "warning"
+                        );
+                    }
+                }
 
                 alunos.forEach(a => {
                     const mat = (a.matricula || '-').trim().toUpperCase();
-                    const nome = (a.nome || 'COLABORADOR').trim().toUpperCase();
+                    let nome = (a.nome || 'COLABORADOR').trim().toUpperCase();
+                    let cpf = (a.cpf || '').trim();
+                    let adm = (a.dataAdmissao || t.dataInicio || '').trim();
 
                     if (mat && mat !== '-') {
                         const jaExiste = t.colaboradores.some(c => String(c.matricula).trim().toUpperCase() === mat);
@@ -4656,15 +4921,24 @@ storage: {
                             duplicados++;
                             return;
                         }
+                        if (!isIntegracao) {
+                            const dadosAuto = this.buscarDadosIntegracaoPorMatricula(mat);
+                            if (dadosAuto) {
+                                if (!nome || nome === 'COLABORADOR' || nome === ('COLABORADOR ' + mat)) nome = dadosAuto.nome;
+                                if (!cpf) cpf = dadosAuto.cpf;
+                                if (!adm || adm === t.dataInicio) adm = dadosAuto.dataAdmissao;
+                            }
+                        }
                     }
 
                     t.colaboradores.push({
                         id: 'colab_' + Date.now() + '_' + Math.floor(Math.random() * 10000) + '_' + adicionados,
                         matricula: mat,
                         nome: nome,
-                        cpf: a.cpf || '',
-                        dataAdmissao: a.dataAdmissao || t.dataInicio || '',
-                        statusGeral: 'Ativo'
+                        cpf: cpf,
+                        dataAdmissao: adm,
+                        presenca: a.presenca || 'Presente',
+                        statusGeral: (a.presenca === 'Faltou') ? 'Faltou na Integração' : 'Ativo'
                     });
                     adicionados++;
                 });
@@ -4673,13 +4947,18 @@ storage: {
                 if (modal) modal.classList.add('hidden');
                 ta.value = '';
 
-                this.renderTabelaColaboradoresTurma();
+                if (isIntegracao) {
+                    this.renderTabelaParticipantesIntegracao();
+                    this.renderPainelPresenteismoIntegracao();
+                } else {
+                    this.renderTabelaColaboradoresTurma();
+                }
 
                 if (adicionados > 0) {
                     const msgDup = duplicados > 0 ? (' (' + duplicados + (duplicados > 1 ? ' matrículas já estavam cadastradas' : ' matrícula já estava cadastrada') + ' e foram ignoradas)') : '';
-                    app.ui.showAlert("Alunos Importados!", adicionados + (adicionados > 1 ? ' colaboradores inseridos' : ' colaborador inserido') + ' na turma com sucesso!' + msgDup, "success");
+                    app.ui.showAlert(isIntegracao ? "Participantes Importados!" : "Alunos Importados!", adicionados + (adicionados > 1 ? ' colaboradores inseridos' : ' colaborador inserido') + ' com sucesso!' + msgDup, "success");
                 } else {
-                    app.ui.showAlert("Atenção", 'Nenhum novo aluno inserido. Todas as ' + duplicados + ' matrículas já constavam na turma.', "warning");
+                    app.ui.showAlert("Atenção", 'Nenhum novo colaborador inserido. Todas as ' + duplicados + ' matrículas já constavam na lista.', "warning");
                 }
             },
 
@@ -4692,8 +4971,8 @@ storage: {
                 const admEl = document.getElementById('turma-add-colab-adm');
 
                 const mat = (matEl?.value || '').trim().toUpperCase();
-                const nome = (nomeEl?.value || '').trim().toUpperCase();
-                const cpf = (cpfEl?.value || '').trim();
+                let nome = (nomeEl?.value || '').trim().toUpperCase();
+                let cpf = (cpfEl?.value || '').trim();
                 let adm = (admEl?.value || '').trim();
                 if (adm) {
                     const iso = this.formatarParaISODate(adm);
@@ -4711,6 +4990,13 @@ storage: {
                     if (duplicado) {
                         return app.ui.showAlert("Atenção", 'A matrícula ' + mat + ' já está cadastrada nesta turma.', "warning");
                     }
+                    // Auto-completa dados da integração caso omitidos
+                    const dadosAuto = this.buscarDadosIntegracaoPorMatricula(mat);
+                    if (dadosAuto) {
+                        if (!nome || nome === 'COLABORADOR') nome = dadosAuto.nome;
+                        if (!cpf) cpf = dadosAuto.cpf;
+                        if (!adm || adm === t.dataInicio) adm = dadosAuto.dataAdmissao;
+                    }
                 }
 
                 t.colaboradores.push({
@@ -4726,6 +5012,8 @@ storage: {
                 if (nomeEl) nomeEl.value = '';
                 if (cpfEl) cpfEl.value = '';
                 if (admEl) admEl.value = adm || t.dataInicio || '';
+                const fbEl = document.getElementById('turma-colab-feedback-auto');
+                if (fbEl) fbEl.innerHTML = '';
 
                 this.renderTabelaColaboradoresTurma();
             },
@@ -4791,6 +5079,284 @@ storage: {
                         </tr>
                     `;
                 }).join('');
+            },
+
+            formatarInputCpf(el) {
+                if (!el) return;
+                let v = el.value.replace(/\D/g, '').slice(0, 11);
+                if (v.length > 9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/, '$1.$2.$3-$4');
+                else if (v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{1,3})/, '$1.$2.$3');
+                else if (v.length > 3) v = v.replace(/(\d{3})(\d{1,3})/, '$1.$2');
+                el.value = v;
+            },
+
+            adicionarParticipanteIntegracao() {
+                const t = this.turmaEmEdicao;
+                if (!t) return;
+                const matEl = document.getElementById('int-add-mat');
+                const nomeEl = document.getElementById('int-add-nome');
+                const cpfEl = document.getElementById('int-add-cpf');
+                const admEl = document.getElementById('int-add-adm');
+                const presEl = document.getElementById('int-add-presenca');
+
+                const mat = (matEl?.value || '').trim().toUpperCase();
+                const nome = (nomeEl?.value || '').trim().toUpperCase();
+                const cpf = (cpfEl?.value || '').trim();
+                let adm = (admEl?.value || '').trim();
+                const presenca = presEl?.value || 'Presente';
+
+                if (adm) {
+                    const iso = this.formatarParaISODate(adm);
+                    if (iso) adm = iso;
+                }
+
+                if (!mat) {
+                    return app.ui.showAlert("Atenção", "Informe a matrícula do colaborador para registrar na integração.", "warning");
+                }
+                if (!nome) {
+                    return app.ui.showAlert("Atenção", "Informe o nome completo do colaborador.", "warning");
+                }
+                const cpfLimpo = cpf.replace(/\D/g, '');
+                if (!cpfLimpo || cpfLimpo.length < 11) {
+                    return app.ui.showAlert("CPF Obrigatório", "O CPF é obrigatório para cadastrar o participante na integração (11 dígitos).", "warning");
+                }
+
+                if (!Array.isArray(t.colaboradores)) t.colaboradores = [];
+
+                const duplicado = t.colaboradores.some(c => String(c.matricula).trim().toUpperCase() === mat);
+                if (duplicado) {
+                    return app.ui.showAlert("Atenção", `A matrícula ${mat} já está cadastrada nesta integração.`, "warning");
+                }
+
+                t.colaboradores.push({
+                    id: 'colab_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    matricula: mat,
+                    nome: nome,
+                    cpf: cpf,
+                    dataAdmissao: adm || t.dataInicio || '',
+                    presenca: presenca,
+                    statusGeral: presenca === 'Faltou' ? 'Faltou na Integração' : 'Ativo'
+                });
+
+                if (matEl) { matEl.value = ''; matEl.focus(); }
+                if (nomeEl) nomeEl.value = '';
+                if (cpfEl) cpfEl.value = '';
+                if (admEl) admEl.value = adm || t.dataInicio || '';
+                if (presEl) presEl.value = 'Presente';
+
+                this.renderTabelaParticipantesIntegracao();
+                this.renderPainelPresenteismoIntegracao();
+            },
+
+            alternarPresencaParticipanteIntegracao(idx) {
+                const t = this.turmaEmEdicao;
+                if (!t || !Array.isArray(t.colaboradores) || !t.colaboradores[idx]) return;
+                const colab = t.colaboradores[idx];
+                const isPresente = (colab.presenca !== 'Faltou' && colab.statusGeral !== 'Faltou na Integração');
+                if (isPresente) {
+                    colab.presenca = 'Faltou';
+                    colab.statusGeral = 'Faltou na Integração';
+                } else {
+                    colab.presenca = 'Presente';
+                    colab.statusGeral = 'Ativo';
+                }
+                this.renderTabelaParticipantesIntegracao();
+                this.renderPainelPresenteismoIntegracao();
+            },
+
+            removerParticipanteIntegracao(idx) {
+                const t = this.turmaEmEdicao;
+                if (!t || !Array.isArray(t.colaboradores)) return;
+                t.colaboradores.splice(idx, 1);
+                this.renderTabelaParticipantesIntegracao();
+                this.renderPainelPresenteismoIntegracao();
+            },
+
+            renderPainelPresenteismoIntegracao() {
+                const t = this.turmaEmEdicao;
+                const container = document.getElementById('int-painel-presenteismo');
+                if (!t || !container) return;
+
+                const lista = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+                const total = lista.length;
+                const presentes = lista.filter(c => c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração').length;
+                const faltas = total - presentes;
+                const percentual = total > 0 ? Math.round((presentes / total) * 100) : 100;
+
+                container.innerHTML = `
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-black uppercase tracking-wider text-sky-800 dark:text-sky-300">
+                                    <i class="fa-solid fa-chart-pie mr-1 text-sky-600"></i> Presenteísmo da Integração
+                                </span>
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold ${percentual >= 90 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : (percentual >= 75 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800')}">
+                                    ${percentual}% de Presença
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                                Taxa calculada automaticamente com base nos participantes informados.
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3 w-full sm:w-auto">
+                            <div class="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase">Convocados</div>
+                                <div class="text-base font-black text-slate-800 dark:text-white tabular-nums">${total}</div>
+                            </div>
+                            <div class="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center">
+                                <div class="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Presentes</div>
+                                <div class="text-base font-black text-emerald-700 dark:text-emerald-300 tabular-nums">${presentes}</div>
+                            </div>
+                            <div class="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-center">
+                                <div class="text-[10px] font-bold text-rose-700 dark:text-rose-400 uppercase">Faltas</div>
+                                <div class="text-base font-black text-rose-700 dark:text-rose-300 tabular-nums">${faltas}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden mt-3">
+                        <div class="h-full ${percentual >= 90 ? 'bg-emerald-500' : (percentual >= 75 ? 'bg-amber-500' : 'bg-rose-500')} transition-all duration-500 rounded-full" style="width: ${percentual}%"></div>
+                    </div>
+                `;
+            },
+
+            renderTabelaParticipantesIntegracao() {
+                const t = this.turmaEmEdicao;
+                const tbody = document.getElementById('int-tbody-participantes');
+                const badgeTotal = document.getElementById('int-badge-total-colabs');
+                if (!t || !tbody) return;
+
+                const lista = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+                if (badgeTotal) badgeTotal.textContent = `${lista.length} participante${lista.length !== 1 ? 's' : ''}`;
+
+                if (lista.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="p-6 text-center text-xs text-slate-400 italic">
+                                Nenhum participante cadastrado ainda. Preencha os campos acima para registrar os novos colaboradores da integração.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = lista.map((c, idx) => {
+                    const isPresente = (c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração');
+                    const temCpfValido = (c.cpf || '').replace(/\D/g, '').length >= 11;
+                    return `
+                        <tr class="border-b border-slate-100 dark:border-slate-800 transition ${!isPresente ? 'bg-rose-50/60 dark:bg-rose-950/20 opacity-80' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}">
+                            <td class="p-2.5 text-center text-xs font-bold text-slate-400 w-12">${idx + 1}</td>
+                            <td class="p-2.5 text-xs font-extrabold text-slate-700 dark:text-slate-200">${c.matricula || '-'}</td>
+                            <td class="p-2.5 text-xs font-semibold ${!isPresente ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-white'}">
+                                ${c.nome}
+                            </td>
+                            <td class="p-2.5 text-xs">
+                                ${temCpfValido ? `
+                                    <span class="text-slate-700 dark:text-slate-200 font-medium">${c.cpf}</span>
+                                ` : `
+                                    <span class="text-rose-600 font-extrabold text-[11px] bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200">
+                                        <i class="fa-solid fa-triangle-exclamation mr-1"></i> Inválido
+                                    </span>
+                                `}
+                            </td>
+                            <td class="p-2.5 text-xs text-slate-500 dark:text-slate-400">${c.dataAdmissao ? c.dataAdmissao.split('-').reverse().join('/') : '-'}</td>
+                            <td class="p-2.5 text-center w-36">
+                                <button type="button" onclick="app.diarioBordo.alternarPresencaParticipanteIntegracao(${idx})" class="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${isPresente ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-200'}" title="Clique para alternar Presente / Faltou">
+                                    <i class="fa-solid ${isPresente ? 'fa-check text-emerald-600' : 'fa-xmark text-rose-600'}"></i>
+                                    <span>${isPresente ? 'Presente' : 'Faltou'}</span>
+                                </button>
+                            </td>
+                            <td class="p-2.5 text-right w-20">
+                                <button type="button" onclick="app.diarioBordo.removerParticipanteIntegracao(${idx})" class="p-1 text-xs text-rose-500 hover:text-rose-700 rounded transition cursor-pointer" title="Remover da Integração">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            },
+
+            salvarIntegracao() {
+                const t = this.turmaEmEdicao;
+                if (!t) return;
+
+                const dataEl = document.getElementById('int-input-data');
+                if (dataEl && dataEl.value) t.dataInicio = dataEl.value;
+
+                t.operacao = 'INTEGRAÇÃO GERAL';
+                t.responsavelIntegracaoNome = app.currentUser?.nome || t.responsavelIntegracaoNome || 'Instrutor';
+                t.responsavelIntegracaoMatricula = app.currentUser?.matricula || t.responsavelIntegracaoMatricula || '-';
+                t.treinadorNome = t.responsavelIntegracaoNome;
+                t.treinadorMatricula = t.responsavelIntegracaoMatricula;
+                t.previsaoEntrega = t.dataInicio;
+                t.horario = 'Integral';
+                t.tipoTurma = 'integracao';
+                t.numeroTurma = 'INTEGRAÇÃO ' + (t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '');
+
+                if (!t.dataInicio) return app.ui.showAlert("Atenção", "Informe a data da integração.", "warning");
+                if (!Array.isArray(t.colaboradores) || t.colaboradores.length === 0) {
+                    return app.ui.showAlert("Atenção", "Cadastre pelo menos 1 participante nesta integração.", "warning");
+                }
+
+                // Validação estrita: CPF OBRIGATÓRIO EM TODOS OS PARTICIPANTES
+                for (let i = 0; i < t.colaboradores.length; i++) {
+                    const c = t.colaboradores[i];
+                    const cpfLimpo = (c.cpf || '').replace(/\D/g, '');
+                    if (!cpfLimpo || cpfLimpo.length < 11) {
+                        return app.ui.showAlert(
+                            "CPF Obrigatório na Integração",
+                            `O participante "${c.nome || 'Sem Nome'}" (Matrícula: ${c.matricula || '-'}) não possui CPF válido. O CPF é obrigatório para cadastrar na integração e criar o acesso às avaliações.`,
+                            "warning"
+                        );
+                    }
+                }
+
+                // Calcula presenteísmo final
+                const total = t.colaboradores.length;
+                const presentes = t.colaboradores.filter(c => c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração').length;
+                const faltas = total - presentes;
+                const taxa = total > 0 ? Math.round((presentes / total) * 100) : 0;
+                t.presenteismo = {
+                    total,
+                    presentes,
+                    faltas,
+                    percentual: taxa
+                };
+
+                const dataFmt = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '';
+
+                // Confirmação 1 de 2:
+                app.ui.showConfirm(
+                    "Confirmação 1 de 2: Salvar Registro de Integração",
+                    `Deseja realmente registrar a integração de <strong>${t.operacao}</strong> realizada em <strong>${dataFmt}</strong>?<br><br>
+                    <div class="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-xs text-sky-900 dark:text-sky-200 space-y-1">
+                        <div><strong>Presenteísmo Apurado:</strong> ${taxa}% (${presentes} presentes de ${total} convocados)</div>
+                        <div><strong>Responsável:</strong> ${t.responsavelIntegracaoNome || '-'}</div>
+                        <div><strong>Lista Assinada:</strong> ${t.anexoListaPresenca ? '<span class="text-emerald-600 font-bold"><i class="fa-solid fa-check"></i> Foto anexada</span>' : '<span class="text-amber-600 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Sem foto anexada</span>'}</div>
+                    </div>`,
+                    () => {
+                        // Confirmação 2 de 2:
+                        app.ui.showConfirm(
+                            "Confirmação 2 de 2: Bloqueio Permanente de Segurança",
+                            `<div class="space-y-3 text-left">
+                                <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-start gap-2.5">
+                                    <i class="fa-solid fa-triangle-exclamation text-amber-600 text-base shrink-0 mt-0.5"></i>
+                                    <div>
+                                        <strong>ATENÇÃO:</strong> Ao confirmar, a integração será <strong>bloqueada para alterações manuais</strong>, os acessos dos operadores serão criados (com senha = CPF) e os dados estarão disponíveis para auto-preenchimento ao abrir as turmas de treinamento.
+                                    </div>
+                                </div>
+                                <p class="text-xs text-slate-600 dark:text-slate-300">
+                                    Confirma o salvamento definitivo?
+                                </p>
+                            </div>`,
+                            () => {
+                                t.status = 'Integrados';
+                                app.diarioBordo.executarSalvarTurma(true);
+                            },
+                            false
+                        );
+                    },
+                    false
+                );
             },
 
             filtrarPorOperacao(op) {
@@ -5387,6 +5953,68 @@ storage: {
                 );
             },
 
+            buscarDadosIntegracaoPorMatricula(mat) {
+                if (!mat) return null;
+                const cleanMat = String(mat).trim().toUpperCase();
+                if (!cleanMat || cleanMat === '-') return null;
+
+                // 1. Prioridade máxima: Integrados cadastrados em Turmas de Integração
+                const turmas = Object.values(app.turmasTreinamentoList || {}).filter(Boolean);
+                const integracoes = turmas.filter(t => t.tipoTurma === 'integracao');
+                for (const int of integracoes) {
+                    if (Array.isArray(int.colaboradores)) {
+                        const achado = int.colaboradores.find(c => String(c.matricula || '').trim().toUpperCase() === cleanMat);
+                        if (achado) {
+                            return {
+                                matricula: cleanMat,
+                                nome: achado.nome || '',
+                                cpf: achado.cpf || '',
+                                dataAdmissao: achado.dataAdmissao || int.dataInicio || '',
+                                operacao: int.operacao || '',
+                                dataIntegracao: int.dataInicio || '',
+                                responsavelIntegracao: int.responsavelIntegracaoNome || '',
+                                presenca: achado.presenca || 'Presente',
+                                origem: 'integracao'
+                            };
+                        }
+                    }
+                }
+
+                // 2. Turmas de treinamento anteriores
+                for (const t of turmas) {
+                    if (t.tipoTurma !== 'integracao' && Array.isArray(t.colaboradores)) {
+                        const achado = t.colaboradores.find(c => String(c.matricula || '').trim().toUpperCase() === cleanMat);
+                        if (achado) {
+                            return {
+                                matricula: cleanMat,
+                                nome: achado.nome || '',
+                                cpf: achado.cpf || '',
+                                dataAdmissao: achado.dataAdmissao || t.dataInicio || '',
+                                operacao: t.operacao || '',
+                                origem: 'turma_treinamento'
+                            };
+                        }
+                    }
+                }
+
+                // 3. Usuários cadastrados no sistema
+                if (Array.isArray(app.users)) {
+                    const u = app.users.find(usr => String(usr.matricula || '').trim().toUpperCase() === cleanMat);
+                    if (u) {
+                        return {
+                            matricula: cleanMat,
+                            nome: u.nome || '',
+                            cpf: u.cpf || '',
+                            dataAdmissao: u.dataAdmissao || '',
+                            operacao: (u.operacoes && u.operacoes[0]) || '',
+                            origem: 'usuario'
+                        };
+                    }
+                }
+
+                return null;
+            },
+
             buscarColaboradorPorMatricula(mat) {
                 if (!mat || !app.users) return null;
                 const clean = String(mat).trim().toLowerCase();
@@ -5395,12 +6023,66 @@ storage: {
 
             onMatriculaChange(tipo, valor) {
                 if (!valor) return;
+                const clean = String(valor).trim().toUpperCase();
+                if (!clean) return;
+
+                if (tipo === 'turma_colab') {
+                    const dados = this.buscarDadosIntegracaoPorMatricula(clean);
+                    const nomeEl = document.getElementById('turma-add-colab-nome');
+                    const cpfEl = document.getElementById('turma-add-colab-cpf');
+                    const admEl = document.getElementById('turma-add-colab-adm');
+                    const feedbackEl = document.getElementById('turma-colab-feedback-auto');
+
+                    if (dados) {
+                        if (nomeEl && dados.nome) {
+                            nomeEl.value = dados.nome;
+                            nomeEl.classList.add('bg-sky-50', 'dark:bg-sky-950/30');
+                            setTimeout(() => nomeEl.classList.remove('bg-sky-50', 'dark:bg-sky-950/30'), 700);
+                        }
+                        if (cpfEl && dados.cpf) {
+                            cpfEl.value = dados.cpf;
+                            cpfEl.classList.add('bg-sky-50', 'dark:bg-sky-950/30');
+                            setTimeout(() => cpfEl.classList.remove('bg-sky-50', 'dark:bg-sky-950/30'), 700);
+                        }
+                        if (admEl && dados.dataAdmissao) {
+                            admEl.value = dados.dataAdmissao;
+                            admEl.classList.add('bg-sky-50', 'dark:bg-sky-950/30');
+                            setTimeout(() => admEl.classList.remove('bg-sky-50', 'dark:bg-sky-950/30'), 700);
+                        }
+
+                        if (feedbackEl) {
+                            const dataFmt = dados.dataIntegracao ? dados.dataIntegracao.split('-').reverse().join('/') : '';
+                            const infoOrigem = dados.origem === 'integracao'
+                                ? `Localizado na Integração de ${dataFmt} (${dados.operacao || 'Geral'}${dados.responsavelIntegracao ? ' · Resp: ' + dados.responsavelIntegracao : ''})`
+                                : `Cadastro localizado no sistema (${dados.operacao || 'Geral'})`;
+                            feedbackEl.innerHTML = `<span class="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 px-2.5 py-1 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in"><i class="fa-solid fa-circle-check text-sky-500"></i> Auto-preenchido: ${dados.nome} · CPF: ${dados.cpf || '-'} · ${infoOrigem}</span>`;
+                        }
+                    } else if (feedbackEl) {
+                        feedbackEl.innerHTML = '';
+                    }
+                    return;
+                }
+
+                if (tipo === 'integracao_colab') {
+                    const dados = this.buscarDadosIntegracaoPorMatricula(clean);
+                    if (dados) {
+                        const nomeEl = document.getElementById('int-add-nome');
+                        const cpfEl = document.getElementById('int-add-cpf');
+                        const admEl = document.getElementById('int-add-adm');
+                        if (nomeEl && dados.nome && !nomeEl.value) nomeEl.value = dados.nome;
+                        if (cpfEl && dados.cpf && !cpfEl.value) cpfEl.value = dados.cpf;
+                        if (admEl && dados.dataAdmissao && !admEl.value) admEl.value = dados.dataAdmissao;
+                    }
+                    return;
+                }
+
                 const user = this.buscarColaboradorPorMatricula(valor);
                 if (!user) return;
                 let inputNome = null;
-                if (tipo === 'turma_colab') inputNome = document.getElementById('turma-add-colab-nome');
-                else if (tipo === 'treinador') inputNome = document.getElementById('turma-input-treinador-nome');
-                else if (tipo === 'resp_int') inputNome = document.getElementById('turma-input-resp-int-nome');
+                if (tipo === 'treinador') inputNome = document.getElementById('turma-input-treinador-nome');
+                else if (tipo === 'resp_int') {
+                    inputNome = document.getElementById('turma-input-resp-int-nome') || document.getElementById('int-input-resp-nome');
+                }
                 else if (tipo === 'db_treinador') inputNome = document.getElementById('db-input-treinador-nome');
                 else if (tipo === 'abs') inputNome = document.getElementById('db-add-abs-nome');
                 else if (tipo === 'desl') inputNome = document.getElementById('db-add-desl-nome');
@@ -6399,33 +7081,61 @@ storage: {
                 doc.text(`Operação: ${String(t.operacao || '').toUpperCase()}  |  Turma: ${String(t.numeroTurma || '').toUpperCase()}  |  Total: ${colabs.length} alunos`, pageWidth - marginX, 12, { align: 'right' });
 
                 const alunosRows = colabs.map((c, idx) => {
-                    const isTO = (c.statusGeral === 'T.O' || c.statusGeral === 'Declínio');
+                    const cMat = String(c.matricula || '').trim().toUpperCase();
+                    let isTO = (c.statusGeral === 'T.O' || c.statusGeral === 'Declínio');
+                    let presCount = 0;
+                    let absCount = 0;
+                    let dataTO = '';
+
+                    const timelineItems = diariosTurma.map((d, dIdx) => {
+                        const colabChamada = Array.isArray(d.chamada) ? d.chamada.find(item => String(item.matricula || '').trim().toUpperCase() === cMat) : null;
+                        const st = colabChamada ? colabChamada.statusDia : (isTO ? 'T.O' : 'Presente');
+                        if (st === 'Presente') {
+                            presCount++;
+                            return `D${dIdx + 1}:P`;
+                        } else if (st === 'T.O' || st === 'Declínio') {
+                            isTO = true;
+                            if (!dataTO && d.data) dataTO = d.data.split('-').reverse().slice(0, 2).join('/');
+                            return `D${dIdx + 1}:TO`;
+                        } else {
+                            absCount++;
+                            return `D${dIdx + 1}:${st === 'Atestado' ? 'AT' : 'F'}`;
+                        }
+                    });
+
+                    const totalDias = diariosTurma.length;
+                    const taxaPres = totalDias > 0 ? Math.round((presCount / totalDias) * 100) : 100;
+                    const timelineTxt = timelineItems.length > 0 ? timelineItems.join(' | ') : 'Sem registros';
+                    const situacaoTxt = isTO 
+                        ? `DESLIGADO (T.O${dataTO ? ' em ' + dataTO : ''})` 
+                        : (t.tipoTurma === 'integracao' ? 'INTEGRADO' : 'APROVADO / ENTREGUE');
+
                     return [
                         String(idx + 1),
                         c.matricula || '-',
                         c.nome || 'Colaborador',
-                        c.cpf || '-',
-                        c.dataAdmissao ? c.dataAdmissao.split('-').reverse().join('/') : '-',
-                        isTO ? 'DESLIGADO (T.O)' : (t.tipoTurma === 'integracao' ? 'INTEGRADO' : 'APROVADO / ENTREGUE')
+                        timelineTxt,
+                        `${presCount}P / ${absCount}F (${taxaPres}%)`,
+                        situacaoTxt
                     ];
                 });
 
                 doc.autoTable({
                     startY: 23,
                     margin: { left: marginX, right: marginX },
-                    head: [['#', 'Matrícula', 'Nome Completo do Colaborador', 'CPF', 'Admissão', 'Situação Final']],
+                    head: [['#', 'Matrícula', 'Nome Completo do Colaborador', 'Linha do Tempo (Dia a Dia)', 'Frequência', 'Situação Final / Parecer']],
                     body: alunosRows,
                     theme: 'striped',
-                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
-                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, cellPadding: 2 },
+                    bodyStyles: { fontSize: 6.8, cellPadding: 1.8, textColor: [30, 41, 59] },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
-                        0: { cellWidth: 10, halign: 'center' },
-                        1: { cellWidth: 26, halign: 'center' },
-                        2: { cellWidth: 90 },
-                        3: { cellWidth: 32 },
-                        4: { cellWidth: 28, halign: 'center' },
-                        5: { cellWidth: contentWidth - 186, halign: 'center' }
+                        0: { cellWidth: 8, halign: 'center' },
+                        1: { cellWidth: 22, halign: 'center' },
+                        2: { cellWidth: 62 },
+                        3: { cellWidth: 95 },
+                        4: { cellWidth: 32, halign: 'center' },
+                        5: { cellWidth: contentWidth - 219, halign: 'center' }
                     }
                 });
 
@@ -7998,444 +8708,10 @@ storage: {
                 },
 
                 // =========================================================================
-                // CADASTRO DE NOVO USUÁRIO COM VERIFICAÇÃO POR E-MAIL (PRIMEIRO ACESSO)
+                // CADASTRO DE NOVO USUÁRIO (DESATIVADO - OPERADORES GERADOS VIA TURMAS)
                 // =========================================================================
                 abrirModalCadastro() {
-                    const exist = document.getElementById('modal-cadastro-novo-usuario');
-                    if (exist) exist.remove();
-
-                    app.auth._regState = {
-                        step: 1,
-                        nome: '',
-                        email: '',
-                        tipoAcesso: 'Operador',
-                        codigoEnviado: null,
-                        codigoValido: false,
-                        matricula: '',
-                        senha: ''
-                    };
-
-                    const modal = document.createElement('div');
-                    modal.id = 'modal-cadastro-novo-usuario';
-                    modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
-
-                    modal.innerHTML = `
-                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl relative my-8">
-                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-900/30 text-green-600 flex items-center justify-center text-xl shrink-0">
-                                        <i class="fa-solid fa-user-plus"></i>
-                                    </div>
-                                    <div>
-                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Primeiro Acesso • Criar Conta</h3>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400">Autenticação institucional Softmarketing</p>
-                                    </div>
-                                </div>
-                                <button onclick="document.getElementById('modal-cadastro-novo-usuario').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-
-                            <!-- Stepper Visual -->
-                            <div class="flex items-center justify-between mb-6 px-2">
-                                <div id="step-dot-1" class="flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-400">
-                                    <span class="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-[11px] font-black">1</span>
-                                    <span>E-mail</span>
-                                </div>
-                                <div class="flex-1 h-0.5 bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                <div id="step-dot-2" class="flex items-center gap-1.5 text-xs font-bold text-slate-400">
-                                    <span class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center text-[11px] font-black">2</span>
-                                    <span>Código</span>
-                                </div>
-                                <div class="flex-1 h-0.5 bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                <div id="step-dot-3" class="flex items-center gap-1.5 text-xs font-bold text-slate-400">
-                                    <span class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center text-[11px] font-black">3</span>
-                                    <span>Matrícula & Senha</span>
-                                </div>
-                            </div>
-
-                            <!-- Conteúdo Dinâmico das Etapas -->
-                            <div id="cadastro-step-container">
-                                <!-- Renderizado via renderCadastroStep -->
-                            </div>
-                        </div>
-                    `;
-
-                    document.body.appendChild(modal);
-                    this.renderCadastroStep(1);
-                },
-
-                renderCadastroStep(step) {
-                    const container = document.getElementById('cadastro-step-container');
-                    if (!container) return;
-
-                    ['1', '2', '3'].forEach(s => {
-                        const dot = document.getElementById('step-dot-' + s);
-                        if (dot) {
-                            if (parseInt(s) === step) {
-                                dot.className = 'flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-400';
-                                dot.querySelector('span:first-child').className = 'w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-[11px] font-black';
-                            } else if (parseInt(s) < step) {
-                                dot.className = 'flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400';
-                                dot.querySelector('span:first-child').className = 'w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] font-black';
-                            } else {
-                                dot.className = 'flex items-center gap-1.5 text-xs font-bold text-slate-400';
-                                dot.querySelector('span:first-child').className = 'w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center text-[11px] font-black';
-                            }
-                        }
-                    });
-
-                    if (step === 1) {
-                        container.innerHTML = `
-                            <form onsubmit="event.preventDefault(); app.auth.enviarCodigoCadastro();" class="space-y-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Nome Completo</label>
-                                    <input type="text" id="reg-nome" required value="${app.auth._regState.nome || ''}" oninput="this.value = this.value.toUpperCase(); app.auth._regState.nome = this.value;" class="w-full px-4 py-3 uppercase rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500 font-bold" placeholder="SEU NOME COMPLETO" style="text-transform: uppercase;">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">E-mail Corporativo</label>
-                                    <div class="relative">
-                                        <i class="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="email" id="reg-email" required value="${app.auth._regState.email || ''}" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="seu.nome@softmarketing.com.br">
-                                    </div>
-                                    <span class="text-[11px] text-slate-400 mt-1 block">Informe seu e-mail corporativo para autenticação institucional.</span>
-                                </div>
-                                
-                                <div class="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 rounded-xl flex items-center gap-3 text-xs">
-                                    <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm shrink-0">
-                                        <i class="fa-solid fa-headset"></i>
-                                    </div>
-                                    <div>
-                                        <div class="font-bold text-blue-800 dark:text-blue-300">Perfil Inicial: Operador de Atendimento</div>
-                                        <div class="text-[11px] text-blue-600 dark:text-blue-400">Seu cadastro será validado pelo setor de Treinamento para vinculação à equipe.</div>
-                                    </div>
-                                </div>
-
-                                <button type="submit" class="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-sm">
-                                    <i class="fa-solid fa-paper-plane"></i> Gerar & Enviar Código de Verificação
-                                </button>
-                            </form>
-                        `;
-                    } else if (step === 2) {
-                        const isSupa = Boolean(app.auth._regState.sentViaSupabase);
-                        container.innerHTML = `
-                            <form onsubmit="event.preventDefault(); app.auth.validarCodigoCadastro();" class="space-y-4">
-                                <div class="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-2">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shrink-0">
-                                            <i class="fa-solid ${isSupa ? 'fa-paper-plane' : 'fa-envelope-circle-check'}"></i>
-                                        </div>
-                                        <div>
-                                            <div>Código de autenticação para <strong>${app.auth._regState.email}</strong></div>
-                                            <div class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">${isSupa ? 'Enviamos o código oficial de 6 dígitos via Supabase. Verifique sua caixa de entrada e spam:' : 'Utilize o código oficial abaixo para validar sua solicitação:'}</div>
-                                        </div>
-                                    </div>
-                                    ${!isSupa ? `
-                                    <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-300 dark:border-emerald-700 flex items-center justify-between">
-                                        <div>
-                                            <span class="text-[10px] font-bold text-slate-400 block uppercase">Código de 6 Dígitos:</span>
-                                            <span class="text-2xl font-black tracking-[0.25em] text-emerald-600 dark:text-emerald-400">${app.auth._regState.codigoEnviado}</span>
-                                        </div>
-                                        <button type="button" onclick="document.getElementById('reg-codigo').value = '${app.auth._regState.codigoEnviado}'" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5">
-                                            <i class="fa-solid fa-clone"></i> Inserir Código
-                                        </button>
-                                    </div>
-                                    ` : ''}
-                                    <div class="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-shield-halved text-emerald-500"></i>
-                                        Autenticação institucional segura: ${isSupa ? 'Disparo via Supabase' : 'Código gerado com sucesso'}.
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Digite o Código de 6 Dígitos</label>
-                                    <input type="text" id="reg-codigo" maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/\\D/g, '').slice(0, 6)" required class="w-full px-4 py-3 text-center text-2xl font-black tracking-[0.3em] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-green-500" placeholder="000000">
-                                </div>
-                                <div class="flex items-center gap-2 pt-2">
-                                    <button type="button" onclick="app.auth.renderCadastroStep(1)" class="w-1/3 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                        Voltar
-                                    </button>
-                                    <button type="submit" class="w-2/3 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-sm">
-                                        <i class="fa-solid fa-shield-halved"></i> Validar Código
-                                    </button>
-                                </div>
-                            </form>
-                        `;
-                    } else if (step === 3) {
-                        container.innerHTML = `
-                            <form onsubmit="event.preventDefault(); app.auth.finalizarCadastroUsuario();" class="space-y-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Matrícula Desejada (Login de Acesso)</label>
-                                    <div class="relative">
-                                        <i class="fa-solid fa-id-card absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="text" id="reg-matricula" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" required oninput="this.value = this.value.replace(/\\D/g, '').slice(0, 5)" class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500 font-bold" placeholder="Ex: 12345">
-                                    </div>
-                                    <span id="reg-mat-aviso" class="text-[11px] text-amber-600 dark:text-amber-400 mt-1 block font-bold">Obrigatório exatamente 5 números (apenas dígitos).</span>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Invente sua Senha de Acesso</label>
-                                    <div class="relative">
-                                        <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="password" id="reg-senha" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Mínimo 4 caracteres">
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Confirme sua Senha</label>
-                                    <div class="relative">
-                                        <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                        <input type="password" id="reg-senha-conf" required class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-sm outline-none focus:ring-2 focus:ring-green-500" placeholder="Repita a mesma senha">
-                                    </div>
-                                </div>
-                                <button type="submit" class="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-sm">
-                                    <i class="fa-solid fa-check"></i> Concluir Cadastro & Entrar
-                                </button>
-                            </form>
-                        `;
-                    }
-                },
-
-                getSupabaseKey() {
-                    return (app.config && app.config.supabaseKey) || localStorage.getItem('soft_supabase_key') || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
-                },
-
-                getSupabaseUrl() {
-                    return (app.config && app.config.supabaseUrl) || localStorage.getItem('soft_supabase_url') || '';
-                },
-
-                getSupabaseClient() {
-                    if (this._supabaseClient) return this._supabaseClient;
-                    const key = this.getSupabaseKey();
-                    const url = this.getSupabaseUrl();
-                    if (typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function' && url && key) {
-                        try {
-                            this._supabaseClient = window.supabase.createClient(url, key);
-                            return this._supabaseClient;
-                        } catch (e) {
-                            console.warn("Falha ao instanciar Supabase Client:", e);
-                        }
-                    }
-                    return null;
-                },
-
-                async enviarCodigoCadastro() {
-                    try {
-                        const nomeInput = document.getElementById('reg-nome');
-                        const emailInput = document.getElementById('reg-email');
-                        const nome = (nomeInput ? nomeInput.value : '').trim().toUpperCase();
-                        const email = (emailInput ? emailInput.value : '').trim().toLowerCase();
-
-                        if (!nome) {
-                            app.ui.showAlert("Campo Obrigatório", "Por favor, preencha seu nome completo.", "warning");
-                            return;
-                        }
-
-                        if (!email) {
-                            app.ui.showAlert("Campo Obrigatório", "Por favor, preencha seu e-mail corporativo.", "warning");
-                            return;
-                        }
-
-                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                        if (!emailRegex.test(email)) {
-                            app.ui.showAlert("E-mail Inválido", "Por favor, informe um endereço de e-mail corporativo válido (exemplo: seu.nome@softmarketing.com.br).", "warning");
-                            return;
-                        }
-
-                        const btnSubmit = document.querySelector('#reg-step-container button[type="submit"]');
-                        if (btnSubmit) {
-                            btnSubmit.disabled = true;
-                            btnSubmit.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Enviando código...`;
-                        }
-
-                        app.auth._regState.nome = nome;
-                        app.auth._regState.email = email;
-                        app.auth._regState.tipoAcesso = 'Operador';
-                        app.auth._regState.sentViaSupabase = false;
-
-                        const supa = this.getSupabaseClient();
-                        let sentWithSupa = false;
-
-                        if (supa) {
-                            try {
-                                const redirectUrl = window.location.href.split('#')[0].split('?')[0];
-                                const { data, error } = await supa.auth.signInWithOtp({
-                                    email: email,
-                                    options: {
-                                        shouldCreateUser: true,
-                                        emailRedirectTo: redirectUrl
-                                    }
-                                });
-                                if (error) {
-                                    console.warn("Supabase signInWithOtp retornou erro:", error);
-                                } else {
-                                    sentWithSupa = true;
-                                    app.auth._regState.sentViaSupabase = true;
-                                    app.auth._regState.codigoEnviado = null;
-                                }
-                            } catch (supaErr) {
-                                console.warn("Exceção ao chamar Supabase signInWithOtp:", supaErr);
-                            }
-                        }
-
-                        if (!sentWithSupa) {
-                            // Se Supabase URL não foi informada ou houve falha de envio, gera código local institucional de segurança
-                            const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-                            app.auth._regState.codigoEnviado = codigo;
-                            app.auth._regState.sentViaSupabase = false;
-                        }
-
-                        this.renderCadastroStep(2);
-                    } catch (err) {
-                        console.error("Erro em enviarCodigoCadastro:", err);
-                        app.ui.showAlert("Erro ao Gerar Código", "Ocorreu uma falha ao preparar a autenticação. Tente novamente.", "error");
-                    }
-                },
-
-                async validarCodigoCadastro() {
-                    const codDigitado = (document.getElementById('reg-codigo')?.value || '').trim();
-                    if (!codDigitado || codDigitado.length < 6) {
-                        app.ui.showAlert("Código Incompleto", "Por favor, digite o código de 6 dígitos recebido.", "warning");
-                        return;
-                    }
-
-                    if (app.auth._regState.sentViaSupabase) {
-                        const supa = this.getSupabaseClient();
-                        if (supa) {
-                            const btnSubmit = document.querySelector('#reg-step-container button[type="submit"]');
-                            if (btnSubmit) {
-                                btnSubmit.disabled = true;
-                                btnSubmit.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Validando código...`;
-                            }
-
-                            try {
-                                const { data, error } = await supa.auth.verifyOtp({
-                                    email: app.auth._regState.email,
-                                    token: codDigitado,
-                                    type: 'email'
-                                });
-
-                                if (error) {
-                                    if (btnSubmit) {
-                                        btnSubmit.disabled = false;
-                                        btnSubmit.innerHTML = `<i class="fa-solid fa-shield-halved"></i> Validar Código`;
-                                    }
-                                    app.ui.showAlert("Código Inválido", "O código digitado não confere ou expirou. Verifique o e-mail " + app.auth._regState.email, "error");
-                                    return;
-                                }
-                            } catch (e) {
-                                if (btnSubmit) {
-                                    btnSubmit.disabled = false;
-                                    btnSubmit.innerHTML = `<i class="fa-solid fa-shield-halved"></i> Validar Código`;
-                                }
-                                app.ui.showAlert("Erro de Validação", "Falha de comunicação com o servidor de autenticação.", "error");
-                                return;
-                            }
-                        }
-                    } else {
-                        if (codDigitado !== app.auth._regState.codigoEnviado) {
-                            app.ui.showAlert("Código Inválido", "O código digitado não confere com o código gerado para seu e-mail.", "error");
-                            return;
-                        }
-                    }
-
-                    app.auth._regState.codigoValido = true;
-                    this.renderCadastroStep(3);
-                },
-
-                async finalizarCadastroUsuario() {
-                    const mat = (document.getElementById('reg-matricula')?.value || '').trim();
-                    const pwd = (document.getElementById('reg-senha')?.value || '').trim();
-                    const pwdConf = (document.getElementById('reg-senha-conf')?.value || '').trim();
-
-                    if (!mat || !pwd) {
-                        app.ui.showAlert("Atenção", "Preencha a matrícula e a senha de acesso.", "warning");
-                        return;
-                    }
-
-                    // Validação estrita: exatamente 5 números
-                    if (!/^\d{5}$/.test(mat)) {
-                        app.ui.showAlert("Matrícula Inválida", "A matrícula corporativa deve conter obrigatoriamente exatamente 5 números (apenas dígitos).", "error");
-                        return;
-                    }
-
-                    if (pwd.length < 4) {
-                        app.ui.showAlert("Senha Curta", "A senha de acesso deve conter no mínimo 4 caracteres.", "warning");
-                        return;
-                    }
-
-                    if (pwd !== pwdConf) {
-                        app.ui.showAlert("Senhas Não Conferem", "A confirmação de senha é diferente da senha digitada.", "warning");
-                        return;
-                    }
-
-                    // Verifica se matrícula já existe
-                    // Garante que a base completa de usuarios esteja carregada antes de salvar o novo operador
-                    if (!Array.isArray(app.users) || app.users.length < 5) {
-                        if (typeof firebase !== 'undefined' && firebase.database) {
-                            try {
-                                const snap = await firebase.database().ref("sistema_bonificacao/users").once("value");
-                                const uVal = snap.val();
-                                if (uVal) {
-                                    const rawU = Array.isArray(uVal) ? uVal : Object.values(uVal);
-                                    if (rawU.length >= 5) {
-                                        app.users = rawU.filter(u => u !== null && u !== undefined);
-                                    }
-                                }
-                            } catch (e) {}
-                        }
-                    }
-
-                    const exists = (app.users || []).some(u => String(u.matricula).trim() === mat);
-                    if (exists) {
-                        app.ui.showAlert("Matrícula Existente", `Já existe um colaborador cadastrado com a matrícula ${mat}. Escolha outra numeração corporativa.`, "error");
-                        return;
-                    }
-
-                    // Criação oficial do perfil OPERADOR com status pendente de validação pelo Treinamento
-                    const novoUsuario = {
-                        nome: app.auth._regState.nome.toUpperCase(),
-                        matricula: mat,
-                        email: app.auth._regState.email,
-                        senha: app.utils.encryptPassword(pwd),
-                        tipoAcesso: 'Operador',
-                        cargo: 'Operador de Atendimento',
-                        statusValidacao: 'Pendente',
-                        gestorMatricula: null,
-                        supervisor: 'Aguardando Treinamento',
-                        operacoes: ['Geral'],
-                        abasLiberadas: ['meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal'],
-                        results: {},
-                        loginCount: 1,
-                        cadastradoVia: 'Primeiro Acesso',
-                        aceiteTermos: new Date().toISOString(),
-                        aceiteDiretrizes: new Date().toISOString(),
-                        criadoEm: new Date().toISOString()
-                    };
-
-                    app.users.push(novoUsuario);
-                    if (app.storage && typeof app.storage.saveUsers === 'function') {
-                        app.storage.saveUsers();
-                    }
-
-                    // Notifica ADM/Treinamento
-                    if (app.notifications && typeof app.notifications.notify === 'function') {
-                        app.notifications.notify('ADM', 'Novo Operador Cadastrado', `O operador ${novoUsuario.nome} (Matrícula: ${mat}) realizou o primeiro acesso e aguarda validação.`, 'info');
-                    }
-
-                    // Fecha o modal de cadastro
-                    const modalCad = document.getElementById('modal-cadastro-novo-usuario');
-                    if (modalCad) modalCad.remove();
-                    // Auto-login imediato
-                    app.isAdmin = false;
-                    app.currentUser = novoUsuario;
-                    app.currentTab = 'home';
-                    localStorage.setItem('soft_session_date', new Date().toLocaleDateString('pt-BR'));
-                    localStorage.setItem('soft_session_mat', mat);
-                    localStorage.setItem('soft_session_admin', 'false');
-                    localStorage.setItem('soft_session_tab', 'home');
-
-                    document.getElementById('view-login').classList.add('hidden');
-                    app.ui.showApp();
-                    app.ui.renderTab('home', true);
-                    app.ui.showAlert("Cadastro Realizado!", `Bem-vindo(a) à Softmarketing, <strong>${novoUsuario.nome}</strong>! Sua matrícula é <strong>${mat}</strong>.<br><small class="text-slate-500">Seu perfil de Operador foi criado e está aguardando vinculação pelo setor de Treinamento.</small>`, "success");
+                    app.ui.showAlert('Acesso Restrito', 'O cadastro de novos colaboradores é realizado exclusivamente pelo setor de Treinamento e pela Coordenação ao registrar turmas.', 'info');
                 },
 
                 executeChangePassword() {
@@ -8485,6 +8761,40 @@ storage: {
 
             pesquisaTreinamento: {
                 currentStep: 0, // 0 a 4: perguntas 1 a 5; 5: revisão e envio
+                turmaTesteId: null,
+
+                abrirTesteDev(turmaId) {
+                    this.turmaTesteId = turmaId;
+                    if (app.diarioBordo && typeof app.diarioBordo.fecharModalCSATConsolidado === 'function') {
+                        app.diarioBordo.fecharModalCSATConsolidado();
+                    }
+                    app.ui.renderTab('pesquisa_treinamento', true);
+                },
+
+                sairModoDev() {
+                    this.turmaTesteId = null;
+                    app.ui.renderTab('pesquisa_treinamento', true);
+                },
+
+                simularRespostasRapidas(turmaId, notaValor) {
+                    const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
+                    if (!t) return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
+                    if (!Array.isArray(t.respostasCSAT)) t.respostasCSAT = [];
+                    const v = parseInt(notaValor) || 5;
+                    t.respostasCSAT.push({
+                        data: new Date().toLocaleDateString('pt-BR'),
+                        timestamp: Date.now(),
+                        notas: [v, v, v, v, v],
+                        media: v,
+                        comentario: `Voto de teste rápido DEV (Nota ${v}.0)`
+                    });
+                    app.storage.saveTurmasTreinamento(t.id).then(() => {
+                        app.ui.showAlert("Voto Teste Gravado!", `Resposta de teste com nota ${v}.0 foi gravada com sucesso na Turma ${t.numeroTurma || ''}.`, "success");
+                        app.ui.renderTab('pesquisa_treinamento', true);
+                    }).catch(() => {
+                        app.ui.renderTab('pesquisa_treinamento', true);
+                    });
+                },
                 respostas: [null, null, null, null, null],
                 turmaAtivaId: null,
 
@@ -8748,10 +9058,13 @@ storage: {
                     });
 
                     // 2. Registra matrícula do aluno apenas na lista de controle de entrega (evita duplo voto, sem ligar à nota)
-                    if (!Array.isArray(t.avaliadosMatriculas)) t.avaliadosMatriculas = [];
-                    const curMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
-                    if (curMat && !t.avaliadosMatriculas.includes(curMat)) {
-                        t.avaliadosMatriculas.push(curMat);
+                    const isDev = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev');
+                    if (!isDev) {
+                        if (!Array.isArray(t.avaliadosMatriculas)) t.avaliadosMatriculas = [];
+                        const curMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
+                        if (curMat && !t.avaliadosMatriculas.includes(curMat)) {
+                            t.avaliadosMatriculas.push(curMat);
+                        }
                     }
 
                     // 3. Salva no Firebase
@@ -9804,7 +10117,7 @@ storage: {
                 menusAdmin: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'validacao_operadores', label:'Validar Operadores'}, {id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -9819,9 +10132,9 @@ storage: {
                     const defaults = {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal', 'pesquisa_treinamento'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['home', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['home', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'home', 'qualidade_treinamento', 'diario_bordo', 'validacao_operadores', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'qualidade_treinamento', 'diario_bordo', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds
                     };
 
@@ -9918,7 +10231,7 @@ storage: {
                     }
 
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'apresentacao_dental_uni'];
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         if (!hasAnyAdminSaved || savedTabs.length <= 2) return [...new Set([...savedTabs, ...presetTabs])];
                         if (['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
@@ -11181,16 +11494,28 @@ storage: {
                     // Rotina Diária de Agenda
                     app.notifications.checkDailySchedule();
                     
+                    // Perfil Operador: Interface 100% limpa (sem seletor de mês global ou menus externos)
+                    const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                    const gmContainer = document.getElementById('global-month')?.parentElement;
+                    if (gmContainer) {
+                        if (isOpUser) gmContainer.classList.add('hidden');
+                        else gmContainer.classList.remove('hidden');
+                    }
+
                     // Resgata aba inicial da URL ou padrão permitido
-                    const urlTab = app.urlState ? app.urlState.get('tab') : null;
-                    const effectiveTabs = this.getEffectiveUserTabs(app.currentUser);
-                    if (urlTab && (app.isAdmin || effectiveTabs.includes(urlTab))) {
-                        app.currentTab = urlTab;
-                    } else if (!app.isAdmin && effectiveTabs.length > 0 && (!app.currentTab || !effectiveTabs.includes(app.currentTab))) {
-                        app.currentTab = effectiveTabs[0];
-                    } else if (!app.currentTab || app.currentTab === 'dashboard_adm' || app.currentTab === 'meu_painel' || (!app.isAdmin && !effectiveTabs.includes('home') && app.currentTab === 'home')) {
-                        const savedTab = localStorage.getItem("soft_session_tab");
-                        app.currentTab = (savedTab && (app.isAdmin || effectiveTabs.includes(savedTab))) ? savedTab : (effectiveTabs[0] || 'home');
+                    if (isOpUser) {
+                        app.currentTab = 'pesquisa_treinamento';
+                    } else {
+                        const urlTab = app.urlState ? app.urlState.get('tab') : null;
+                        const effectiveTabs = this.getEffectiveUserTabs(app.currentUser);
+                        if (urlTab && (app.isAdmin || effectiveTabs.includes(urlTab))) {
+                            app.currentTab = urlTab;
+                        } else if (!app.isAdmin && effectiveTabs.length > 0 && (!app.currentTab || !effectiveTabs.includes(app.currentTab))) {
+                            app.currentTab = effectiveTabs[0];
+                        } else if (!app.currentTab || app.currentTab === 'dashboard_adm' || app.currentTab === 'meu_painel' || (!app.isAdmin && !effectiveTabs.includes('home') && app.currentTab === 'home')) {
+                            const savedTab = localStorage.getItem("soft_session_tab");
+                            app.currentTab = (savedTab && (app.isAdmin || effectiveTabs.includes(savedTab))) ? savedTab : (effectiveTabs[0] || 'home');
+                        }
                     }
                     
                     this.renderNav();
@@ -11201,6 +11526,18 @@ storage: {
                 renderNav() {
                     const nav = document.getElementById('main-nav');
                     if (!nav) return;
+
+                    // Operador: Tela 100% limpa sem nenhuma aba superior
+                    const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                    if (isOpUser) {
+                        nav.innerHTML = '';
+                        nav.classList.add('hidden');
+                        if (nav.parentElement) nav.parentElement.classList.add('hidden');
+                        return;
+                    } else {
+                        nav.classList.remove('hidden');
+                        if (nav.parentElement) nav.parentElement.classList.remove('hidden');
+                    }
                     
                     // CORREÇÃO CRÍTICA: Remove a guilhotina (overflow) do elemento pai para que as sombras não sejam cortadas
                     nav.classList.remove('flex', 'space-x-2', 'overflow-x-auto');
@@ -11213,7 +11550,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'validacao_operadores', 'teste_duolingo'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'apresentacao_dental_uni'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -11476,7 +11813,7 @@ storage: {
                                     app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv); });
                                 }
                             }
-                            else if(tabId === 'validacao_operadores') this.renderView_ValidacaoOperadores(viewDiv);
+
                             else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
                             else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
                             else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
@@ -11493,6 +11830,7 @@ storage: {
                             else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
                             else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
+                            else if(tabId === 'apresentacao_dental_uni') this.renderView_ApresentacaoDentalUni(viewDiv);
                             else if(tabId === 'qualidade_treinamento') this.renderView_QualidadeTreinamento(viewDiv);
                             else if(tabId === 'pesquisa_treinamento') this.renderView_PesquisaTreinamento(viewDiv);
                             else if(tabId === 'diario_bordo') this.renderView_DiarioBordo(viewDiv);
@@ -11537,258 +11875,6 @@ storage: {
                     // Aplica melhorias leves de UX apenas na aba ativa
                     requestAnimationFrame(() => this.applyPremiumUX(viewDiv));
                 },
-
-                                renderView_ValidacaoOperadores(container) {
-                    if (!app.hasAdminAccess('validacao_operadores') && !app.hasAdminAccess('hierarquia') && app.currentUser?.tipoAcesso !== 'Treinamento' && !app.isAdmin && app.currentUser?.tipoAcesso !== 'Dev') {
-                        container.innerHTML = `<div class="p-8 text-center text-slate-500 font-bold">Acesso restrito ao setor de Treinamento e Gestão.</div>`;
-                        return;
-                    }
-
-                    if (!this._validacaoOpFilter) this._validacaoOpFilter = 'pendentes';
-                    if (!this._validacaoOpSearch) this._validacaoOpSearch = '';
-
-                    const allUsers = app.users || [];
-                    const operadores = allUsers.filter(u => u.tipoAcesso === 'Operador' || u.statusValidacao);
-
-                    const pendentesCount = operadores.filter(u => u.statusValidacao !== 'Aprovado').length;
-                    const aprovadosCount = operadores.filter(u => u.statusValidacao === 'Aprovado').length;
-                    const totalCount = operadores.length;
-
-                    const supervisores = allUsers.filter(u => ['Gestor', 'Supervisor', 'Treinamento', 'Gerente', 'Dev'].includes(u.tipoAcesso) || u.isGestor);
-                    
-                    const opsList = (typeof app.getOperacoesSetoriais === 'function' ? app.getOperacoesSetoriais().map(o => o.nome) : []) || [];
-                    if (opsList.length === 0 && app.operacoesList) {
-                        Object.values(app.operacoesList).forEach(op => { if (op && op.nome) opsList.push(op.nome); });
-                    }
-                    const opsUnicas = [...new Set(['Geral', ...opsList])];
-
-                    let filtrados = operadores;
-                    if (this._validacaoOpFilter === 'pendentes') {
-                        filtrados = filtrados.filter(u => u.statusValidacao !== 'Aprovado');
-                    } else if (this._validacaoOpFilter === 'aprovados') {
-                        filtrados = filtrados.filter(u => u.statusValidacao === 'Aprovado');
-                    }
-
-                    if (this._validacaoOpSearch) {
-                        const q = this._validacaoOpSearch.toLowerCase();
-                        filtrados = filtrados.filter(u => (u.nome || '').toLowerCase().includes(q) || String(u.matricula).includes(q) || (u.email || '').toLowerCase().includes(q));
-                    }
-
-                    container.innerHTML = `
-                        <div class="space-y-6">
-                            <!-- Header Corporativo -->
-                            <div class="bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
-                                <div class="absolute -right-12 -bottom-12 text-9xl text-white/5 pointer-events-none">
-                                    <i class="fa-solid fa-user-check"></i>
-                                </div>
-                                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                    <div>
-                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-widest mb-2 border border-emerald-400/30">
-                                            <i class="fa-solid fa-graduation-cap"></i> Treinamento & Gestão de Acessos
-                                        </div>
-                                        <h2 class="text-2xl md:text-3xl font-black">Validação & Hierarquia de Operadores</h2>
-                                        <p class="text-xs md:text-sm text-slate-300 max-w-2xl mt-1">
-                                            Valide os operadores que realizaram o primeiro acesso e vincule-os à hierarquia do Supervisor ou à sua equipe de Treinamento.
-                                        </p>
-                                    </div>
-
-                                    <!-- Métricas Rápidas -->
-                                    <div class="flex items-center gap-3">
-                                        <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
-                                            <span class="text-[10px] uppercase font-bold text-slate-300 block">Pendentes</span>
-                                            <span class="text-2xl font-black text-amber-300">${pendentesCount}</span>
-                                        </div>
-                                        <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
-                                            <span class="text-[10px] uppercase font-bold text-slate-300 block">Validados</span>
-                                            <span class="text-2xl font-black text-emerald-300">${aprovadosCount}</span>
-                                        </div>
-                                        <div class="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 text-center">
-                                            <span class="text-[10px] uppercase font-bold text-slate-300 block">Total</span>
-                                            <span class="text-2xl font-black text-white">${totalCount}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Barra de Filtros e Busca -->
-                            <div class="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                                <div class="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-full md:w-auto">
-                                    <button type="button" onclick="app.ui._validacaoOpFilter = 'pendentes'; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" class="px-4 py-2 rounded-lg text-xs font-bold transition-all ${this._validacaoOpFilter === 'pendentes' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}">
-                                        <i class="fa-solid fa-clock mr-1"></i> Pendentes (${pendentesCount})
-                                    </button>
-                                    <button type="button" onclick="app.ui._validacaoOpFilter = 'aprovados'; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" class="px-4 py-2 rounded-lg text-xs font-bold transition-all ${this._validacaoOpFilter === 'aprovados' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}">
-                                        <i class="fa-solid fa-circle-check mr-1"></i> Validados (${aprovadosCount})
-                                    </button>
-                                    <button type="button" onclick="app.ui._validacaoOpFilter = 'todos'; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" class="px-4 py-2 rounded-lg text-xs font-bold transition-all ${this._validacaoOpFilter === 'todos' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}">
-                                        <i class="fa-solid fa-users mr-1"></i> Todos (${totalCount})
-                                    </button>
-                                </div>
-
-                                <div class="relative w-full md:w-72">
-                                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                    <input type="text" value="${this._validacaoOpSearch || ''}" oninput="app.ui._validacaoOpSearch = this.value; app.ui.renderView_ValidacaoOperadores(document.getElementById('view-container-validacao_operadores'))" placeholder="Buscar operador ou matrícula..." class="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500">
-                                </div>
-                            </div>
-
-                            <!-- Grade de Operadores -->
-                            ${filtrados.length === 0 ? `
-                                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center text-slate-400">
-                                    <div class="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center text-2xl mx-auto mb-3">
-                                        <i class="fa-solid fa-user-slash"></i>
-                                    </div>
-                                    <h4 class="font-bold text-base text-slate-700 dark:text-slate-200">Nenhum operador encontrado</h4>
-                                    <p class="text-xs text-slate-500 mt-1">Nenhum cadastro corresponde ao filtro selecionado.</p>
-                                </div>
-                            ` : `
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    ${filtrados.map(op => {
-                                        const isAprovado = op.statusValidacao === 'Aprovado';
-                                        const opAtual = (op.operacoes && op.operacoes[0]) || 'Geral';
-                                        const currentUserMat = (app.currentUser && app.currentUser.matricula) || '';
-
-                                        return `
-                                            <div class="bg-white dark:bg-slate-900 border ${isAprovado ? 'border-slate-200 dark:border-slate-800' : 'border-amber-300 dark:border-amber-700/60 shadow-md shadow-amber-500/5'} rounded-2xl p-5 flex flex-col justify-between transition-all hover:shadow-lg">
-                                                <div>
-                                                    <div class="flex items-start justify-between gap-3 mb-3">
-                                                        <div class="flex items-center gap-3">
-                                                            <div class="w-11 h-11 rounded-xl ${isAprovado ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-600'} flex items-center justify-center text-lg font-black shrink-0">
-                                                                <i class="fa-solid fa-headset"></i>
-                                                            </div>
-                                                            <div>
-                                                                <h4 class="font-black text-sm text-slate-800 dark:text-white uppercase leading-snug">${op.nome}</h4>
-                                                                <div class="flex items-center gap-2 mt-0.5">
-                                                                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400">Mat: <strong class="text-slate-700 dark:text-slate-200">${op.matricula}</strong></span>
-                                                                    <span class="text-slate-300 dark:text-slate-600">•</span>
-                                                                    <span class="text-[10px] text-slate-400 truncate max-w-[140px]">${op.email || 'Sem e-mail'}</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            ${isAprovado ? `
-                                                                <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1">
-                                                                    <i class="fa-solid fa-check"></i> Validado
-                                                                </span>
-                                                            ` : `
-                                                                <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 flex items-center gap-1 animate-pulse">
-                                                                    <i class="fa-solid fa-clock"></i> Pendente
-                                                                </span>
-                                                            `}
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-                                                        <div>
-                                                            <div class="flex items-center justify-between mb-1">
-                                                                <label class="font-bold text-slate-600 dark:text-slate-400 text-[11px]">Supervisor / Treinador:</label>
-                                                                ${currentUserMat ? `
-                                                                    <button type="button" onclick="document.getElementById('sel-sup-${op.matricula}').value = '${currentUserMat}'" class="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-hand"></i> Puxar para mim
-                                                                    </button>
-                                                                ` : ''}
-                                                            </div>
-                                                            <select id="sel-sup-${op.matricula}" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
-                                                                <option value="">-- Selecione o Responsável --</option>
-                                                                ${supervisores.map(s => `
-                                                                    <option value="${s.matricula}" ${String(s.matricula) === String(op.gestorMatricula) ? 'selected' : ''}>${s.nome} (${s.tipoAcesso || 'Supervisor'})</option>
-                                                                `).join('')}
-                                                            </select>
-                                                        </div>
-
-                                                        <div>
-                                                            <label class="block font-bold text-slate-600 dark:text-slate-400 text-[11px] mb-1">Operação / Campanha:</label>
-                                                            <select id="sel-op-${op.matricula}" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
-                                                                ${opsUnicas.map(o => `
-                                                                    <option value="${o}" ${o === opAtual ? 'selected' : ''}>${o}</option>
-                                                                `).join('')}
-                                                            </select>
-                                                        </div>
-
-                                                        ${op.validadoPor ? `
-                                                            <div class="text-[10px] text-slate-400 pt-1">
-                                                                Validado por <strong>${op.validadoPor}</strong> em ${new Date(op.validadoEm || Date.now()).toLocaleDateString('pt-BR')}
-                                                            </div>
-                                                        ` : ''}
-                                                    </div>
-                                                </div>
-
-                                                <div class="flex items-center gap-2 pt-4 mt-3 border-t border-slate-100 dark:border-slate-800/80">
-                                                    <button type="button" onclick="app.ui.salvarValidacaoOperador('${op.matricula}')" class="flex-1 py-2.5 px-3 rounded-xl ${isAprovado ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'} font-bold text-xs transition flex items-center justify-center gap-1.5">
-                                                        <i class="fa-solid fa-check-double"></i>
-                                                        <span>${isAprovado ? 'Atualizar Vínculo' : 'Aprovar & Puxar'}</span>
-                                                    </button>
-                                                    <button type="button" onclick="app.ui.removerOperadorCadastro('${op.matricula}')" class="p-2.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition text-xs" title="Excluir Operador">
-                                                        <i class="fa-solid fa-trash"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            `}
-                        </div>
-                    `;
-                },
-
-                salvarValidacaoOperador(matricula) {
-                    const op = (app.users || []).find(u => String(u.matricula) === String(matricula));
-                    if (!op) {
-                        app.ui.showAlert("Erro", "Operador não localizado no banco de dados.", "error");
-                        return;
-                    }
-
-                    const selSup = document.getElementById('sel-sup-' + matricula);
-                    const selOp = document.getElementById('sel-op-' + matricula);
-
-                    const supMat = selSup ? selSup.value.trim() : '';
-                    const operacao = selOp ? selOp.value.trim() : 'Geral';
-
-                    if (!supMat) {
-                        app.ui.showAlert("Atenção", "Selecione o Supervisor ou Analista de Treinamento responsável para vincular à hierarquia.", "warning");
-                        return;
-                    }
-
-                    const supervisor = (app.users || []).find(u => String(u.matricula) === String(supMat));
-                    const supervisorNome = supervisor ? supervisor.nome : 'Supervisor';
-
-                    op.statusValidacao = 'Aprovado';
-                    op.gestorMatricula = supMat;
-                    op.supervisor = supervisorNome;
-                    op.operacoes = [operacao];
-                    op.validadoPor = (app.currentUser && app.currentUser.nome) || 'Treinamento';
-                    op.validadoEm = new Date().toISOString();
-
-                    if (app.storage && typeof app.storage.saveUsers === 'function') {
-                        app.storage.saveUsers().then(() => {
-                            if (app.notifications && typeof app.notifications.notify === 'function') {
-                                app.notifications.notify(op.matricula, 'Cadastro Aprovado!', `Você foi vinculado(a) à supervisão de ${supervisorNome} na operação ${operacao}.`, 'success');
-                            }
-                            app.ui.showAlert("Operador Validado!", `O colaborador <strong>${op.nome}</strong> foi aprovado(a) e vinculado(a) à supervisão de <strong>${supervisorNome}</strong> (${operacao}) com sucesso!`, "success");
-                            const container = document.getElementById('view-container-validacao_operadores');
-                            if (container) app.ui.renderView_ValidacaoOperadores(container);
-                        });
-                    }
-                },
-
-                removerOperadorCadastro(matricula) {
-                    const op = (app.users || []).find(u => String(u.matricula) === String(matricula));
-                    if (!op) return;
-
-                    if (!confirm(`Tem certeza que deseja excluir o operador ${op.nome} (Matrícula: ${matricula})?`)) return;
-
-                    const idx = app.users.findIndex(u => String(u.matricula) === String(matricula));
-                    if (idx !== -1) {
-                        app.users.splice(idx, 1);
-                        if (app.storage && typeof app.storage.saveUsers === 'function') {
-                            app.storage.saveUsers().then(() => {
-                                app.ui.showAlert("Removido", `Operador ${op.nome} removido do sistema.`, "info");
-                                const container = document.getElementById('view-container-validacao_operadores');
-                                if (container) app.ui.renderView_ValidacaoOperadores(container);
-                            });
-                        }
-                    }
-                },
-
-
 
                 renderView_ValidarAcoes(container) {
                     if(!app.hasAdminAccess('validar_acoes')) return;
@@ -12097,20 +12183,6 @@ storage: {
                 renderView_RegistrarAcao(container) {
                     if(app.isAdmin && !app.currentUser) return;
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
-                    const pendingBannerOperador = (app.currentUser && app.currentUser.statusValidacao === 'Pendente') ? `
-                        <div class="mb-6 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between text-amber-900 dark:text-amber-200 shadow-sm animate-fade-in">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0">
-                                    <i class="fa-solid fa-clock-rotate-left"></i>
-                                </div>
-                                <div>
-                                    <h4 class="font-bold text-sm">Cadastro em Validação de Equipe</h4>
-                                    <p class="text-xs text-amber-700 dark:text-amber-300">Seu primeiro acesso como <strong>Operador</strong> foi registrado com sucesso. O setor de <strong>Treinamento</strong> está vinculando sua matrícula ao seu Supervisor oficial.</p>
-                                </div>
-                            </div>
-                            <span class="px-3 py-1 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-black uppercase tracking-wider shrink-0">Aguardando Vínculo</span>
-                        </div>
-                    ` : '';
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     const todayIso = localStorage.getItem('soft_acao_data_draft') || new Date().toISOString().split('T')[0];
                     const myMat = String(app.currentUser?.matricula || '').trim();
@@ -12122,7 +12194,7 @@ storage: {
                             <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Qualidade em Ação</h2>
                             <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Registre ou atualize suas ações presenciais referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                         </div>
-                        ${pendingBannerOperador}
+
 
                         <!-- DIVISÃO EM DOIS: FORMULÁRIO À ESQUERDA E HISTÓRICO À DIREITA -->
                         <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
@@ -16614,7 +16686,9 @@ storage: {
 
                         container.innerHTML = `
                             <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
-                                
+                                <!-- Sub-navegação Fixa no Topo -->
+                                ${navSubTabsHtml}
+
                                 <!-- Banner Header -->
                                 <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                                     <div class="relative z-10">
@@ -16635,9 +16709,6 @@ storage: {
                                         <i class="fa-solid fa-chart-line"></i>
                                     </div>
                                 </div>
-
-                                <!-- Sub-navegação -->
-                                ${navSubTabsHtml}
 
                                 <!-- Barra de Filtro de Período -->
                                 <div class="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -16889,17 +16960,21 @@ storage: {
                         const filtroOp = app.diarioBordo.filtroTurmaOp || 'TODAS';
                         const filtroBusca = String(app.diarioBordo.filtroTurmaBusca || '').toLowerCase().trim();
 
+                        const filtroTipo = app.diarioBordo.filtroTurmaTipo || 'TODAS';
                         const turmasFiltradas = turmasCadastradas.filter(t => {
                             if (filtroOp !== 'TODAS' && t.operacao !== filtroOp) return false;
+                            if (filtroTipo === 'treinamento' && t.tipoTurma === 'integracao') return false;
+                            if (filtroTipo === 'integracao' && t.tipoTurma !== 'integracao') return false;
                             if (filtroBusca) {
                                 const numMatch = String(t.numeroTurma || '').toLowerCase().includes(filtroBusca);
                                 const opMatch = String(t.operacao || '').toLowerCase().includes(filtroBusca);
                                 const instrMatch = String(t.treinadorNome || '').toLowerCase().includes(filtroBusca);
+                                const respIntMatch = String(t.responsavelIntegracaoNome || '').toLowerCase().includes(filtroBusca);
                                 const colabMatch = Array.isArray(t.colaboradores) && t.colaboradores.some(c => 
                                     String(c.nome || '').toLowerCase().includes(filtroBusca) || 
                                     String(c.matricula || '').toLowerCase().includes(filtroBusca)
                                 );
-                                if (!numMatch && !opMatch && !instrMatch && !colabMatch) return false;
+                                if (!numMatch && !opMatch && !instrMatch && !respIntMatch && !colabMatch) return false;
                             }
                             return true;
                         }).sort((a, b) => String(b.dataInicio || '').localeCompare(String(a.dataInicio || '')));
@@ -16916,14 +16991,17 @@ storage: {
                                         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-emerald-200 text-xs font-bold uppercase tracking-widest mb-3 border border-white/10">
                                             <i class="fa-solid fa-graduation-cap"></i> Gestão de Turmas em Sala
                                         </div>
-                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Turmas de Treinamento</h2>
+                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Turmas de Treinamento & Integração</h2>
                                         <p class="text-emerald-100/80 text-xs sm:text-sm max-w-2xl mt-1 leading-relaxed">
-                                            Cadastre suas turmas completas com data de início, previsão de entrega, horário e alunos. Ao preencher o Diário de Bordo, os colaboradores já carregam automaticamente para chamada, faltas, T.O e perfil diário.
+                                            Cadastre turmas de capacitação com horário, cronograma e acompanhamento operacional, ou registre integrações de novos colaboradores com cálculo instantâneo de presenteísmo e lista assinada.
                                         </p>
                                     </div>
                                     <div class="relative z-10 flex flex-wrap items-center gap-3">
-                                        <button type="button" onclick="app.diarioBordo.novaTurma()" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
-                                            <i class="fa-solid fa-plus text-emerald-600"></i> Cadastrar Nova Turma
+                                        <button type="button" onclick="app.diarioBordo.novaTurma('treinamento')" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
+                                            <i class="fa-solid fa-graduation-cap text-emerald-600"></i> Cadastrar Turma
+                                        </button>
+                                        <button type="button" onclick="app.diarioBordo.novaIntegracao()" class="px-5 py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
+                                            <i class="fa-solid fa-handshake"></i> Nova Integração
                                         </button>
                                     </div>
                                     <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-9xl">
@@ -16937,6 +17015,14 @@ storage: {
                                         <div class="relative flex-1 max-w-md">
                                             <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                                             <input type="text" value="${app.diarioBordo.filtroTurmaBusca || ''}" oninput="app.diarioBordo.filtroTurmaBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar por turma, instrutor ou aluno..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Tipo:</label>
+                                            <select onchange="app.diarioBordo.filtroTurmaTipo = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500">
+                                                <option value="TODAS" ${(app.diarioBordo.filtroTurmaTipo || 'TODAS') === 'TODAS' ? 'selected' : ''}>Todos os Tipos</option>
+                                                <option value="treinamento" ${app.diarioBordo.filtroTurmaTipo === 'treinamento' ? 'selected' : ''}>Treinamento Regular</option>
+                                                <option value="integracao" ${app.diarioBordo.filtroTurmaTipo === 'integracao' ? 'selected' : ''}>Turmas de Integração</option>
+                                            </select>
                                         </div>
                                         <div class="flex items-center gap-2">
                                             <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Operação:</label>
@@ -16974,6 +17060,133 @@ storage: {
                                             const dtIniFmt = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '--/--/----';
                                             const dtFimFmt = t.previsaoEntrega ? t.previsaoEntrega.split('-').reverse().join('/') : '--/--/----';
                                             const podeEditar = app.diarioBordo.canEditTurma(t);
+
+                                            if (t.tipoTurma === 'integracao') {
+                                                const presentes = Array.isArray(t.colaboradores) ? t.colaboradores.filter(c => c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração').length : 0;
+                                                const faltas = totalColabs - presentes;
+                                                const taxa = totalColabs > 0 ? Math.round((presentes / totalColabs) * 100) : 0;
+
+                                                return `
+                                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-sky-200/80 dark:border-sky-800/60 flex flex-col justify-between hover:shadow-md transition group">
+                                                        <div class="space-y-4">
+                                                            <!-- Header Card Integração -->
+                                                            <div class="flex items-start justify-between gap-3">
+                                                                <div>
+                                                                    <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                                                        <span class="inline-block px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
+                                                                            ${t.operacao}
+                                                                        </span>
+                                                                        <span class="inline-block px-2 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800 text-[10px] font-bold uppercase tracking-wider border">
+                                                                            <i class="fa-solid fa-handshake mr-1"></i> Integração
+                                                                        </span>
+                                                                        ${t.status === 'Integrados' ? `
+                                                                            <span class="px-2 py-0.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 text-[10px] font-black uppercase border border-teal-200 dark:border-teal-800">
+                                                                                <i class="fa-solid fa-user-check mr-1"></i> Integrados
+                                                                            </span>
+                                                                        ` : `
+                                                                            <span class="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase border border-amber-200 dark:border-amber-800">
+                                                                                <i class="fa-solid fa-clock-rotate-left mr-1"></i> Em Andamento
+                                                                            </span>
+                                                                        `}
+                                                                        ${t.travada ? `<span title="Integração bloqueada contra alteração manual" class="text-slate-400 text-xs"><i class="fa-solid fa-lock"></i></span>` : ''}
+                                                                    </div>
+                                                                    <h3 class="text-base font-extrabold text-slate-800 dark:text-white leading-tight">
+                                                                        ${t.numeroTurma || ('Integração ' + t.operacao)}
+                                                                    </h3>
+                                                                </div>
+                                                                <span class="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-[10px] font-bold shrink-0 flex items-center gap-1 border border-sky-200 dark:border-sky-800/60">
+                                                                    <i class="fa-solid fa-calendar-check text-sky-600"></i> ${dtIniFmt}
+                                                                </span>
+                                                            </div>
+
+                                                            <!-- Detalhes da Integração -->
+                                                            <div class="p-3.5 rounded-2xl bg-sky-50/40 dark:bg-slate-900/40 border border-sky-100 dark:border-slate-700/60 text-xs space-y-2.5">
+                                                                <div class="flex items-center justify-between text-[11px]">
+                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
+                                                                        <i class="fa-solid fa-id-badge text-sky-500"></i> Responsável:
+                                                                    </span>
+                                                                    <span class="font-extrabold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">
+                                                                        ${t.responsavelIntegracaoNome || '-'} ${t.responsavelIntegracaoMatricula ? `(#${t.responsavelIntegracaoMatricula})` : ''}
+                                                                    </span>
+                                                                </div>
+
+                                                                <!-- Métrica de Presenteísmo -->
+                                                                <div class="pt-2 border-t border-sky-100 dark:border-slate-800 space-y-1.5">
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Presenteísmo:</span>
+                                                                        <span class="text-xs font-black ${taxa >= 90 ? 'text-emerald-600 dark:text-emerald-400' : (taxa >= 75 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400')}">
+                                                                            ${taxa}% (${presentes}/${totalColabs} presentes)
+                                                                        </span>
+                                                                    </div>
+                                                                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                                                                        <div class="h-full ${taxa >= 90 ? 'bg-emerald-500' : (taxa >= 75 ? 'bg-amber-500' : 'bg-rose-500')} rounded-full" style="width: ${taxa}%"></div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <!-- Anexo da Lista Assinada -->
+                                                                <div class="pt-2 border-t border-sky-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
+                                                                        <i class="fa-solid fa-camera text-sky-500"></i> Lista Assinada:
+                                                                    </span>
+                                                                    ${t.anexoListaPresenca ? `
+                                                                        <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="text-emerald-700 dark:text-emerald-400 font-extrabold hover:underline flex items-center gap-1 cursor-pointer">
+                                                                            <i class="fa-solid fa-file-signature"></i> Ver Anexo
+                                                                        </button>
+                                                                    ` : `
+                                                                        <span class="text-slate-400 italic">Sem anexo</span>
+                                                                    `}
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="flex items-center justify-between text-xs pt-1">
+                                                                <span class="text-slate-400 font-bold text-[11px]">
+                                                                    <i class="fa-solid fa-users text-sky-500 mr-1"></i> ${totalColabs} participante${totalColabs !== 1 ? 's' : ''}
+                                                                </span>
+                                                                <span class="text-[11px] font-extrabold text-slate-600 dark:text-slate-300">
+                                                                    ${faltas > 0 ? `<span class="text-rose-500 mr-1">${faltas} falta${faltas !== 1 ? 's' : ''}</span>` : '<span class="text-emerald-600 mr-1">100% Presença</span>'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <!-- Rodapé de Ações do Card de Integração -->
+                                                        <div class="pt-4 border-t border-slate-100 dark:border-slate-700/80 space-y-2 mt-4">
+                                                            <div class="flex items-center gap-2">
+                                                                ${t.status !== 'Integrados' ? `
+                                                                    <button type="button" onclick="app.diarioBordo.finalizarComoIntegrados('${t.id}')" class="flex-1 py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+                                                                        <i class="fa-solid fa-user-check"></i> Finalizar como Integrados
+                                                                    </button>
+                                                                ` : `
+                                                                    <button type="button" onclick="app.diarioBordo.editarTurma('${t.id}')" class="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                                                        <i class="fa-solid fa-list-check"></i> Ver Lista de Participantes
+                                                                    </button>
+                                                                `}
+                                                                ${t.anexoListaPresenca ? `
+                                                                    <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="py-2 px-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Visualizar Lista de Presença Assinada">
+                                                                        <i class="fa-solid fa-eye"></i>
+                                                                    </button>
+                                                                ` : ''}
+                                                            </div>
+
+                                                            <div class="flex items-center justify-end gap-1 pt-1">
+                                                                ${podeEditar && !t.travada ? `
+                                                                    <button type="button" onclick="app.diarioBordo.editarTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition flex items-center justify-center cursor-pointer" title="Editar Integração">
+                                                                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                                                    </button>
+                                                                ` : t.travada ? `
+                                                                    <span class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700/60 text-slate-400 flex items-center justify-center text-xs" title="Integração Travada">
+                                                                        <i class="fa-solid fa-lock"></i>
+                                                                    </span>
+                                                                ` : ''}
+                                                                ${podeEditar ? `
+                                                                    <button type="button" onclick="app.diarioBordo.excluirTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition flex items-center justify-center cursor-pointer" title="Excluir Integração">
+                                                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                                                    </button>
+                                                                ` : ''}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            }
 
                                             return `
                                                 <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between hover:shadow-md transition group">
@@ -17097,18 +17310,21 @@ storage: {
 
                                                     <!-- Ações do Card -->
                                                     <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                                                        ${Array.isArray(t.respostasCSAT) && t.respostasCSAT.length > 0 ? `
+                                                        ${Array.isArray(t.respostasCSAT) && t.respostasCSAT.length > 0 ? (() => {
+                                                            const csatT = app.diarioBordo.calcularCSATVerdadeiro(t);
+                                                            return `
                                                             <div class="mb-2 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-2">
                                                                 <div class="flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
                                                                     <i class="fa-solid fa-star text-amber-500"></i>
-                                                                    <span>CSAT: <strong>${(t.respostasCSAT.reduce((acc, r) => acc + (parseFloat(r.media) || 0), 0) / t.respostasCSAT.length).toFixed(1)}</strong> / 5.0</span>
-                                                                    <span class="text-[10px] text-amber-600 dark:text-amber-400 font-normal">(${t.respostasCSAT.length} ${t.respostasCSAT.length === 1 ? 'avaliação' : 'avaliações'})</span>
+                                                                    <span>CSAT: <strong>${csatT.percentualCSAT}%</strong> Satisfeitos</span>
+                                                                    <span class="text-[10px] text-slate-500 dark:text-slate-400 font-normal">(Média ${csatT.mediaGeral} | ${csatT.total} ${csatT.total === 1 ? 'avaliação' : 'avaliações'})</span>
                                                                 </div>
                                                                 <button type="button" onclick="app.diarioBordo.abrirModalCSATConsolidado('${t.id}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[10px] shadow-xs transition flex items-center gap-1 cursor-pointer">
                                                                     <i class="fa-solid fa-chart-column"></i> Ver CSAT
                                                                 </button>
                                                             </div>
-                                                        ` : (t.status === 'Entregue' || t.status === 'Integrados') ? `
+                                                            `;
+                                                        })() : (t.status === 'Entregue' || t.status === 'Integrados') ? `
                                                             <div class="mb-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between gap-2 text-slate-500 text-[11px]">
                                                                 <span class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
                                                                     <i class="fa-solid fa-hourglass-half text-amber-500"></i> Aguardando CSAT dos alunos
@@ -17172,7 +17388,7 @@ storage: {
                         `;
                     } else if (mode === 'turma_form') {
                         // ==========================================
-                        // TELA: CADASTRO / EDIÇÃO DE TURMA
+                        // TELA: CADASTRO / EDIÇÃO DE TURMA OU INTEGRAÇÃO
                         // ==========================================
                         const t = app.diarioBordo.turmaEmEdicao;
                         if (!t) {
@@ -17182,6 +17398,211 @@ storage: {
 
                         const operacoes = app.diarioBordo.getOperacoesDisponiveis();
                         const isEdicao = app.turmasTreinamentoList && app.turmasTreinamentoList[t.id];
+                        const isIntegracao = t.tipoTurma === 'integracao';
+
+                        if (isIntegracao) {
+                            // ==========================================
+                            // FORMULÁRIO DEDICADO: TURMA DE INTEGRAÇÃO
+                            // ==========================================
+                            container.innerHTML = `
+                                <div class="max-w-[1500px] mx-auto pb-20 space-y-6 animate-fade-in">
+                                    <!-- Header do Formulário de Integração -->
+                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4">
+                                        <div class="flex items-center gap-3">
+                                            <button type="button" onclick="app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 transition flex items-center justify-center cursor-pointer" title="Voltar para Turmas">
+                                                <i class="fa-solid fa-arrow-left"></i>
+                                            </button>
+                                            <div>
+                                                <div class="text-[11px] font-black uppercase tracking-wider text-sky-600 dark:text-sky-400">Acolhimento & Novos Colaboradores</div>
+                                                <h2 class="text-xl font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                    <i class="fa-solid fa-handshake text-sky-600"></i>
+                                                    ${isEdicao ? `Editar Registro de Integração: ${t.operacao} (${t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : ''})` : 'Novo Registro de Integração de Colaboradores'}
+                                                </h2>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <button type="button" onclick="app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold text-xs transition cursor-pointer">
+                                                Cancelar
+                                            </button>
+                                            <button type="button" onclick="app.diarioBordo.salvarIntegracao()" class="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                                <i class="fa-solid fa-check-double"></i> Finalizar como Integrados
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    ${t.travada ? `
+                                        <div class="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center gap-3 text-amber-800 dark:text-amber-200 text-xs font-bold">
+                                            <i class="fa-solid fa-lock text-base text-amber-600 shrink-0"></i>
+                                            <span>Registro de integração bloqueado para alterações manuais para garantir a auditoria de presenças e criação dos acessos.</span>
+                                        </div>
+                                    ` : ''}
+
+                                    <!-- Identificação do Ocorrido e Responsável -->
+                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                        <div class="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-700">
+                                            <i class="fa-solid fa-calendar-check text-sky-600"></i>
+                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Identificação do Evento de Integração</h3>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            <!-- Data: -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                                    <i class="fa-solid fa-calendar-day text-sky-600 mr-1"></i> Data:
+                                                </label>
+                                                <input type="date" id="int-input-data" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+
+                                            <!-- Matrícula do Responsável (Fixo) -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                    <span><i class="fa-solid fa-id-card text-sky-600 mr-1"></i> Matrícula do Responsável:</span>
+                                                    <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>
+                                                </label>
+                                                <input type="text" id="int-input-resp-mat" readonly value="${t.responsavelIntegracaoMatricula || app.currentUser?.matricula || ''}" placeholder="Matrícula..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 cursor-not-allowed outline-none select-none">
+                                            </div>
+
+                                            <!-- Nome do Responsável (Fixo) -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                    <span><i class="fa-solid fa-user-tie text-sky-600 mr-1"></i> Responsável pela Integração:</span>
+                                                    <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>
+                                                </label>
+                                                <input type="text" id="int-input-resp-nome" readonly value="${t.responsavelIntegracaoNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || ''}" placeholder="Nome do Responsável" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 cursor-not-allowed outline-none select-none">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Card de Presenteísmo Dinâmico -->
+                                    <div id="int-painel-presenteismo" class="p-5 rounded-3xl bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-950/40 dark:to-indigo-950/40 border border-sky-200 dark:border-sky-800/80 shadow-sm">
+                                        <!-- Injetado via renderPainelPresenteismoIntegracao() -->
+                                    </div>
+
+                                    <!-- Cadastro dos Participantes da Integração -->
+                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
+                                            <div class="flex items-center gap-2">
+                                                <i class="fa-solid fa-users text-sky-600"></i>
+                                                <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Participantes da Integração</h3>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <button type="button" onclick="app.diarioBordo.abrirModalColarAlunos('integracao')" class="px-3.5 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                                    <i class="fa-solid fa-file-excel text-emerald-600 text-sm"></i> Colar Alunos do Excel
+                                                </button>
+                                                <span id="int-badge-total-colabs" class="text-xs font-extrabold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 px-3 py-1 rounded-full border border-sky-200 dark:border-sky-800">
+                                                    ${(t.colaboradores || []).length} participante${(t.colaboradores || []).length !== 1 ? 's' : ''}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Linha Rápida de Adição de Participante -->
+                                        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
+                                                <input type="text" id="int-add-mat" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('integracao_colab', this.value);" onblur="app.diarioBordo.onMatriculaChange('integracao_colab', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+                                            <div class="sm:col-span-3">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome Completo:</label>
+                                                <input type="text" id="int-add-nome" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo do participante" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1"><span class="text-rose-500 font-black">*</span> CPF (Obrigatório):</label>
+                                                <input type="text" id="int-add-cpf" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="app.diarioBordo.formatarInputCpf(this)" maxlength="14" placeholder="000.000.000-00" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data Admissão:</label>
+                                                <input type="date" id="int-add-adm" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+                                            <div class="sm:col-span-1">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Presença:</label>
+                                                <select id="int-add-presenca" class="w-full px-2 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer">
+                                                    <option value="Presente" selected>Presente</option>
+                                                    <option value="Faltou">Faltou</option>
+                                                </select>
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <button type="button" onclick="app.diarioBordo.adicionarParticipanteIntegracao()" class="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-95">
+                                                    <i class="fa-solid fa-plus"></i> Inserir
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Tabela de Participantes da Integração -->
+                                        <div class="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700/80">
+                                            <table class="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                        <th class="p-2.5 w-12 text-center">#</th>
+                                                        <th class="p-2.5 w-28">Matrícula</th>
+                                                        <th class="p-2.5">Nome do Participante</th>
+                                                        <th class="p-2.5 w-36"><span class="text-rose-500">*</span> CPF (Obrigatório)</th>
+                                                        <th class="p-2.5 w-32">Data Admissão</th>
+                                                        <th class="p-2.5 w-40 text-center">Presenteísmo</th>
+                                                        <th class="p-2.5 w-20 text-right">Ação</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="int-tbody-participantes">
+                                                    <!-- Injetado via renderTabelaParticipantesIntegracao() -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <!-- Bloco de Anexo: Lista de Presença Física Assinada -->
+                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
+                                        <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+                                            <i class="fa-solid fa-paperclip text-sky-600"></i>
+                                            <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Lista de Presença Física Assinada (Anexo Obrigatório)</h3>
+                                        </div>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                                            Anexe a foto legível ou o PDF da folha física de presença assinada por todos os participantes presentes na integração.
+                                        </p>
+                                        <div class="flex flex-wrap items-center gap-3 pt-1">
+                                            <label class="cursor-pointer px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border-2 border-dashed border-sky-300 dark:border-sky-700 hover:bg-sky-50 dark:hover:bg-slate-700/60 text-sky-800 dark:text-sky-200 text-xs font-bold transition flex items-center gap-2.5 shadow-xs">
+                                                <i class="fa-solid fa-cloud-arrow-up text-sky-600 text-base"></i> Selecionar Foto ou PDF Assinado
+                                                <input type="file" accept="image/*,.pdf" onchange="app.diarioBordo.carregarAnexoListaPresenca(event)" class="hidden">
+                                            </label>
+                                            <span class="text-xs text-slate-400">Formatos aceitos: PDF, JPG, PNG (máx. 8MB)</span>
+                                        </div>
+                                        <div id="turma-anexo-info" class="mt-2">
+                                            ${t.anexoListaPresenca ? `
+                                                <div class="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs">
+                                                    <div class="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 font-bold truncate max-w-md">
+                                                        <i class="fa-solid ${t.anexoListaPresenca.tipo && t.anexoListaPresenca.tipo.includes('pdf') ? 'fa-file-pdf text-rose-500' : 'fa-image text-emerald-600'} text-base"></i>
+                                                        <span class="truncate">${t.anexoListaPresenca.nome}</span>
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <button type="button" onclick="app.diarioBordo.turmaEmEdicao.anexoListaPresenca = null; document.getElementById('turma-anexo-info').innerHTML = '';" class="text-rose-500 hover:text-rose-700 p-1.5 cursor-pointer" title="Remover anexo">
+                                                            <i class="fa-solid fa-trash-can"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+
+                                    <!-- Rodapé de Ações -->
+                                    <div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                                        <button type="button" onclick="app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold text-xs transition cursor-pointer">
+                                            <i class="fa-solid fa-xmark"></i> Cancelar e Voltar
+                                        </button>
+                                        <button type="button" onclick="app.diarioBordo.salvarIntegracao()" class="px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                            <i class="fa-solid fa-check-double"></i> Finalizar como Integrados
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+
+                            setTimeout(() => {
+                                app.diarioBordo.renderTabelaParticipantesIntegracao();
+                                app.diarioBordo.renderPainelPresenteismoIntegracao();
+                            }, 50);
+                            return;
+                        }
+
+                        // ==========================================
+                        // FORMULÁRIO REGULAR: TURMA DE TREINAMENTO
+                        // ==========================================
                         const horarioAtual = (t.horario || '08:00 às 17:00').trim();
                         const padroes = app.diarioBordo.getHorariosPadrao();
                         const isCustom = !padroes.includes(horarioAtual);
@@ -17232,16 +17653,9 @@ storage: {
                                         <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Identificação Geral da Turma</h3>
                                     </div>
 
-                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <!-- Tipo de Turma -->
-                                        <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tipo de Turma:</label>
-                                            <select id="turma-input-tipo" onchange="const isInt = this.value === 'integracao'; document.getElementById('turma-bloco-integracao').classList.toggle('hidden', !isInt); document.getElementById('turma-bloco-alo').classList.toggle('hidden', isInt);" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer">
-                                                <option value="treinamento" ${t.tipoTurma !== 'integracao' ? 'selected' : ''}>Turma de Treinamento Regular</option>
-                                                <option value="integracao" ${t.tipoTurma === 'integracao' ? 'selected' : ''}>Turma de Integração</option>
-                                            </select>
-                                        </div>
+                                    <input type="hidden" id="turma-input-tipo" value="treinamento">
 
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                         <!-- Operação Certa -->
                                         <div>
                                             <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Operação (Lista Suspensa):</label>
@@ -17297,21 +17711,27 @@ storage: {
                                             <input type="date" id="turma-input-fim" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.previsaoEntrega || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                                         </div>
 
-                                        <!-- Treinador Responsável -->
+                                        <!-- Treinador Responsável (Fixo) -->
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nome do Treinador / Instrutor:</label>
-                                            <input type="text" id="turma-input-treinador-nome" oninput="this.value = this.value.toUpperCase();" value="${t.treinadorNome || ''}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                <span>Nome do Treinador / Instrutor:</span>
+                                                <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>
+                                            </label>
+                                            <input type="text" id="turma-input-treinador-nome" readonly value="${t.treinadorNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || ''}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 cursor-not-allowed outline-none select-none">
                                         </div>
 
-                                        <!-- Matrícula -->
+                                        <!-- Matrícula (Fixo) -->
                                         <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Matrícula do Treinador:</label>
-                                            <input type="text" id="turma-input-treinador-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('treinador', this.value);" value="${t.treinadorMatricula || ''}" placeholder="Matrícula" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                <span>Matrícula do Treinador:</span>
+                                                <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>
+                                            </label>
+                                            <input type="text" id="turma-input-treinador-mat" readonly value="${t.treinadorMatricula || app.currentUser?.matricula || ''}" placeholder="Matrícula" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 cursor-not-allowed outline-none select-none">
                                         </div>
                                     </div>
 
                                     <!-- Bloco Específico: Treinamento Regular / Alô Acompanhado 4 dias -->
-                                    <div id="turma-bloco-alo" class="${t.tipoTurma === 'integracao' ? 'hidden' : ''} p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800/60 mt-3 space-y-3">
+                                    <div id="turma-bloco-alo" class="p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800/60 mt-3 space-y-3">
                                         <div class="flex items-center gap-2 text-indigo-900 dark:text-indigo-200">
                                             <i class="fa-solid fa-headset text-indigo-600"></i>
                                             <h4 class="font-bold text-xs uppercase tracking-wider">Acompanhamento Operacional (Alô Acompanhado)</h4>
@@ -17331,49 +17751,6 @@ storage: {
                                             </div>
                                         </div>
                                     </div>
-
-                                    <!-- Bloco Específico: Integração & Lista de Presença Assinada -->
-                                    <div id="turma-bloco-integracao" class="${t.tipoTurma !== 'integracao' ? 'hidden' : ''} p-4 rounded-2xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/60 mt-3 space-y-3">
-                                        <div class="flex items-center gap-2 text-sky-900 dark:text-sky-200">
-                                            <i class="fa-solid fa-handshake text-sky-600"></i>
-                                            <h4 class="font-bold text-xs uppercase tracking-wider">Dados da Turma de Integração</h4>
-                                        </div>
-                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-sky-900 dark:text-sky-200 uppercase tracking-wider mb-1">Responsável pela Integração (Nome):</label>
-                                                <input type="text" id="turma-input-resp-int-nome" oninput="this.value = this.value.toUpperCase();" value="${t.responsavelIntegracaoNome || ''}" placeholder="Nome do Responsável pela Integração" class="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none">
-                                            </div>
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-sky-900 dark:text-sky-200 uppercase tracking-wider mb-1">Matrícula do Responsável:</label>
-                                                <input type="text" id="turma-input-resp-int-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('resp_int', this.value);" value="${t.responsavelIntegracaoMatricula || ''}" placeholder="Matrícula do Responsável" class="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none">
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label class="block text-[11px] font-bold text-sky-900 dark:text-sky-200 uppercase tracking-wider mb-1.5">
-                                                Anexar Lista de Presença Física Assinada (Foto ou PDF):
-                                            </label>
-                                            <div class="flex flex-wrap items-center gap-3">
-                                                <label class="cursor-pointer px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-sky-300 dark:border-sky-700 hover:bg-sky-50 dark:hover:bg-slate-700 text-sky-800 dark:text-sky-200 text-xs font-bold transition flex items-center gap-2 shadow-xs">
-                                                    <i class="fa-solid fa-paperclip text-sky-600"></i> Selecionar Imagem ou PDF Assinado
-                                                    <input type="file" accept="image/*,.pdf" onchange="app.diarioBordo.carregarAnexoListaPresenca(event)" class="hidden">
-                                                </label>
-                                                <span class="text-xs text-slate-400">PDF, PNG, JPG até 8MB</span>
-                                            </div>
-                                            <div id="turma-anexo-info" class="mt-2">
-                                                ${t.anexoListaPresenca ? `
-                                                    <div class="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs">
-                                                        <div class="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold truncate max-w-xs">
-                                                            <i class="fa-solid ${t.anexoListaPresenca.tipo && t.anexoListaPresenca.tipo.includes('pdf') ? 'fa-file-pdf text-rose-500' : 'fa-image text-emerald-600'}"></i>
-                                                            <span class="truncate">${t.anexoListaPresenca.nome}</span>
-                                                        </div>
-                                                        <button type="button" onclick="app.diarioBordo.turmaEmEdicao.anexoListaPresenca = null; document.getElementById('turma-anexo-info').innerHTML = '';" class="text-rose-500 hover:text-rose-700 p-1 cursor-pointer" title="Remover anexo">
-                                                            <i class="fa-solid fa-trash-can"></i>
-                                                        </button>
-                                                    </div>
-                                                ` : ''}
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
 
                                 <!-- Cadastro de Alunos da Turma -->
@@ -17384,7 +17761,7 @@ storage: {
                                             <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Alunos / Integrantes da Turma</h3>
                                         </div>
                                         <div class="flex items-center gap-2">
-                                            <button type="button" onclick="app.diarioBordo.abrirModalColarAlunos()" class="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm">
+                                            <button type="button" onclick="app.diarioBordo.abrirModalColarAlunos('treinamento')" class="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm">
                                                 <i class="fa-solid fa-file-excel text-emerald-600 text-sm"></i> Colar Alunos do Excel
                                             </button>
                                             <span id="turma-badge-total-colabs" class="text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
@@ -17393,29 +17770,36 @@ storage: {
                                         </div>
                                     </div>
 
-                                    <!-- Linha Rápida de Adição de Colaborador -->
-                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                                        <div class="sm:col-span-2">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
-                                            <input type="text" id="turma-add-colab-mat" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('turma_colab', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
+                                    <!-- Linha Rápida de Adição de Colaborador com Auto-preenchimento pela Matrícula -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700">
+                                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                                    Matrícula:
+                                                    <span class="text-[9px] text-emerald-600 dark:text-emerald-400 font-normal ml-1">(auto-busca)</span>
+                                                </label>
+                                                <input type="text" id="turma-add-colab-mat" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('turma_colab', this.value);" onblur="app.diarioBordo.onMatriculaChange('turma_colab', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+                                            <div class="sm:col-span-4">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome Completo do Aluno:</label>
+                                                <input type="text" id="turma-add-colab-nome" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">CPF:</label>
+                                                <input type="text" id="turma-add-colab-cpf" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="app.diarioBordo.formatarInputCpf(this)" maxlength="14" placeholder="000.000.000-00" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data Admissão:</label>
+                                                <input type="date" id="turma-add-colab-adm" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <button type="button" onclick="app.diarioBordo.adicionarColaboradorTurma()" class="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-95">
+                                                    <i class="fa-solid fa-plus"></i> Inserir Aluno
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div class="sm:col-span-4">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome Completo do Aluno:</label>
-                                            <input type="text" id="turma-add-colab-nome" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
-                                        </div>
-                                        <div class="sm:col-span-2">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">CPF (Opcional):</label>
-                                            <input type="text" id="turma-add-colab-cpf" onpaste="app.diarioBordo.handleColabInputPaste(event)" placeholder="000.000.000-00" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
-                                        </div>
-                                        <div class="sm:col-span-2">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data Admissão:</label>
-                                            <input type="date" id="turma-add-colab-adm" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
-                                        </div>
-                                        <div class="sm:col-span-2">
-                                            <button type="button" onclick="app.diarioBordo.adicionarColaboradorTurma()" class="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
-                                                <i class="fa-solid fa-plus"></i> Inserir Aluno
-                                            </button>
-                                        </div>
+                                        <!-- Feedback de Auto-Preenchimento -->
+                                        <div id="turma-colab-feedback-auto" class="min-h-[22px] px-1 mt-1.5"></div>
                                     </div>
 
                                     <!-- Tabela de Alunos Adicionados -->
@@ -17426,7 +17810,7 @@ storage: {
                                                     <th class="p-2.5 w-12 text-center">#</th>
                                                     <th class="p-2.5 w-32">Matrícula</th>
                                                     <th class="p-2.5">Nome do Aluno</th>
-                                                    <th class="p-2.5 w-36">CPF (Opcional)</th>
+                                                    <th class="p-2.5 w-36">CPF</th>
                                                     <th class="p-2.5 w-32">Data Admissão</th>
                                                     <th class="p-2.5 w-24 text-right">Ação</th>
                                                 </tr>
@@ -17475,7 +17859,9 @@ storage: {
 
                         container.innerHTML = `
                             <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
-                                
+                                <!-- Sub-navegação Fixa no Topo -->
+                                ${navSubTabsHtml}
+
                                 <!-- Banner Header -->
                                 <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                                     <div class="relative z-10">
@@ -17496,9 +17882,6 @@ storage: {
                                         <i class="fa-solid fa-book-journal-whills"></i>
                                     </div>
                                 </div>
-
-                                <!-- Sub-navegação -->
-                                ${navSubTabsHtml}
 
                                 <!-- Barra de Filtros e Busca -->
                                 <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4">
@@ -17987,12 +18370,73 @@ storage: {
 
         renderView_PesquisaTreinamento(viewDiv) {
             const u = app.currentUser;
+            const isDev = app.isAdmin || (u && u.tipoAcesso === 'Dev');
             const isOp = u && (u.tipoAcesso === 'Operador' || u.cargo === 'Operador em Treinamento');
+            const turmas = Object.values(app.turmasTreinamentoList || {}).filter(t => t && t.id);
+
+            // Se o Desenvolvedor (DEV) está em modo de teste em uma turma selecionada
+            if (isDev && app.pesquisaTreinamento.turmaTesteId) {
+                const targetTurma = app.turmasTreinamentoList && app.turmasTreinamentoList[app.pesquisaTreinamento.turmaTesteId];
+                if (targetTurma) {
+                    viewDiv.innerHTML = `
+                        <div class="space-y-6">
+                            <!-- BARRA DE MODO TESTE DEV -->
+                            <div class="p-4 rounded-3xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 flex flex-wrap items-center justify-between gap-4 shadow-sm animate-fade-in">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0">
+                                        <i class="fa-solid fa-flask"></i>
+                                    </div>
+                                    <div>
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Ambiente de Simulação &amp; Teste (DEV)</span>
+                                        <h3 class="text-base font-extrabold text-slate-800 dark:text-white">
+                                            Testando Questionário CSAT na Turma ${targetTurma.numeroTurma} (${targetTurma.operacao})
+                                        </h3>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button type="button" onclick="app.pesquisaTreinamento.simularRespostasRapidas('${targetTurma.id}', 5)" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-star"></i> Simular Voto 5.0 (Excelente)
+                                    </button>
+                                    <button type="button" onclick="app.pesquisaTreinamento.simularRespostasRapidas('${targetTurma.id}', 3)" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-star-half-stroke"></i> Simular Voto 3.0 (Regular)
+                                    </button>
+                                    <button type="button" onclick="app.diarioBordo.excluirNotasCSATTurma('${targetTurma.id}')" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-trash-can"></i> Excluir Notas
+                                    </button>
+                                    <button type="button" onclick="app.pesquisaTreinamento.sairModoDev()" class="px-3.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-arrow-left"></i> Sair do Teste
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- CABEÇALHO DO QUESTIONÁRIO -->
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+                                <div>
+                                    <h2 class="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-star text-amber-500"></i> Avaliação de Satisfação CSAT (Visualização do Aluno)
+                                    </h2>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">Turma ${targetTurma.numeroTurma} - ${targetTurma.operacao} | Instrutor: ${targetTurma.treinadorNome || 'Treinamento'}</p>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="px-3 py-1 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 font-extrabold text-xs flex items-center gap-1.5 border border-purple-200 dark:border-purple-800">
+                                        <i class="fa-solid fa-code"></i> Modo Teste Ativo (Envio Ilimitado)
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- CONTAINER DINÂMICO DOS PASSOS -->
+                            <div id="pesquisa-csat-interactive-container">
+                                <!-- Preenchido dinamicamente por app.pesquisaTreinamento -->
+                            </div>
+                        </div>
+                    `;
+                    app.pesquisaTreinamento.iniciarPesquisa(targetTurma.id);
+                    return;
+                }
+            }
 
             // Localiza a turma do usuário atual
             let userTurma = null;
-            const turmas = Object.values(app.turmasTreinamentoList || {}).filter(t => t && t.id);
-
             if (u) {
                 const uMat = String(u.matricula || '').trim().toUpperCase();
                 if (u.turmaId && app.turmasTreinamentoList && app.turmasTreinamentoList[u.turmaId]) {
@@ -18009,16 +18453,15 @@ storage: {
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                             <div>
                                 <h2 class="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                    <i class="fa-solid fa-star text-amber-500"></i> Pesquisas de Satisfação CSAT
+                                    <i class="fa-solid fa-star text-amber-500"></i> Painel Consolidado de Satisfação CSAT
                                 </h2>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">Visão geral das avaliações das turmas de treinamento concluídas</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Visão geral do cálculo oficial de CSAT (Top-2 Box: % Satisfeitos) das turmas concluídas</p>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             ${turmas.filter(t => t.status === 'Entregue' || t.status === 'Integrados' || (Array.isArray(t.respostasCSAT) && t.respostasCSAT.length > 0)).map(t => {
-                                const resp = Array.isArray(t.respostasCSAT) ? t.respostasCSAT : [];
-                                const mediaG = resp.length > 0 ? (resp.reduce((a, b) => a + (parseFloat(b.media) || 0), 0) / resp.length).toFixed(1) : 'Sem avaliações';
+                                const csatV = app.diarioBordo.calcularCSATVerdadeiro(t);
                                 return `
                                     <div class="p-5 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md space-y-3">
                                         <div class="flex items-center justify-between">
@@ -18030,12 +18473,20 @@ storage: {
                                         </div>
                                         <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700">
                                             <div class="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
-                                                <i class="fa-solid fa-star text-amber-500"></i> ${mediaG}
-                                                <span class="text-[10px] text-slate-400">(${resp.length} votos)</span>
+                                                <i class="fa-solid fa-star text-amber-500"></i>
+                                                <span>${csatV.temDados ? `<strong>${csatV.percentualCSAT}%</strong> Satisfeitos (${csatV.mediaGeral}/5.0)` : 'Sem avaliações'}</span>
+                                                <span class="text-[10px] text-slate-400">(${csatV.total} ${csatV.total === 1 ? 'voto' : 'votos'})</span>
                                             </div>
-                                            <button type="button" onclick="app.diarioBordo.abrirModalCSATConsolidado('${t.id}')" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer">
-                                                <i class="fa-solid fa-chart-column"></i> Ver Detalhes
-                                            </button>
+                                            <div class="flex items-center gap-1.5">
+                                                ${isDev ? `
+                                                    <button type="button" onclick="app.pesquisaTreinamento.abrirTesteDev('${t.id}')" class="px-2.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer" title="Testar Questionário (DEV)">
+                                                        <i class="fa-solid fa-flask"></i> Testar
+                                                    </button>
+                                                ` : ''}
+                                                <button type="button" onclick="app.diarioBordo.abrirModalCSATConsolidado('${t.id}')" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer">
+                                                    <i class="fa-solid fa-chart-column"></i> Ver CSAT
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 `;
@@ -31119,6 +31570,1147 @@ storage: {
                     }, 300);
                 },
 
+                // =========================================================================
+                // APRESENTAÇÃO DE RESULTADOS • DENTAL UNI (EXCLUSIVO GESTOR & DEV)
+                // =========================================================================
+                _dentalUniFiltros: { mes: '', fila: '', tabulacao: '', agente: '', supervisor: '', buscaAgente: '' },
+                _dentalUniApresentacaoMode: false,
+                _dentalUniLoading: false,
+
+                updateDentalUniTitle(newTitle) {
+                    if (!app.dentalUniData) return;
+                    app.dentalUniData.customTitle = String(newTitle || '').trim() || 'Apresentação de Resultados • Dental Uni';
+                    localforage.setItem('soft_dental_uni_data', app.dentalUniData).catch(() => {});
+                },
+
+                updateDentalUniSubtitle(newSub) {
+                    if (!app.dentalUniData) return;
+                    app.dentalUniData.customSubtitle = String(newSub || '').trim() || 'Consolidado Operacional, FCR, NPS & CSAT';
+                    localforage.setItem('soft_dental_uni_data', app.dentalUniData).catch(() => {});
+                },
+
+                toggleDentalUniModoApresentacao() {
+                    this._dentalUniApresentacaoMode = !this._dentalUniApresentacaoMode;
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) this.renderView_ApresentacaoDentalUni(container);
+                },
+
+                setDentalUniFiltro(tipo, val) {
+                    if (!this._dentalUniFiltros) this._dentalUniFiltros = { mes: '', fila: '', tabulacao: '', agente: '', supervisor: '', buscaAgente: '' };
+                    this._dentalUniFiltros[tipo] = String(val || '');
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) this.renderView_ApresentacaoDentalUni(container);
+                },
+
+                limparFiltrosDentalUni() {
+                    this._dentalUniFiltros = { mes: '', fila: '', tabulacao: '', agente: '', supervisor: '', buscaAgente: '' };
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) this.renderView_ApresentacaoDentalUni(container);
+                },
+
+                filtrarTabelaAgentesDentalUni(busca) {
+                    const q = String(busca || '').trim().toLowerCase();
+                    const rows = document.querySelectorAll('.tabela-agente-dental-row');
+                    rows.forEach(r => {
+                        const txt = r.innerText.toLowerCase();
+                        r.style.display = txt.includes(q) ? '' : 'none';
+                    });
+                },
+
+                exportarRelatorioDentalUniPDF() {
+                    window.print();
+                },
+
+                openGerenciarBasesDentalUniModal() {
+                    const data = app.dentalUniData;
+                    if (!data || !Array.isArray(data.relatorios) || data.relatorios.length === 0) {
+                        return app.ui.showAlert("Aviso", "Nenhuma base importada na Dental Uni no momento.", "info");
+                    }
+
+                    let listHtml = `<div class="space-y-3 max-h-[55vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    data.relatorios.forEach(rel => {
+                        listHtml += `
+                            <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 flex items-center justify-center text-lg shrink-0">
+                                        <i class="fa-solid fa-file-csv"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-slate-800 dark:text-white text-sm">${rel.nome}</div>
+                                        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">${(rel.rows || []).length.toLocaleString('pt-BR')} Atendimentos • Enviado em ${rel.dataUpload || 'Data não registrada'}</div>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="app.admin.excluirBaseDentalUni('${rel.id}')" class="p-2.5 text-rose-500 hover:text-rose-700 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-xl transition border border-rose-200 dark:border-rose-800/40 shadow-xs" title="Excluir este arquivo da base">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        `;
+                    });
+                    listHtml += `</div>`;
+
+                    const modalExist = document.getElementById('modal-gerenciar-bases-dental-uni');
+                    if (modalExist) modalExist.remove();
+
+                    const modal = document.createElement('div');
+                    modal.id = 'modal-gerenciar-bases-dental-uni';
+                    modal.className = 'fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto custom-scrollbar animate-fade-in text-slate-800 dark:text-slate-100';
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 md:p-8 shadow-2xl relative my-8">
+                            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 flex items-center justify-center text-xl shrink-0">
+                                        <i class="fa-solid fa-database"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-black text-slate-800 dark:text-white">Gerenciador de Bases • Dental Uni</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Exclua arquivos individuais ou reinicie o consolidado</p>
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('modal-gerenciar-bases-dental-uni').remove()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">Abaixo estão todos os arquivos de atendimento somados para compor a apresentação de resultados da Dental Uni. A exclusão de um arquivo remove apenas as linhas dele, preservando os demais.</p>
+
+                            ${listHtml}
+
+                            <div class="pt-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 mt-6">
+                                <button type="button" onclick="app.admin.limparTudoDentalUni()" class="px-4 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 font-bold text-xs border border-rose-200 dark:border-rose-800/40 transition flex items-center gap-2">
+                                    <i class="fa-solid fa-dumpster-fire"></i> Excluir Toda a Base
+                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="document.getElementById('modal-gerenciar-bases-dental-uni').remove(); document.getElementById('dental-uni-file-upload').click();" class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-md transition flex items-center gap-2">
+                                        <i class="fa-solid fa-plus"></i> Adicionar Mais
+                                    </button>
+                                    <button type="button" onclick="document.getElementById('modal-gerenciar-bases-dental-uni').remove()" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition">
+                                        Fechar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                renderView_ApresentacaoDentalUni(container) {
+                    // Trava de segurança: exclusivo Gestor, Dev, Gerente ou Admin
+                    const tipo = app.currentUser?.tipoAcesso;
+                    if (!['Gestor', 'Dev', 'Gerente'].includes(tipo) && !app.isAdmin) {
+                        container.innerHTML = `
+                            <div class="p-16 text-center text-slate-500 glass-card rounded-3xl m-8 max-w-lg mx-auto border border-slate-200 dark:border-slate-800">
+                                <div class="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400 flex items-center justify-center text-3xl mx-auto mb-4">
+                                    <i class="fa-solid fa-lock"></i>
+                                </div>
+                                <h3 class="text-xl font-black text-slate-800 dark:text-white mb-2">Acesso Exclusivo</h3>
+                                <p class="text-sm text-slate-500 dark:text-slate-400">Esta tela de Apresentação de Resultados da Dental Uni é exclusiva para Gestores e Desenvolvedores.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // Carregamento assíncrono do localforage
+                    if (!app.dentalUniData && !this._dentalUniLoading) {
+                        this._dentalUniLoading = true;
+                        container.innerHTML = `
+                            <div class="p-16 text-center text-slate-400 glass-card rounded-3xl mt-8 border-dashed border-2 border-slate-300 dark:border-slate-700">
+                                <i class="fa-solid fa-spinner fa-spin text-5xl mb-4 text-teal-600"></i>
+                                <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Carregando Dados Dental Uni...</h3>
+                                <p class="text-sm max-w-md mx-auto">Restaurando relatórios e análises consolidadas da memória do navegador.</p>
+                            </div>
+                        `;
+                        localforage.getItem('soft_dental_uni_data').then(saved => {
+                            this._dentalUniLoading = false;
+                            app.dentalUniData = saved || { relatorios: [], customTitle: 'Apresentação de Resultados • Dental Uni', customSubtitle: 'Consolidado Operacional, FCR, NPS & CSAT' };
+                            this.renderView_ApresentacaoDentalUni(container);
+                        }).catch(() => {
+                            this._dentalUniLoading = false;
+                            app.dentalUniData = { relatorios: [], customTitle: 'Apresentação de Resultados • Dental Uni', customSubtitle: 'Consolidado Operacional, FCR, NPS & CSAT' };
+                            this.renderView_ApresentacaoDentalUni(container);
+                        });
+                        return;
+                    }
+
+                    const data = app.dentalUniData || { relatorios: [] };
+                    const relatorios = Array.isArray(data.relatorios) ? data.relatorios : [];
+
+                    // Se não houver arquivos importados, renderiza o Empty State elegante
+                    if (relatorios.length === 0) {
+                        container.innerHTML = `
+                            <div class="max-w-4xl mx-auto py-8 px-4 animate-fade-in">
+                                <div class="text-center mb-8">
+                                    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 text-xs font-black uppercase tracking-wider mb-3">
+                                        <i class="fa-solid fa-tooth"></i> Operação Dental Uni • Gestão & Resultados
+                                    </div>
+                                    <h2 class="text-3xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight">Apresentação de Resultados</h2>
+                                    <p class="text-sm md:text-base text-slate-500 dark:text-slate-400 mt-2 max-w-xl mx-auto">Importe seus arquivos CSV ou XLSX com chamadas, tabulações e notas de satisfação para gerar o consolidado executivo pronto para o cliente.</p>
+                                </div>
+
+                                <!-- Drag & Drop Zone -->
+                                <div id="dental-uni-dropzone" ondragover="event.preventDefault(); this.classList.add('border-teal-500', 'bg-teal-50/50', 'dark:bg-teal-950/20');" ondragleave="this.classList.remove('border-teal-500', 'bg-teal-50/50', 'dark:bg-teal-950/20');" ondrop="event.preventDefault(); this.classList.remove('border-teal-500', 'bg-teal-50/50', 'dark:bg-teal-950/20'); app.admin.processarArquivosDentalUni(event.dataTransfer.files);" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 rounded-3xl p-8 md:p-12 text-center bg-white/70 dark:bg-slate-900/60 backdrop-blur-md shadow-xl transition-all cursor-pointer group" onclick="document.getElementById('dental-uni-file-upload-empty').click()">
+                                    <input type="file" id="dental-uni-file-upload-empty" multiple accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.processarArquivosDentalUni(this.files); this.value='';" />
+                                    <div class="w-20 h-20 rounded-3xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center text-4xl mx-auto mb-5 group-hover:scale-110 transition-transform shadow-inner">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                                    </div>
+                                    <h3 class="text-xl font-black text-slate-800 dark:text-white mb-2">Arraste seus arquivos CSV ou XLSX aqui</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">Você pode selecionar múltiplos arquivos de uma só vez para somá-los ao relatório geral. Compatível com arquivos .csv, .xlsx e .xls.</p>
+                                    <div class="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-lg shadow-teal-500/25 transition">
+                                        <i class="fa-solid fa-folder-open"></i> Selecionar Arquivos do Computador
+                                    </div>
+                                </div>
+
+                                <!-- Guia de Colunas Esperadas -->
+                                <div class="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 1</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">Data</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">"3/11/2026, 08:08"</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 2</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">Fila</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Identificação da fila</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 3</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">Agente (Matrícula)</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Cruza com base de RH</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 4</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">tempoFalado_s</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Duração em seg (691)</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 5</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">Tabulacao</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Motivo do contato</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 6</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">nota1 (Resolução)</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">1 Sim | 2 Não (FCR)</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 7</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">nota2 (NPS)</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Indicação (0 a 10)</div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400 mb-1">Coluna 8</div>
+                                        <div class="font-bold text-xs text-slate-800 dark:text-white">nota3 (CSAT)</div>
+                                        <div class="text-[11px] text-slate-500 mt-0.5">Satisfação (0 a 10)</div>
+                                    </div>
+                                </div>
+
+                                <!-- Botão de Demonstração Imediata -->
+                                <div class="text-center mt-8">
+                                    <button type="button" onclick="app.admin.carregarDadosDemonstracaoDentalUni()" class="px-5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition border border-slate-200 dark:border-slate-700 shadow-sm inline-flex items-center gap-2">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-teal-500"></i> Carregar Base Demonstrativa da Dental Uni (Visualizar Agora)
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // Consolidação de todas as linhas de todos os relatórios
+                    let todasLinhas = [];
+                    relatorios.forEach(rel => {
+                        if (Array.isArray(rel.rows)) todasLinhas.push(...rel.rows);
+                    });
+
+                    const totalGeralLinhas = todasLinhas.length;
+
+                    // Aplicação dos Filtros Ativos
+                    const filtros = this._dentalUniFiltros || { mes: '', fila: '', tabulacao: '', agente: '', supervisor: '', buscaAgente: '' };
+                    let filtradas = todasLinhas.filter(r => {
+                        if (filtros.mes && r.mes !== filtros.mes) return false;
+                        if (filtros.fila && r.fila !== filtros.fila) return false;
+                        if (filtros.tabulacao && r.tabulacao !== filtros.tabulacao) return false;
+                        if (filtros.agente && r.agente !== filtros.agente) return false;
+                        if (filtros.supervisor && r.supervisor !== filtros.supervisor) return false;
+                        return true;
+                    });
+
+                    // Listas para os Dropdowns de Filtro
+                    const mesesDisponiveis = [...new Set(todasLinhas.map(r => r.mes).filter(Boolean))].sort();
+                    const filasDisponiveis = [...new Set(todasLinhas.map(r => r.fila).filter(Boolean))].sort();
+                    const tabulacoesDisponiveis = [...new Set(todasLinhas.map(r => r.tabulacao).filter(Boolean))].sort();
+                    const agentesDisponiveis = [...new Map(todasLinhas.map(r => [r.agente, { matricula: r.agente, nome: r.agenteNome || r.agente }])).values()].sort((a,b) => a.nome.localeCompare(b.nome));
+                    const supervisoresDisponiveis = [...new Set(todasLinhas.map(r => r.supervisor).filter(Boolean))].sort();
+
+                    // CÁLCULO DAS MÉTRICAS CONSOLIDADAS
+                    const totalChamadas = filtradas.length;
+                    const somaTempo = filtradas.reduce((acc, r) => acc + (r.tempoFalado_s || 0), 0);
+                    const tmaMedioSegundos = totalChamadas > 0 ? Math.round(somaTempo / totalChamadas) : 0;
+                    const tmaMedioFmt = this._formatSegundosDental(tmaMedioSegundos);
+                    const horasTotais = (somaTempo / 3600).toFixed(1);
+
+                    // 1. Resolução da Demanda (Nota 1 - FCR)
+                    const comNota1 = filtradas.filter(r => r.nota1 !== null && r.nota1 !== undefined);
+                    const totalSimN1 = comNota1.filter(r => r.nota1 === true).length;
+                    const totalNaoN1 = comNota1.filter(r => r.nota1 === false).length;
+                    const pctFCR = comNota1.length > 0 ? ((totalSimN1 / comNota1.length) * 100).toFixed(1) : '0.0';
+
+                    // 2. NPS (Nota 2 - 0 a 10)
+                    const comNota2 = filtradas.filter(r => r.nota2 !== null && r.nota2 !== undefined);
+                    const promotores = comNota2.filter(r => r.nota2 >= 9).length;
+                    const neutros = comNota2.filter(r => r.nota2 >= 7 && r.nota2 <= 8).length;
+                    const detratores = comNota2.filter(r => r.nota2 <= 6).length;
+                    const pctPromotores = comNota2.length > 0 ? ((promotores / comNota2.length) * 100).toFixed(1) : '0.0';
+                    const pctNeutros = comNota2.length > 0 ? ((neutros / comNota2.length) * 100).toFixed(1) : '0.0';
+                    const pctDetratores = comNota2.length > 0 ? ((detratores / comNota2.length) * 100).toFixed(1) : '0.0';
+                    const npsScore = comNota2.length > 0 ? Math.round(parseFloat(pctPromotores) - parseFloat(pctDetratores)) : 0;
+                    
+                    let zonaNPS = { label: 'Zona de Aperfeiçoamento', cor: 'amber', badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300' };
+                    if (npsScore >= 75) zonaNPS = { label: 'Zona de Excelência', cor: 'emerald', badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300' };
+                    else if (npsScore >= 50) zonaNPS = { label: 'Zona de Qualidade', cor: 'blue', badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300' };
+                    else if (npsScore < 0) zonaNPS = { label: 'Zona Crítica', cor: 'rose', badgeClass: 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300' };
+
+                    // 3. CSAT (Nota 3 - 0 a 10)
+                    const comNota3 = filtradas.filter(r => r.nota3 !== null && r.nota3 !== undefined);
+                    const somaCSAT = comNota3.reduce((acc, r) => acc + r.nota3, 0);
+                    const mediaCSAT = comNota3.length > 0 ? (somaCSAT / comNota3.length).toFixed(2) : '0.00';
+                    const topBoxCSAT = comNota3.filter(r => r.nota3 >= 9).length;
+                    const pctTopBox = comNota3.length > 0 ? ((topBoxCSAT / comNota3.length) * 100).toFixed(1) : '0.0';
+
+                    // 4. Aderência Geral à Pesquisa
+                    const comAlgumaPesquisa = filtradas.filter(r => (r.nota1 !== null) || (r.nota2 !== null) || (r.nota3 !== null)).length;
+                    const pctAderenciaGeral = totalChamadas > 0 ? ((comAlgumaPesquisa / totalChamadas) * 100).toFixed(1) : '0.0';
+
+                    // Agrupamento por Agente para a Tabela
+                    const agentesMap = {};
+                    filtradas.forEach(r => {
+                        const k = r.agente || 'Sem Matrícula';
+                        if (!agentesMap[k]) {
+                            agentesMap[k] = {
+                                matricula: k,
+                                nome: r.agenteNome || k,
+                                supervisor: r.supervisor || 'Sem Supervisor',
+                                operacao: r.operacao || 'Dental Uni',
+                                total: 0,
+                                somaTempo: 0,
+                                comN1: 0,
+                                simN1: 0,
+                                comN2: 0,
+                                promotores: 0,
+                                detratores: 0,
+                                comN3: 0,
+                                somaN3: 0
+                            };
+                        }
+                        agentesMap[k].total++;
+                        agentesMap[k].somaTempo += (r.tempoFalado_s || 0);
+                        if (r.nota1 !== null && r.nota1 !== undefined) {
+                            agentesMap[k].comN1++;
+                            if (r.nota1 === true) agentesMap[k].simN1++;
+                        }
+                        if (r.nota2 !== null && r.nota2 !== undefined) {
+                            agentesMap[k].comN2++;
+                            if (r.nota2 >= 9) agentesMap[k].promotores++;
+                            else if (r.nota2 <= 6) agentesMap[k].detratores++;
+                        }
+                        if (r.nota3 !== null && r.nota3 !== undefined) {
+                            agentesMap[k].comN3++;
+                            agentesMap[k].somaN3 += r.nota3;
+                        }
+                    });
+                    const listaAgentes = Object.values(agentesMap).sort((a,b) => b.total - a.total);
+
+                    // Agrupamento por Fila para a Tabela
+                    const filasMap = {};
+                    filtradas.forEach(r => {
+                        const f = r.fila || 'Geral';
+                        if (!filasMap[f]) filasMap[f] = { fila: f, total: 0, somaTempo: 0, comN1: 0, simN1: 0, comN2: 0, promotores: 0, detratores: 0, comN3: 0, somaN3: 0 };
+                        filasMap[f].total++;
+                        filasMap[f].somaTempo += (r.tempoFalado_s || 0);
+                        if (r.nota1 !== null && r.nota1 !== undefined) { filasMap[f].comN1++; if (r.nota1 === true) filasMap[f].simN1++; }
+                        if (r.nota2 !== null && r.nota2 !== undefined) { filasMap[f].comN2++; if (r.nota2 >= 9) filasMap[f].promotores++; else if (r.nota2 <= 6) filasMap[f].detratores++; }
+                        if (r.nota3 !== null && r.nota3 !== undefined) { filasMap[f].comN3++; filasMap[f].somaN3 += r.nota3; }
+                    });
+                    const listaFilas = Object.values(filasMap).sort((a,b) => b.total - a.total);
+
+                    // Agrupamento por Tabulação
+                    const tabsMap = {};
+                    filtradas.forEach(r => {
+                        const t = r.tabulacao || 'Não Informado';
+                        if (!tabsMap[t]) tabsMap[t] = { tabulacao: t, total: 0, somaTempo: 0, comN1: 0, simN1: 0 };
+                        tabsMap[t].total++;
+                        tabsMap[t].somaTempo += (r.tempoFalado_s || 0);
+                        if (r.nota1 !== null && r.nota1 !== undefined) { tabsMap[t].comN1++; if (r.nota1 === true) tabsMap[t].simN1++; }
+                    });
+                    const listaTabulacoes = Object.values(tabsMap).sort((a,b) => b.total - a.total);
+
+                    // Configuração Visual do Modo Apresentação
+                    const isApr = this._dentalUniApresentacaoMode;
+                    const bgWrapperClass = isApr 
+                        ? 'min-h-screen bg-gradient-to-b from-slate-950 via-[#042427] to-slate-950 text-white p-4 sm:p-8 rounded-none' 
+                        : 'py-6 px-2 sm:px-4';
+
+                    let html = `
+                        <div class="${bgWrapperClass} animate-fade-in relative transition-all">
+                            
+                            ${isApr ? `
+                                <div class="fixed top-4 right-4 z-[999] flex items-center gap-2">
+                                    <button type="button" onclick="app.ui.toggleDentalUniModoApresentacao()" class="px-4 py-2 bg-slate-900/90 hover:bg-black text-white text-xs font-bold rounded-xl border border-teal-500/40 shadow-2xl backdrop-blur-md transition flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-compress text-teal-400"></i> Sair da Apresentação
+                                    </button>
+                                </div>
+                            ` : ''}
+
+                            <!-- HEADER DA APRESENTAÇÃO -->
+                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 border border-slate-200/80 dark:border-slate-800 shadow-sm relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-teal-500/30' : ''}">
+                                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                    <div class="flex items-start gap-4">
+                                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center text-3xl shadow-lg shadow-teal-500/25 shrink-0">
+                                            <i class="fa-solid fa-tooth"></i>
+                                        </div>
+                                        <div>
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300 border border-teal-300 dark:border-teal-700/60">
+                                                    <i class="fa-solid fa-chart-line mr-1"></i> Apresentação de Resultados • Dental Uni
+                                                </span>
+                                                <span class="text-xs text-slate-400 font-bold">${relatorios.length} base(s) integradas</span>
+                                            </div>
+                                            <h1 contenteditable="${!isApr}" onblur="app.ui.updateDentalUniTitle(this.innerText)" class="text-2xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight outline-none focus:ring-2 focus:ring-teal-500 rounded px-1 transition-all" title="Clique para editar o título">${data.customTitle || 'Apresentação de Resultados • Dental Uni'}</h1>
+                                            <p contenteditable="${!isApr}" onblur="app.ui.updateDentalUniSubtitle(this.innerText)" class="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1 outline-none focus:ring-1 focus:ring-teal-500 rounded px-1" title="Clique para editar o subtítulo">${data.customSubtitle || 'Consolidado Operacional, FCR, NPS & CSAT'}</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- BARRA DE FERRAMENTAS -->
+                                    <div class="flex flex-wrap items-center gap-2.5 shrink-0 ${isApr ? 'hidden' : ''}">
+                                        <button type="button" onclick="document.getElementById('dental-uni-file-upload').click()" class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-md shadow-teal-600/20 transition flex items-center gap-2">
+                                            <i class="fa-solid fa-cloud-arrow-up"></i> Importar CSV/XLSX
+                                        </button>
+                                        <button type="button" onclick="app.ui.openGerenciarBasesDentalUniModal()" class="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 transition flex items-center gap-2">
+                                            <i class="fa-solid fa-database text-teal-600 dark:text-teal-400"></i> Bases (${relatorios.length})
+                                        </button>
+                                        <button type="button" onclick="app.ui.toggleDentalUniModoApresentacao()" class="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-md transition flex items-center gap-2">
+                                            <i class="fa-solid fa-expand text-teal-400"></i> Modo Apresentação
+                                        </button>
+                                        <button type="button" onclick="app.ui.exportarRelatorioDentalUniPDF()" class="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 transition flex items-center gap-2" title="Imprimir Apresentação">
+                                            <i class="fa-solid fa-print"></i> PDF
+                                        </button>
+                                        <input type="file" id="dental-uni-file-upload" multiple accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.processarArquivosDentalUni(this.files); this.value='';" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- BARRA DE FILTROS DINÂMICOS -->
+                            <div class="glass-card p-5 rounded-2xl mb-8 border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/60 !border-teal-900/40' : ''}">
+                                <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80 mb-4">
+                                    <div class="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        <i class="fa-solid fa-filter text-teal-600 dark:text-teal-400"></i> Filtros de Apresentação
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-xs text-slate-500 font-bold">Exibindo <strong class="text-teal-600 dark:text-teal-400">${totalChamadas.toLocaleString('pt-BR')}</strong> de ${totalGeralLinhas.toLocaleString('pt-BR')} atendimentos (${((totalChamadas/totalGeralLinhas)*100).toFixed(0)}%)</span>
+                                        <button type="button" onclick="app.ui.limparFiltrosDentalUni()" class="text-xs text-rose-500 hover:text-rose-700 font-bold transition flex items-center gap-1">
+                                            <i class="fa-solid fa-rotate-left"></i> Limpar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                                    <div>
+                                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Mês / Competência</label>
+                                        <select onchange="app.ui.setDentalUniFiltro('mes', this.value)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500">
+                                            <option value="">Todos os Meses</option>
+                                            ${mesesDisponiveis.map(m => `<option value="${m}" ${filtros.mes === m ? 'selected' : ''}>${app.ui.formatMonthLabel ? app.ui.formatMonthLabel(m) : m}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Fila</label>
+                                        <select onchange="app.ui.setDentalUniFiltro('fila', this.value)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500">
+                                            <option value="">Todas as Filas (${filasDisponiveis.length})</option>
+                                            ${filasDisponiveis.map(f => `<option value="${f}" ${filtros.fila === f ? 'selected' : ''}>${f}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Tabulação / Motivo</label>
+                                        <select onchange="app.ui.setDentalUniFiltro('tabulacao', this.value)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500">
+                                            <option value="">Todas as Tabulações (${tabulacoesDisponiveis.length})</option>
+                                            ${tabulacoesDisponiveis.map(t => `<option value="${t}" ${filtros.tabulacao === t ? 'selected' : ''}>${t}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Operador (RH)</label>
+                                        <select onchange="app.ui.setDentalUniFiltro('agente', this.value)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500">
+                                            <option value="">Todos os Operadores (${agentesDisponiveis.length})</option>
+                                            ${agentesDisponiveis.map(a => `<option value="${a.matricula}" ${filtros.agente === a.matricula ? 'selected' : ''}>${a.nome} (${a.matricula})</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Supervisor (RH)</label>
+                                        <select onchange="app.ui.setDentalUniFiltro('supervisor', this.value)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500">
+                                            <option value="">Todos os Supervisores</option>
+                                            ${supervisoresDisponiveis.map(s => `<option value="${s}" ${filtros.supervisor === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 6 CARDS DE KPIS EXECUTIVOS -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+                                <!-- Card 1: Volume de Atendimentos -->
+                                <div class="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Volume Total</span>
+                                        <div class="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center text-sm"><i class="fa-solid fa-phone-volume"></i></div>
+                                    </div>
+                                    <div class="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight">${totalChamadas.toLocaleString('pt-BR')}</div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">${filasDisponiveis.length} filas • ${agentesDisponiveis.length} operadores</div>
+                                </div>
+
+                                <!-- Card 2: TMA Médio -->
+                                <div class="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-indigo-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">TMA Médio</span>
+                                        <div class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm"><i class="fa-solid fa-stopwatch"></i></div>
+                                    </div>
+                                    <div class="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight">${tmaMedioFmt}</div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">${horasTotais}h faladas no total</div>
+                                </div>
+
+                                <!-- Card 3: Resolução da Demanda (Nota 1 - FCR) -->
+                                <div class="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-emerald-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Resolução (FCR)</span>
+                                        <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-sm"><i class="fa-solid fa-circle-check"></i></div>
+                                    </div>
+                                    <div class="text-2xl md:text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">${pctFCR}%</div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">${totalSimN1.toLocaleString('pt-BR')} de ${comNota1.length.toLocaleString('pt-BR')} pesquisas</div>
+                                </div>
+
+                                <!-- Card 4: NPS Oficial (Nota 2) -->
+                                <div class="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-rose-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">NPS Oficial</span>
+                                        <div class="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-sm"><i class="fa-solid fa-heart-pulse"></i></div>
+                                    </div>
+                                    <div class="flex items-baseline gap-2">
+                                        <div class="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight">${npsScore >= 0 ? '+' : ''}${npsScore}</div>
+                                        <span class="text-[10px] font-black px-2 py-0.5 rounded-full border ${zonaNPS.badgeClass}">${zonaNPS.label.replace('Zona de ', '')}</span>
+                                    </div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">${pctPromotores}% Prom. • ${pctDetratores}% Detr.</div>
+                                </div>
+
+                                <!-- Card 5: CSAT Médio (Nota 3) -->
+                                <div class="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-amber-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">CSAT Médio</span>
+                                        <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center text-sm"><i class="fa-solid fa-star"></i></div>
+                                    </div>
+                                    <div class="text-2xl md:text-3xl font-black text-amber-600 dark:text-amber-400 tracking-tight">${mediaCSAT} <span class="text-xs text-slate-400 font-normal">/ 10</span></div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">${pctTopBox}% Top-Box (Notas 9-10)</div>
+                                </div>
+
+                                <!-- Card 6: Aderência à Pesquisa -->
+                                <div class="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden ${isApr ? '!bg-slate-900/80 !border-blue-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Aderência Geral</span>
+                                        <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm"><i class="fa-solid fa-clipboard-check"></i></div>
+                                    </div>
+                                    <div class="text-2xl md:text-3xl font-black text-blue-600 dark:text-blue-400 tracking-tight">${pctAderenciaGeral}%</div>
+                                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">${comAlgumaPesquisa.toLocaleString('pt-BR')} avaliações registradas</div>
+                                </div>
+                            </div>
+
+                            <!-- GRID DE GRÁFICOS EXECUTIVOS -->
+                            <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 mb-8">
+                                <!-- Gráfico 1: Evolutivo Mensal de Chamadas & TMA (Linha Dupla) -->
+                                <div class="xl:col-span-8 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-chart-line text-teal-600 dark:text-teal-400"></i> Evolutivo de Atendimentos & TMA por Mês
+                                            </h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Volume de chamadas recebidas (área) cruzado com o Tempo Médio de Atendimento em minutos (linha tracejada)</p>
+                                        </div>
+                                    </div>
+                                    <div class="h-64 relative">
+                                        <canvas id="chart-dental-uni-evolutivo-mes"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico 2: Donut de Resolução (FCR - Nota 1) -->
+                                <div class="xl:col-span-4 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="mb-4">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-chart-pie text-emerald-600 dark:text-emerald-400"></i> Resolução da Demanda (FCR)
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Percentual de clientes que confirmaram resolução no 1º contato (Nota 1)</p>
+                                    </div>
+                                    <div class="h-64 relative flex items-center justify-center">
+                                        <canvas id="chart-dental-uni-resolucao"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico 3: Evolutivo de Avaliações (NPS, CSAT % e FCR % no Tempo) -->
+                                <div class="xl:col-span-12 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-wave-square text-indigo-600 dark:text-indigo-400"></i> Linha do Tempo: Satisfação, NPS & FCR
+                                            </h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Comparativo das 3 notas de qualidade ao longo dos meses para prestação de contas com o cliente</p>
+                                        </div>
+                                    </div>
+                                    <div class="h-56 relative">
+                                        <canvas id="chart-dental-uni-evolutivo-notas"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico 4: Distribuição de Notas NPS (0 a 10) -->
+                                <div class="xl:col-span-6 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="mb-4">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-chart-simple text-rose-500"></i> Distribuição de Notas NPS (0 a 10)
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Detratores (0-6 em vermelho), Neutros (7-8 em amarelo) e Promotores (9-10 em verde)</p>
+                                    </div>
+                                    <div class="h-56 relative">
+                                        <canvas id="chart-dental-uni-nps-dist"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico 5: Distribuição de Notas CSAT (0 a 10) -->
+                                <div class="xl:col-span-6 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="mb-4">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-star-half-stroke text-amber-500"></i> Distribuição de Satisfação CSAT (0 a 10)
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Frequência absoluta e percentual para cada nota avaliada pelos beneficiários</p>
+                                    </div>
+                                    <div class="h-56 relative">
+                                        <canvas id="chart-dental-uni-csat-dist"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico 6: Top 10 Tabulações / Motivos -->
+                                <div class="xl:col-span-6 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="mb-4">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-list-ol text-teal-600 dark:text-teal-400"></i> Top Motivos de Contato (Tabulações)
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Principais demandas apresentadas pelos clientes na operação</p>
+                                    </div>
+                                    <div class="h-64 relative">
+                                        <canvas id="chart-dental-uni-top-tabulacoes"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Gráfico 7: Distribuição por Fila -->
+                                <div class="xl:col-span-6 glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="mb-4">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-network-wired text-sky-500"></i> Volume e TMA por Fila
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Atendimentos direcionados a cada fila de suporte Dental Uni</p>
+                                    </div>
+                                    <div class="h-64 relative">
+                                        <canvas id="chart-dental-uni-filas"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TABELAS ANALÍTICAS EXECUTIVAS -->
+                            <div class="space-y-8 mb-12">
+                                <!-- TABELA 1: DESEMPENHO POR OPERADOR / AGENTE (CRUZADO COM RH) -->
+                                <div class="glass-card p-6 md:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+                                        <div>
+                                            <h3 class="font-black text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-users text-teal-600 dark:text-teal-400"></i> Performance Individual de Operadores
+                                            </h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Cruzamento de matrículas do arquivo com a base oficial de RH (Nome, Supervisor e Operação)</p>
+                                        </div>
+                                        <div class="w-full sm:w-72">
+                                            <input type="text" oninput="app.ui.filtrarTabelaAgentesDentalUni(this.value)" placeholder="Buscar operador ou matrícula..." class="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500" />
+                                        </div>
+                                    </div>
+
+                                    <div class="overflow-x-auto custom-scrollbar max-h-96">
+                                        <table class="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                                <tr class="border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-black tracking-wider text-slate-400 sticky top-0 bg-white dark:bg-slate-900 z-10">
+                                                    <th class="py-3 px-3">Matrícula</th>
+                                                    <th class="py-3 px-3">Nome (RH)</th>
+                                                    <th class="py-3 px-3">Supervisor</th>
+                                                    <th class="py-3 px-3 text-right">Chamadas</th>
+                                                    <th class="py-3 px-3 text-right">TMA Médio</th>
+                                                    <th class="py-3 px-3 text-right">Resolução (FCR)</th>
+                                                    <th class="py-3 px-3 text-right">NPS Score</th>
+                                                    <th class="py-3 px-3 text-right">CSAT Médio</th>
+                                                    <th class="py-3 px-3 text-right">Amostragem</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold text-slate-700 dark:text-slate-300">
+                                                ${listaAgentes.map(ag => {
+                                                    const tma = this._formatSegundosDental(ag.total > 0 ? Math.round(ag.somaTempo / ag.total) : 0);
+                                                    const fcr = ag.comN1 > 0 ? ((ag.simN1 / ag.comN1) * 100).toFixed(1) : '-';
+                                                    const nps = ag.comN2 > 0 ? Math.round(((ag.promotores - ag.detratores) / ag.comN2) * 100) : '-';
+                                                    const csat = ag.comN3 > 0 ? (ag.somaN3 / ag.comN3).toFixed(2) : '-';
+                                                    return `
+                                                        <tr class="tabela-agente-dental-row hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                                                            <td class="py-2.5 px-3 font-mono text-[11px] text-teal-600 dark:text-teal-400 font-bold">${ag.matricula}</td>
+                                                            <td class="py-2.5 px-3 font-bold text-slate-900 dark:text-white">${ag.nome}</td>
+                                                            <td class="py-2.5 px-3 text-slate-500">${ag.supervisor}</td>
+                                                            <td class="py-2.5 px-3 text-right font-black">${ag.total.toLocaleString('pt-BR')}</td>
+                                                            <td class="py-2.5 px-3 text-right font-mono text-[11px]">${tma}</td>
+                                                            <td class="py-2.5 px-3 text-right font-bold ${fcr !== '-' && parseFloat(fcr) >= 80 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}">${fcr !== '-' ? fcr + '%' : '-'}</td>
+                                                            <td class="py-2.5 px-3 text-right font-black ${nps !== '-' && nps >= 50 ? 'text-emerald-600 dark:text-emerald-400' : (nps !== '-' && nps < 0 ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300')}">${nps !== '-' ? (nps >= 0 ? '+' : '') + nps : '-'}</td>
+                                                            <td class="py-2.5 px-3 text-right font-bold text-amber-600 dark:text-amber-400">${csat}</td>
+                                                            <td class="py-2.5 px-3 text-right text-slate-400 text-[11px]">${ag.comN1 + ag.comN2 + ag.comN3 > 0 ? (ag.comN2 || ag.comN3 || ag.comN1) + ' aval.' : '0'}</td>
+                                                        </tr>
+                                                    `;
+                                                }).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- TABELA 2: RESUMO POR FILA E TABULAÇÕES -->
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <!-- Filas -->
+                                    <div class="glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                            <i class="fa-solid fa-layer-group text-sky-500"></i> Performance por Fila
+                                        </h3>
+                                        <div class="overflow-x-auto custom-scrollbar max-h-80">
+                                            <table class="w-full text-left text-xs border-collapse">
+                                                <thead>
+                                                    <tr class="border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-black text-slate-400">
+                                                        <th class="py-2.5 px-2">Fila</th>
+                                                        <th class="py-2.5 px-2 text-right">Chamadas</th>
+                                                        <th class="py-2.5 px-2 text-right">TMA</th>
+                                                        <th class="py-2.5 px-2 text-right">FCR</th>
+                                                        <th class="py-2.5 px-2 text-right">NPS</th>
+                                                        <th class="py-2.5 px-2 text-right">CSAT</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold text-slate-700 dark:text-slate-300">
+                                                    ${listaFilas.map(f => {
+                                                        const tma = this._formatSegundosDental(f.total > 0 ? Math.round(f.somaTempo / f.total) : 0);
+                                                        const fcr = f.comN1 > 0 ? ((f.simN1 / f.comN1) * 100).toFixed(0) + '%' : '-';
+                                                        const nps = f.comN2 > 0 ? Math.round(((f.promotores - f.detratores) / f.comN2) * 100) : '-';
+                                                        const csat = f.comN3 > 0 ? (f.somaN3 / f.comN3).toFixed(1) : '-';
+                                                        return `
+                                                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                                                <td class="py-2 px-2 font-bold text-slate-900 dark:text-white">${f.fila}</td>
+                                                                <td class="py-2 px-2 text-right font-black">${f.total.toLocaleString('pt-BR')}</td>
+                                                                <td class="py-2 px-2 text-right font-mono text-[11px]">${tma}</td>
+                                                                <td class="py-2 px-2 text-right text-emerald-600 dark:text-emerald-400 font-bold">${fcr}</td>
+                                                                <td class="py-2 px-2 text-right font-bold">${nps !== '-' && nps >= 0 ? '+' : ''}${nps}</td>
+                                                                <td class="py-2 px-2 text-right text-amber-600 dark:text-amber-400 font-bold">${csat}</td>
+                                                            </tr>
+                                                        `;
+                                                    }).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <!-- Tabulações -->
+                                    <div class="glass-card p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs ${isApr ? '!bg-slate-900/80 !border-teal-500/20' : ''}">
+                                        <h3 class="font-black text-base text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                            <i class="fa-solid fa-tags text-teal-600 dark:text-teal-400"></i> Matriz de Motivos (Tabulações)
+                                        </h3>
+                                        <div class="overflow-x-auto custom-scrollbar max-h-80">
+                                            <table class="w-full text-left text-xs border-collapse">
+                                                <thead>
+                                                    <tr class="border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-black text-slate-400">
+                                                        <th class="py-2.5 px-2">Tabulação</th>
+                                                        <th class="py-2.5 px-2 text-right">Qtd</th>
+                                                        <th class="py-2.5 px-2 text-right">% Base</th>
+                                                        <th class="py-2.5 px-2 text-right">TMA</th>
+                                                        <th class="py-2.5 px-2 text-right">Resolução</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold text-slate-700 dark:text-slate-300">
+                                                    ${listaTabulacoes.slice(0, 15).map(t => {
+                                                        const pct = totalChamadas > 0 ? ((t.total / totalChamadas) * 100).toFixed(1) : '0.0';
+                                                        const tma = this._formatSegundosDental(t.total > 0 ? Math.round(t.somaTempo / t.total) : 0);
+                                                        const fcr = t.comN1 > 0 ? ((t.simN1 / t.comN1) * 100).toFixed(0) + '%' : '-';
+                                                        return `
+                                                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                                                <td class="py-2 px-2 font-bold text-slate-900 dark:text-white truncate max-w-[200px]" title="${t.tabulacao}">${t.tabulacao}</td>
+                                                                <td class="py-2 px-2 text-right font-black">${t.total.toLocaleString('pt-BR')}</td>
+                                                                <td class="py-2 px-2 text-right text-slate-400 font-mono text-[11px]">${pct}%</td>
+                                                                <td class="py-2 px-2 text-right font-mono text-[11px]">${tma}</td>
+                                                                <td class="py-2 px-2 text-right text-emerald-600 dark:text-emerald-400 font-bold">${fcr}</td>
+                                                            </tr>
+                                                        `;
+                                                    }).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    `;
+
+                    container.innerHTML = html;
+
+                    // INJEÇÃO DOS GRÁFICOS APÓS RENDERIZAÇÃO NO DOM
+                    setTimeout(() => {
+                        this._renderChartsDentalUni(filtradas, mesesDisponiveis, isApr);
+                    }, 150);
+                },
+
+                _formatSegundosDental(seg) {
+                    if (!seg || isNaN(seg) || seg <= 0) return '00:00';
+                    const s = Math.round(seg);
+                    const m = Math.floor(s / 60);
+                    const sec = s % 60;
+                    if (m >= 60) {
+                        const h = Math.floor(m / 60);
+                        const remM = m % 60;
+                        return `${String(h).padStart(2,'0')}:${String(remM).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+                    }
+                    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+                },
+
+                _renderChartsDentalUni(filtradas, mesesDisponiveis, isApr) {
+                    if (!app._dentalUniCharts) app._dentalUniCharts = {};
+                    
+                    // Destroi gráficos antigos para evitar sobreposições e memory leak
+                    Object.keys(app._dentalUniCharts).forEach(k => {
+                        try { if (app._dentalUniCharts[k]) app._dentalUniCharts[k].destroy(); } catch(e) {}
+                    });
+                    app._dentalUniCharts = {};
+
+                    if (typeof Chart === 'undefined') return;
+
+                    const isDark = isApr || document.documentElement.classList.contains('dark');
+                    const textCol = isDark ? '#94a3b8' : '#64748b';
+                    const gridCol = isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(226, 232, 240, 0.6)';
+
+                    // DADOS PARA GRÁFICO 1 & 3: EVOLUÇÃO POR MÊS
+                    const mesesMap = {};
+                    mesesDisponiveis.forEach(m => {
+                        mesesMap[m] = { mes: m, total: 0, somaTempo: 0, comN1: 0, simN1: 0, comN2: 0, promotores: 0, detratores: 0, comN3: 0, somaN3: 0 };
+                    });
+                    filtradas.forEach(r => {
+                        if (r.mes && mesesMap[r.mes]) {
+                            mesesMap[r.mes].total++;
+                            mesesMap[r.mes].somaTempo += (r.tempoFalado_s || 0);
+                            if (r.nota1 !== null && r.nota1 !== undefined) {
+                                mesesMap[r.mes].comN1++;
+                                if (r.nota1 === true) mesesMap[r.mes].simN1++;
+                            }
+                            if (r.nota2 !== null && r.nota2 !== undefined) {
+                                mesesMap[r.mes].comN2++;
+                                if (r.nota2 >= 9) mesesMap[r.mes].promotores++;
+                                else if (r.nota2 <= 6) mesesMap[r.mes].detratores++;
+                            }
+                            if (r.nota3 !== null && r.nota3 !== undefined) {
+                                mesesMap[r.mes].comN3++;
+                                mesesMap[r.mes].somaN3 += r.nota3;
+                            }
+                        }
+                    });
+
+                    const mesesArr = Object.values(mesesMap);
+                    const labelsMeses = mesesArr.map(m => app.ui.formatMonthLabel ? app.ui.formatMonthLabel(m.mes) : m.mes);
+                    const dataVolumeMes = mesesArr.map(m => m.total);
+                    const dataTmaMes = mesesArr.map(m => m.total > 0 ? (m.somaTempo / m.total / 60).toFixed(1) : 0);
+                    const dataFcrMes = mesesArr.map(m => m.comN1 > 0 ? ((m.simN1 / m.comN1) * 100).toFixed(1) : null);
+                    const dataNpsMes = mesesArr.map(m => m.comN2 > 0 ? Math.round(((m.promotores - m.detratores) / m.comN2) * 100) : null);
+                    const dataCsatMes = mesesArr.map(m => m.comN3 > 0 ? (m.somaN3 / m.comN3).toFixed(2) : null);
+
+                    // 1. Gráfico de Linha: Evolutivo Mensal de Chamadas & TMA
+                    const ctx1 = document.getElementById('chart-dental-uni-evolutivo-mes');
+                    if (ctx1) {
+                        app._dentalUniCharts.evolutivo = new Chart(ctx1, {
+                            type: 'line',
+                            data: {
+                                labels: labelsMeses,
+                                datasets: [
+                                    {
+                                        label: 'Volume de Chamadas',
+                                        data: dataVolumeMes,
+                                        borderColor: '#0d9488',
+                                        backgroundColor: 'rgba(13, 148, 136, 0.15)',
+                                        fill: true,
+                                        tension: 0.35,
+                                        borderWidth: 3,
+                                        pointRadius: 5,
+                                        pointBackgroundColor: '#0d9488',
+                                        yAxisID: 'y'
+                                    },
+                                    {
+                                        label: 'TMA Médio (Minutos)',
+                                        data: dataTmaMes,
+                                        borderColor: '#f59e0b',
+                                        backgroundColor: 'transparent',
+                                        borderDash: [5, 5],
+                                        tension: 0.3,
+                                        borderWidth: 2,
+                                        pointRadius: 4,
+                                        pointBackgroundColor: '#f59e0b',
+                                        yAxisID: 'y1'
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                    legend: { labels: { color: textCol, font: { weight: 'bold', size: 11 } } },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                },
+                                scales: {
+                                    x: { grid: { color: gridCol }, ticks: { color: textCol, font: { weight: 'bold' } } },
+                                    y: {
+                                        type: 'linear',
+                                        position: 'left',
+                                        grid: { color: gridCol },
+                                        ticks: { color: textCol }
+                                    },
+                                    y1: {
+                                        type: 'linear',
+                                        position: 'right',
+                                        grid: { drawOnChartArea: false },
+                                        ticks: { color: '#f59e0b', callback: val => val + ' min' }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    // 2. Gráfico Donut: Resolução da Demanda (Nota 1 - FCR)
+                    const ctx2 = document.getElementById('chart-dental-uni-resolucao');
+                    if (ctx2) {
+                        const comN1 = filtradas.filter(r => r.nota1 !== null && r.nota1 !== undefined);
+                        const sim = comN1.filter(r => r.nota1 === true).length;
+                        const nao = comN1.filter(r => r.nota1 === false).length;
+                        app._dentalUniCharts.resolucao = new Chart(ctx2, {
+                            type: 'doughnut',
+                            data: {
+                                labels: ['Solucionada (Sim)', 'Não Solucionada (Não)'],
+                                datasets: [{
+                                    data: [sim, nao],
+                                    backgroundColor: ['#10b981', '#f43f5e'],
+                                    borderWidth: 0,
+                                    hoverOffset: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                cutout: '75%',
+                                plugins: {
+                                    legend: { position: 'bottom', labels: { color: textCol, font: { weight: 'bold', size: 11 }, padding: 14 } },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                }
+                            }
+                        });
+                    }
+
+                    // 3. Gráfico de Linha: Evolutivo das Notas (NPS, CSAT e FCR)
+                    const ctx3 = document.getElementById('chart-dental-uni-evolutivo-notas');
+                    if (ctx3) {
+                        app._dentalUniCharts.notas = new Chart(ctx3, {
+                            type: 'line',
+                            data: {
+                                labels: labelsMeses,
+                                datasets: [
+                                    {
+                                        label: 'NPS Score (-100 a +100)',
+                                        data: dataNpsMes,
+                                        borderColor: '#f43f5e',
+                                        backgroundColor: 'transparent',
+                                        tension: 0.3,
+                                        borderWidth: 3,
+                                        pointRadius: 5,
+                                        pointBackgroundColor: '#f43f5e'
+                                    },
+                                    {
+                                        label: 'FCR Resolução (%)',
+                                        data: dataFcrMes,
+                                        borderColor: '#10b981',
+                                        backgroundColor: 'transparent',
+                                        tension: 0.3,
+                                        borderWidth: 3,
+                                        pointRadius: 5,
+                                        pointBackgroundColor: '#10b981'
+                                    },
+                                    {
+                                        label: 'CSAT Médio (x10 para escala %)',
+                                        data: dataCsatMes.map(v => v !== null ? (parseFloat(v) * 10).toFixed(1) : null),
+                                        borderColor: '#f59e0b',
+                                        backgroundColor: 'transparent',
+                                        tension: 0.3,
+                                        borderWidth: 2,
+                                        borderDash: [4, 4],
+                                        pointRadius: 4,
+                                        pointBackgroundColor: '#f59e0b'
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                    legend: { labels: { color: textCol, font: { weight: 'bold', size: 11 } } },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                },
+                                scales: {
+                                    x: { grid: { color: gridCol }, ticks: { color: textCol, font: { weight: 'bold' } } },
+                                    y: { grid: { color: gridCol }, ticks: { color: textCol } }
+                                }
+                            }
+                        });
+                    }
+
+                    // 4. Distribuição NPS 0 a 10
+                    const ctx4 = document.getElementById('chart-dental-uni-nps-dist');
+                    if (ctx4) {
+                        const distNps = Array(11).fill(0);
+                        filtradas.forEach(r => {
+                            if (r.nota2 !== null && r.nota2 !== undefined && r.nota2 >= 0 && r.nota2 <= 10) {
+                                distNps[r.nota2]++;
+                            }
+                        });
+                        const colorsNps = distNps.map((_, i) => i >= 9 ? '#10b981' : (i >= 7 ? '#f59e0b' : '#f43f5e'));
+                        app._dentalUniCharts.npsDist = new Chart(ctx4, {
+                            type: 'bar',
+                            data: {
+                                labels: ['0','1','2','3','4','5','6','7','8','9','10'],
+                                datasets: [{
+                                    label: 'Avaliações',
+                                    data: distNps,
+                                    backgroundColor: colorsNps,
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                },
+                                scales: {
+                                    x: { grid: { display: false }, ticks: { color: textCol, font: { weight: 'bold' } } },
+                                    y: { grid: { color: gridCol }, ticks: { color: textCol } }
+                                }
+                            }
+                        });
+                    }
+
+                    // 5. Distribuição CSAT 0 a 10
+                    const ctx5 = document.getElementById('chart-dental-uni-csat-dist');
+                    if (ctx5) {
+                        const distCsat = Array(11).fill(0);
+                        filtradas.forEach(r => {
+                            if (r.nota3 !== null && r.nota3 !== undefined) {
+                                const idx = Math.min(10, Math.max(0, Math.round(r.nota3)));
+                                distCsat[idx]++;
+                            }
+                        });
+                        app._dentalUniCharts.csatDist = new Chart(ctx5, {
+                            type: 'bar',
+                            data: {
+                                labels: ['0','1','2','3','4','5','6','7','8','9','10'],
+                                datasets: [{
+                                    label: 'Avaliações CSAT',
+                                    data: distCsat,
+                                    backgroundColor: '#0d9488',
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                },
+                                scales: {
+                                    x: { grid: { display: false }, ticks: { color: textCol, font: { weight: 'bold' } } },
+                                    y: { grid: { color: gridCol }, ticks: { color: textCol } }
+                                }
+                            }
+                        });
+                    }
+
+                    // 6. Top 10 Tabulações (Barras Horizontais)
+                    const ctx6 = document.getElementById('chart-dental-uni-top-tabulacoes');
+                    if (ctx6) {
+                        const tabCount = {};
+                        filtradas.forEach(r => {
+                            const t = r.tabulacao || 'Não Informado';
+                            tabCount[t] = (tabCount[t] || 0) + 1;
+                        });
+                        const topTabs = Object.entries(tabCount).sort((a,b) => b[1] - a[1]).slice(0, 8);
+                        app._dentalUniCharts.topTabs = new Chart(ctx6, {
+                            type: 'bar',
+                            data: {
+                                labels: topTabs.map(t => t[0].length > 25 ? t[0].substring(0, 25) + '...' : t[0]),
+                                datasets: [{
+                                    label: 'Atendimentos',
+                                    data: topTabs.map(t => t[1]),
+                                    backgroundColor: '#14b8a6',
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                },
+                                scales: {
+                                    x: { grid: { color: gridCol }, ticks: { color: textCol } },
+                                    y: { grid: { display: false }, ticks: { color: textCol, font: { weight: 'bold', size: 10 } } }
+                                }
+                            }
+                        });
+                    }
+
+                    // 7. Chamadas por Fila
+                    const ctx7 = document.getElementById('chart-dental-uni-filas');
+                    if (ctx7) {
+                        const filaCount = {};
+                        filtradas.forEach(r => {
+                            const f = r.fila || 'Geral';
+                            filaCount[f] = (filaCount[f] || 0) + 1;
+                        });
+                        const topFilas = Object.entries(filaCount).sort((a,b) => b[1] - a[1]);
+                        app._dentalUniCharts.filas = new Chart(ctx7, {
+                            type: 'bar',
+                            data: {
+                                labels: topFilas.map(f => f[0]),
+                                datasets: [{
+                                    label: 'Chamadas',
+                                    data: topFilas.map(f => f[1]),
+                                    backgroundColor: '#0284c7',
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { backgroundColor: 'rgba(15,23,42,0.9)', padding: 10, cornerRadius: 8 }
+                                },
+                                scales: {
+                                    x: { grid: { display: false }, ticks: { color: textCol, font: { weight: 'bold', size: 10 } } },
+                                    y: { grid: { color: gridCol }, ticks: { color: textCol } }
+                                }
+                            }
+                        });
+                    }
+                },
                 renderView_PesquisasAnatel(container) {
                     // Inicializa a árvore de Projetos caso não exista
                     if (!app.anatelData) app.anatelData = { projetos: {}, projetoAtivo: null };
@@ -31583,6 +33175,312 @@ storage: {
             },
 
             admin: {
+                // =========================================================================
+                // PROCESSAMENTO DE BASES • DENTAL UNI
+                // =========================================================================
+                async processarArquivosDentalUni(files) {
+                    if (!files || files.length === 0) return;
+                    app.ui.showAlert("Processando Arquivos...", "Lendo as planilhas da Dental Uni e cruzando matrículas com o cadastro de RH...", "info");
+
+                    const fileList = Array.from(files);
+                    let novosRelatorios = [];
+
+                    for (const file of fileList) {
+                        try {
+                            const buffer = await file.arrayBuffer();
+                            const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+                            const firstSheet = workbook.SheetNames[0];
+                            const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+
+                            if (rawRows.length === 0) continue;
+
+                            const findCol = (row, patterns) => {
+                                const keys = Object.keys(row);
+                                for (const pat of patterns) {
+                                    const found = keys.find(k => k.trim().toLowerCase() === pat.toLowerCase());
+                                    if (found) return row[found];
+                                }
+                                for (const pat of patterns) {
+                                    const found = keys.find(k => k.trim().toLowerCase().includes(pat.toLowerCase()));
+                                    if (found) return row[found];
+                                }
+                                return null;
+                            };
+
+                            const parseDataPt = (val) => {
+                                if (!val) return null;
+                                if (val instanceof Date && !isNaN(val)) {
+                                    const y = val.getFullYear();
+                                    const m = String(val.getMonth() + 1).padStart(2, '0');
+                                    const d = String(val.getDate()).padStart(2, '0');
+                                    const h = val.getHours();
+                                    const min = String(val.getMinutes()).padStart(2, '0');
+                                    return { ano: y, mes: `${y}-${m}`, dia: `${y}-${m}-${d}`, hora: h, horaStr: `${String(h).padStart(2, '0')}:00`, dataFmt: `${d}/${m}/${y} ${String(h).padStart(2, '0')}:${min}` };
+                                }
+                                if (typeof val === 'number') {
+                                    const dateObj = new Date((val - (25567 + 2)) * 86400 * 1000);
+                                    if (!isNaN(dateObj)) {
+                                        const y = dateObj.getFullYear();
+                                        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                                        const d = String(dateObj.getDate()).padStart(2, '0');
+                                        const h = dateObj.getHours();
+                                        const min = String(dateObj.getMinutes()).padStart(2, '0');
+                                        return { ano: y, mes: `${y}-${m}`, dia: `${y}-${m}-${d}`, hora: h, horaStr: `${String(h).padStart(2, '0')}:00`, dataFmt: `${d}/${m}/${y} ${String(h).padStart(2, '0')}:${min}` };
+                                    }
+                                }
+                                const str = String(val).trim();
+                                const matchPt = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2}))?/);
+                                if (matchPt) {
+                                    const d = matchPt[1].padStart(2, '0');
+                                    const m = matchPt[2].padStart(2, '0');
+                                    const y = parseInt(matchPt[3], 10);
+                                    const h = matchPt[4] ? parseInt(matchPt[4], 10) : 0;
+                                    const min = matchPt[5] ? matchPt[5].padStart(2, '0') : '00';
+                                    return { ano: y, mes: `${y}-${m}`, dia: `${y}-${m}-${d}`, hora: h, horaStr: `${String(h).padStart(2, '0')}:00`, dataFmt: `${d}/${m}/${y} ${String(h).padStart(2, '0')}:${min}` };
+                                }
+                                const matchIso = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[,\s]+(\d{1,2}):(\d{1,2}))?/);
+                                if (matchIso) {
+                                    const y = parseInt(matchIso[1], 10);
+                                    const m = matchIso[2].padStart(2, '0');
+                                    const d = matchIso[3].padStart(2, '0');
+                                    const h = matchIso[4] ? parseInt(matchIso[4], 10) : 0;
+                                    const min = matchIso[5] ? matchIso[5].padStart(2, '0') : '00';
+                                    return { ano: y, mes: `${y}-${m}`, dia: `${y}-${m}-${d}`, hora: h, horaStr: `${String(h).padStart(2, '0')}:00`, dataFmt: `${d}/${m}/${y} ${String(h).padStart(2, '0')}:${min}` };
+                                }
+                                return null;
+                            };
+
+                            const parseTempo = (val) => {
+                                if (val === null || val === undefined || val === '') return 0;
+                                if (typeof val === 'number') return Math.max(0, Math.round(val));
+                                const s = String(val).trim();
+                                if (!isNaN(parseFloat(s)) && !s.includes(':')) return Math.max(0, Math.round(parseFloat(s)));
+                                if (s.includes(':')) {
+                                    const parts = s.split(':').map(p => parseFloat(p) || 0);
+                                    if (parts.length === 2) return Math.round(parts[0] * 60 + parts[1]);
+                                    if (parts.length === 3) return Math.round(parts[0] * 3600 + parts[1] * 60 + parts[2]);
+                                }
+                                return 0;
+                            };
+
+                            const processedRows = [];
+                            rawRows.forEach(row => {
+                                const rawData = findCol(row, ['Data', 'data', 'DATA', 'Data Chamada', 'Data/Hora']);
+                                const dt = parseDataPt(rawData);
+                                const fila = String(findCol(row, ['Fila', 'fila', 'FILA', 'Queue', 'Nome Fila']) || 'Geral').trim();
+                                const agenteMatricula = String(findCol(row, ['Agente', 'agente', 'AGENTE', 'Matrícula', 'Matricula', 'Login', 'Operador']) || '').trim().toUpperCase();
+                                const tempoFaladoSegundos = parseTempo(findCol(row, ['tempoFalado_s', 'tempofalado_s', 'TempoFalado_s', 'tempo_falado', 'tempoFalado', 'duracao_s', 'TMA', 'Duracao']));
+                                const tabulacao = String(findCol(row, ['Tabulacao', 'tabulacao', 'TABULACAO', 'Tabulação', 'tabulação', 'Motivo', 'Submotivo']) || 'Não Informado').trim();
+
+                                // Cruzamento de Agente com a Base de RH (app.users)
+                                const rhUser = (app.users || []).find(u => String(u.matricula || '').trim().toUpperCase() === agenteMatricula) || null;
+                                const agenteNome = rhUser ? rhUser.nome : (agenteMatricula || 'Não Identificado');
+                                const supervisorNome = rhUser ? (rhUser.supervisor || 'Sem Supervisor') : 'Sem Supervisor';
+                                const operacaoNome = rhUser ? (Array.isArray(rhUser.operacoes) ? rhUser.operacoes.join(', ') : (rhUser.operacoes || 'Dental Uni')) : 'Dental Uni';
+
+                                // Nota 1: sua demanda foi solucionada? 1 sim 2 nao (FCR)
+                                const rawN1 = findCol(row, ['nota1', 'Nota1', 'NOTA1', 'nota_1', 'sua demanda foi solucionada', 'demanda', 'solucionada', 'resolucao']);
+                                let nota1Val = null;
+                                if (rawN1 !== null && rawN1 !== undefined && String(rawN1).trim() !== '') {
+                                    const s = String(rawN1).trim().toLowerCase();
+                                    if (s === '1' || s === 'sim' || s === 's' || s.startsWith('sim')) nota1Val = true;
+                                    else if (s === '2' || s === 'não' || s === 'nao' || s === 'n' || s.startsWith('nao') || s.startsWith('não')) nota1Val = false;
+                                    else if (!isNaN(parseFloat(s))) nota1Val = (parseFloat(s) === 1);
+                                }
+
+                                // Nota 2: Qual a possibilidade de indicação? 0 a 10 (NPS)
+                                const rawN2 = findCol(row, ['nota2', 'Nota2', 'NOTA2', 'nota_2', 'possibilidade de indicação', 'indicacao', 'indicação', 'nps']);
+                                let nota2Val = null;
+                                if (rawN2 !== null && rawN2 !== undefined && String(rawN2).trim() !== '') {
+                                    const num = parseFloat(String(rawN2).replace(',', '.').trim());
+                                    if (!isNaN(num) && num >= 0 && num <= 10) nota2Val = Math.round(num);
+                                }
+
+                                // Nota 3: Qual foi o Grau de Satisfação com o Atendimento? 0 a 10 (CSAT)
+                                const rawN3 = findCol(row, ['nota3', 'Nota3', 'NOTA3', 'nota_3', 'grau de satisfação', 'satisfacao', 'satisfação', 'csat']);
+                                let nota3Val = null;
+                                if (rawN3 !== null && rawN3 !== undefined && String(rawN3).trim() !== '') {
+                                    const num = parseFloat(String(rawN3).replace(',', '.').trim());
+                                    if (!isNaN(num) && num >= 0 && num <= 10) nota3Val = Math.round(num * 10) / 10;
+                                }
+
+                                processedRows.push({
+                                    ano: dt ? dt.ano : new Date().getFullYear(),
+                                    mes: dt ? dt.mes : new Date().toISOString().substring(0,7),
+                                    dia: dt ? dt.dia : new Date().toISOString().substring(0,10),
+                                    dataFmt: dt ? dt.dataFmt : 'Data Indefinida',
+                                    fila: fila || 'Geral',
+                                    agente: agenteMatricula || 'SEM_MATRICULA',
+                                    agenteNome: agenteNome,
+                                    supervisor: supervisorNome,
+                                    operacao: operacaoNome,
+                                    tempoFalado_s: tempoFaladoSegundos,
+                                    tabulacao: tabulacao || 'Não Informado',
+                                    nota1: nota1Val,
+                                    nota2: nota2Val,
+                                    nota3: nota3Val
+                                });
+                            });
+
+                            if (processedRows.length > 0) {
+                                novosRelatorios.push({
+                                    id: Date.now() + Math.random().toString(36).substring(2,7),
+                                    nome: file.name,
+                                    dataUpload: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                    totalLinhas: processedRows.length,
+                                    rows: processedRows
+                                });
+                            }
+                        } catch (err) {
+                            console.error("Erro ao processar arquivo Dental Uni " + file.name + ":", err);
+                        }
+                    }
+
+                    if (novosRelatorios.length === 0) {
+                        return app.ui.showAlert("Aviso", "Nenhum atendimento válido foi detectado nos arquivos selecionados.", "error");
+                    }
+
+                    if (!app.dentalUniData) app.dentalUniData = { relatorios: [] };
+                    if (!Array.isArray(app.dentalUniData.relatorios)) app.dentalUniData.relatorios = [];
+
+                    app.dentalUniData.relatorios.push(...novosRelatorios);
+
+                    await localforage.setItem('soft_dental_uni_data', app.dentalUniData);
+                    app.ui.showAlert("Importação Concluída!", `${novosRelatorios.length} arquivo(s) foram integrados com sucesso. O consolidado da Dental Uni foi recalculado.`, "success");
+
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) app.ui.renderView_ApresentacaoDentalUni(container);
+                },
+
+                async excluirBaseDentalUni(id) {
+                    if (!app.dentalUniData || !Array.isArray(app.dentalUniData.relatorios)) return;
+                    app.dentalUniData.relatorios = app.dentalUniData.relatorios.filter(r => String(r.id) !== String(id));
+
+                    await localforage.setItem('soft_dental_uni_data', app.dentalUniData);
+
+                    const modalExist = document.getElementById('modal-gerenciar-bases-dental-uni');
+                    if (modalExist) modalExist.remove();
+
+                    if (app.dentalUniData.relatorios.length > 0) {
+                        app.ui.openGerenciarBasesDentalUniModal();
+                    }
+
+                    app.ui.showAlert("Arquivo Removido", "O arquivo foi desvinculado da apresentação com sucesso.", "info");
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) app.ui.renderView_ApresentacaoDentalUni(container);
+                },
+
+                async limparTudoDentalUni() {
+                    if (!confirm("Tem certeza que deseja apagar TODOS os relatórios e atendimentos carregados na Dental Uni? Esta ação reiniciará a apresentação.")) return;
+
+                    app.dentalUniData = { relatorios: [], customTitle: 'Apresentação de Resultados • Dental Uni', customSubtitle: 'Consolidado Operacional, FCR, NPS & CSAT' };
+                    await localforage.setItem('soft_dental_uni_data', app.dentalUniData);
+
+                    const modalExist = document.getElementById('modal-gerenciar-bases-dental-uni');
+                    if (modalExist) modalExist.remove();
+
+                    app.ui.showAlert("Base Reiniciada", "Todos os dados foram excluídos da apresentação Dental Uni.", "info");
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) app.ui.renderView_ApresentacaoDentalUni(container);
+                },
+
+                async carregarDadosDemonstracaoDentalUni() {
+                    app.ui.showAlert("Gerando Demonstração...", "Montando base de teste completa com indicadores reais da Dental Uni...", "info");
+
+                    const filas = ['Atendimento Beneficiário', 'Atendimento Dentista/Rede', 'SAC Geral', 'Urgência & Emergência', 'Autorizações & Procedimentos'];
+                    const tabulacoes = [
+                        'Solicitação de 2ª Via de Cartão',
+                        'Consulta de Rede Credenciada',
+                        'Status de Autorização de Guia',
+                        'Dúvidas sobre Cobertura/Carência',
+                        'Cancelamento / Retenção',
+                        'Inclusão de Dependente',
+                        'Reclamação de Clínica Credenciada',
+                        'Elogio ao Atendente',
+                        'Agendamento de Avaliação Odontológica'
+                    ];
+
+                    const rhUsers = (app.users || []).filter(u => u && u.matricula);
+                    const poolAgentes = rhUsers.length >= 6 
+                        ? rhUsers.slice(0, 12).map(u => ({ mat: u.matricula, nome: u.nome, sup: u.supervisor || 'Gestão Dental Uni' }))
+                        : [
+                            { mat: 'DU101', nome: 'ANA PAULA FERREIRA', sup: 'CARLOS SILVA' },
+                            { mat: 'DU102', nome: 'BRUNO GOMES LIMA', sup: 'CARLOS SILVA' },
+                            { mat: 'DU103', nome: 'CAMILA RODRIGUES ALVES', sup: 'MARIANA COSTA' },
+                            { mat: 'DU104', nome: 'DANIEL CARDOSO DIAS', sup: 'MARIANA COSTA' },
+                            { mat: 'DU105', nome: 'EDUARDA MARTINS ROCHA', sup: 'CARLOS SILVA' },
+                            { mat: 'DU106', nome: 'FELIPE NOGUEIRA PINTO', sup: 'MARIANA COSTA' },
+                            { mat: 'DU107', nome: 'GABRIEL BARBOSA SANTOS', sup: 'CARLOS SILVA' },
+                            { mat: 'DU108', nome: 'HELENA DUARTE SOUZA', sup: 'MARIANA COSTA' }
+                        ];
+
+                    const meses = ['2026-08', '2026-09', '2026-10', '2026-11'];
+                    const demoRows = [];
+
+                    for (let i = 0; i < 1850; i++) {
+                        const m = meses[Math.floor(Math.random() * meses.length)];
+                        const diaNum = Math.floor(Math.random() * 28) + 1;
+                        const diaStr = String(diaNum).padStart(2, '0');
+                        const horaNum = Math.floor(Math.random() * 11) + 8; // 08:00 as 19:00
+                        const minNum = Math.floor(Math.random() * 60);
+
+                        const ag = poolAgentes[Math.floor(Math.random() * poolAgentes.length)];
+                        const fila = filas[Math.floor(Math.random() * filas.length)];
+                        const tab = tabulacoes[Math.floor(Math.random() * tabulacoes.length)];
+                        const tmaSeg = Math.floor(Math.random() * 480) + 180; // 3 a 11 min
+
+                        // Resolução FCR: ~86% Sim
+                        const nota1Val = Math.random() < 0.86;
+
+                        // NPS: 72% Promotores (9-10), 18% Neutros (7-8), 10% Detratores (0-6) -> NPS ~ +62
+                        const rNps = Math.random();
+                        let nota2Val = 10;
+                        if (rNps < 0.10) nota2Val = Math.floor(Math.random() * 7); // 0..6
+                        else if (rNps < 0.28) nota2Val = Math.floor(Math.random() * 2) + 7; // 7..8
+                        else nota2Val = Math.floor(Math.random() * 2) + 9; // 9..10
+
+                        // CSAT: média ~ 8.9
+                        const rCsat = Math.random();
+                        let nota3Val = 10;
+                        if (rCsat < 0.08) nota3Val = Math.floor(Math.random() * 6);
+                        else if (rCsat < 0.22) nota3Val = Math.floor(Math.random() * 2) + 7;
+                        else nota3Val = Math.floor(Math.random() * 2) + 9;
+
+                        demoRows.push({
+                            ano: parseInt(m.substring(0,4), 10),
+                            mes: m,
+                            dia: `${m}-${diaStr}`,
+                            dataFmt: `${diaStr}/${m.substring(5,7)}/${m.substring(0,4)} ${String(horaNum).padStart(2,'0')}:${String(minNum).padStart(2,'0')}`,
+                            fila: fila,
+                            agente: ag.mat,
+                            agenteNome: ag.nome,
+                            supervisor: ag.sup,
+                            operacao: 'Dental Uni',
+                            tempoFalado_s: tmaSeg,
+                            tabulacao: tab,
+                            nota1: nota1Val,
+                            nota2: nota2Val,
+                            nota3: nota3Val
+                        });
+                    }
+
+                    if (!app.dentalUniData) app.dentalUniData = { relatorios: [] };
+                    if (!Array.isArray(app.dentalUniData.relatorios)) app.dentalUniData.relatorios = [];
+
+                    app.dentalUniData.relatorios.push({
+                        id: 'demo_' + Date.now(),
+                        nome: 'base_oficial_demonstracao_dental_uni.xlsx',
+                        dataUpload: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                        totalLinhas: demoRows.length,
+                        rows: demoRows
+                    });
+
+                    await localforage.setItem('soft_dental_uni_data', app.dentalUniData);
+                    app.ui.showAlert("Demonstração Pronta!", "Uma base completa com 1.850 atendimentos, gráficos de linha, FCR, NPS e CSAT foi carregada com sucesso.", "success");
+
+                    const container = document.getElementById('view-container-apresentacao_dental_uni');
+                    if (container) app.ui.renderView_ApresentacaoDentalUni(container);
+                },
 
                 processarCSVDinamico(input) {
                     const file = input.files[0];
@@ -43186,8 +45084,8 @@ Object.assign(app.ui, {
                         if (!this._crosswordState) {
                             this._crosswordState = {
                                 size: 'medio',
-                                theme: 'qualidade',
-                                customText: app.crossword.themePresets['qualidade'].items.map(it => `${it.word} - ${it.clue}`).join('\n'),
+                                theme: '',
+                                customText: '',
                                 showSolution: false,
                                 puzzleData: null
                             };
@@ -43195,7 +45093,7 @@ Object.assign(app.ui, {
 
                         const state = this._crosswordState;
 
-                        if (!state.puzzleData) {
+                        if (!state.puzzleData && state.customText && state.customText.trim()) {
                             const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
                                 const parts = line.split('-');
                                 return {
@@ -43203,12 +45101,15 @@ Object.assign(app.ui, {
                                     clue: parts.slice(1).join('-').trim() || 'Sem dica cadastrada'
                                 };
                             });
-                            state.puzzleData = app.crossword.generate(items, state.size);
+                            if (items.length > 0) {
+                                state.puzzleData = app.crossword.generate(items, state.size);
+                            }
                         }
 
                         const pData = state.puzzleData;
-                        const N = pData.size;
-                        const cellNumbers = pData.cellNumbers || {};
+                        const N = pData ? pData.size : (state.size === 'pequeno' ? 12 : (state.size === 'grande' ? 18 : 15));
+                        const cellNumbers = pData?.cellNumbers || {};
+                        const placedCount = pData?.placedWords?.length || 0;
 
                         container.innerHTML = `
                             <div class="w-full px-2 sm:px-6 py-6 animate-fade-in">
@@ -43216,7 +45117,7 @@ Object.assign(app.ui, {
                                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800 mb-8">
                                     <div>
                                         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300 text-xs font-bold uppercase tracking-wider mb-2">
-                                            <i class="fa-solid fa-spell-check"></i> Módulo Pedagógico & Treinamento
+                                            <i class="fa-solid fa-spell-check"></i> Módulo Pedagógico &amp; Treinamento
                                         </div>
                                         <h1 class="text-2xl md:text-3xl font-extrabold text-slate-800 dark:text-white">
                                             Gerador de Palavras Cruzadas Pedagógicas
@@ -43228,11 +45129,11 @@ Object.assign(app.ui, {
 
                                     <div class="flex flex-wrap items-center gap-3">
                                         <button id="cw-btn-export-pdf" type="button"
-                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 transition flex items-center gap-2">
+                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-500/20 transition flex items-center gap-2 cursor-pointer">
                                             <i class="fa-solid fa-file-pdf"></i> Imprimir em PDF (A4)
                                         </button>
                                         <button id="cw-btn-send-print" type="button"
-                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 cursor-pointer">
                                             <i class="fa-solid fa-print"></i> Enviar para Impressão
                                         </button>
                                     </div>
@@ -43253,53 +45154,35 @@ Object.assign(app.ui, {
                                                 </label>
                                                 <div class="grid grid-cols-3 gap-2">
                                                     <button type="button" data-cw-size="pequeno"
-                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'pequeno' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'}">
+                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'pequeno' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'} cursor-pointer">
                                                         Pequeno (12x12)
                                                     </button>
                                                     <button type="button" data-cw-size="medio"
-                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'medio' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'}">
+                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'medio' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'} cursor-pointer">
                                                         Médio (15x15)
                                                     </button>
                                                     <button type="button" data-cw-size="grande"
-                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'grande' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'}">
+                                                        class="cw-size-btn py-2.5 px-3 rounded-xl text-xs font-bold border transition ${state.size === 'grande' ? 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm' : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-fuchsia-400'} cursor-pointer">
                                                         Grande (18x18)
                                                     </button>
                                                 </div>
                                             </div>
 
-                                            <!-- 2. Temas Pré-Prontos -->
-                                            <div class="mb-5">
-                                                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
-                                                    2. Carregar Tema Pré-Pronto (1 Clique)
-                                                </label>
-                                                <div class="flex flex-wrap gap-1.5">
-                                                    ${Object.keys(app.crossword.themePresets).map(tKey => {
-                                                        const p = app.crossword.themePresets[tKey];
-                                                        return `
-                                                            <button type="button" data-cw-theme="${tKey}"
-                                                                class="cw-theme-chip px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${state.theme === tKey ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-800' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'}">
-                                                                ${p.label}
-                                                            </button>
-                                                        `;
-                                                    }).join('')}
-                                                </div>
-                                            </div>
-
-                                            <!-- 3. Palavras e Dicas -->
+                                            <!-- 2. Palavras e Dicas (Sem pré-pronto) -->
                                             <div class="mb-6">
                                                 <div class="flex items-center justify-between mb-2">
                                                     <label class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                                        3. Palavras & Dicas (PALAVRA - Dica)
+                                                        2. Palavras &amp; Dicas (PALAVRA - Dica)
                                                     </label>
                                                     <span id="cw-words-counter" class="text-xs font-bold text-fuchsia-600 dark:text-fuchsia-400">
-                                                        ${pData.placedWords.length} cruzadas
+                                                        ${placedCount} cruzadas
                                                     </span>
                                                 </div>
-                                                <textarea id="cw-custom-text-input" rows="6" placeholder="Digite uma palavra por linha no formato: PALAVRA - Dica da palavra..."
-                                                    class="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 text-xs focus:ring-2 focus:ring-fuchsia-500 focus:outline-none transition-all leading-relaxed font-mono">${state.customText}</textarea>
+                                                <textarea id="cw-custom-text-input" rows="7" placeholder="Digite uma palavra por linha no formato:&#10;PALAVRA - Dica explicativa da palavra..."
+                                                    class="w-full p-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 text-xs focus:ring-2 focus:ring-fuchsia-500 focus:outline-none transition-all leading-relaxed">${state.customText}</textarea>
                                                 <div class="flex items-center justify-between mt-1 text-[11px] text-slate-400">
                                                     <span>Formato: PALAVRA - Dica explicativa</span>
-                                                    <button id="cw-spellcheck-btn" type="button" class="text-fuchsia-600 dark:text-fuchsia-400 hover:underline font-semibold">
+                                                    <button id="cw-spellcheck-btn" type="button" class="text-fuchsia-600 dark:text-fuchsia-400 hover:underline font-semibold cursor-pointer">
                                                         <i class="fa-solid fa-spell-check mr-1"></i> Corrigir Acentos
                                                     </button>
                                                 </div>
@@ -43308,7 +45191,7 @@ Object.assign(app.ui, {
                                             <!-- Botão Gerar -->
                                             <div class="pt-2">
                                                 <button id="cw-btn-generate" type="button"
-                                                    class="w-full py-3 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold text-xs uppercase tracking-wider shadow-md transition flex items-center justify-center gap-2">
+                                                    class="w-full py-3 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold text-xs uppercase tracking-wider shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95">
                                                     <i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Novas Palavras Cruzadas
                                                 </button>
                                             </div>
@@ -43324,74 +45207,88 @@ Object.assign(app.ui, {
                                                         <i class="fa-solid fa-eye text-fuchsia-600"></i> Prévia da Grade Cruzada (${N}x${N})
                                                     </h2>
                                                     <p class="text-xs text-slate-400 mt-0.5">
-                                                        ${pData.placedWords.length} palavras posicionadas com cruzamentos válidos
+                                                        ${placedCount > 0 ? `${placedCount} palavras posicionadas com cruzamentos válidos` : 'Aguardando digitação dos termos e geração da grade'}
                                                     </p>
                                                 </div>
 
-                                                <div class="flex items-center gap-2">
-                                                    <button id="cw-btn-toggle-solution" type="button"
-                                                        class="px-3.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${state.showSolution ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-700' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'}">
-                                                        <i class="fa-solid ${state.showSolution ? 'fa-eye-slash' : 'fa-lightbulb'}"></i>
-                                                        ${state.showSolution ? 'Ocultar Respostas' : 'Ver Gabarito'}
-                                                    </button>
-                                                </div>
+                                                ${placedCount > 0 ? `
+                                                    <div class="flex items-center gap-2">
+                                                        <button id="cw-btn-toggle-solution" type="button"
+                                                            class="px-3.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${state.showSolution ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-700' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'} cursor-pointer">
+                                                            <i class="fa-solid ${state.showSolution ? 'fa-eye-slash' : 'fa-lightbulb'}"></i>
+                                                            ${state.showSolution ? 'Ocultar Respostas' : 'Ver Gabarito'}
+                                                        </button>
+                                                    </div>
+                                                ` : ''}
                                             </div>
 
-                                            <!-- Grade de Palavras Cruzadas (Fundo Claro sem Preto) -->
-                                            <div class="flex justify-center overflow-x-auto py-2">
-                                                <div class="inline-grid gap-1 bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800"
-                                                    style="grid-template-columns: repeat(${N}, minmax(0, 1fr));">
-                                                    ${pData.grid.map((row, r) => row.map((char, c) => {
-                                                        if (char === null) {
-                                                            // Espaço vazio/bloqueado sem fundo preto, transparente e limpo
-                                                            return `<div class="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded bg-transparent opacity-0 pointer-events-none"></div>`;
-                                                        }
-                                                        const numKey = `${r},${c}`;
-                                                        const num = cellNumbers[numKey] || '';
-                                                        return `
-                                                            <div class="relative w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center font-extrabold text-xs sm:text-sm select-none shadow-sm transition-all hover:border-fuchsia-500">
-                                                                ${num ? `<span class="absolute top-0.5 left-1 text-[8px] sm:text-[9px] font-black text-slate-400 dark:text-slate-500 leading-none">${num}</span>` : ''}
-                                                                <span>${state.showSolution ? char : ''}</span>
-                                                            </div>
-                                                        `;
-                                                    }).join('')).join('')}
-                                                </div>
-                                            </div>
-
-                                            <!-- Dicas Horizontais e Verticais -->
-                                            <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                <!-- Horizontais -->
-                                                <div>
-                                                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
-                                                        <i class="fa-solid fa-arrows-left-right text-fuchsia-600"></i> Horizontais (${pData.acrossClues.length})
-                                                    </h3>
-                                                    <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                                                        ${pData.acrossClues.map(c => `
-                                                            <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
-                                                                <span class="font-extrabold text-fuchsia-600 dark:text-fuchsia-400 mr-1">${c.num}.</span>
-                                                                <span class="text-slate-700 dark:text-slate-300">${c.clue}</span>
-                                                                ${state.showSolution ? `<span class="ml-1 font-bold text-emerald-600 dark:text-emerald-400">(${c.original})</span>` : ''}
-                                                            </div>
-                                                        `).join('')}
+                                            ${placedCount > 0 ? `
+                                                <!-- Grade de Palavras Cruzadas (Fundo Claro sem Preto) -->
+                                                <div class="flex justify-center overflow-x-auto py-2">
+                                                    <div class="inline-grid gap-1 bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800"
+                                                        style="grid-template-columns: repeat(${N}, minmax(0, 1fr));">
+                                                        ${pData.grid.map((row, r) => row.map((char, c) => {
+                                                            if (char === null) {
+                                                                return `<div class="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded bg-transparent opacity-0 pointer-events-none"></div>`;
+                                                            }
+                                                            const numKey = `${r},${c}`;
+                                                            const num = cellNumbers[numKey] || '';
+                                                            return `
+                                                                <div class="relative w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center font-extrabold text-xs sm:text-sm select-none shadow-sm transition-all hover:border-fuchsia-500">
+                                                                    ${num ? `<span class="absolute top-0.5 left-1 text-[8px] sm:text-[9px] font-black text-slate-400 dark:text-slate-500 leading-none">${num}</span>` : ''}
+                                                                    <span>${state.showSolution ? char : ''}</span>
+                                                                </div>
+                                                            `;
+                                                        }).join('')).join('')}
                                                     </div>
                                                 </div>
 
-                                                <!-- Verticais -->
-                                                <div>
-                                                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
-                                                        <i class="fa-solid fa-arrows-up-down text-indigo-600"></i> Verticais (${pData.downClues.length})
-                                                    </h3>
-                                                    <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                                                        ${pData.downClues.map(c => `
-                                                            <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
-                                                                <span class="font-extrabold text-indigo-600 dark:text-indigo-400 mr-1">${c.num}.</span>
-                                                                <span class="text-slate-700 dark:text-slate-300">${c.clue}</span>
-                                                                ${state.showSolution ? `<span class="ml-1 font-bold text-emerald-600 dark:text-emerald-400">(${c.original})</span>` : ''}
-                                                            </div>
-                                                        `).join('')}
+                                                <!-- Dicas Horizontais e Verticais -->
+                                                <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <!-- Horizontais -->
+                                                    <div>
+                                                        <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                                                            <i class="fa-solid fa-arrows-left-right text-fuchsia-600"></i> Horizontais (${pData.acrossClues.length})
+                                                        </h3>
+                                                        <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                                                            ${pData.acrossClues.map(c => `
+                                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
+                                                                    <span class="font-extrabold text-fuchsia-600 dark:text-fuchsia-400 mr-1">${c.num}.</span>
+                                                                    <span class="text-slate-700 dark:text-slate-300">${c.clue}</span>
+                                                                    ${state.showSolution ? `<span class="ml-1 font-bold text-emerald-600 dark:text-emerald-400">(${c.original})</span>` : ''}
+                                                                </div>
+                                                            `).join('')}
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Verticais -->
+                                                    <div>
+                                                        <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                                                            <i class="fa-solid fa-arrows-up-down text-indigo-600"></i> Verticais (${pData.downClues.length})
+                                                        </h3>
+                                                        <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                                                            ${pData.downClues.map(c => `
+                                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
+                                                                    <span class="font-extrabold text-indigo-600 dark:text-indigo-400 mr-1">${c.num}.</span>
+                                                                    <span class="text-slate-700 dark:text-slate-300">${c.clue}</span>
+                                                                    ${state.showSolution ? `<span class="ml-1 font-bold text-emerald-600 dark:text-emerald-400">(${c.original})</span>` : ''}
+                                                                </div>
+                                                            `).join('')}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
+                                            ` : `
+                                                <!-- ESTADO VAZIO ELEGANTE -->
+                                                <div class="p-12 text-center space-y-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                                                    <div class="w-14 h-14 rounded-2xl bg-fuchsia-50 dark:bg-fuchsia-950/60 text-fuchsia-600 flex items-center justify-center text-2xl mx-auto shadow-inner">
+                                                        <i class="fa-solid fa-spell-check"></i>
+                                                    </div>
+                                                    <h3 class="text-base font-extrabold text-slate-700 dark:text-slate-200">Nenhuma Palavra Cruzada Gerada</h3>
+                                                    <p class="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                                                        Digite os termos e as respectivas dicas no painel ao lado (formato: <strong>PALAVRA - Dica</strong>) e clique no botão <strong>Gerar Novas Palavras Cruzadas</strong>.
+                                                    </p>
+                                                </div>
+                                            `}
                                         </div>
                                     </div>
                                 </div>
@@ -43403,22 +45300,15 @@ Object.assign(app.ui, {
                             container.querySelectorAll('.cw-size-btn').forEach(btn => {
                                 btn.onclick = () => {
                                     state.size = btn.getAttribute('data-cw-size');
-                                    const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
-                                        const parts = line.split('-');
-                                        return { word: parts[0].trim(), clue: parts.slice(1).join('-').trim() || 'Sem dica' };
-                                    });
-                                    state.puzzleData = app.crossword.generate(items, state.size);
-                                    this.renderView_PalavrasCruzadas(container);
-                                };
-                            });
-
-                            container.querySelectorAll('.cw-theme-chip').forEach(chip => {
-                                chip.onclick = () => {
-                                    const tKey = chip.getAttribute('data-cw-theme');
-                                    state.theme = tKey;
-                                    state.customText = app.crossword.themePresets[tKey].items.map(it => `${it.word} - ${it.clue}`).join('\n');
-                                    const items = app.crossword.themePresets[tKey].items;
-                                    state.puzzleData = app.crossword.generate(items, state.size);
+                                    if (state.customText && state.customText.trim()) {
+                                        const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+                                            const parts = line.split('-');
+                                            return { word: parts[0].trim(), clue: parts.slice(1).join('-').trim() || 'Sem dica' };
+                                        });
+                                        if (items.length > 0) {
+                                            state.puzzleData = app.crossword.generate(items, state.size);
+                                        }
+                                    }
                                     this.renderView_PalavrasCruzadas(container);
                                 };
                             });
@@ -43443,10 +45333,16 @@ Object.assign(app.ui, {
                             const genBtn = container.querySelector('#cw-btn-generate');
                             if (genBtn) {
                                 genBtn.onclick = () => {
+                                    if (!state.customText || !state.customText.trim()) {
+                                        return app.ui.showAlert("Atenção", "Digite ao menos uma palavra e dica no formato PALAVRA - Dica para gerar as palavras cruzadas.", "warning");
+                                    }
                                     const items = state.customText.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
                                         const parts = line.split('-');
                                         return { word: parts[0].trim(), clue: parts.slice(1).join('-').trim() || 'Sem dica' };
                                     });
+                                    if (items.length === 0) {
+                                        return app.ui.showAlert("Atenção", "Nenhuma palavra válida encontrada para gerar a grade.", "warning");
+                                    }
                                     state.puzzleData = app.crossword.generate(items, state.size);
                                     this.renderView_PalavrasCruzadas(container);
                                     app.ui.showNotification("Novas palavras cruzadas geradas com sucesso!", "success");
@@ -43464,22 +45360,26 @@ Object.assign(app.ui, {
                             const pdfBtn = container.querySelector('#cw-btn-export-pdf');
                             if (pdfBtn) {
                                 pdfBtn.onclick = () => {
-                                    const themeLabel = app.crossword.themePresets[state.theme]?.label || 'Operação & Qualidade';
-                                    app.crossword.exportToPdf(state.puzzleData, 'PALAVRAS CRUZADAS DA QUALIDADE', themeLabel);
+                                    if (!state.puzzleData || !state.puzzleData.placedWords || state.puzzleData.placedWords.length === 0) {
+                                        return app.ui.showAlert("Atenção", "Preencha as palavras e clique em Gerar Novas Palavras Cruzadas antes de exportar o PDF.", "warning");
+                                    }
+                                    app.crossword.exportToPdf(state.puzzleData, 'PALAVRAS CRUZADAS PEDAGÓGICAS', 'Treinamento & Qualidade');
                                 };
                             }
 
                             const printBtn = container.querySelector('#cw-btn-send-print');
                             if (printBtn) {
                                 printBtn.onclick = () => {
-                                    const themeLabel = app.crossword.themePresets[state.theme]?.label || 'Operação & Qualidade';
-                                    const doc = app.crossword.exportToPdf(state.puzzleData, 'PALAVRAS CRUZADAS DA QUALIDADE', themeLabel, true);
+                                    if (!state.puzzleData || !state.puzzleData.placedWords || state.puzzleData.placedWords.length === 0) {
+                                        return app.ui.showAlert("Atenção", "Preencha as palavras e clique em Gerar Novas Palavras Cruzadas antes de solicitar a impressão.", "warning");
+                                    }
+                                    const doc = app.crossword.exportToPdf(state.puzzleData, 'PALAVRAS CRUZADAS PEDAGÓGICAS', 'Treinamento & Qualidade', true);
                                     if (!doc) return;
                                     const base64 = doc.output('datauristring');
                                     const copiasStr = prompt("Quantas cópias das Palavras Cruzadas deseja solicitar para impressão?", "10");
                                     if (copiasStr === null) return;
                                     const copias = Math.max(1, parseInt(copiasStr) || 1);
-                                    app.ui.impressoes.solicitarDinamica('palavras_cruzadas.pdf', base64, copias, 'Palavras Cruzadas da Qualidade');
+                                    app.ui.impressoes.solicitarDinamica('palavras_cruzadas.pdf', base64, copias, 'Palavras Cruzadas Pedagógicas');
                                 };
                             }
                         };
